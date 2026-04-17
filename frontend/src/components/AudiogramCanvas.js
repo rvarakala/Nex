@@ -4,8 +4,8 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const canvasRef = useRef(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   
-  const frequencies = [250, 500, 1000, 2000, 3000, 4000, 6000, 8000];
-  const dbLevels = Array.from({ length: 14 }, (_, i) => -10 + i * 10); // -10 to 120
+  const frequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000];
+  const dbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5); // -10 to 120 in 5dB steps
   
   const colors = {
     right: { main: '#DC3545', light: '#FFE5E5' },

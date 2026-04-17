@@ -2,18 +2,19 @@ import React from 'react';
 import AudiogramCanvas from './AudiogramCanvas';
 
 const AudiogramPanel = ({ ear, data, onPlotPoint, activeMode, masked, onModeChange, onMaskedToggle }) => {
-  const colors = {
-    right: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
-    left: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
-  };
-
-  const color = colors[ear];
   const earLabel = ear.charAt(0).toUpperCase() + ear.slice(1);
+  const textColor = ear === 'right' ? 'text-red-600' : 'text-blue-600';
 
   return (
-    <div className="bg-white border border-gray-300 rounded shadow-sm p-4">
-      <div className={`text-center font-semibold mb-3 py-2 rounded ${color.bg} ${color.text}`}>
-        {earLabel} EAR
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+      {/* Minimal Header */}
+      <div className="flex justify-between items-center mb-4">
+        <h3 className={`text-sm font-semibold ${textColor}`}>{earLabel} Ear</h3>
+        {data?.pta_3freq && (
+          <div className="text-xs text-gray-600">
+            PTA: <span className="font-semibold text-gray-900">{data.pta_3freq} dB</span>
+          </div>
+        )}
       </div>
       
       <AudiogramCanvas
@@ -24,53 +25,39 @@ const AudiogramPanel = ({ ear, data, onPlotPoint, activeMode, masked, onModeChan
         masked={masked}
       />
       
-      <div className="flex justify-center gap-2 mt-3 flex-wrap">
+      {/* Compact Mode Controls */}
+      <div className="flex justify-center gap-2 mt-4">
         <button
           onClick={() => onModeChange('ac')}
-          className={`
-            px-3 py-1.5 border rounded text-xs font-medium transition-all
-            ${activeMode === 'ac'
-              ? 'bg-blue-500 text-white border-blue-600'
-              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }
-          `}
+          className={`px-3 py-1.5 text-xs rounded transition-all ${
+            activeMode === 'ac'
+              ? 'bg-blue-500 text-white font-medium'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
         >
-          🎧 AC Mode
+          AC
         </button>
         <button
           onClick={() => onModeChange('bc')}
-          className={`
-            px-3 py-1.5 border rounded text-xs font-medium transition-all
-            ${activeMode === 'bc'
-              ? 'bg-blue-500 text-white border-blue-600'
-              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }
-          `}
+          className={`px-3 py-1.5 text-xs rounded transition-all ${
+            activeMode === 'bc'
+              ? 'bg-blue-500 text-white font-medium'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
         >
-          ⚡ BC Mode
+          BC
         </button>
         <button
           onClick={onMaskedToggle}
-          className={`
-            px-3 py-1.5 border rounded text-xs font-medium transition-all
-            ${masked
-              ? 'bg-yellow-500 text-white border-yellow-600'
-              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }
-          `}
+          className={`px-3 py-1.5 text-xs rounded transition-all ${
+            masked
+              ? 'bg-yellow-500 text-white font-medium'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
         >
-          {ear === 'right' ? '△' : '□'} Masked
-        </button>
-        <button className="px-3 py-1.5 border border-gray-300 bg-white rounded text-xs hover:bg-gray-100">
-          ↓ No Response
+          Masked
         </button>
       </div>
-      
-      {data && (
-        <div className="mt-3 text-center text-xs text-gray-600">
-          PTA: {data.pta_3freq ? `${data.pta_3freq} dB` : 'Not calculated'}
-        </div>
-      )}
     </div>
   );
 };
