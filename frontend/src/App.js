@@ -94,6 +94,10 @@ function App() {
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  
+  // Collapse state for UI sections
+  const [isPatientInfoCollapsed, setIsPatientInfoCollapsed] = useState(false);
+  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
 
   // Initialize session on mount
   useEffect(() => {
@@ -252,10 +256,32 @@ function App() {
     setCompletedTabs(completed);
   }, [rightEarData, leftEarData, rightEarSpeech, leftEarSpeech]);
 
+  // Auto-collapse sections when PTA or Speech tabs are active
+  useEffect(() => {
+    if (activeTab === 'pta' || activeTab === 'speech') {
+      setIsPatientInfoCollapsed(true);
+      setIsSummaryCollapsed(true);
+    } else if (activeTab === 'results') {
+      setIsPatientInfoCollapsed(false);
+      setIsSummaryCollapsed(false);
+    }
+  }, [activeTab]);
+
   return (
     <div className="h-screen flex flex-col bg-gray-200">
       <TopMenu />
-      <PatientContext patient={patient} session={session} />
+      
+      {/* Collapsible Patient Context */}
+      <div 
+        className="transition-all duration-300 ease-in-out overflow-hidden"
+        style={{ 
+          maxHeight: isPatientInfoCollapsed ? '0px' : '80px',
+          opacity: isPatientInfoCollapsed ? 0 : 1
+        }}
+      >
+        <PatientContext patient={patient} session={session} />
+      </div>
+      
       <WorkflowTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -339,14 +365,51 @@ function App() {
           />
         </div>
 
-        {/* Right Info Panel */}
-        {activeTab === 'pta' && (
-          <InfoPanel
-            rightEarData={rightEarData}
-            leftEarData={leftEarData}
-            notes={notes}
-            onNotesChange={setNotes}
-          />
+        {/* Right Info Panel - Collapsible */}
+        {(activeTab === 'pta' || activeTab === 'speech') && (
+          <>
+            <div 
+              className="transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0"
+              style={{ 
+                width: isSummaryCollapsed ? '0px' : '320px',
+                opacity: isSummaryCollapsed ? 0 : 1,
+                minWidth: isSummaryCollapsed ? '0px' : '320px'
+              }}
+            >
+              <InfoPanel
+                rightEarData={rightEarData}
+                leftEarData={leftEarData}
+                notes={notes}
+                onNotesChange={setNotes}
+              />
+            </div>
+            
+            {/* Toggle Summary Button - shown when collapsed */}
+            {isSummaryCollapsed && (
+              <button
+                onClick={() => setIsSummaryCollapsed(false)}
+                className="fixed top-1/2 right-2 transform -translate-y-1/2 bg-blue-500 text-white p-3 rounded-l-lg shadow-lg hover:bg-blue-600 transition-all z-50 hover:pr-4"
+                title="Show Summary"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            
+            {/* Close Summary Button - shown when expanded */}
+            {!isSummaryCollapsed && (
+              <button
+                onClick={() => setIsSummaryCollapsed(true)}
+                className="fixed top-1/2 right-[320px] transform -translate-y-1/2 bg-gray-500 text-white p-2 rounded-l-lg shadow-md hover:bg-gray-600 transition-all z-50"
+                title="Hide Summary"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+          </>
         )}
       </div>
 
