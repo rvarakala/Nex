@@ -11,3 +11,4 @@ export { default as BottomActions } from './BottomActions';
 export { default as StatusBar } from './StatusBar';
 export { default as SpeechAudiometry } from './SpeechAudiometry';
 export { default as ResultsPanel } from './ResultsPanel';
+export { default as ReportPreviewModal } from './ReportPreviewModal';

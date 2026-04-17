@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -14,6 +15,9 @@ from models import (
     TestSession, TestSessionCreate, TestSessionUpdate,
     AudiogramData, SpeechTest
 )
+
+# Import PDF generator
+from pdf_generator import generate_report_pdf
 
 
 ROOT_DIR = Path(__file__).parent
@@ -208,6 +212,40 @@ async def calculate_pta(audiogram: AudiogramData):
         "degree": degree,
         "ear": audiogram.ear
     }
+
+
+# ==================== PDF REPORT GENERATION ====================
+
+@api_router.get("/reports/{session_id}/pdf")
+async def generate_session_report(session_id: str):
+    """Generate PDF report for a test session"""
+    # Get session data
+    session = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+    
+    # Get patient data
+    patient = await db.patients.find_one({"patient_id": session['patient_id']}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    try:
+        # Generate PDF
+        pdf_buffer = generate_report_pdf(session_id, session, patient)
+        
+        # Return as streaming response
+        headers = {
+            'Content-Disposition': f'attachment; filename="audiogram_report_{session_id}.pdf"'
+        }
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type='application/pdf',
+            headers=headers
+        )
+    except Exception as e:
+        logging.error(f"Error generating PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
 
 # Include the router in the main app
 app.include_router(api_router)

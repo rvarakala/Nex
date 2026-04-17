@@ -12,7 +12,8 @@ import {
   BottomActions,
   StatusBar,
   SpeechAudiometry,
-  ResultsPanel
+  ResultsPanel,
+  ReportPreviewModal
 } from "./components";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -92,6 +93,7 @@ function App() {
   // UI state
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
 
   // Initialize session on mount
   useEffect(() => {
@@ -196,7 +198,7 @@ function App() {
 
   const handlePreview = () => {
     console.log("Preview report");
-    alert("📄 Report preview will open here (PDF generation in Phase 2)");
+    setShowReportModal(true);
   };
 
   const handleFinalize = async () => {
@@ -349,6 +351,16 @@ function App() {
       </div>
 
       <StatusBar />
+      
+      {/* Report Preview Modal */}
+      {showReportModal && (
+        <ReportPreviewModal
+          sessionId={sessionId}
+          patient={patient}
+          session={session}
+          onClose={() => setShowReportModal(false)}
+        />
+      )}
     </div>
   );
 }
