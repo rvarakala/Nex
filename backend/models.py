@@ -66,18 +66,95 @@ class SpeechTest(BaseModel):
 
 # ==================== PRE-TEST MODELS (Case History / Tuning Fork / Otoscopy) ====================
 
+class HearingSpecifics(BaseModel):
+    suspect_hearing_loss: Optional[Literal["yes", "no", "not_sure"]] = None
+    better_ear: Optional[Literal["right", "left", "same"]] = None
+    progression: Optional[Literal["fluctuating", "gradual", "rapid", "sudden"]] = None
+    prior_test: bool = False
+    prior_test_details: Optional[str] = None
+    seen_physician: bool = False
+    physician_details: Optional[str] = None
+    earache_drainage_3mo: bool = False
+    aural_fullness: bool = False
+    aural_fullness_ear: Optional[Literal["right", "left", "both"]] = None
+    aural_fullness_frequency: Optional[str] = None
+
+
+class TinnitusDetail(BaseModel):
+    ear: Optional[Literal["right", "left", "both"]] = None
+    frequency: Optional[Literal["constant", "intermittent", "occasional"]] = None
+    bothersome: Optional[Literal["yes", "no", "sometimes"]] = None
+    sound_description: Optional[str] = None
+
+
+class DizzinessDetail(BaseModel):
+    dizzy_today: bool = False
+    associated_symptoms: List[str] = []  # nausea/tinnitus/hearing_loss/vision/other
+    frequency: Optional[str] = None
+    falls_12mo: bool = False
+    falls_count: Optional[int] = None
+    falls_injured: bool = False
+    falls_injury_details: Optional[str] = None
+
+
+class NoiseExposure(BaseModel):
+    exposed: bool = False
+    description: Optional[str] = None
+
+
+class FamilyHistory(BaseModel):
+    hearing_loss_in_family: Optional[Literal["yes", "no", "not_sure"]] = None
+    description: Optional[str] = None
+
+
+class MedicalHistoryDetail(BaseModel):
+    prior_head_neck_surgery: bool = False
+    prior_head_neck_surgery_details: Optional[str] = None
+    head_trauma: bool = False
+    head_trauma_details: Optional[str] = None
+    medications: Optional[str] = None
+    conditions: List[str] = []  # diabetes, hypertension, stroke_tia, etc.
+
+
+class HearingAidHistory(BaseModel):
+    ever_used: bool = False
+    currently_using: bool = False
+    ear: Optional[Literal["right", "left", "both"]] = None
+    years_of_use: Optional[str] = None
+    regular_wear: Optional[bool] = None
+    benefit: Optional[bool] = None
+    problems: Optional[str] = None
+
+
+class CommunicationNeeds(BaseModel):
+    difficult_situations: List[str] = []  # tv/phone/restaurant/meeting/theatre/worship
+    top_problem_areas: List[str] = []  # up to 3 free-text items
+    phone_ear: Optional[Literal["right", "left", "switch"]] = None
+
+
 class CaseHistory(BaseModel):
-    """Minimal case history intake"""
+    """Expanded adult audiology case history"""
+    # Core (minimal — always visible)
     chief_complaint: Optional[str] = None
     duration: Optional[str] = None  # e.g., "3 months"
     onset: Optional[Literal["sudden", "gradual", "unknown"]] = None
     affected_ear: Optional[Literal["right", "left", "both", "unknown"]] = None
-    # Associated symptoms
+    # Associated symptom flags (quick checkboxes)
     tinnitus: bool = False
     vertigo: bool = False
     otalgia: bool = False
     otorrhea: bool = False
     notes: Optional[str] = None
+
+    # Extended sections (accordion)
+    hearing_specifics: HearingSpecifics = Field(default_factory=HearingSpecifics)
+    tinnitus_detail: TinnitusDetail = Field(default_factory=TinnitusDetail)
+    dizziness_detail: DizzinessDetail = Field(default_factory=DizzinessDetail)
+    noise_exposure: NoiseExposure = Field(default_factory=NoiseExposure)
+    family_history: FamilyHistory = Field(default_factory=FamilyHistory)
+    medical_history: MedicalHistoryDetail = Field(default_factory=MedicalHistoryDetail)
+    hearing_aid_history: HearingAidHistory = Field(default_factory=HearingAidHistory)
+    communication_needs: CommunicationNeeds = Field(default_factory=CommunicationNeeds)
 
 
 class TuningForkTest(BaseModel):

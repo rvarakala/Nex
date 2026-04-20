@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import CaseHistorySection from './CaseHistorySection';
 
 /**
  * Compact select dropdown matching the NOAH-dense clinical aesthetic.
@@ -239,12 +240,9 @@ const OtoscopyEar = ({ earLabel, earSide, value, onChange }) => {
 // --- Main Pre-Test panel (3-column split) -----------------------------------
 
 const PreTestPanel = ({ data, onChange }) => {
-  const ch = data.case_history;
   const tf = data.tuning_fork;
   const ot = data.otoscopy;
 
-  const updateCH = (patch) =>
-    onChange({ ...data, case_history: { ...ch, ...patch } });
   const updateTF = (patch) =>
     onChange({ ...data, tuning_fork: { ...tf, ...patch } });
   const updateOt = (patch) =>
@@ -253,87 +251,11 @@ const PreTestPanel = ({ data, onChange }) => {
   return (
     <div className="flex-1 flex min-h-0 bg-gray-100 overflow-hidden">
       <div className="flex-1 flex gap-2 p-2 overflow-hidden">
-        {/* ========== Column 1: Case History ========== */}
-        <div className="flex-1 min-w-0 flex flex-col bg-white border border-gray-300 rounded shadow-sm overflow-hidden">
-          <SectionHeader title="Case History" />
-          <div className="flex-1 p-2 space-y-1 overflow-auto">
-            <Row label="Complaint">
-              <input
-                type="text"
-                data-testid="ch-complaint"
-                value={ch.chief_complaint || ''}
-                onChange={(e) => updateCH({ chief_complaint: e.target.value })}
-                placeholder="Chief complaint…"
-                className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 focus:outline-none focus:border-blue-500"
-              />
-            </Row>
-            <Row label="Duration">
-              <input
-                type="text"
-                data-testid="ch-duration"
-                value={ch.duration || ''}
-                onChange={(e) => updateCH({ duration: e.target.value })}
-                placeholder="e.g., 3 months"
-                className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 focus:outline-none focus:border-blue-500"
-              />
-            </Row>
-            <Row label="Onset">
-              <Select
-                testId="ch-onset"
-                value={ch.onset}
-                onChange={(v) => updateCH({ onset: v })}
-                options={ONSET_OPTIONS}
-              />
-            </Row>
-            <Row label="Affected ear">
-              <Select
-                testId="ch-affected-ear"
-                value={ch.affected_ear}
-                onChange={(v) => updateCH({ affected_ear: v })}
-                options={EAR_OPTIONS}
-              />
-            </Row>
-
-            <div className="pt-1 border-t border-gray-200 mt-1">
-              <div className="text-[10px] font-semibold text-gray-600 mb-1">
-                Associated symptoms
-              </div>
-              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                {[
-                  ['tinnitus', 'Tinnitus'],
-                  ['vertigo', 'Vertigo'],
-                  ['otalgia', 'Otalgia'],
-                  ['otorrhea', 'Otorrhea'],
-                ].map(([key, label]) => (
-                  <label
-                    key={key}
-                    className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      data-testid={`ch-sym-${key}`}
-                      checked={!!ch[key]}
-                      onChange={(e) => updateCH({ [key]: e.target.checked })}
-                      className="w-3.5 h-3.5"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <Row label="Notes">
-              <textarea
-                data-testid="ch-notes"
-                value={ch.notes || ''}
-                onChange={(e) => updateCH({ notes: e.target.value })}
-                placeholder="Medical / family / noise / drug history…"
-                rows={4}
-                className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 resize-none focus:outline-none focus:border-blue-500"
-              />
-            </Row>
-          </div>
-        </div>
+        {/* ========== Column 1: Case History (expanded) ========== */}
+        <CaseHistorySection
+          data={data.case_history}
+          onChange={(next) => onChange({ ...data, case_history: next })}
+        />
 
         {/* ========== Column 2: Tuning Fork Tests ========== */}
         <div className="flex-1 min-w-0 flex flex-col bg-white border border-gray-300 rounded shadow-sm overflow-hidden">

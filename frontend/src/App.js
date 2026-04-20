@@ -34,6 +34,32 @@ function App() {
       chief_complaint: '', duration: '', onset: null, affected_ear: null,
       tinnitus: false, vertigo: false, otalgia: false, otorrhea: false,
       notes: '',
+      hearing_specifics: {
+        suspect_hearing_loss: null, better_ear: null, progression: null,
+        prior_test: false, prior_test_details: '',
+        seen_physician: false, physician_details: '',
+        earache_drainage_3mo: false,
+        aural_fullness: false, aural_fullness_ear: null, aural_fullness_frequency: '',
+      },
+      tinnitus_detail: { ear: null, frequency: null, bothersome: null, sound_description: '' },
+      dizziness_detail: {
+        dizzy_today: false, associated_symptoms: [], frequency: '',
+        falls_12mo: false, falls_count: null, falls_injured: false, falls_injury_details: '',
+      },
+      noise_exposure: { exposed: false, description: '' },
+      family_history: { hearing_loss_in_family: null, description: '' },
+      medical_history: {
+        prior_head_neck_surgery: false, prior_head_neck_surgery_details: '',
+        head_trauma: false, head_trauma_details: '',
+        medications: '', conditions: [],
+      },
+      hearing_aid_history: {
+        ever_used: false, currently_using: false, ear: null,
+        years_of_use: '', regular_wear: null, benefit: null, problems: '',
+      },
+      communication_needs: {
+        difficult_situations: [], top_problem_areas: ['', '', ''], phone_ear: null,
+      },
     },
     tuning_fork: {
       frequency_hz: 512,
