@@ -5,11 +5,20 @@ import SimpleTabs from "./components/SimpleTabs";
 import AudiogramCanvas from "./components/AudiogramCanvas";
 import ControlPanel from "./components/ControlPanel";
 import PTACalculator from "./components/PTACalculator";
+import PatientInfoBar from "./components/PatientInfoBar";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 function App() {
+  // Demo patient data
+  const patient = {
+    patient_id: "ACS-2025-001234",
+    name: "Ramesh Kumar",
+    age: 45,
+    gender: "Male",
+  };
+
   // Tab navigation
   const [activeTab, setActiveTab] = useState('pure_tone');
   
@@ -39,7 +48,7 @@ function App() {
     const initSession = async () => {
       try {
         const response = await axios.post(`${API}/sessions`, {
-          patient_id: "ACS-2025-001234",
+          patient_id: patient.patient_id,
           audiologist_name: "Dr. Audiologist",
           test_reliability: "good",
           test_methods: ["headphones"]
@@ -135,12 +144,15 @@ function App() {
     <div className="h-screen w-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Simple Tab Navigation */}
       <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      
+      {/* Patient Info Bar */}
+      <PatientInfoBar patient={patient} />
 
       {/* Pure Tone Audiometry */}
       {activeTab === 'pure_tone' && (
         <div className="flex-1 flex flex-col min-h-0">
           {/* Extended Frequency Toggle */}
-          <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-gray-300 flex-shrink-0">
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-white border-b border-gray-300 flex-shrink-0">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -157,8 +169,8 @@ function App() {
           {/* Main Audiogram Area */}
           <div className="flex-1 flex min-h-0 relative">
             {/* Right Ear Audiogram */}
-            <div className="flex-1 flex flex-col p-3 bg-gray-50 min-w-0">
-              <h2 className="text-base font-bold text-red-600 mb-2 text-center flex-shrink-0">
+            <div className="flex-1 flex flex-col p-2 bg-gray-50 min-w-0">
+              <h2 className="text-sm font-bold text-red-600 mb-1.5 text-center flex-shrink-0">
                 Right Ear Audiogram
               </h2>
               <div className="flex-1 min-h-0">
@@ -184,8 +196,8 @@ function App() {
             </div>
 
             {/* Left Ear Audiogram */}
-            <div className="flex-1 flex flex-col p-3 bg-gray-50 min-w-0">
-              <h2 className="text-base font-bold text-blue-600 mb-2 text-center flex-shrink-0">
+            <div className="flex-1 flex flex-col p-2 bg-gray-50 min-w-0">
+              <h2 className="text-sm font-bold text-blue-600 mb-1.5 text-center flex-shrink-0">
                 Left Ear Audiogram
               </h2>
               <div className="flex-1 min-h-0">

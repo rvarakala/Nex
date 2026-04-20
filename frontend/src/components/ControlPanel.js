@@ -9,15 +9,15 @@ const ControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle }) => {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center gap-3 px-4 py-6 bg-gray-50 border-x border-gray-300">
-      <div className="text-sm font-semibold text-gray-700 mb-2">Test Type</div>
+    <div className="flex flex-col items-center justify-center gap-2 px-3 py-4 bg-gray-50 border-x border-gray-300">
+      <div className="text-xs font-semibold text-gray-700 mb-1">Test Type</div>
       
       {tests.map((test) => (
         <button
           key={test.id}
           onClick={() => onTestChange(test.id)}
           className={`
-            w-32 px-4 py-2.5 text-sm font-medium rounded
+            w-28 px-3 py-2 text-xs font-medium rounded
             transition-all duration-150
             ${
               activeTest === test.id
@@ -28,7 +28,7 @@ const ControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle }) => {
             }
           `}
         >
-          <span className="font-bold mr-2">{test.symbol}</span>
+          <span className="font-bold mr-1.5">{test.symbol}</span>
           {test.label}
         </button>
       ))}
@@ -38,7 +38,7 @@ const ControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle }) => {
       <button
         onClick={onMaskedToggle}
         className={`
-          w-32 px-4 py-2.5 text-sm font-medium rounded
+          w-28 px-3 py-2 text-xs font-medium rounded
           transition-all duration-150
           ${
             masked

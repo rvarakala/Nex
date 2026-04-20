@@ -4,13 +4,21 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const canvasRef = useRef(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   
-  // Standard frequencies with mid-frequencies
-  const standardFrequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000];
+  // Major frequencies (with labels)
+  const standardMajorFreqs = [250, 500, 1000, 2000, 4000, 8000];
+  const extendedMajorFreqs = [250, 500, 1000, 2000, 4000, 8000, 10000, 12500, 16000];
   
-  // Extended frequencies (add 10K, 12.5K, 16K)
-  const extendedFrequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12500, 16000];
+  // Mid frequencies (dotted lines, NO labels)
+  const standardMidFreqs = [750, 1500, 3000, 6000];
+  const extendedMidFreqs = [750, 1500, 3000, 6000];
   
-  const frequencies = extendedFrequency ? extendedFrequencies : standardFrequencies;
+  // All frequencies combined for plotting logic
+  const standardAllFreqs = [...standardMajorFreqs, ...standardMidFreqs].sort((a, b) => a - b);
+  const extendedAllFreqs = [...extendedMajorFreqs, ...extendedMidFreqs].sort((a, b) => a - b);
+  
+  const majorFrequencies = extendedFrequency ? extendedMajorFreqs : standardMajorFreqs;
+  const midFrequencies = extendedFrequency ? extendedMidFreqs : standardMidFreqs;
+  const frequencies = extendedFrequency ? extendedAllFreqs : standardAllFreqs;
   
   // All dB levels for grid lines (5 dB precision)
   const allDbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5); // -10 to 120 in 5dB steps
@@ -69,31 +77,49 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       // Y-axis labels - only for major intervals (10 dB)
       if (isMajor) {
         ctx.fillStyle = '#666';
-        ctx.font = '11px Arial';
+        ctx.font = '10px Arial';
         ctx.textAlign = 'right';
-        ctx.fillText(db.toString(), padding.left - 10, y + 4);
+        ctx.fillText(db.toString(), padding.left - 10, y + 3);
       }
     });
     
     // Vertical lines (frequencies)
     frequencies.forEach((freq, i) => {
       const x = padding.left + (i / (frequencies.length - 1)) * chartWidth;
+      const isMajor = majorFrequencies.includes(freq);
+      
+      // Set line style
+      if (isMajor) {
+        // Solid line for major frequencies
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([]);
+      } else {
+        // Dotted line for mid-frequencies
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([3, 3]);
+      }
+      
       ctx.beginPath();
       ctx.moveTo(x, padding.top);
       ctx.lineTo(x, padding.top + chartHeight);
       ctx.stroke();
+      ctx.setLineDash([]); // Reset
       
-      // X-axis labels
-      ctx.fillStyle = '#666';
-      ctx.font = '11px Arial';
-      ctx.textAlign = 'center';
-      let label;
-      if (freq >= 1000) {
-        label = freq === 12500 ? '12.5K' : `${freq / 1000}K`;
-      } else {
-        label = freq.toString();
+      // X-axis labels - ONLY for major frequencies
+      if (isMajor) {
+        ctx.fillStyle = '#666';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        let label;
+        if (freq >= 1000) {
+          label = freq === 12500 ? '12.5K' : `${freq / 1000}K`;
+        } else {
+          label = freq.toString();
+        }
+        ctx.fillText(label, x, height - 18);
       }
-      ctx.fillText(label, x, height - 20);
     });
     
     // Draw extended frequency background (blue tint) if in extended mode
