@@ -38,6 +38,7 @@ no modern SaaS fluff).
 - [Feb 2026] **NR line isolation**: connecting polyline lifts pen at any NR point — NR points never joined to neighbouring thresholds
 - [Feb 2026] Uniform 10px font sizing across the control panel
 - [Feb 2026] Hidden "Made with Emergent" badge (display:none in index.html)
+- [Feb 2026] **Expanded to 10-tab NOAH bar**: Pure Tone | Speech | Impedance | Special Tests | OAE | Sound Field / Aided | ABR / ASSR | Pediatric | Tinnitus | Reports. Each new tab renders a structured `TabPlaceholder` listing planned sub-tests.
 
 ## Backlog / Roadmap
 

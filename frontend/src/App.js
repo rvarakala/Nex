@@ -5,6 +5,7 @@ import SimpleTabs from "./components/SimpleTabs";
 import AudiogramCanvas from "./components/AudiogramCanvas";
 import NoahControlPanel from "./components/NoahControlPanel";
 import PTACalculator from "./components/PTACalculator";
+import TabPlaceholder from "./components/TabPlaceholder";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -317,22 +318,147 @@ function App() {
 
           {/* Speech Tab (Placeholder) */}
           {activeTab === 'speech' && (
-            <div className="flex-1 flex items-center justify-center bg-gray-50">
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-gray-700 mb-2">Speech Audiometry</h2>
-                <p className="text-gray-500">Coming next...</p>
-              </div>
-            </div>
+            <TabPlaceholder
+              title="Speech Audiometry"
+              note="Speech reception & recognition under quiet and noise conditions."
+              subtests={[
+                'SRT (Speech Reception Threshold)',
+                'SDT (Speech Detection Threshold)',
+                'PB Word Discrimination (WRS)',
+                'Speech-in-Noise (HINT)',
+                'Sentence tests',
+                'Aided vs Unaided benefit',
+                'MCL / UCL (speech)',
+                'Speech-banana overlay',
+              ]}
+            />
           )}
 
-          {/* Impedance Tab (Placeholder) */}
+          {/* Impedance / Tympanometry (Placeholder) */}
           {activeTab === 'impedance' && (
-            <div className="flex-1 flex items-center justify-center bg-gray-50">
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-gray-700 mb-2">Impedance / Tympanometry</h2>
-                <p className="text-gray-500">Coming next...</p>
-              </div>
-            </div>
+            <TabPlaceholder
+              title="Impedance / Tympanometry"
+              note="Middle-ear analysis — Jerger classification with ipsi/contra reflexes."
+              subtests={[
+                'Tympanogram (Type A / As / Ad / B / C)',
+                'Acoustic Reflexes — Ipsilateral',
+                'Acoustic Reflexes — Contralateral',
+                'Reflex Decay (500 & 1000 Hz)',
+                'ECV (Equivalent Volume)',
+                'ETF — Toynbee',
+                'ETF — Valsalva',
+                'ETF — Pressure application',
+              ]}
+            />
+          )}
+
+          {/* Special Tests (Placeholder) */}
+          {activeTab === 'special' && (
+            <TabPlaceholder
+              title="Special Diagnostic Tests"
+              note="Site-of-lesion and functional hearing tests."
+              subtests={[
+                'SISI (Short Increment Sensitivity Index)',
+                'ABLB (Alternate Binaural Loudness Balance)',
+                'Stenger Test',
+                'Tone Decay Test',
+                'MML (Masking Level Differences)',
+              ]}
+            />
+          )}
+
+          {/* OAE (Placeholder) */}
+          {activeTab === 'oae' && (
+            <TabPlaceholder
+              title="Otoacoustic Emissions"
+              note="Objective cochlear outer-hair-cell function screening."
+              subtests={[
+                'TEOAE — SNR per band',
+                'TEOAE — Reproducibility %',
+                'DPOAE — DP-gram (F1/F2)',
+                'DPOAE — Pass / Refer criteria',
+              ]}
+            />
+          )}
+
+          {/* Sound Field / Aided (Placeholder) */}
+          {activeTab === 'soundfield' && (
+            <TabPlaceholder
+              title="Sound Field / Aided"
+              note="Aided vs unaided thresholds measured in free field."
+              subtests={[
+                'Soundfield audiogram (unaided)',
+                'Aided soundfield (with processor)',
+                'Aided vs Unaided benefit curve',
+                'Ling-6 sound test',
+                'Speech-banana coverage overlay',
+              ]}
+            />
+          )}
+
+          {/* ABR / ASSR (Placeholder) */}
+          {activeTab === 'abr' && (
+            <TabPlaceholder
+              title="ABR / ASSR (Electrophysiology)"
+              note="Auditory Brainstem Response & Auditory Steady-State Response."
+              subtests={[
+                'Click ABR — Wave I / III / V latencies',
+                'Tone-burst ABR (500, 1k, 2k, 4k Hz)',
+                'Interpeak Latencies (I-III, III-V, I-V)',
+                'Neurodiagnostic ABR',
+                'ASSR — frequency-specific thresholds',
+                'ASSR — nHL → eHL conversion',
+                'ECochG — SP/AP ratio',
+              ]}
+            />
+          )}
+
+          {/* Pediatric (Placeholder) */}
+          {activeTab === 'pediatric' && (
+            <TabPlaceholder
+              title="Pediatric Audiometry"
+              note="Age-appropriate behavioural hearing assessment."
+              subtests={[
+                'BOA (Behavioural Observation Audiometry)',
+                'VRA (Visual Reinforcement Audiometry)',
+                'Play Audiometry',
+                'Test reliability rating',
+                'Parent counselling checklist',
+                'Developmental milestones reference',
+              ]}
+            />
+          )}
+
+          {/* Tinnitus (Placeholder) */}
+          {activeTab === 'tinnitus' && (
+            <TabPlaceholder
+              title="Tinnitus Assessment"
+              note="Psychoacoustic characterisation and management planning."
+              subtests={[
+                'Pitch matching',
+                'Loudness matching',
+                'MML (Minimum Masking Level)',
+                'Residual Inhibition',
+                'THI / TFI questionnaire score',
+              ]}
+            />
+          )}
+
+          {/* Reports (Placeholder) */}
+          {activeTab === 'reports' && (
+            <TabPlaceholder
+              title="Reports"
+              note="Template-driven PDF export — audiogram + tympanogram + AI narrative."
+              subtests={[
+                'Audiogram render (R/L)',
+                'Tympanogram render',
+                'Speech audiometry summary',
+                'Clinical impression (AI-generated)',
+                'Recommendations',
+                'Medical clearance workflow',
+                'Digital signature & watermark',
+              ]}
+            />
           )}
         </div>
       </div>
