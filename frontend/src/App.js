@@ -72,19 +72,24 @@ function App() {
 
   // Determine active mode and ear from activeTest
   const getActiveMode = () => {
-    if (activeTest.includes('ac')) return 'ac';
-    if (activeTest.includes('bc')) return 'bc';
-    if (activeTest.includes('mcl')) return 'mcl';
-    if (activeTest.includes('ucl')) return 'ucl';
-    if (activeTest.includes('ff') && !activeTest.includes('ffa')) return 'ff';
-    if (activeTest.includes('ffa')) return 'ffa';
+    const testName = activeTest.replace('_nr', '').replace('_left', '').replace('_right', '');
+    if (testName.includes('ac')) return 'ac';
+    if (testName.includes('bc')) return 'bc';
+    if (testName.includes('mcl')) return 'mcl';
+    if (testName.includes('ucl')) return 'ucl';
+    if (testName.includes('ff') && !testName.includes('ffa')) return 'ff';
+    if (testName.includes('ffa')) return 'ffa';
     return 'ac';
   };
 
   const getActiveEar = () => {
-    if (activeTest.includes('right')) return 'right';
     if (activeTest.includes('left')) return 'left';
+    if (activeTest.includes('right')) return 'right';
     return 'right';
+  };
+  
+  const isNoResponse = () => {
+    return activeTest.includes('_nr');
   };
 
   // Plot point on audiogram
@@ -115,13 +120,13 @@ function App() {
         frequency,
         threshold_db: db,
         masked,
-        no_response: false
+        no_response: isNoResponse()
       };
     } else {
       // Add new
       updatedMeasurements = [
         ...currentData[measurementArray],
-        { frequency, threshold_db: db, masked, no_response: false }
+        { frequency, threshold_db: db, masked, no_response: isNoResponse() }
       ];
     }
 

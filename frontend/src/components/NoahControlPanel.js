@@ -2,12 +2,12 @@ import React from 'react';
 
 const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, rightEarData, leftEarData }) => {
   const thresholdTypes = [
-    { id: 'htl', label: 'HTL', leftSymbol: 'O', rightSymbol: 'X', leftTest: 'ac_right', rightTest: 'ac_left' },
-    { id: 'bcl', label: 'BCL', leftSymbol: '<', rightSymbol: '>', leftTest: 'bc_right', rightTest: 'bc_left' },
-    { id: 'mcl', label: 'MCL', leftSymbol: 'M', rightSymbol: 'M', leftTest: 'mcl_right', rightTest: 'mcl_left' },
-    { id: 'ucl', label: 'UCL', leftSymbol: 'L', rightSymbol: 'J', leftTest: 'ucl_right', rightTest: 'ucl_left' },
-    { id: 'ff', label: 'FF', leftSymbol: 'O', rightSymbol: 'X', leftTest: 'ff_right', rightTest: 'ff_left' },
-    { id: 'ffa', label: 'FF-A', leftSymbol: '◊', rightSymbol: '◊', leftTest: 'ffa_right', rightTest: 'ffa_left' },
+    { id: 'htl', label: 'HTL', leftSymbol: 'X', rightSymbol: 'O', leftTest: 'ac_left', rightTest: 'ac_right', leftNR: 'ac_left_nr', rightNR: 'ac_right_nr' },
+    { id: 'bcl', label: 'BCL', leftSymbol: '>', rightSymbol: '<', leftTest: 'bc_left', rightTest: 'bc_right', leftNR: 'bc_left_nr', rightNR: 'bc_right_nr' },
+    { id: 'mcl', label: 'MCL', leftSymbol: 'M', rightSymbol: 'M', leftTest: 'mcl_left', rightTest: 'mcl_right', leftNR: 'mcl_left_nr', rightNR: 'mcl_right_nr' },
+    { id: 'ucl', label: 'UCL', leftSymbol: 'J', rightSymbol: 'L', leftTest: 'ucl_left', rightTest: 'ucl_right', leftNR: 'ucl_left_nr', rightNR: 'ucl_right_nr' },
+    { id: 'ff', label: 'FF', leftSymbol: 'X', rightSymbol: 'O', leftTest: 'ff_left', rightTest: 'ff_right', leftNR: 'ff_left_nr', rightNR: 'ff_right_nr' },
+    { id: 'ffa', label: 'FF-A', leftSymbol: '◊', rightSymbol: '◊', leftTest: 'ffa_left', rightTest: 'ffa_right', leftNR: 'ffa_left_nr', rightNR: 'ffa_right_nr' },
   ];
 
   // Calculate HTL and BCL averages
@@ -33,29 +33,58 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
   const leftBCL = calculateAverage(leftEarData, 'bc_measurements', [500, 1000, 2000]);
 
   return (
-    <div className="flex flex-col items-center justify-start gap-0 px-2 py-3 bg-gray-100 border-x border-gray-300 w-28">
+    <div className="flex flex-col items-center justify-start gap-0 px-2 py-3 bg-gray-100 border-x border-gray-300" style={{ width: '160px' }}>
       {thresholdTypes.map((type) => (
         <div key={type.id} className="flex items-center gap-0 mb-1 bg-white border border-gray-300 rounded">
+          {/* NR Left */}
+          <button
+            onClick={() => onTestChange(type.leftNR)}
+            className={`px-1 py-1 text-[9px] font-bold border-r border-gray-300 ${
+              activeTest === type.leftNR ? 'bg-blue-200 text-blue-700' : 'text-gray-500 hover:bg-gray-50'
+            }`}
+            style={{ minWidth: '22px' }}
+            title="No Response Left"
+          >
+            NR
+          </button>
+          
+          {/* Response Left */}
           <button
             onClick={() => onTestChange(type.leftTest)}
             className={`px-1.5 py-1 text-xs font-bold border-r border-gray-300 ${
-              activeTest === type.leftTest ? 'bg-red-100 text-red-600' : 'text-gray-600 hover:bg-gray-50'
+              activeTest === type.leftTest ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
             style={{ minWidth: '20px' }}
           >
             {type.leftSymbol}
           </button>
-          <div className="px-2 py-1 text-[10px] font-semibold text-gray-700 bg-gray-50" style={{ minWidth: '35px', textAlign: 'center' }}>
+          
+          {/* Test Label */}
+          <div className="px-2 py-1 text-[10px] font-semibold text-gray-700 bg-gray-50" style={{ minWidth: '38px', textAlign: 'center' }}>
             {type.label}
           </div>
+          
+          {/* Response Right */}
           <button
             onClick={() => onTestChange(type.rightTest)}
             className={`px-1.5 py-1 text-xs font-bold border-l border-gray-300 ${
-              activeTest === type.rightTest ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
+              activeTest === type.rightTest ? 'bg-red-100 text-red-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
             style={{ minWidth: '20px' }}
           >
             {type.rightSymbol}
+          </button>
+          
+          {/* NR Right */}
+          <button
+            onClick={() => onTestChange(type.rightNR)}
+            className={`px-1 py-1 text-[9px] font-bold border-l border-gray-300 ${
+              activeTest === type.rightNR ? 'bg-red-200 text-red-700' : 'text-gray-500 hover:bg-gray-50'
+            }`}
+            style={{ minWidth: '22px' }}
+            title="No Response Right"
+          >
+            NR
           </button>
         </div>
       ))}

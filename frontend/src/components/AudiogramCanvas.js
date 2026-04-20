@@ -192,6 +192,10 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
           ctx.fillStyle = point.masked ? color.main : 'transparent';
           ctx.lineWidth = 2.5;
           
+          // Check if it's a no response measurement
+          const measurement = data.ac_measurements.find(m => m.frequency === point.freq && m.threshold_db === point.db);
+          const isNoResponse = measurement && measurement.no_response;
+          
           if (point.masked) {
             // Masked AC: filled triangle (right) or square (left)
             if (ear === 'right') {
@@ -220,6 +224,20 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
               ctx.lineTo(coords.x - 6, coords.y + 6);
               ctx.stroke();
             }
+          }
+          
+          // Draw downward arrow if no response
+          if (isNoResponse) {
+            ctx.strokeStyle = color.main;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(coords.x, coords.y + 8);
+            ctx.lineTo(coords.x, coords.y + 16);
+            // Arrow head
+            ctx.moveTo(coords.x - 3, coords.y + 13);
+            ctx.lineTo(coords.x, coords.y + 16);
+            ctx.lineTo(coords.x + 3, coords.y + 13);
+            ctx.stroke();
           }
         });
       }
