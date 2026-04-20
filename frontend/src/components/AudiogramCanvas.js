@@ -83,22 +83,31 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       }
     });
     
-    // Vertical lines (frequencies)
-    frequencies.forEach((freq, i) => {
-      const x = padding.left + (i / (frequencies.length - 1)) * chartWidth;
+    // Helper function to get logarithmic position for frequency (reuse from draw)
+    const getLogPosition = (freq) => {
+      const minFreq = frequencies[0];
+      const maxFreq = frequencies[frequencies.length - 1];
+      const logRatio = (Math.log10(freq) - Math.log10(minFreq)) / (Math.log10(maxFreq) - Math.log10(minFreq));
+      return logRatio;
+    };
+    
+    // Vertical lines (frequencies) - logarithmic spacing
+    frequencies.forEach((freq) => {
+      const logPos = getLogPosition(freq);
+      const x = padding.left + logPos * chartWidth;
       const isMajor = majorFrequencies.includes(freq);
       
       // Set line style
       if (isMajor) {
         // Solid line for major frequencies
-        ctx.strokeStyle = '#e0e0e0';
+        ctx.strokeStyle = '#d0d0d0';
         ctx.lineWidth = 0.8;
         ctx.setLineDash([]);
       } else {
         // Dotted line for mid-frequencies
-        ctx.strokeStyle = '#d0d0d0';
+        ctx.strokeStyle = '#e0e0e0';
         ctx.lineWidth = 0.5;
-        ctx.setLineDash([3, 3]);
+        ctx.setLineDash([2, 2]);
       }
       
       ctx.beginPath();
@@ -137,14 +146,16 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     ctx.lineWidth = 1.5;
     ctx.strokeRect(padding.left, padding.top, chartWidth, chartHeight);
     
-    // Helper function to get canvas coordinates
+    // Helper function to get canvas coordinates with logarithmic X-axis
     const getCoords = (freq, db) => {
       const freqIndex = frequencies.indexOf(freq);
       const dbIndex = dbLevels.indexOf(db);
       
       if (freqIndex === -1 || dbIndex === -1) return null;
       
-      const x = padding.left + (freqIndex / (frequencies.length - 1)) * chartWidth;
+      // Use logarithmic positioning for X coordinate
+      const logPos = getLogPosition(freq);
+      const x = padding.left + logPos * chartWidth;
       const y = padding.top + (dbIndex / (dbLevels.length - 1)) * chartHeight;
       
       return { x, y };
@@ -286,8 +297,20 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     }
     
     const freqRatio = (x - padding.left) / chartWidth;
-    const freqIndex = Math.round(freqRatio * (frequencies.length - 1));
-    const frequency = frequencies[freqIndex];
+    
+    // Find closest frequency using logarithmic spacing
+    let closestFreq = frequencies[0];
+    let minDiff = Math.abs(getLogPosition(frequencies[0]) - freqRatio);
+    
+    frequencies.forEach(freq => {
+      const diff = Math.abs(getLogPosition(freq) - freqRatio);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestFreq = freq;
+      }
+    });
+    
+    const frequency = closestFreq;
     
     const dbRatio = (y - padding.top) / chartHeight;
     const dbIndex = Math.round(dbRatio * (dbLevels.length - 1));

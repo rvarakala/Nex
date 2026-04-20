@@ -200,11 +200,13 @@ function App() {
                     onTestChange={setActiveTest}
                     masked={masked}
                     onMaskedToggle={() => setMasked(!masked)}
+                    rightEarData={rightEarData}
+                    leftEarData={leftEarData}
                   />
                 </div>
 
                 {/* Left Ear Audiogram */}
-                <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0 relative">
+                <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0">
                   <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
                     Left
                   </h2>
@@ -218,9 +220,6 @@ function App() {
                       extendedFrequency={extendedFrequency}
                     />
                   </div>
-                  
-                  {/* PTA Calculator Box */}
-                  <PTACalculator rightEarData={rightEarData} leftEarData={leftEarData} />
                 </div>
               </div>
             </div>
