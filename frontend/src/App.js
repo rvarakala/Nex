@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "@/App.css";
 import axios from "axios";
 import SimpleTabs from "./components/SimpleTabs";
@@ -6,6 +6,7 @@ import AudiogramCanvas from "./components/AudiogramCanvas";
 import NoahControlPanel from "./components/NoahControlPanel";
 import PTACalculator from "./components/PTACalculator";
 import TabPlaceholder from "./components/TabPlaceholder";
+import PreTestPanel from "./components/PreTestPanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -20,12 +21,33 @@ function App() {
   };
 
   // Tab navigation
-  const [activeTab, setActiveTab] = useState('pure_tone');
+  const [activeTab, setActiveTab] = useState('pre_test');
   
   // Pure Tone state
   const [activeTest, setActiveTest] = useState('ac_right');
   const [masked, setMasked] = useState(false);
   const [extendedFrequency, setExtendedFrequency] = useState(false);
+  
+  // Pre-Test (Case History + Tuning Fork + Otoscopy)
+  const defaultPreTest = {
+    case_history: {
+      chief_complaint: '', duration: '', onset: null, affected_ear: null,
+      tinnitus: false, vertigo: false, otalgia: false, otorrhea: false,
+      notes: '',
+    },
+    tuning_fork: {
+      frequency_hz: 512,
+      rinne_right: null, rinne_left: null, rinne_notes: '',
+      weber: null, weber_notes: '',
+      abc_right: null, abc_left: null, abc_notes: '',
+      bing_right: null, bing_left: null, bing_notes: '',
+    },
+    otoscopy: {
+      right: { pinna: null, eac: null, tm: null, notes: '', image_base64: null },
+      left:  { pinna: null, eac: null, tm: null, notes: '', image_base64: null },
+    },
+  };
+  const [preTestData, setPreTestData] = useState(defaultPreTest);
   
   // Audiogram data
   const [rightEarData, setRightEarData] = useState({
@@ -70,6 +92,26 @@ function App() {
 
     initSession();
   }, []);
+
+  // Debounced auto-save of pre-test data to backend
+  const preTestSaveTimer = useRef(null);
+  useEffect(() => {
+    if (!sessionId) return;
+    if (preTestSaveTimer.current) clearTimeout(preTestSaveTimer.current);
+    preTestSaveTimer.current = setTimeout(async () => {
+      try {
+        await axios.put(`${API}/sessions/${sessionId}`, {
+          pre_test_data: preTestData,
+        });
+        console.log('Pre-test data saved');
+      } catch (err) {
+        console.error('Pre-test save failed', err);
+      }
+    }, 800);
+    return () => {
+      if (preTestSaveTimer.current) clearTimeout(preTestSaveTimer.current);
+    };
+  }, [preTestData, sessionId]);
 
   // Determine active mode and ear from activeTest
   const getActiveMode = () => {
@@ -242,6 +284,11 @@ function App() {
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tab Navigation */}
           <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+          {/* Pre-Test (Case History + Tuning Fork + Otoscopy) */}
+          {activeTab === 'pre_test' && (
+            <PreTestPanel data={preTestData} onChange={setPreTestData} />
+          )}
 
           {/* Pure Tone Audiometry */}
           {activeTab === 'pure_tone' && (

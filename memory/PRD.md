@@ -39,6 +39,8 @@ no modern SaaS fluff).
 - [Feb 2026] Uniform 10px font sizing across the control panel
 - [Feb 2026] Hidden "Made with Emergent" badge (display:none in index.html)
 - [Feb 2026] **Expanded to 10-tab NOAH bar**: Pure Tone | Speech | Impedance | Special Tests | OAE | Sound Field / Aided | ABR / ASSR | Pediatric | Tinnitus | Reports. Each new tab renders a structured `TabPlaceholder` listing planned sub-tests.
+- [Feb 2026] **NR workflow refactored**: removed all 12 center-panel NR buttons; NR is plotted only via right-click context menu and plots at the user-chosen dB (cursor Y position, 5 dB snap) instead of fixed 120 dB.
+- [Feb 2026] **Pre-Test tab added** (now the first tab) — 3-column NOAH layout for Case History (minimal: complaint / duration / onset / affected ear / tinnitus-vertigo-otalgia-otorrhea / notes), Tuning Fork battery (selectable 256/512/1024/2048 Hz + Rinne R/L / Weber / ABC R/L / Bing R/L with dropdowns + notes), and Otoscopy (Pinna / EAC / TM dropdowns + notes + client-side-resized base64 image upload per ear). Backend models `CaseHistory`, `TuningForkTest`, `EarOtoscopy`, `OtoscopyFinding`, `PreTestData` added; `pre_test_data` persisted via existing `PUT /api/sessions/{id}` with 800 ms debounced auto-save.
 
 ## Backlog / Roadmap
 

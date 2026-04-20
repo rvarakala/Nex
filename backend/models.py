@@ -64,6 +64,66 @@ class SpeechTest(BaseModel):
     ucl: Optional[int] = None  # Uncomfortable Loudness Level
 
 
+# ==================== PRE-TEST MODELS (Case History / Tuning Fork / Otoscopy) ====================
+
+class CaseHistory(BaseModel):
+    """Minimal case history intake"""
+    chief_complaint: Optional[str] = None
+    duration: Optional[str] = None  # e.g., "3 months"
+    onset: Optional[Literal["sudden", "gradual", "unknown"]] = None
+    affected_ear: Optional[Literal["right", "left", "both", "unknown"]] = None
+    # Associated symptoms
+    tinnitus: bool = False
+    vertigo: bool = False
+    otalgia: bool = False
+    otorrhea: bool = False
+    notes: Optional[str] = None
+
+
+class TuningForkTest(BaseModel):
+    """Standard tuning-fork battery"""
+    frequency_hz: Literal[256, 512, 1024, 2048] = 512
+    # Rinne (AC vs BC) per ear
+    rinne_right: Optional[Literal["positive", "negative", "equal"]] = None
+    rinne_left: Optional[Literal["positive", "negative", "equal"]] = None
+    rinne_notes: Optional[str] = None
+    # Weber — where sound lateralizes
+    weber: Optional[Literal["right", "left", "midline", "not_lateralized"]] = None
+    weber_notes: Optional[str] = None
+    # Absolute Bone Conduction per ear
+    abc_right: Optional[Literal["normal", "reduced"]] = None
+    abc_left: Optional[Literal["normal", "reduced"]] = None
+    abc_notes: Optional[str] = None
+    # Bing (occlusion effect) per ear
+    bing_right: Optional[Literal["positive", "negative"]] = None
+    bing_left: Optional[Literal["positive", "negative"]] = None
+    bing_notes: Optional[str] = None
+
+
+class EarOtoscopy(BaseModel):
+    """Otoscopic findings for a single ear"""
+    pinna: Optional[Literal["normal", "abnormal"]] = None
+    eac: Optional[Literal["clear", "wax", "debris", "inflamed", "foreign_body", "other"]] = None
+    tm: Optional[Literal[
+        "intact_normal", "retracted", "bulging", "perforated",
+        "dull", "erythematous", "effusion", "scarred", "other"
+    ]] = None
+    notes: Optional[str] = None
+    image_base64: Optional[str] = None  # client-side resized (<= 800px), data-URI
+
+
+class OtoscopyFinding(BaseModel):
+    right: EarOtoscopy = Field(default_factory=EarOtoscopy)
+    left: EarOtoscopy = Field(default_factory=EarOtoscopy)
+
+
+class PreTestData(BaseModel):
+    """Combined pre-test intake (case history + tuning fork + otoscopy)"""
+    case_history: CaseHistory = Field(default_factory=CaseHistory)
+    tuning_fork: TuningForkTest = Field(default_factory=TuningForkTest)
+    otoscopy: OtoscopyFinding = Field(default_factory=OtoscopyFinding)
+
+
 # ==================== TEST SESSION MODELS ====================
 
 class TestSession(BaseModel):
@@ -83,6 +143,9 @@ class TestSession(BaseModel):
     symptoms: List[str] = []
     chief_complaint: Optional[str] = None
     history_notes: Optional[str] = None
+    
+    # Pre-Test (Case History + Tuning Fork + Otoscopy)
+    pre_test_data: Optional[PreTestData] = None
     
     # Pure Tone Audiometry
     right_ear_audiogram: Optional[AudiogramData] = None
@@ -127,6 +190,7 @@ class TestSessionUpdate(BaseModel):
     symptoms: Optional[List[str]] = None
     chief_complaint: Optional[str] = None
     history_notes: Optional[str] = None
+    pre_test_data: Optional[PreTestData] = None
     right_ear_audiogram: Optional[AudiogramData] = None
     left_ear_audiogram: Optional[AudiogramData] = None
     right_ear_speech: Optional[SpeechTest] = None

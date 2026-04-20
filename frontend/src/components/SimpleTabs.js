@@ -2,6 +2,7 @@ import React from 'react';
 
 const SimpleTabs = ({ activeTab, onTabChange }) => {
   const tabs = [
+    { id: 'pre_test',     label: 'Pre-Test' },
     { id: 'pure_tone',    label: 'Pure Tone' },
     { id: 'speech',       label: 'Speech' },
     { id: 'impedance',    label: 'Impedance' },
