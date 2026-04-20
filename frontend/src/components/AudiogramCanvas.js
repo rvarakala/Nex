@@ -9,8 +9,8 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const extendedMajorFreqs = [125, 250, 500, 1000, 2000, 4000, 8000, 10000, 12500, 16000];
   
   // Mid-frequencies (dotted lines at halfway points - NO labels)
-  const standardMidFreqs = [750, 1500, 3000, 6000]; // 750 between 500-1K, 1500 between 1K-2K, etc.
-  const extendedMidFreqs = [750, 1500, 3000, 6000]; // Same mids in extended mode
+  const standardMidFreqs = [750, 1500, 3000, 6000];
+  const extendedMidFreqs = [750, 1500, 3000, 6000];
   
   // All frequencies for plotting and grid
   const standardAllFreqs = [...standardMajorFreqs, ...standardMidFreqs].sort((a, b) => a - b);
@@ -21,12 +21,20 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const frequencies = extendedFrequency ? extendedAllFreqs : standardAllFreqs;
   
   // All dB levels for grid lines (5 dB precision)
-  const allDbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5); // -10 to 120 in 5dB steps
+  const allDbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5);
   
   // Major dB levels for labels (10 dB steps for readability)
-  const majorDbLevels = Array.from({ length: 14 }, (_, i) => -10 + i * 10); // -10, 0, 10, 20... 120
+  const majorDbLevels = Array.from({ length: 14 }, (_, i) => -10 + i * 10);
   
-  const dbLevels = allDbLevels; // Use all levels for plotting precision
+  const dbLevels = allDbLevels;
+
+  // Helper function for logarithmic positioning - defined at component level
+  const getLogPosition = (freq) => {
+    const minFreq = frequencies[0];
+    const maxFreq = frequencies[frequencies.length - 1];
+    const logRatio = (Math.log10(freq) - Math.log10(minFreq)) / (Math.log10(maxFreq) - Math.log10(minFreq));
+    return logRatio;
+  };
   
   const colors = {
     right: { main: '#DC3545', light: '#FFE5E5' },
@@ -82,14 +90,6 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
         ctx.fillText(db.toString(), padding.left - 10, y + 3);
       }
     });
-    
-    // Helper function to get logarithmic position for frequency (reuse from draw)
-    const getLogPosition = (freq) => {
-      const minFreq = frequencies[0];
-      const maxFreq = frequencies[frequencies.length - 1];
-      const logRatio = (Math.log10(freq) - Math.log10(minFreq)) / (Math.log10(maxFreq) - Math.log10(minFreq));
-      return logRatio;
-    };
     
     // Vertical lines (frequencies) - logarithmic spacing
     frequencies.forEach((freq) => {
