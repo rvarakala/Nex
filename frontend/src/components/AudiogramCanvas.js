@@ -4,17 +4,17 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const canvasRef = useRef(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   
-  // Standard octave frequencies (NOAH-style)
+  // Standard octave frequencies (major - with labels)
   const standardMajorFreqs = [125, 250, 500, 1000, 2000, 4000, 8000];
   const extendedMajorFreqs = [125, 250, 500, 1000, 2000, 4000, 8000, 10000, 12500, 16000];
   
-  // No mid-frequencies displayed as separate lines in NOAH standard view
-  const standardMidFreqs = [];
-  const extendedMidFreqs = [];
+  // Mid-frequencies (dotted lines at halfway points - NO labels)
+  const standardMidFreqs = [750, 1500, 3000, 6000]; // 750 between 500-1K, 1500 between 1K-2K, etc.
+  const extendedMidFreqs = [750, 1500, 3000, 6000]; // Same mids in extended mode
   
-  // All frequencies for plotting
-  const standardAllFreqs = standardMajorFreqs;
-  const extendedAllFreqs = extendedMajorFreqs;
+  // All frequencies for plotting and grid
+  const standardAllFreqs = [...standardMajorFreqs, ...standardMidFreqs].sort((a, b) => a - b);
+  const extendedAllFreqs = [...extendedMajorFreqs, ...extendedMidFreqs].sort((a, b) => a - b);
   
   const majorFrequencies = extendedFrequency ? extendedMajorFreqs : standardMajorFreqs;
   const midFrequencies = extendedFrequency ? extendedMidFreqs : standardMidFreqs;
@@ -107,17 +107,19 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       ctx.stroke();
       ctx.setLineDash([]); // Reset
       
-      // X-axis labels - all frequencies get labels in NOAH style
-      ctx.fillStyle = '#666';
-      ctx.font = '10px Arial';
-      ctx.textAlign = 'center';
-      let label;
-      if (freq >= 1000) {
-        label = freq === 12500 ? '12.5K' : `${freq / 1000}K`;
-      } else {
-        label = freq.toString();
+      // X-axis labels - ONLY for major frequencies
+      if (isMajor) {
+        ctx.fillStyle = '#666';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        let label;
+        if (freq >= 1000) {
+          label = freq === 12500 ? '12.5K' : `${freq / 1000}K`;
+        } else {
+          label = freq.toString();
+        }
+        ctx.fillText(label, x, height - 18);
       }
-      ctx.fillText(label, x, height - 18);
     });
     
     // Draw extended frequency background (blue tint) if in extended mode

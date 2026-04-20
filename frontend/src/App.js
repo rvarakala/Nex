@@ -141,83 +141,112 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-100 overflow-hidden">
-      {/* Simple Tab Navigation */}
-      <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* Test Procedures - Outer Window */}
+      <div className="flex-1 flex flex-col min-h-0 border-4 border-gray-300 m-2 bg-white rounded-lg shadow-lg">
+        {/* Test Procedures Header */}
+        <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-4 py-2 border-b-2 border-gray-300 flex items-center justify-between">
+          <h1 className="text-sm font-bold text-gray-700">Test Procedures</h1>
+          <div className="text-xs text-gray-600">
+            Patient: {patient.name} | MRD: {patient.patient_id} | Age: {patient.age}Y
+          </div>
+        </div>
 
-      {/* Pure Tone Audiometry */}
-      {activeTab === 'pure_tone' && (
+        {/* Inner Window - Tabs */}
         <div className="flex-1 flex flex-col min-h-0">
-          {/* Main Audiogram Area */}
-          <div className="flex-1 flex min-h-0 relative pt-1">
-            {/* Right Ear Audiogram */}
-            <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0">
-              <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
-                Right
-              </h2>
-              <div className="flex-1 min-h-0">
-                <AudiogramCanvas
-                  ear="right"
-                  data={rightEarData}
-                  onPlotPoint={(freq, db) => handlePlotPoint('right', freq, db)}
-                  activeMode={getActiveMode()}
-                  masked={masked}
-                  extendedFrequency={extendedFrequency}
-                />
+          {/* Tab Navigation */}
+          <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+          {/* Pure Tone Audiometry */}
+          {activeTab === 'pure_tone' && (
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Extended Frequency Checkbox */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-300">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={extendedFrequency}
+                    onChange={(e) => setExtendedFrequency(e.target.checked)}
+                    className="w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="text-xs font-medium text-gray-700">
+                    Extended Audiogram (High Frequencies: 10K, 12.5K, 16K)
+                  </span>
+                </label>
+              </div>
+
+              {/* Main Audiogram Area */}
+              <div className="flex-1 flex min-h-0 relative">
+                {/* Right Ear Audiogram */}
+                <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0">
+                  <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
+                    Right
+                  </h2>
+                  <div className="flex-1 min-h-0">
+                    <AudiogramCanvas
+                      ear="right"
+                      data={rightEarData}
+                      onPlotPoint={(freq, db) => handlePlotPoint('right', freq, db)}
+                      activeMode={getActiveMode()}
+                      masked={masked}
+                      extendedFrequency={extendedFrequency}
+                    />
+                  </div>
+                </div>
+
+                {/* Center Control Panel (NOAH-style) */}
+                <div className="flex-shrink-0">
+                  <NoahControlPanel
+                    activeTest={activeTest}
+                    onTestChange={setActiveTest}
+                    masked={masked}
+                    onMaskedToggle={() => setMasked(!masked)}
+                  />
+                </div>
+
+                {/* Left Ear Audiogram */}
+                <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0 relative">
+                  <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
+                    Left
+                  </h2>
+                  <div className="flex-1 min-h-0">
+                    <AudiogramCanvas
+                      ear="left"
+                      data={leftEarData}
+                      onPlotPoint={(freq, db) => handlePlotPoint('left', freq, db)}
+                      activeMode={getActiveMode()}
+                      masked={masked}
+                      extendedFrequency={extendedFrequency}
+                    />
+                  </div>
+                  
+                  {/* PTA Calculator Box */}
+                  <PTACalculator rightEarData={rightEarData} leftEarData={leftEarData} />
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Center Control Panel (NOAH-style) */}
-            <div className="flex-shrink-0">
-              <NoahControlPanel
-                activeTest={activeTest}
-                onTestChange={setActiveTest}
-                masked={masked}
-                onMaskedToggle={() => setMasked(!masked)}
-              />
-            </div>
-
-            {/* Left Ear Audiogram */}
-            <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0 relative">
-              <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
-                Left
-              </h2>
-              <div className="flex-1 min-h-0">
-                <AudiogramCanvas
-                  ear="left"
-                  data={leftEarData}
-                  onPlotPoint={(freq, db) => handlePlotPoint('left', freq, db)}
-                  activeMode={getActiveMode()}
-                  masked={masked}
-                  extendedFrequency={extendedFrequency}
-                />
+          {/* Speech Tab (Placeholder) */}
+          {activeTab === 'speech' && (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-gray-700 mb-2">Speech Audiometry</h2>
+                <p className="text-gray-500">Coming next...</p>
               </div>
-              
-              {/* PTA Calculator Box - inside Left audiogram area */}
-              <PTACalculator rightEarData={rightEarData} leftEarData={leftEarData} />
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Speech Tab (Placeholder) */}
-      {activeTab === 'speech' && (
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-700 mb-2">Speech Audiometry</h2>
-            <p className="text-gray-500">Coming next...</p>
-          </div>
+          {/* Impedance Tab (Placeholder) */}
+          {activeTab === 'impedance' && (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-gray-700 mb-2">Impedance / Tympanometry</h2>
+                <p className="text-gray-500">Coming next...</p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Impedance Tab (Placeholder) */}
-      {activeTab === 'impedance' && (
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-700 mb-2">Impedance / Tympanometry</h2>
-            <p className="text-gray-500">Coming next...</p>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
