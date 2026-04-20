@@ -11,7 +11,14 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const extendedFrequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12500, 16000];
   
   const frequencies = extendedFrequency ? extendedFrequencies : standardFrequencies;
-  const dbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5); // -10 to 120 in 5dB steps
+  
+  // All dB levels for grid lines (5 dB precision)
+  const allDbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5); // -10 to 120 in 5dB steps
+  
+  // Major dB levels for labels (10 dB steps for readability)
+  const majorDbLevels = Array.from({ length: 14 }, (_, i) => -10 + i * 10); // -10, 0, 10, 20... 120
+  
+  const dbLevels = allDbLevels; // Use all levels for plotting precision
   
   const colors = {
     right: { main: '#DC3545', light: '#FFE5E5' },
@@ -46,19 +53,26 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 0.5;
     
-    // Horizontal lines (dB levels)
-    dbLevels.forEach((db, i) => {
-      const y = padding.top + (i / (dbLevels.length - 1)) * chartHeight;
+    // Horizontal lines (dB levels) - draw all for 5dB precision
+    allDbLevels.forEach((db, i) => {
+      const y = padding.top + (i / (allDbLevels.length - 1)) * chartHeight;
+      const isMajor = majorDbLevels.includes(db);
+      
+      // Draw grid line
+      ctx.strokeStyle = isMajor ? '#d0d0d0' : '#f0f0f0'; // Darker for major, lighter for minor
+      ctx.lineWidth = isMajor ? 0.8 : 0.3;
       ctx.beginPath();
       ctx.moveTo(padding.left, y);
       ctx.lineTo(padding.left + chartWidth, y);
       ctx.stroke();
       
-      // Y-axis labels
-      ctx.fillStyle = '#666';
-      ctx.font = '11px Arial';
-      ctx.textAlign = 'right';
-      ctx.fillText(db.toString(), padding.left - 10, y + 4);
+      // Y-axis labels - only for major intervals (10 dB)
+      if (isMajor) {
+        ctx.fillStyle = '#666';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(db.toString(), padding.left - 10, y + 4);
+      }
     });
     
     // Vertical lines (frequencies)
@@ -269,3 +283,4 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
 };
 
 export default AudiogramCanvas;
+;
