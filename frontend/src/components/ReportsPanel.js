@@ -220,7 +220,6 @@ const PTATableSection = ({ rightEar, leftEar }) => {
             <th className="border border-gray-400 px-2 py-0.5 text-left">Ear</th>
             <th className="border border-gray-400 px-2 py-0.5">HTL (dB)</th>
             <th className="border border-gray-400 px-2 py-0.5">BCL (dB)</th>
-            <th className="border border-gray-400 px-2 py-0.5">Degree</th>
           </tr>
         </thead>
         <tbody>
@@ -228,13 +227,11 @@ const PTATableSection = ({ rightEar, leftEar }) => {
             <td className="border border-gray-400 px-2 py-0.5 font-semibold text-red-600">Right</td>
             <td className="border border-gray-400 px-2 py-0.5 text-center">{rHTL ?? '—'}</td>
             <td className="border border-gray-400 px-2 py-0.5 text-center">{rBCL ?? '—'}</td>
-            <td className="border border-gray-400 px-2 py-0.5">{classifyDegree(rHTL)}</td>
           </tr>
           <tr>
             <td className="border border-gray-400 px-2 py-0.5 font-semibold text-blue-600">Left</td>
             <td className="border border-gray-400 px-2 py-0.5 text-center">{lHTL ?? '—'}</td>
             <td className="border border-gray-400 px-2 py-0.5 text-center">{lBCL ?? '—'}</td>
-            <td className="border border-gray-400 px-2 py-0.5">{classifyDegree(lHTL)}</td>
           </tr>
         </tbody>
       </table>
@@ -523,7 +520,7 @@ const ReportsPanel = ({
               </div>
             </div>
             <div className="text-center flex-1 px-4">
-              <h1 className="text-[20px] font-extrabold text-gray-800">Hearing Loss Assessment</h1>
+              <h1 className="text-[20px] font-extrabold text-gray-800">Hearing Assessment</h1>
             </div>
             <div className="text-[10px] text-right text-gray-700 leading-tight">
               <div>{CLINIC.address_line1}</div>
