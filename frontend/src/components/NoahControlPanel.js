@@ -1,6 +1,6 @@
 import React from 'react';
 
-const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, rightEarData, leftEarData }) => {
+const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, rightEarData, leftEarData, reportAudiogramMode = 'combined', onReportAudiogramModeChange }) => {
   const thresholdTypes = [
     { id: 'htl', label: 'HTL', leftSymbol: 'X', rightSymbol: 'O', leftTest: 'ac_left', rightTest: 'ac_right' },
     { id: 'bcl', label: 'BCL', leftSymbol: '>', rightSymbol: '<', leftTest: 'bc_left', rightTest: 'bc_right' },
@@ -83,6 +83,39 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
       >
         Binaural
       </button>
+
+      {/* Report audiogram display mode (Combined / Separate) */}
+      <div className="w-full mt-2 bg-white border border-gray-300 rounded shadow-sm">
+        <div className="text-[9px] font-bold text-gray-600 px-1.5 py-0.5 border-b border-gray-200 bg-gray-50 text-center">
+          Report Audiogram
+        </div>
+        <div className="flex">
+          <button
+            onClick={() => onReportAudiogramModeChange && onReportAudiogramModeChange('combined')}
+            data-testid="report-mode-combined"
+            className={`flex-1 px-1 py-1 text-[10px] font-medium border-r border-gray-200 ${
+              reportAudiogramMode === 'combined'
+                ? 'bg-blue-100 text-blue-700 font-bold'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+            title="Single overlaid R+L chart"
+          >
+            Combined
+          </button>
+          <button
+            onClick={() => onReportAudiogramModeChange && onReportAudiogramModeChange('separate')}
+            data-testid="report-mode-separate"
+            className={`flex-1 px-1 py-1 text-[10px] font-medium ${
+              reportAudiogramMode === 'separate'
+                ? 'bg-blue-100 text-blue-700 font-bold'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+            title="Side-by-side R & L charts"
+          >
+            Separate
+          </button>
+        </div>
+      </div>
       
       {/* PTA Average Box */}
       <div className="w-full mt-3 bg-white border border-gray-400 rounded shadow-sm p-1.5 text-[10px]">

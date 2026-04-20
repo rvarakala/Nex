@@ -6,7 +6,7 @@ import React, { useRef, useEffect } from 'react';
  * skips NR points from connecting lines and attaches diagonal NR arrows
  * matching the Pure Tone tab conventions.
  */
-const ReportAudiogram = ({ rightEarData, leftEarData }) => {
+const ReportAudiogram = ({ rightEarData, leftEarData, title }) => {
   const canvasRef = useRef(null);
 
   const frequencies = [125, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000];
@@ -30,6 +30,14 @@ const ReportAudiogram = ({ rightEarData, leftEarData }) => {
     const ch = H - pad.top - pad.bottom;
 
     ctx.clearRect(0, 0, W, H);
+
+    // Optional title (for separate per-ear charts)
+    if (title) {
+      ctx.fillStyle = '#1f2937';
+      ctx.font = 'bold 11px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, pad.left + cw / 2, 12);
+    }
 
     const getLogX = (freq) => {
       const minF = frequencies[0];

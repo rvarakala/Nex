@@ -160,28 +160,51 @@ const CaseHistorySection = ({ narrative }) => (
   </div>
 );
 
-const PureToneSection = ({ rightEar, leftEar }) => (
-  <div>
-    <SectionTitle>Puretone Audiometry</SectionTitle>
-    <div className="flex gap-3">
-      <div className="flex-1 h-[320px]">
-        <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
+const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
+  if (mode === 'separate') {
+    return (
+      <div>
+        <SectionTitle>Puretone Audiometry</SectionTitle>
+        <div className="flex gap-2">
+          <div className="flex-1 h-[300px]">
+            <ReportAudiogram rightEarData={rightEar} leftEarData={null} title="Right Ear" />
+          </div>
+          <div className="flex-1 h-[300px]">
+            <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
+          </div>
+        </div>
+        <div className="text-[10px] text-gray-600 mt-1 flex gap-4 justify-center">
+          <span><span className="text-red-600 font-bold">O</span> Right AC · <span className="text-red-600 font-bold">&lt;</span> Right BC</span>
+          <span><span className="text-blue-600 font-bold">X</span> Left AC · <span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
+          <span>↙↘ No Response</span>
+        </div>
       </div>
-      <div className="w-[160px] text-[10px] text-gray-700">
-        <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
-          <div className="font-bold text-[11px] mb-1">Legend</div>
-          <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
-          <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">△</span> Right AC (masked)</div>
-          <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">&lt;</span> Right BC</div>
-          <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">X</span> Left AC (unmasked)</div>
-          <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">□</span> Left AC (masked)</div>
-          <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
-          <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-gray-300">↙ ↘ No Response</div>
+    );
+  }
+  // combined (default)
+  return (
+    <div>
+      <SectionTitle>Puretone Audiometry</SectionTitle>
+      <div className="flex gap-3">
+        <div className="flex-1 h-[320px]">
+          <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
+        </div>
+        <div className="w-[160px] text-[10px] text-gray-700">
+          <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
+            <div className="font-bold text-[11px] mb-1">Legend</div>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">△</span> Right AC (masked)</div>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">&lt;</span> Right BC</div>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">X</span> Left AC (unmasked)</div>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">□</span> Left AC (masked)</div>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
+            <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-gray-300">↙ ↘ No Response</div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const PTATableSection = ({ rightEar, leftEar }) => {
   const rHTL = ptaAvg(rightEar, 'ac_measurements');
@@ -321,6 +344,7 @@ const ReportsPanel = ({
   audiologistName,
   clinicalImpression,
   recommendations,
+  audiogramMode = 'combined',
   onPersist, // (partial) => save to backend
 }) => {
   // Section order + visibility state
@@ -367,7 +391,7 @@ const ReportsPanel = ({
       case 'case_history':
         return <CaseHistorySection key={id} narrative={caseHistoryNarrative} />;
       case 'pure_tone':
-        return <PureToneSection key={id} rightEar={rightEarData} leftEar={leftEarData} />;
+        return <PureToneSection key={id} rightEar={rightEarData} leftEar={leftEarData} mode={audiogramMode} />;
       case 'pta_table':
         return <PTATableSection key={id} rightEar={rightEarData} leftEar={leftEarData} />;
       case 'tuning_fork':

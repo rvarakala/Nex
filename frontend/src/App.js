@@ -28,6 +28,7 @@ function App() {
   const [activeTest, setActiveTest] = useState('ac_right');
   const [masked, setMasked] = useState(false);
   const [extendedFrequency, setExtendedFrequency] = useState(false);
+  const [reportAudiogramMode, setReportAudiogramMode] = useState('combined'); // 'combined' | 'separate'
   
   // Pre-Test (Case History + Tuning Fork + Otoscopy)
   const defaultPreTest = {
@@ -365,6 +366,8 @@ function App() {
                     onMaskedToggle={() => setMasked(!masked)}
                     rightEarData={rightEarData}
                     leftEarData={leftEarData}
+                    reportAudiogramMode={reportAudiogramMode}
+                    onReportAudiogramModeChange={setReportAudiogramMode}
                   />
                 </div>
 
@@ -529,6 +532,7 @@ function App() {
               audiologistName="Dr. Audiologist"
               clinicalImpression=""
               recommendations={[]}
+              audiogramMode={reportAudiogramMode}
               onPersist={async (partial) => {
                 if (!sessionId) return;
                 try {
