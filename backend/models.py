@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict
 from datetime import datetime
 from uuid import uuid4
 
@@ -132,6 +132,75 @@ class CommunicationNeeds(BaseModel):
     phone_ear: Optional[Literal["right", "left", "switch"]] = None
 
 
+# ==================== IMPEDANCE / TYMPANOMETRY MODELS ====================
+
+class TympanogramEar(BaseModel):
+    jerger_type: Optional[Literal["A", "As", "Ad", "B", "C"]] = None
+    me_pressure: Optional[float] = None   # daPa
+    compliance: Optional[float] = None    # mL
+    volume: Optional[float] = None        # cc
+    notes: Optional[str] = None
+
+
+class Tympanometry(BaseModel):
+    right: TympanogramEar = Field(default_factory=TympanogramEar)
+    left: TympanogramEar = Field(default_factory=TympanogramEar)
+
+
+class ReflexCell(BaseModel):
+    level: Optional[float] = None
+    volume: Optional[float] = None
+    pressure: Optional[float] = None
+
+
+class ReflexSide(BaseModel):
+    freqs: Dict[str, ReflexCell] = Field(default_factory=dict)
+
+
+class ReflexEar(BaseModel):
+    ipsi: ReflexSide = Field(default_factory=ReflexSide)
+    contra: ReflexSide = Field(default_factory=ReflexSide)
+
+
+class AcousticReflex(BaseModel):
+    enabled: bool = False
+    right: ReflexEar = Field(default_factory=ReflexEar)
+    left: ReflexEar = Field(default_factory=ReflexEar)
+
+
+class ReflexDecay(BaseModel):
+    enabled: bool = False
+    right: ReflexEar = Field(default_factory=ReflexEar)
+    left: ReflexEar = Field(default_factory=ReflexEar)
+
+
+class ETManeuver(BaseModel):
+    pressure_before: Optional[float] = None
+    pressure_after: Optional[float] = None
+    interpretation: Optional[Literal["positive", "negative", "equivocal"]] = None
+    notes: Optional[str] = None
+
+
+class ETEar(BaseModel):
+    toynbee: ETManeuver = Field(default_factory=ETManeuver)
+    valsalva: ETManeuver = Field(default_factory=ETManeuver)
+    pressure_app: ETManeuver = Field(default_factory=ETManeuver)
+
+
+class ETDysfunction(BaseModel):
+    enabled: bool = False
+    right: ETEar = Field(default_factory=ETEar)
+    left: ETEar = Field(default_factory=ETEar)
+
+
+class ImpedanceData(BaseModel):
+    tympanometry: Tympanometry = Field(default_factory=Tympanometry)
+    acoustic_reflex: AcousticReflex = Field(default_factory=AcousticReflex)
+    reflex_decay: ReflexDecay = Field(default_factory=ReflexDecay)
+    et_dysfunction: ETDysfunction = Field(default_factory=ETDysfunction)
+
+
+
 class CaseHistory(BaseModel):
     """Expanded adult audiology case history"""
     # Core (minimal — always visible)
@@ -224,6 +293,9 @@ class TestSession(BaseModel):
     # Pre-Test (Case History + Tuning Fork + Otoscopy)
     pre_test_data: Optional[PreTestData] = None
     
+    # Impedance / Tympanometry
+    impedance_data: Optional[ImpedanceData] = None
+    
     # Pure Tone Audiometry
     right_ear_audiogram: Optional[AudiogramData] = None
     left_ear_audiogram: Optional[AudiogramData] = None
@@ -268,6 +340,7 @@ class TestSessionUpdate(BaseModel):
     chief_complaint: Optional[str] = None
     history_notes: Optional[str] = None
     pre_test_data: Optional[PreTestData] = None
+    impedance_data: Optional[ImpedanceData] = None
     right_ear_audiogram: Optional[AudiogramData] = None
     left_ear_audiogram: Optional[AudiogramData] = None
     right_ear_speech: Optional[SpeechTest] = None

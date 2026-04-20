@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReportAudiogram from './ReportAudiogram';
+import TympanogramCanvas from './TympanogramCanvas';
+import { autoClassifyJerger } from './ImpedancePanel';
 
 // ==================== CLINIC BRANDING (hardcoded) ====================
 const CLINIC = {
@@ -24,7 +26,7 @@ const TOGGLEABLE_SECTIONS = [
   { id: 'tuning_fork',    label: 'Tuning Fork Tests',        defaultEnabled: true },
   { id: 'otoscopy',       label: 'Otoscopic Examination',    defaultEnabled: false },
   { id: 'speech',         label: 'Speech Audiometry',        defaultEnabled: false },
-  { id: 'tympanometry',   label: 'Tympanometry',             defaultEnabled: false },
+  { id: 'tympanometry',   label: 'Tympanometry / Impedance', defaultEnabled: true },
   { id: 'results',        label: 'Results (narrative)',      defaultEnabled: true },
   { id: 'recommendations', label: 'Recommendations',         defaultEnabled: true },
 ];
@@ -140,6 +142,210 @@ const ptaAvg = (data, which, freqs = [500, 1000, 2000]) => {
   );
   if (arr.length < freqs.length) return null;
   return Math.round(arr.reduce((a, m) => a + m.threshold_db, 0) / arr.length);
+};
+
+// ==================== Tympanometry render helpers ====================
+
+const effectiveJerger = (ear) =>
+  ear?.jerger_type || autoClassifyJerger({
+    me_pressure: ear?.me_pressure,
+    compliance: ear?.compliance,
+    volume: ear?.volume,
+  });
+
+const TympanometrySummaryTable = ({ impedance }) => {
+  const R = impedance?.tympanometry?.right || {};
+  const L = impedance?.tympanometry?.left || {};
+  const row = (ear, label, colour) => (
+    <tr>
+      <td className={`border border-gray-400 px-2 py-0.5 font-semibold ${colour}`}>{label}</td>
+      <td className="border border-gray-400 px-2 py-0.5 text-center">{effectiveJerger(ear) || '—'}</td>
+      <td className="border border-gray-400 px-2 py-0.5 text-center">{ear.me_pressure ?? '—'}</td>
+      <td className="border border-gray-400 px-2 py-0.5 text-center">{ear.compliance ?? '—'}</td>
+      <td className="border border-gray-400 px-2 py-0.5 text-center">{ear.volume ?? '—'}</td>
+    </tr>
+  );
+  return (
+    <table className="w-full text-[11px] border border-gray-400">
+      <thead className="bg-gray-100">
+        <tr>
+          <th className="border border-gray-400 px-2 py-0.5 text-left">Ear</th>
+          <th className="border border-gray-400 px-2 py-0.5">Type</th>
+          <th className="border border-gray-400 px-2 py-0.5">Pressure (daPa)</th>
+          <th className="border border-gray-400 px-2 py-0.5">Compliance (mL)</th>
+          <th className="border border-gray-400 px-2 py-0.5">Volume (cc)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {row(R, 'Right', 'text-red-600')}
+        {row(L, 'Left', 'text-blue-600')}
+      </tbody>
+    </table>
+  );
+};
+
+const ReflexTable = ({ title, reflex, freqs }) => {
+  const row = (earLabel, earData, side, sideLabel, colour) => (
+    <tr>
+      <td className={`border border-gray-400 px-1 py-0.5 font-semibold ${colour}`}>{earLabel}</td>
+      <td className="border border-gray-400 px-1 py-0.5">{sideLabel}</td>
+      {freqs.map((f) => {
+        const cell = earData?.[side]?.freqs?.[f] || {};
+        return (
+          <td key={f} className="border border-gray-400 px-1 py-0.5 text-center">
+            {cell.level ?? '—'}
+          </td>
+        );
+      })}
+    </tr>
+  );
+  return (
+    <div>
+      <div className="text-[11px] font-semibold text-gray-700 mt-1 mb-0.5">{title} — Threshold level (dB HL)</div>
+      <table className="w-full text-[10px] border border-gray-400">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="border border-gray-400 px-1 py-0.5">Ear</th>
+            <th className="border border-gray-400 px-1 py-0.5">Probe</th>
+            {freqs.map((f) => (
+              <th key={f} className="border border-gray-400 px-1 py-0.5">
+                {parseInt(f) >= 1000 ? `${parseInt(f) / 1000}K` : f} Hz
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {row('Right', reflex?.right, 'ipsi', 'Ipsi', 'text-red-600')}
+          {row('Right', reflex?.right, 'contra', 'Contra', 'text-red-600')}
+          {row('Left',  reflex?.left,  'ipsi', 'Ipsi', 'text-blue-600')}
+          {row('Left',  reflex?.left,  'contra', 'Contra', 'text-blue-600')}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const ETTable = ({ et }) => {
+  const earCol = (earLabel, earData, colour) => (
+    <tr>
+      <td className={`border border-gray-400 px-1 py-0.5 font-semibold ${colour}`}>{earLabel}</td>
+      {['toynbee', 'valsalva', 'pressure_app'].map((m) => {
+        const v = earData?.[m] || {};
+        return (
+          <td key={m} className="border border-gray-400 px-1 py-0.5">
+            <div className="text-[10px]">
+              <div>Before: {v.pressure_before ?? '—'} · After: {v.pressure_after ?? '—'}</div>
+              <div className="font-semibold capitalize">{v.interpretation || '—'}</div>
+              {v.notes && <div className="italic text-gray-500">{v.notes}</div>}
+            </div>
+          </td>
+        );
+      })}
+    </tr>
+  );
+  return (
+    <div>
+      <div className="text-[11px] font-semibold text-gray-700 mt-1 mb-0.5">Eustachian Tube Dysfunction</div>
+      <table className="w-full text-[10px] border border-gray-400">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="border border-gray-400 px-1 py-0.5">Ear</th>
+            <th className="border border-gray-400 px-1 py-0.5">Toynbee</th>
+            <th className="border border-gray-400 px-1 py-0.5">Valsalva</th>
+            <th className="border border-gray-400 px-1 py-0.5">Pressure App.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {earCol('Right', et?.right, 'text-red-600')}
+          {earCol('Left',  et?.left,  'text-blue-600')}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+// Compact tympanometry section (inline on PTA page)
+const TympanometryInlineSection = ({ impedance }) => {
+  const R = impedance?.tympanometry?.right || {};
+  const L = impedance?.tympanometry?.left || {};
+  return (
+    <div>
+      <SectionTitle>Tympanometry</SectionTitle>
+      <div className="flex gap-2">
+        <div className="flex-1 h-[180px] border border-gray-300 rounded">
+          <TympanogramCanvas
+            jergerType={effectiveJerger(R)}
+            mePressure={R.me_pressure}
+            compliance={R.compliance}
+            volume={R.volume}
+            earSide="right"
+          />
+        </div>
+        <div className="flex-1 h-[180px] border border-gray-300 rounded">
+          <TympanogramCanvas
+            jergerType={effectiveJerger(L)}
+            mePressure={L.me_pressure}
+            compliance={L.compliance}
+            volume={L.volume}
+            earSide="left"
+          />
+        </div>
+      </div>
+      <div className="mt-2">
+        <TympanometrySummaryTable impedance={impedance} />
+      </div>
+      {impedance?.acoustic_reflex?.enabled && (
+        <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
+      )}
+    </div>
+  );
+};
+
+// Full-page tympanometry section (with page break)
+const TympanometryFullPage = ({ impedance }) => {
+  const R = impedance?.tympanometry?.right || {};
+  const L = impedance?.tympanometry?.left || {};
+  return (
+    <div className="page-break-before">
+      <SectionTitle>Tympanometry & Immittance</SectionTitle>
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <div className="text-[11px] font-bold text-red-600 mb-1">Right Ear</div>
+          <div className="h-[260px] border border-gray-300 rounded">
+            <TympanogramCanvas
+              jergerType={effectiveJerger(R)}
+              mePressure={R.me_pressure}
+              compliance={R.compliance}
+              volume={R.volume}
+              earSide="right"
+            />
+          </div>
+        </div>
+        <div className="flex-1">
+          <div className="text-[11px] font-bold text-blue-600 mb-1">Left Ear</div>
+          <div className="h-[260px] border border-gray-300 rounded">
+            <TympanogramCanvas
+              jergerType={effectiveJerger(L)}
+              mePressure={L.me_pressure}
+              compliance={L.compliance}
+              volume={L.volume}
+              earSide="left"
+            />
+          </div>
+        </div>
+      </div>
+      <div className="mt-3">
+        <TympanometrySummaryTable impedance={impedance} />
+      </div>
+      {impedance?.acoustic_reflex?.enabled && (
+        <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
+      )}
+      {impedance?.reflex_decay?.enabled && (
+        <ReflexTable title="Reflex Decay" reflex={impedance.reflex_decay} freqs={['500', '1000']} />
+      )}
+      {impedance?.et_dysfunction?.enabled && <ETTable et={impedance.et_dysfunction} />}
+    </div>
+  );
 };
 
 // ==================== REPORT PREVIEW SECTIONS ====================
@@ -345,6 +551,7 @@ const ReportsPanel = ({
   rightEarData,
   leftEarData,
   preTestData,
+  impedanceData,
   sessionId,
   audiologistName,
   clinicalImpression,
@@ -359,6 +566,16 @@ const ReportsPanel = ({
   const [resultsText, setResultsText] = useState(clinicalImpression || '');
   const [recText, setRecText] = useState((recommendations || []).join('\n'));
   const [license, setLicense] = useState('');
+  // Tympanometry placement: auto | inline | separate
+  const [tympPlacement, setTympPlacement] = useState('auto');
+
+  // Auto rule: if Reflex Decay or ET Dysfunction are enabled, default to separate page
+  const autoSeparatePage = !!(
+    impedanceData?.reflex_decay?.enabled || impedanceData?.et_dysfunction?.enabled
+  );
+  const useSeparatePage =
+    tympPlacement === 'separate' ||
+    (tympPlacement === 'auto' && autoSeparatePage);
 
   // Debounced auto-save of editable fields
   const saveTimer = useRef(null);
@@ -404,7 +621,8 @@ const ReportsPanel = ({
       case 'speech':
         return <PlaceholderTable key={id} title="Speech Audiometry" columns={['SAT', 'SRT', 'Mask', 'MCL', 'UCL', 'WR %', 'WR Level']} />;
       case 'tympanometry':
-        return <PlaceholderTable key={id} title="Tympanometry" columns={['Type', 'Pressure (daPa)', 'Compliance (ml)', 'Volume (cc)']} />;
+        // Inline render at this slot ONLY if not using separate page
+        return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
       case 'results':
         return <NarrativeSection key={id} title="Results" text={resultsText} />;
       case 'recommendations':
@@ -470,6 +688,36 @@ const ReportsPanel = ({
                   >▼</button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Tympanometry placement</div>
+            <div className="flex gap-1">
+              {[
+                { k: 'auto', label: 'Auto', title: 'Separate page if Decay or ET enabled, else inline' },
+                { k: 'inline', label: 'Inline', title: 'Always on main page' },
+                { k: 'separate', label: 'New page', title: 'Always on a dedicated page' },
+              ].map((opt) => (
+                <button
+                  key={opt.k}
+                  type="button"
+                  onClick={() => setTympPlacement(opt.k)}
+                  data-testid={`report-tymp-placement-${opt.k}`}
+                  title={opt.title}
+                  className={`flex-1 px-1 py-1 text-[10px] font-medium border rounded ${
+                    tympPlacement === opt.k
+                      ? 'bg-blue-100 border-blue-400 text-blue-700 font-bold'
+                      : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[9px] text-gray-500 mt-0.5 italic">
+              Currently: {useSeparatePage ? 'Separate page' : 'Inline on main page'}
+              {tympPlacement === 'auto' && autoSeparatePage ? ' (auto — Decay/ET enabled)' : ''}
             </div>
           </div>
 
@@ -593,6 +841,21 @@ const ReportsPanel = ({
               <div className="mt-0.5 font-semibold">{fmtDate()}</div>
             </div>
           </footer>
+
+          {/* Tympanometry (separate page) */}
+          {sections.find((s) => s.id === 'tympanometry' && s.enabled) && useSeparatePage && (
+            <div className="report-page-break">
+              <header className="flex items-center justify-between border-b-2 border-blue-700 pb-2 mb-3 pt-3">
+                <div className="text-[11px] text-gray-700">
+                  <span className="font-semibold">{CLINIC.name}</span> · {CLINIC.tel}
+                </div>
+                <div className="text-[11px] text-gray-800">
+                  <span className="font-bold">{patient.name || '—'}</span> · ID: {patient.patient_id || '—'} · {fmtDate()}
+                </div>
+              </header>
+              <TympanometryFullPage impedance={impedanceData} />
+            </div>
+          )}
         </div>
       </div>
     </div>

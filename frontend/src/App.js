@@ -8,6 +8,7 @@ import PTACalculator from "./components/PTACalculator";
 import TabPlaceholder from "./components/TabPlaceholder";
 import PreTestPanel from "./components/PreTestPanel";
 import ReportsPanel from "./components/ReportsPanel";
+import ImpedancePanel from "./components/ImpedancePanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -76,6 +77,30 @@ function App() {
     },
   };
   const [preTestData, setPreTestData] = useState(defaultPreTest);
+
+  // Impedance / Tympanometry
+  const defaultImpedance = {
+    tympanometry: {
+      right: { jerger_type: null, me_pressure: null, compliance: null, volume: null, notes: '' },
+      left:  { jerger_type: null, me_pressure: null, compliance: null, volume: null, notes: '' },
+    },
+    acoustic_reflex: {
+      enabled: false,
+      right: { ipsi: { freqs: {} }, contra: { freqs: {} } },
+      left:  { ipsi: { freqs: {} }, contra: { freqs: {} } },
+    },
+    reflex_decay: {
+      enabled: false,
+      right: { ipsi: { freqs: {} }, contra: { freqs: {} } },
+      left:  { ipsi: { freqs: {} }, contra: { freqs: {} } },
+    },
+    et_dysfunction: {
+      enabled: false,
+      right: { toynbee: {}, valsalva: {}, pressure_app: {} },
+      left:  { toynbee: {}, valsalva: {}, pressure_app: {} },
+    },
+  };
+  const [impedanceData, setImpedanceData] = useState(defaultImpedance);
   
   // Audiogram data
   const [rightEarData, setRightEarData] = useState({
@@ -411,22 +436,9 @@ function App() {
             />
           )}
 
-          {/* Impedance / Tympanometry (Placeholder) */}
+          {/* Impedance / Tympanometry (Full functional panel) */}
           {activeTab === 'impedance' && (
-            <TabPlaceholder
-              title="Impedance / Tympanometry"
-              note="Middle-ear analysis — Jerger classification with ipsi/contra reflexes."
-              subtests={[
-                'Tympanogram (Type A / As / Ad / B / C)',
-                'Acoustic Reflexes — Ipsilateral',
-                'Acoustic Reflexes — Contralateral',
-                'Reflex Decay (500 & 1000 Hz)',
-                'ECV (Equivalent Volume)',
-                'ETF — Toynbee',
-                'ETF — Valsalva',
-                'ETF — Pressure application',
-              ]}
-            />
+            <ImpedancePanel data={impedanceData} onChange={setImpedanceData} />
           )}
 
           {/* Special Tests (Placeholder) */}
@@ -533,6 +545,7 @@ function App() {
               clinicalImpression=""
               recommendations={[]}
               audiogramMode={reportAudiogramMode}
+              impedanceData={impedanceData}
               onPersist={async (partial) => {
                 if (!sessionId) return;
                 try {

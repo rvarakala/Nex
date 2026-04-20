@@ -75,4 +75,15 @@
     .report-page div > h3 {
         page-break-inside: avoid;
     }
+    /* Force a page break for the Tympanometry separate page */
+    .report-page-break {
+        page-break-before: always;
+    }
+}
+
+/* On-screen separation between main report page and separate tympanometry page */
+.report-page-break {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 2px dashed #9ca3af;
 }
