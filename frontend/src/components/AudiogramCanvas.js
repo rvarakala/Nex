@@ -1,10 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noResponse }) => {
+const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noResponse, extendedFrequency = false }) => {
   const canvasRef = useRef(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   
-  const frequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000];
+  // Standard frequencies with mid-frequencies
+  const standardFrequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000];
+  
+  // Extended frequencies (add 10K, 12.5K, 16K)
+  const extendedFrequencies = [250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12500, 16000];
+  
+  const frequencies = extendedFrequency ? extendedFrequencies : standardFrequencies;
   const dbLevels = Array.from({ length: 27 }, (_, i) => -10 + i * 5); // -10 to 120 in 5dB steps
   
   const colors = {
@@ -67,9 +73,24 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       ctx.fillStyle = '#666';
       ctx.font = '11px Arial';
       ctx.textAlign = 'center';
-      const label = freq >= 1000 ? `${freq / 1000}K` : freq.toString();
+      let label;
+      if (freq >= 1000) {
+        label = freq === 12500 ? '12.5K' : `${freq / 1000}K`;
+      } else {
+        label = freq.toString();
+      }
       ctx.fillText(label, x, height - 20);
     });
+    
+    // Draw extended frequency background (blue tint) if in extended mode
+    if (extendedFrequency && frequencies.length > 10) {
+      const extendedStartIndex = 10; // After 8000 Hz
+      const extendedX = padding.left + (extendedStartIndex / (frequencies.length - 1)) * chartWidth;
+      const extendedWidth = chartWidth - (extendedStartIndex / (frequencies.length - 1)) * chartWidth;
+      
+      ctx.fillStyle = 'rgba(173, 216, 230, 0.15)'; // Light blue tint
+      ctx.fillRect(extendedX, padding.top, extendedWidth, chartHeight);
+    }
     
     // Draw border
     ctx.strokeStyle = '#666';
