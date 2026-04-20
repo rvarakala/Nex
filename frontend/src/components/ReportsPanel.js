@@ -17,10 +17,10 @@ const CLINIC = {
 // ==================== SECTION CATALOGUE ====================
 // `fixed` sections always appear (header/patient/signature).
 // Remaining sections are toggleable & reorderable.
+// PTA summary is embedded inside Pure Tone section (not separately toggleable).
 const TOGGLEABLE_SECTIONS = [
   { id: 'case_history',   label: 'Case History (summary)',   defaultEnabled: true },
   { id: 'pure_tone',      label: 'Pure Tone Audiometry',     defaultEnabled: true },
-  { id: 'pta_table',      label: 'PTA Summary Table',        defaultEnabled: true },
   { id: 'tuning_fork',    label: 'Tuning Fork Tests',        defaultEnabled: true },
   { id: 'otoscopy',       label: 'Otoscopic Examination',    defaultEnabled: false },
   { id: 'speech',         label: 'Speech Audiometry',        defaultEnabled: false },
@@ -129,22 +129,17 @@ const buildCaseHistoryNarrative = (patient, ch = {}) => {
 };
 
 // ==================== PTA CALC ====================
-const ptaAvg = (data, which) => {
+const ptaAvg = (data, which, freqs = [500, 1000, 2000]) => {
   if (!data) return null;
-  const arr = (data[which] || []).filter((m) => [500, 1000, 2000].includes(m.frequency) && m.threshold_db !== null && m.threshold_db !== undefined && !m.no_response);
-  if (!arr.length) return null;
+  const arr = (data[which] || []).filter(
+    (m) =>
+      freqs.includes(m.frequency) &&
+      m.threshold_db !== null &&
+      m.threshold_db !== undefined &&
+      !m.no_response
+  );
+  if (arr.length < freqs.length) return null;
   return Math.round(arr.reduce((a, m) => a + m.threshold_db, 0) / arr.length);
-};
-
-const classifyDegree = (pta) => {
-  if (pta === null) return '—';
-  if (pta <= 15) return 'Normal';
-  if (pta <= 25) return 'Slight';
-  if (pta <= 40) return 'Mild';
-  if (pta <= 55) return 'Moderate';
-  if (pta <= 70) return 'Moderately severe';
-  if (pta <= 90) return 'Severe';
-  return 'Profound';
 };
 
 // ==================== REPORT PREVIEW SECTIONS ====================
@@ -173,15 +168,20 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
             <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
           </div>
         </div>
-        <div className="text-[10px] text-gray-600 mt-1 flex gap-4 justify-center">
-          <span><span className="text-red-600 font-bold">O</span> Right AC · <span className="text-red-600 font-bold">&lt;</span> Right BC</span>
-          <span><span className="text-blue-600 font-bold">X</span> Left AC · <span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
-          <span>↙↘ No Response</span>
+        <div className="flex gap-3 mt-2 items-start">
+          <div className="flex-1 text-[10px] text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5 pt-1">
+            <span><span className="text-red-600 font-bold">O</span> Right AC · <span className="text-red-600 font-bold">&lt;</span> Right BC</span>
+            <span><span className="text-blue-600 font-bold">X</span> Left AC · <span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
+            <span>↙↘ No Response</span>
+          </div>
+          <div className="w-[200px] flex-shrink-0">
+            <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
+          </div>
         </div>
       </div>
     );
   }
-  // combined (default)
+  // combined (default) — PTA mini-table sits below the legend in the right sidebar
   return (
     <div>
       <SectionTitle>Puretone Audiometry</SectionTitle>
@@ -189,7 +189,7 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
         <div className="flex-1 h-[320px]">
           <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
         </div>
-        <div className="w-[160px] text-[10px] text-gray-700">
+        <div className="w-[180px] flex flex-col gap-2 text-[10px] text-gray-700">
           <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
             <div className="font-bold text-[11px] mb-1">Legend</div>
             <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
@@ -200,41 +200,49 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
             <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
             <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-gray-300">↙ ↘ No Response</div>
           </div>
+          <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
         </div>
       </div>
     </div>
   );
 };
 
-const PTATableSection = ({ rightEar, leftEar }) => {
-  const rHTL = ptaAvg(rightEar, 'ac_measurements');
-  const lHTL = ptaAvg(leftEar, 'ac_measurements');
-  const rBCL = ptaAvg(rightEar, 'bc_measurements');
-  const lBCL = ptaAvg(leftEar, 'bc_measurements');
+// Compact PTA table placed below the legend (or below charts in separate mode).
+// PTA 1 = avg of 500, 1K, 2K Hz (AC); PTA 2 = avg of 1K, 2K, 4K Hz (AC)
+const PTAMiniTable = ({ rightEar, leftEar }) => {
+  const rP1 = ptaAvg(rightEar, 'ac_measurements', [500, 1000, 2000]);
+  const rP2 = ptaAvg(rightEar, 'ac_measurements', [1000, 2000, 4000]);
+  const lP1 = ptaAvg(leftEar,  'ac_measurements', [500, 1000, 2000]);
+  const lP2 = ptaAvg(leftEar,  'ac_measurements', [1000, 2000, 4000]);
   return (
-    <div>
-      <SectionTitle>PTA Summary (500, 1K, 2K Hz)</SectionTitle>
-      <table className="w-full text-[11px] border border-gray-400">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="border border-gray-400 px-2 py-0.5 text-left">Ear</th>
-            <th className="border border-gray-400 px-2 py-0.5">HTL (dB)</th>
-            <th className="border border-gray-400 px-2 py-0.5">BCL (dB)</th>
+    <div className="border border-gray-300 rounded bg-white">
+      <div className="text-[10px] font-bold text-gray-700 bg-gray-100 text-center py-0.5 border-b border-gray-300">
+        PTA Summary (dB HL)
+      </div>
+      <table className="w-full text-[10px]">
+        <thead>
+          <tr className="border-b border-gray-200">
+            <th className="px-1.5 py-0.5 text-left font-semibold text-gray-600">Ear</th>
+            <th className="px-1.5 py-0.5 font-semibold text-gray-700" title="Average of 500, 1000, 2000 Hz">PTA 1</th>
+            <th className="px-1.5 py-0.5 font-semibold text-gray-700" title="Average of 1000, 2000, 4000 Hz">PTA 2</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td className="border border-gray-400 px-2 py-0.5 font-semibold text-red-600">Right</td>
-            <td className="border border-gray-400 px-2 py-0.5 text-center">{rHTL ?? '—'}</td>
-            <td className="border border-gray-400 px-2 py-0.5 text-center">{rBCL ?? '—'}</td>
+          <tr className="border-b border-gray-100">
+            <td className="px-1.5 py-0.5 font-semibold text-red-600">R</td>
+            <td className="px-1.5 py-0.5 text-center font-mono">{rP1 ?? '—'}</td>
+            <td className="px-1.5 py-0.5 text-center font-mono">{rP2 ?? '—'}</td>
           </tr>
           <tr>
-            <td className="border border-gray-400 px-2 py-0.5 font-semibold text-blue-600">Left</td>
-            <td className="border border-gray-400 px-2 py-0.5 text-center">{lHTL ?? '—'}</td>
-            <td className="border border-gray-400 px-2 py-0.5 text-center">{lBCL ?? '—'}</td>
+            <td className="px-1.5 py-0.5 font-semibold text-blue-600">L</td>
+            <td className="px-1.5 py-0.5 text-center font-mono">{lP1 ?? '—'}</td>
+            <td className="px-1.5 py-0.5 text-center font-mono">{lP2 ?? '—'}</td>
           </tr>
         </tbody>
       </table>
+      <div className="text-[8px] text-gray-500 px-1.5 py-0.5 border-t border-gray-200 leading-tight">
+        PTA 1: 500·1K·2K · PTA 2: 1K·2K·4K Hz
+      </div>
     </div>
   );
 };
@@ -389,8 +397,6 @@ const ReportsPanel = ({
         return <CaseHistorySection key={id} narrative={caseHistoryNarrative} />;
       case 'pure_tone':
         return <PureToneSection key={id} rightEar={rightEarData} leftEar={leftEarData} mode={audiogramMode} />;
-      case 'pta_table':
-        return <PTATableSection key={id} rightEar={rightEarData} leftEar={leftEarData} />;
       case 'tuning_fork':
         return <TuningForkSection key={id} tf={preTestData?.tuning_fork} />;
       case 'otoscopy':
