@@ -5,6 +5,7 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [contextFrequency, setContextFrequency] = useState(null);
+  const [contextDb, setContextDb] = useState(null);
   
   // Standard octave frequencies (major - with labels)
   const standardMajorFreqs = [125, 250, 500, 1000, 2000, 4000, 8000];
@@ -479,18 +480,26 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    const padding = { top: 40, right: 40, bottom: 40, left: 60 };
+    // Keep consistent with drawing padding
+    const padding = { top: 20, right: 20, bottom: 40, left: 50 };
     
-    // Check if click is within chart area
-    if (x < padding.left || y < padding.top) return;
+    // Must be inside chart area
+    if (
+      x < padding.left ||
+      x > rect.width - padding.right ||
+      y < padding.top ||
+      y > rect.height - padding.bottom
+    ) {
+      return;
+    }
     
     const chartWidth = rect.width - padding.left - padding.right;
+    const chartHeight = rect.height - padding.top - padding.bottom;
     const freqRatio = (x - padding.left) / chartWidth;
     
-    // Find closest frequency
+    // Find closest frequency (log spacing)
     let closestFreq = frequencies[0];
     let minDiff = Math.abs(getLogPosition(frequencies[0]) - freqRatio);
-    
     frequencies.forEach(freq => {
       const diff = Math.abs(getLogPosition(freq) - freqRatio);
       if (diff < minDiff) {
@@ -499,7 +508,13 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       }
     });
     
+    // Find closest dB level under cursor (snaps to 5 dB grid)
+    const dbRatio = (y - padding.top) / chartHeight;
+    const dbIndex = Math.max(0, Math.min(dbLevels.length - 1, Math.round(dbRatio * (dbLevels.length - 1))));
+    const closestDb = dbLevels[dbIndex];
+    
     setContextFrequency(closestFreq);
+    setContextDb(closestDb);
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
   
@@ -511,8 +526,9 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   };
   
   const handlePlotNoResponse = () => {
-    if (onPlotPoint && contextFrequency) {
-      onPlotPoint(contextFrequency, 120, true);
+    if (onPlotPoint && contextFrequency !== null && contextDb !== null) {
+      // Plot NR at the exact dB where the user right-clicked
+      onPlotPoint(contextFrequency, contextDb, true);
     }
     setContextMenu(null);
   };
@@ -560,7 +576,7 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
             onClick={handlePlotNoResponse}
             className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-gray-700"
           >
-            Plot No Response @ {contextFrequency}Hz
+            Plot No Response @ {contextFrequency}Hz, {contextDb}dB HL
           </button>
           <button
             onClick={handleDeletePointClick}
