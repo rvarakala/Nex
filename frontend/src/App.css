@@ -32,3 +32,47 @@
         transform: rotate(360deg);
     }
 }
+
+
+/* ==================== REPORT PRINT STYLES ==================== */
+
+@media print {
+    @page {
+        size: A4;
+        margin: 0;
+    }
+    html, body {
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    /* Hide everything except the report preview */
+    body * {
+        visibility: hidden;
+    }
+    .no-print, .no-print * {
+        display: none !important;
+    }
+    #report-preview, #report-preview * {
+        visibility: visible;
+    }
+    #report-preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 210mm;
+        min-height: 297mm;
+        box-shadow: none !important;
+        margin: 0 !important;
+    }
+    .print-area {
+        background: white !important;
+        padding: 0 !important;
+        overflow: visible !important;
+    }
+    /* Avoid awkward section splits across pages */
+    .report-page section,
+    .report-page div > h3 {
+        page-break-inside: avoid;
+    }
+}

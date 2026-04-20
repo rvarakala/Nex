@@ -7,6 +7,7 @@ import NoahControlPanel from "./components/NoahControlPanel";
 import PTACalculator from "./components/PTACalculator";
 import TabPlaceholder from "./components/TabPlaceholder";
 import PreTestPanel from "./components/PreTestPanel";
+import ReportsPanel from "./components/ReportsPanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -517,20 +518,25 @@ function App() {
             />
           )}
 
-          {/* Reports (Placeholder) */}
+          {/* Reports (live print preview with configurable sections) */}
           {activeTab === 'reports' && (
-            <TabPlaceholder
-              title="Reports"
-              note="Template-driven PDF export — audiogram + tympanogram + AI narrative."
-              subtests={[
-                'Audiogram render (R/L)',
-                'Tympanogram render',
-                'Speech audiometry summary',
-                'Clinical impression (AI-generated)',
-                'Recommendations',
-                'Medical clearance workflow',
-                'Digital signature & watermark',
-              ]}
+            <ReportsPanel
+              patient={patient}
+              rightEarData={rightEarData}
+              leftEarData={leftEarData}
+              preTestData={preTestData}
+              sessionId={sessionId}
+              audiologistName="Dr. Audiologist"
+              clinicalImpression=""
+              recommendations={[]}
+              onPersist={async (partial) => {
+                if (!sessionId) return;
+                try {
+                  await axios.put(`${API}/sessions/${sessionId}`, partial);
+                } catch (err) {
+                  console.error('Report save failed', err);
+                }
+              }}
             />
           )}
         </div>
