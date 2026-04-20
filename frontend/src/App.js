@@ -3,9 +3,8 @@ import "@/App.css";
 import axios from "axios";
 import SimpleTabs from "./components/SimpleTabs";
 import AudiogramCanvas from "./components/AudiogramCanvas";
-import ControlPanel from "./components/ControlPanel";
+import NoahControlPanel from "./components/NoahControlPanel";
 import PTACalculator from "./components/PTACalculator";
-import PatientInfoBar from "./components/PatientInfoBar";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -144,34 +143,16 @@ function App() {
     <div className="h-screen w-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Simple Tab Navigation */}
       <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
-      
-      {/* Patient Info Bar */}
-      <PatientInfoBar patient={patient} />
 
       {/* Pure Tone Audiometry */}
       {activeTab === 'pure_tone' && (
         <div className="flex-1 flex flex-col min-h-0">
-          {/* Extended Frequency Toggle */}
-          <div className="flex items-center gap-2 px-4 py-1.5 bg-white border-b border-gray-300 flex-shrink-0">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={extendedFrequency}
-                onChange={(e) => setExtendedFrequency(e.target.checked)}
-                className="w-4 h-4 cursor-pointer"
-              />
-              <span className="text-sm font-medium text-gray-700">
-                Extended Frequency Range (10K, 12.5K, 16K)
-              </span>
-            </label>
-          </div>
-
           {/* Main Audiogram Area */}
-          <div className="flex-1 flex min-h-0 relative">
+          <div className="flex-1 flex min-h-0 relative pt-1">
             {/* Right Ear Audiogram */}
-            <div className="flex-1 flex flex-col p-2 bg-gray-50 min-w-0">
-              <h2 className="text-sm font-bold text-red-600 mb-1.5 text-center flex-shrink-0">
-                Right Ear Audiogram
+            <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0">
+              <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
+                Right
               </h2>
               <div className="flex-1 min-h-0">
                 <AudiogramCanvas
@@ -185,9 +166,9 @@ function App() {
               </div>
             </div>
 
-            {/* Center Control Panel */}
+            {/* Center Control Panel (NOAH-style) */}
             <div className="flex-shrink-0">
-              <ControlPanel
+              <NoahControlPanel
                 activeTest={activeTest}
                 onTestChange={setActiveTest}
                 masked={masked}
@@ -196,9 +177,9 @@ function App() {
             </div>
 
             {/* Left Ear Audiogram */}
-            <div className="flex-1 flex flex-col p-2 bg-gray-50 min-w-0">
-              <h2 className="text-sm font-bold text-blue-600 mb-1.5 text-center flex-shrink-0">
-                Left Ear Audiogram
+            <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0 relative">
+              <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
+                Left
               </h2>
               <div className="flex-1 min-h-0">
                 <AudiogramCanvas
@@ -210,26 +191,10 @@ function App() {
                   extendedFrequency={extendedFrequency}
                 />
               </div>
+              
+              {/* PTA Calculator Box - inside Left audiogram area */}
+              <PTACalculator rightEarData={rightEarData} leftEarData={leftEarData} />
             </div>
-
-            {/* PTA Calculator Box */}
-            <PTACalculator rightEarData={rightEarData} leftEarData={leftEarData} />
-          </div>
-
-          {/* Bottom Actions */}
-          <div className="flex items-center justify-end gap-3 px-4 py-2 bg-white border-t border-gray-300 flex-shrink-0">
-            <button
-              onClick={handleSave}
-              className="px-4 py-1.5 text-sm bg-blue-500 text-white font-medium rounded hover:bg-blue-600 transition"
-            >
-              Save Draft
-            </button>
-            <button
-              onClick={() => alert('Preview functionality coming soon')}
-              className="px-4 py-1.5 text-sm bg-green-500 text-white font-medium rounded hover:bg-green-600 transition"
-            >
-              Preview Report
-            </button>
           </div>
         </div>
       )}
