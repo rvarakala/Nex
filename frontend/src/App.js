@@ -93,7 +93,7 @@ function App() {
   };
 
   // Plot point on audiogram
-  const handlePlotPoint = (ear, frequency, db) => {
+  const handlePlotPoint = (ear, frequency, db, forceNoResponse = false) => {
     const currentData = ear === 'right' ? rightEarData : leftEarData;
     const activeMode = getActiveMode();
     
@@ -120,13 +120,13 @@ function App() {
         frequency,
         threshold_db: db,
         masked,
-        no_response: isNoResponse()
+        no_response: forceNoResponse || isNoResponse()
       };
     } else {
       // Add new
       updatedMeasurements = [
         ...currentData[measurementArray],
-        { frequency, threshold_db: db, masked, no_response: isNoResponse() }
+        { frequency, threshold_db: db, masked, no_response: forceNoResponse || isNoResponse() }
       ];
     }
 
@@ -142,7 +142,65 @@ function App() {
       setLeftEarData(updatedData);
     }
 
-    console.log(`Plotted ${ear} ${activeMode.toUpperCase()} @ ${frequency}Hz: ${db}dB${masked ? ' (masked)' : ''}`);
+    console.log(`Plotted ${ear} ${activeMode.toUpperCase()} @ ${frequency}Hz: ${db}dB${masked ? ' (masked)' : ''}${forceNoResponse || isNoResponse() ? ' (NR)' : ''}`);
+  };
+  
+  // Clear entire audiogram for one ear
+  const handleClearAudiogram = (ear) => {
+    if (ear === 'right') {
+      setRightEarData({
+        ear: 'right',
+        ac_measurements: [],
+        bc_measurements: [],
+        mcl_measurements: [],
+        ucl_measurements: [],
+        ff_measurements: [],
+        ffa_measurements: [],
+      });
+    } else {
+      setLeftEarData({
+        ear: 'left',
+        ac_measurements: [],
+        bc_measurements: [],
+        mcl_measurements: [],
+        ucl_measurements: [],
+        ff_measurements: [],
+        ffa_measurements: [],
+      });
+    }
+    console.log(`Cleared ${ear} audiogram`);
+  };
+  
+  // Delete point at specific frequency
+  const handleDeletePoint = (ear, frequency) => {
+    const currentData = ear === 'right' ? rightEarData : leftEarData;
+    const activeMode = getActiveMode();
+    
+    const measurementArrayMap = {
+      'ac': 'ac_measurements',
+      'bc': 'bc_measurements',
+      'mcl': 'mcl_measurements',
+      'ucl': 'ucl_measurements',
+      'ff': 'ff_measurements',
+      'ffa': 'ffa_measurements'
+    };
+    
+    const measurementArray = measurementArrayMap[activeMode] || 'ac_measurements';
+    
+    const updatedMeasurements = currentData[measurementArray].filter(m => m.frequency !== frequency);
+    
+    const updatedData = {
+      ...currentData,
+      [measurementArray]: updatedMeasurements
+    };
+    
+    if (ear === 'right') {
+      setRightEarData(updatedData);
+    } else {
+      setLeftEarData(updatedData);
+    }
+    
+    console.log(`Deleted ${ear} ${activeMode.toUpperCase()} point @ ${frequency}Hz`);
   };
 
   // Auto-save to backend
@@ -213,10 +271,12 @@ function App() {
                     <AudiogramCanvas
                       ear="right"
                       data={rightEarData}
-                      onPlotPoint={(freq, db) => handlePlotPoint('right', freq, db)}
+                      onPlotPoint={(freq, db, forceNR) => handlePlotPoint('right', freq, db, forceNR)}
                       activeMode={getActiveMode()}
                       masked={masked}
                       extendedFrequency={extendedFrequency}
+                      onClearAudiogram={handleClearAudiogram}
+                      onDeletePoint={handleDeletePoint}
                     />
                   </div>
                 </div>
@@ -242,10 +302,12 @@ function App() {
                     <AudiogramCanvas
                       ear="left"
                       data={leftEarData}
-                      onPlotPoint={(freq, db) => handlePlotPoint('left', freq, db)}
+                      onPlotPoint={(freq, db, forceNR) => handlePlotPoint('left', freq, db, forceNR)}
                       activeMode={getActiveMode()}
                       masked={masked}
                       extendedFrequency={extendedFrequency}
+                      onClearAudiogram={handleClearAudiogram}
+                      onDeletePoint={handleDeletePoint}
                     />
                   </div>
                 </div>

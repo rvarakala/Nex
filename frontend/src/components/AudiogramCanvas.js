@@ -1,8 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noResponse, extendedFrequency = false }) => {
+const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noResponse, extendedFrequency = false, onClearAudiogram, onDeletePoint }) => {
   const canvasRef = useRef(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [contextFrequency, setContextFrequency] = useState(null);
   
   // Standard octave frequencies (major - with labels)
   const standardMajorFreqs = [125, 250, 500, 1000, 2000, 4000, 8000];
@@ -379,6 +381,9 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const handleCanvasClick = (e) => {
     if (!onPlotPoint) return;
     
+    // Close context menu if open
+    setContextMenu(null);
+    
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -415,14 +420,105 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     onPlotPoint(frequency, db);
   };
   
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const padding = { top: 40, right: 40, bottom: 40, left: 60 };
+    
+    // Check if click is within chart area
+    if (x < padding.left || y < padding.top) return;
+    
+    const chartWidth = rect.width - padding.left - padding.right;
+    const freqRatio = (x - padding.left) / chartWidth;
+    
+    // Find closest frequency
+    let closestFreq = frequencies[0];
+    let minDiff = Math.abs(getLogPosition(frequencies[0]) - freqRatio);
+    
+    frequencies.forEach(freq => {
+      const diff = Math.abs(getLogPosition(freq) - freqRatio);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestFreq = freq;
+      }
+    });
+    
+    setContextFrequency(closestFreq);
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+  
+  const handleClearAudiogram = () => {
+    if (onClearAudiogram) {
+      onClearAudiogram(ear);
+    }
+    setContextMenu(null);
+  };
+  
+  const handlePlotNoResponse = () => {
+    if (onPlotPoint && contextFrequency) {
+      onPlotPoint(contextFrequency, 120, true);
+    }
+    setContextMenu(null);
+  };
+  
+  const handleDeletePointClick = () => {
+    if (onDeletePoint && contextFrequency) {
+      onDeletePoint(ear, contextFrequency);
+    }
+    setContextMenu(null);
+  };
+  
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    if (contextMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [contextMenu]);
+
   return (
-    <div className="relative w-full h-96">
+    <div className="relative w-full h-full">
       <canvas
         ref={canvasRef}
         onClick={handleCanvasClick}
+        onContextMenu={handleContextMenu}
         className="w-full h-full border border-gray-400 bg-white cursor-crosshair"
         style={{ width: '100%', height: '100%' }}
       />
+      
+      {/* Context Menu */}
+      {contextMenu && (
+        <div 
+          className="fixed bg-white border border-gray-400 shadow-lg rounded py-1 z-50"
+          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '180px' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleClearAudiogram}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-gray-700 font-medium"
+          >
+            Clear Audiogram
+          </button>
+          <button
+            onClick={handlePlotNoResponse}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-gray-700"
+          >
+            Plot No Response @ {contextFrequency}Hz
+          </button>
+          <button
+            onClick={handleDeletePointClick}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-red-600"
+          >
+            Delete Point @ {contextFrequency}Hz
+          </button>
+        </div>
+      )}
     </div>
   );
 };
