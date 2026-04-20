@@ -39,7 +39,7 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
           {/* NR Left */}
           <button
             onClick={() => onTestChange(type.leftNR)}
-            className={`px-1 py-1 text-[9px] font-bold border-r border-gray-300 ${
+            className={`px-1 py-1 text-[10px] font-bold border-r border-gray-300 ${
               activeTest === type.leftNR ? 'bg-blue-200 text-blue-700' : 'text-gray-500 hover:bg-gray-50'
             }`}
             style={{ minWidth: '22px' }}
@@ -51,7 +51,7 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
           {/* Response Left */}
           <button
             onClick={() => onTestChange(type.leftTest)}
-            className={`px-1.5 py-1 text-xs font-bold border-r border-gray-300 ${
+            className={`px-1.5 py-1 text-[10px] font-bold border-r border-gray-300 ${
               activeTest === type.leftTest ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
             style={{ minWidth: '20px' }}
@@ -67,7 +67,7 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
           {/* Response Right */}
           <button
             onClick={() => onTestChange(type.rightTest)}
-            className={`px-1.5 py-1 text-xs font-bold border-l border-gray-300 ${
+            className={`px-1.5 py-1 text-[10px] font-bold border-l border-gray-300 ${
               activeTest === type.rightTest ? 'bg-red-100 text-red-600' : 'text-gray-600 hover:bg-gray-50'
             }`}
             style={{ minWidth: '20px' }}
@@ -78,7 +78,7 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
           {/* NR Right */}
           <button
             onClick={() => onTestChange(type.rightNR)}
-            className={`px-1 py-1 text-[9px] font-bold border-l border-gray-300 ${
+            className={`px-1 py-1 text-[10px] font-bold border-l border-gray-300 ${
               activeTest === type.rightNR ? 'bg-red-200 text-red-700' : 'text-gray-500 hover:bg-gray-50'
             }`}
             style={{ minWidth: '22px' }}
@@ -109,11 +109,11 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
       </button>
       
       {/* PTA Average Box */}
-      <div className="w-full mt-3 bg-white border border-gray-400 rounded shadow-sm p-1.5 text-[9px]">
-        <div className="text-[9px] font-bold text-gray-700 mb-1 text-center pb-0.5 border-b border-gray-300">
+      <div className="w-full mt-3 bg-white border border-gray-400 rounded shadow-sm p-1.5 text-[10px]">
+        <div className="text-[10px] font-bold text-gray-700 mb-1 text-center pb-0.5 border-b border-gray-300">
           PTA
         </div>
-        <table className="w-full text-[8px]">
+        <table className="w-full text-[10px]">
           <thead>
             <tr className="border-b border-gray-200">
               <th className="text-left pb-0.5 font-semibold text-gray-600"></th>
@@ -124,13 +124,13 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
           <tbody>
             <tr className="border-b border-gray-100">
               <td className="py-0.5 font-medium text-red-600">R</td>
-              <td className="text-center py-0.5 font-mono text-[9px]">{rightHTL}</td>
-              <td className="text-center py-0.5 font-mono text-[9px]">{rightBCL}</td>
+              <td className="text-center py-0.5 font-mono text-[10px]">{rightHTL}</td>
+              <td className="text-center py-0.5 font-mono text-[10px]">{rightBCL}</td>
             </tr>
             <tr>
               <td className="py-0.5 font-medium text-blue-600">L</td>
-              <td className="text-center py-0.5 font-mono text-[9px]">{leftHTL}</td>
-              <td className="text-center py-0.5 font-mono text-[9px]">{leftBCL}</td>
+              <td className="text-center py-0.5 font-mono text-[10px]">{leftHTL}</td>
+              <td className="text-center py-0.5 font-mono text-[10px]">{leftBCL}</td>
             </tr>
           </tbody>
         </table>

@@ -163,27 +163,102 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       return { x, y };
     };
     
+    // Helper: draw diagonal "No Response" arrow attached to a symbol.
+    // Right ear -> arrow points down-left (↙); Left ear -> down-right (↘).
+    // Arrow is isolated and never connected to other points via a line.
+    const drawNRArrow = (ctx, x, y, earSide, strokeColor) => {
+      ctx.strokeStyle = strokeColor;
+      ctx.fillStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      
+      const shaftLen = 16;
+      const headLen = 6;
+      const diag = Math.SQRT1_2; // cos(45°) = sin(45°)
+      
+      // Start just outside the symbol edge (~7px)
+      const offset = 7;
+      let startX, startY, dx, dy;
+      if (earSide === 'right') {
+        // ↙ down-left
+        startX = x - offset * diag;
+        startY = y + offset * diag;
+        dx = -diag;
+        dy = diag;
+      } else {
+        // ↘ down-right
+        startX = x + offset * diag;
+        startY = y + offset * diag;
+        dx = diag;
+        dy = diag;
+      }
+      const endX = startX + shaftLen * dx;
+      const endY = startY + shaftLen * dy;
+      
+      // Shaft
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      
+      // Arrow head (two short strokes from tip)
+      const angle = Math.atan2(dy, dx);
+      const spread = Math.PI / 6; // 30°
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - headLen * Math.cos(angle - spread),
+        endY - headLen * Math.sin(angle - spread)
+      );
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - headLen * Math.cos(angle + spread),
+        endY - headLen * Math.sin(angle + spread)
+      );
+      ctx.stroke();
+    };
+    
+    // Helper: draw connecting polyline that lifts the pen at any NR point,
+    // so NR points are never joined to adjacent thresholds.
+    const drawConnectingLine = (points, dashed = false) => {
+      ctx.strokeStyle = color.main;
+      ctx.lineWidth = 2.5;
+      if (dashed) ctx.setLineDash([5, 3]); else ctx.setLineDash([]);
+      ctx.beginPath();
+      let penUp = true;
+      points.forEach((point) => {
+        const coords = getCoords(point.freq, point.db);
+        if (!coords) return;
+        if (point.no_response) {
+          penUp = true;
+          return;
+        }
+        if (penUp) {
+          ctx.moveTo(coords.x, coords.y);
+          penUp = false;
+        } else {
+          ctx.lineTo(coords.x, coords.y);
+        }
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    
     // Draw AC line and symbols
     if (data && data.ac_measurements && data.ac_measurements.length > 0) {
       const acPoints = data.ac_measurements
         .filter(m => m.threshold_db !== null && m.threshold_db !== undefined)
-        .map(m => ({ freq: m.frequency, db: m.threshold_db, masked: m.masked }))
+        .map(m => ({
+          freq: m.frequency,
+          db: m.threshold_db,
+          masked: m.masked,
+          no_response: m.no_response === true,
+        }))
         .sort((a, b) => a.freq - b.freq);
       
       if (acPoints.length > 0) {
-        // Draw connecting line
-        ctx.strokeStyle = color.main;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        
-        acPoints.forEach((point, i) => {
-          const coords = getCoords(point.freq, point.db);
-          if (coords) {
-            if (i === 0) ctx.moveTo(coords.x, coords.y);
-            else ctx.lineTo(coords.x, coords.y);
-          }
-        });
-        ctx.stroke();
+        // Connecting line (skips NR points entirely)
+        drawConnectingLine(acPoints, false);
         
         // Draw symbols
         acPoints.forEach((point) => {
@@ -193,10 +268,6 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
           ctx.strokeStyle = color.main;
           ctx.fillStyle = point.masked ? color.main : 'transparent';
           ctx.lineWidth = 2.5;
-          
-          // Check if it's a no response measurement
-          const measurement = data.ac_measurements.find(m => m.frequency === point.freq && m.threshold_db === point.db);
-          const isNoResponse = measurement && measurement.no_response;
           
           if (point.masked) {
             // Masked AC: filled triangle (right) or square (left)
@@ -228,18 +299,9 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
             }
           }
           
-          // Draw downward arrow if no response
-          if (isNoResponse) {
-            ctx.strokeStyle = color.main;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(coords.x, coords.y + 8);
-            ctx.lineTo(coords.x, coords.y + 16);
-            // Arrow head
-            ctx.moveTo(coords.x - 3, coords.y + 13);
-            ctx.lineTo(coords.x, coords.y + 16);
-            ctx.lineTo(coords.x + 3, coords.y + 13);
-            ctx.stroke();
+          // Attach diagonal NR arrow when no response
+          if (point.no_response) {
+            drawNRArrow(ctx, coords.x, coords.y, ear, color.main);
           }
         });
       }
@@ -249,25 +311,17 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     if (data && data.bc_measurements && data.bc_measurements.length > 0) {
       const bcPoints = data.bc_measurements
         .filter(m => m.threshold_db !== null && m.threshold_db !== undefined)
-        .map(m => ({ freq: m.frequency, db: m.threshold_db, masked: m.masked }))
+        .map(m => ({
+          freq: m.frequency,
+          db: m.threshold_db,
+          masked: m.masked,
+          no_response: m.no_response === true,
+        }))
         .sort((a, b) => a.freq - b.freq);
       
       if (bcPoints.length > 0) {
-        // Draw connecting line (dashed)
-        ctx.strokeStyle = color.main;
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([5, 3]);
-        ctx.beginPath();
-        
-        bcPoints.forEach((point, i) => {
-          const coords = getCoords(point.freq, point.db);
-          if (coords) {
-            if (i === 0) ctx.moveTo(coords.x, coords.y);
-            else ctx.lineTo(coords.x, coords.y);
-          }
-        });
-        ctx.stroke();
-        ctx.setLineDash([]);
+        // Connecting line (dashed, skips NR points entirely)
+        drawConnectingLine(bcPoints, true);
         
         // Draw symbols
         bcPoints.forEach((point) => {
@@ -282,17 +336,14 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
           ctx.textBaseline = 'middle';
           
           if (point.masked) {
-            if (ear === 'right') {
-              ctx.fillText('[', coords.x, coords.y);
-            } else {
-              ctx.fillText(']', coords.x, coords.y);
-            }
+            ctx.fillText(ear === 'right' ? '[' : ']', coords.x, coords.y);
           } else {
-            if (ear === 'right') {
-              ctx.fillText('<', coords.x, coords.y);
-            } else {
-              ctx.fillText('>', coords.x, coords.y);
-            }
+            ctx.fillText(ear === 'right' ? '<' : '>', coords.x, coords.y);
+          }
+          
+          // Attach diagonal NR arrow when no response
+          if (point.no_response) {
+            drawNRArrow(ctx, coords.x, coords.y, ear, color.main);
           }
         });
       }
@@ -524,4 +575,3 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
 };
 
 export default AudiogramCanvas;
-;

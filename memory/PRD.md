@@ -1,0 +1,76 @@
+# ACS Audiology Clinic System — PRD
+
+## Original Problem Statement
+Build Phase 0 MVP for ACS Audiology Clinic system focusing on M03 (Report Generation).
+Core features: Pure Tone Audiometry (PTA) + Tympanometry plotting, speech
+audiometry, template-based PDF reports with clinical accuracy.
+UI/UX must replicate a professional NOAH-style clinical layout (compact, dense,
+no modern SaaS fluff).
+
+## Tech Stack
+- Frontend: React + Tailwind + HTML5 Canvas (custom audiogram rendering)
+- Backend: FastAPI + Motor (Async Mongo)
+- DB: MongoDB
+- Planned: Emergent LLM key for AI report narratives (P2)
+
+## Architecture
+```
+/app/backend/  (server.py, models.py, pdf_generator.py)
+/app/frontend/src/
+  App.js
+  components/
+    AudiogramCanvas.js      (canvas draw logic — logarithmic X, symbols)
+    NoahControlPanel.js     (center control panel: test mode + masked + PTA)
+    SimpleTabs.js           (Pure Tone | Speech | Impedance)
+    PatientInfoBar.js
+    PTACalculator.js
+```
+
+## Implemented (Session 1 + 2)
+- [Session 1] NOAH-style 3-tab layout (Window-in-Window container)
+- [Session 1] Logarithmic X-axis frequency spacing (125 Hz … 16 kHz)
+- [Session 1] Extended Frequency range toggle (10K/12.5K/16K w/ blue tint)
+- [Session 1] 10 dB labels + 5 dB grid + dotted mid-frequency lines (750/1.5K/3K/6K)
+- [Session 1] Center control panel: HTL, BCL, MCL, UCL, FF, FF-A + Masked + NR per ear
+- [Session 1] Right-click context menu (Clear / Plot NR / Delete point)
+- [Session 1] Auto PTA average (500/1K/2K)
+- [Feb 2026] **Clinical NR symbols**: diagonal arrows ↙ (right ear) / ↘ (left ear) attached to AC & BC symbols (O, X, <, >, [, ], △, □)
+- [Feb 2026] **NR line isolation**: connecting polyline lifts pen at any NR point — NR points never joined to neighbouring thresholds
+- [Feb 2026] Uniform 10px font sizing across the control panel
+- [Feb 2026] Hidden "Made with Emergent" badge (display:none in index.html)
+
+## Backlog / Roadmap
+
+### P1
+- [ ] **Speech Audiometry tab** — Acoustic Reflexes grid + Speech data entry table (SRT, MCL, UCL, WRS)
+- [ ] NR diagonal arrows for MCL/UCL/FF/FFA symbols when NR is toggled for those modes
+
+### P2
+- [ ] **Impedance / Tympanometry tab** — interactive full-screen tympanogram plotting (Type A, B, C curves)
+- [ ] **AI-powered report narrative** — Emergent LLM key → GPT-5.2/Claude Sonnet integration for auto-generated diagnostic impressions
+- [ ] PDF report generation with embedded audiogram render
+
+### P3
+- [ ] Historical comparison overlay (previous session threshold ghosts)
+- [ ] Patient DB CRUD UI (currently hardcoded demo patient)
+- [ ] Audiologist auth + multi-user sessions
+
+## Key Technical Invariants (DO NOT BREAK)
+1. `getLogPosition(freq)` provides logarithmic X mapping — must stay log scale.
+2. NR points are drawn in strict isolation — never connected by any line.
+3. NR arrow direction: right ear = ↙ (down-left), left ear = ↘ (down-right).
+4. Control panel width fixed at 160px for NOAH density.
+5. All backend API routes prefixed with `/api`.
+
+## API Endpoints (existing)
+- POST `/api/patients`
+- POST `/api/sessions`
+- PUT  `/api/sessions/{id}`
+- GET  `/api/reports/{session_id}/pdf`
+
+## Mocked / Pending
+- Patient data: hardcoded demo (`ACS-2025-001234 — Ramesh Kumar`)
+- Speech & Impedance tabs: placeholder content only
+
+## Test Credentials
+None required (no auth implemented).
