@@ -278,6 +278,84 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       }
     }
     
+    // Draw MCL measurements (Most Comfortable Level)
+    if (data && data.mcl_measurements && data.mcl_measurements.length > 0) {
+      data.mcl_measurements.forEach(m => {
+        if (m.threshold_db === null || m.threshold_db === undefined) return;
+        const coords = getCoords(m.frequency, m.threshold_db);
+        if (!coords) return;
+        
+        ctx.fillStyle = color.main;
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('M', coords.x, coords.y);
+      });
+    }
+    
+    // Draw UCL measurements (Uncomfortable Loudness Level)
+    if (data && data.ucl_measurements && data.ucl_measurements.length > 0) {
+      data.ucl_measurements.forEach(m => {
+        if (m.threshold_db === null || m.threshold_db === undefined) return;
+        const coords = getCoords(m.frequency, m.threshold_db);
+        if (!coords) return;
+        
+        ctx.fillStyle = color.main;
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ear === 'right' ? 'L' : 'J', coords.x, coords.y);
+      });
+    }
+    
+    // Draw FF measurements (Field Free)
+    if (data && data.ff_measurements && data.ff_measurements.length > 0) {
+      data.ff_measurements.forEach(m => {
+        if (m.threshold_db === null || m.threshold_db === undefined) return;
+        const coords = getCoords(m.frequency, m.threshold_db);
+        if (!coords) return;
+        
+        ctx.strokeStyle = color.main;
+        ctx.lineWidth = 2.5;
+        
+        if (ear === 'right') {
+          // Circle
+          ctx.beginPath();
+          ctx.arc(coords.x, coords.y, 6, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          // X
+          ctx.beginPath();
+          ctx.moveTo(coords.x - 6, coords.y - 6);
+          ctx.lineTo(coords.x + 6, coords.y + 6);
+          ctx.moveTo(coords.x + 6, coords.y - 6);
+          ctx.lineTo(coords.x - 6, coords.y + 6);
+          ctx.stroke();
+        }
+      });
+    }
+    
+    // Draw FF-A measurements (Field Free Aided)
+    if (data && data.ffa_measurements && data.ffa_measurements.length > 0) {
+      data.ffa_measurements.forEach(m => {
+        if (m.threshold_db === null || m.threshold_db === undefined) return;
+        const coords = getCoords(m.frequency, m.threshold_db);
+        if (!coords) return;
+        
+        ctx.strokeStyle = color.main;
+        ctx.lineWidth = 2.5;
+        
+        // Diamond symbol (◊)
+        ctx.beginPath();
+        ctx.moveTo(coords.x, coords.y - 6);
+        ctx.lineTo(coords.x + 6, coords.y);
+        ctx.lineTo(coords.x, coords.y + 6);
+        ctx.lineTo(coords.x - 6, coords.y);
+        ctx.closePath();
+        ctx.stroke();
+      });
+    }
+    
   }, [data, ear, color]);
   
   const handleCanvasClick = (e) => {

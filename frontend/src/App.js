@@ -31,12 +31,20 @@ function App() {
     ear: 'right',
     ac_measurements: [],
     bc_measurements: [],
+    mcl_measurements: [],
+    ucl_measurements: [],
+    ff_measurements: [],
+    ffa_measurements: [],
   });
 
   const [leftEarData, setLeftEarData] = useState({
     ear: 'left',
     ac_measurements: [],
     bc_measurements: [],
+    mcl_measurements: [],
+    ucl_measurements: [],
+    ff_measurements: [],
+    ffa_measurements: [],
   });
 
   // Session state (for backend persistence)
@@ -66,6 +74,10 @@ function App() {
   const getActiveMode = () => {
     if (activeTest.includes('ac')) return 'ac';
     if (activeTest.includes('bc')) return 'bc';
+    if (activeTest.includes('mcl')) return 'mcl';
+    if (activeTest.includes('ucl')) return 'ucl';
+    if (activeTest.includes('ff') && !activeTest.includes('ffa')) return 'ff';
+    if (activeTest.includes('ffa')) return 'ffa';
     return 'ac';
   };
 
@@ -79,7 +91,18 @@ function App() {
   const handlePlotPoint = (ear, frequency, db) => {
     const currentData = ear === 'right' ? rightEarData : leftEarData;
     const activeMode = getActiveMode();
-    const measurementArray = activeMode === 'ac' ? 'ac_measurements' : 'bc_measurements';
+    
+    // Map mode to measurement array name
+    const measurementArrayMap = {
+      'ac': 'ac_measurements',
+      'bc': 'bc_measurements',
+      'mcl': 'mcl_measurements',
+      'ucl': 'ucl_measurements',
+      'ff': 'ff_measurements',
+      'ffa': 'ffa_measurements'
+    };
+    
+    const measurementArray = measurementArrayMap[activeMode] || 'ac_measurements';
     
     // Find if measurement exists
     const existingIndex = currentData[measurementArray].findIndex(m => m.frequency === frequency);

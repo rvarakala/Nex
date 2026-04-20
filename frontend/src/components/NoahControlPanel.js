@@ -33,7 +33,7 @@ const NoahControlPanel = ({ activeTest, onTestChange, masked, onMaskedToggle, ri
   const leftBCL = calculateAverage(leftEarData, 'bc_measurements', [500, 1000, 2000]);
 
   return (
-    <div className="flex flex-col items-center justify-start gap-0 px-2 py-3 bg-gray-100 border-x border-gray-300 w-20">
+    <div className="flex flex-col items-center justify-start gap-0 px-2 py-3 bg-gray-100 border-x border-gray-300 w-28">
       {thresholdTypes.map((type) => (
         <div key={type.id} className="flex items-center gap-0 mb-1 bg-white border border-gray-300 rounded">
           <button
