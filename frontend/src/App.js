@@ -142,9 +142,9 @@ function App() {
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Test Procedures - Outer Window */}
-      <div className="flex-1 flex flex-col min-h-0 border-4 border-gray-300 m-2 bg-white rounded-lg shadow-lg">
+      <div className="flex-1 flex flex-col min-h-0 border-4 border-gray-300 m-1 bg-white rounded-lg shadow-lg">
         {/* Test Procedures Header */}
-        <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-4 py-2 border-b-2 border-gray-300 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-4 py-1.5 border-b-2 border-gray-300 flex items-center justify-between flex-shrink-0">
           <h1 className="text-sm font-bold text-gray-700">Test Procedures</h1>
           <div className="text-xs text-gray-600">
             Patient: {patient.name} | MRD: {patient.patient_id} | Age: {patient.age}Y
@@ -160,7 +160,7 @@ function App() {
           {activeTab === 'pure_tone' && (
             <div className="flex-1 flex flex-col min-h-0">
               {/* Extended Frequency Checkbox */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-300">
+              <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 border-b border-gray-300 flex-shrink-0">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -177,7 +177,7 @@ function App() {
               {/* Main Audiogram Area */}
               <div className="flex-1 flex min-h-0 relative">
                 {/* Right Ear Audiogram */}
-                <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0">
+                <div className="flex-1 flex flex-col p-1 bg-white min-w-0">
                   <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
                     Right
                   </h2>
@@ -206,7 +206,7 @@ function App() {
                 </div>
 
                 {/* Left Ear Audiogram */}
-                <div className="flex-1 flex flex-col px-1 py-1 bg-white min-w-0">
+                <div className="flex-1 flex flex-col p-1 bg-white min-w-0">
                   <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center flex-shrink-0">
                     Left
                   </h2>
