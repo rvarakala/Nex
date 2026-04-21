@@ -81,8 +81,8 @@ function App() {
   // Impedance / Tympanometry
   const defaultImpedance = {
     tympanometry: {
-      right: { jerger_type: null, me_pressure: null, compliance: null, volume: null, notes: '' },
-      left:  { jerger_type: null, me_pressure: null, compliance: null, volume: null, notes: '' },
+      right: { jerger_type: null, me_pressure: null, compliance: null, volume: null, probe_hz: 226, notes: '' },
+      left:  { jerger_type: null, me_pressure: null, compliance: null, volume: null, probe_hz: 226, notes: '' },
     },
     acoustic_reflex: {
       enabled: false,

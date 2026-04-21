@@ -193,10 +193,11 @@ const effectiveJerger = (ear) =>
   });
 
 // Central vertical summary table used in the 3-column tympanometry layout.
-// Columns: Right | Label | Left  (rows: Type / Pressure / Compliance / Volume)
-const TympanometrySummaryTable = ({ impedance, probeHz = 226 }) => {
+// Probe Hz in the header is derived from the right ear's probe setting (assumes both ears tested at same probe).
+const TympanometrySummaryTable = ({ impedance }) => {
   const R = impedance?.tympanometry?.right || {};
   const L = impedance?.tympanometry?.left || {};
+  const probeHz = R.probe_hz || L.probe_hz || 226;
   const rows = [
     { label: 'Type',             r: effectiveJerger(R) || '—',           l: effectiveJerger(L) || '—' },
     { label: 'Pressure (daPa)',  r: R.me_pressure ?? '—',                l: L.me_pressure ?? '—' },
@@ -382,8 +383,8 @@ const TympanometryFullPage = ({ impedance }) => {
               jergerType={effectiveJerger(R)}
               mePressure={R.me_pressure}
               compliance={R.compliance}
-              volume={R.volume}
               earSide="right"
+              probeHz={R.probe_hz || 226}
             />
           </div>
         </div>
@@ -403,8 +404,8 @@ const TympanometryFullPage = ({ impedance }) => {
               jergerType={effectiveJerger(L)}
               mePressure={L.me_pressure}
               compliance={L.compliance}
-              volume={L.volume}
               earSide="left"
+              probeHz={L.probe_hz || 226}
             />
           </div>
         </div>

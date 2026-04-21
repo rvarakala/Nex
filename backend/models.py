@@ -138,7 +138,8 @@ class TympanogramEar(BaseModel):
     jerger_type: Optional[Literal["A", "As", "Ad", "B", "C"]] = None
     me_pressure: Optional[float] = None   # daPa
     compliance: Optional[float] = None    # mL
-    volume: Optional[float] = None        # cc
+    volume: Optional[float] = None        # cc (ECV — reported value only, not used in curve plotting)
+    probe_hz: Literal[226, 678, 800, 1000] = 226
     notes: Optional[str] = None
 
 

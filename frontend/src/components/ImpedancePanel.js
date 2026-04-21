@@ -58,6 +58,13 @@ const INTERP_OPTIONS = [
   { value: 'equivocal', label: 'Equivocal' },
 ];
 
+const PROBE_HZ_OPTIONS = [
+  { value: '226',  label: '226 Hz' },
+  { value: '678',  label: '678 Hz' },
+  { value: '800',  label: '800 Hz' },
+  { value: '1000', label: '1000 Hz' },
+];
+
 const REFLEX_FREQS = ['250', '500', '1000', '2000', '4000'];
 const DECAY_FREQS = ['500', '1000'];
 
@@ -83,6 +90,16 @@ const TympanogramBlock = ({ earLabel, earSide, value, onChange }) => {
       <div className="flex gap-2 p-2">
         {/* Input column */}
         <div className="w-[140px] flex-shrink-0 space-y-1">
+          <div>
+            <label className="text-[10px] font-medium text-gray-600">Probe tone</label>
+            <Select
+              testId={`tymp-${earSide}-probe`}
+              value={value.probe_hz ? String(value.probe_hz) : '226'}
+              onChange={(v) => onChange({ ...value, probe_hz: v ? parseInt(v, 10) : 226 })}
+              options={PROBE_HZ_OPTIONS}
+              className="w-full"
+            />
+          </div>
           <div>
             <label className="text-[10px] font-medium text-gray-600">Type</label>
             <Select
@@ -114,7 +131,7 @@ const TympanogramBlock = ({ earLabel, earSide, value, onChange }) => {
             />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-gray-600">Volume (cc)</label>
+            <label className="text-[10px] font-medium text-gray-600">Volume / ECV (cc)</label>
             <NumInput
               testId={`tymp-${earSide}-volume`}
               value={value.volume}
@@ -141,8 +158,8 @@ const TympanogramBlock = ({ earLabel, earSide, value, onChange }) => {
             jergerType={effectiveType}
             mePressure={value.me_pressure}
             compliance={value.compliance}
-            volume={value.volume}
             earSide={earSide}
+            probeHz={value.probe_hz || 226}
           />
         </div>
       </div>

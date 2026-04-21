@@ -8,7 +8,7 @@ import React, { useRef, useEffect } from 'react';
  *
  * X axis: -400..+200 daPa.  Y axis: 0..(V+C)+buffer.
  */
-const TympanogramCanvas = ({ jergerType, mePressure, compliance, volume, earSide = 'right' }) => {
+const TympanogramCanvas = ({ jergerType, mePressure, compliance, earSide = 'right', probeHz = 226 }) => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -27,10 +27,11 @@ const TympanogramCanvas = ({ jergerType, mePressure, compliance, volume, earSide
 
     const xMin = -400, xMax = 200;
     const yMin = 0;
-    const V = typeof volume === 'number' && !Number.isNaN(volume) ? volume : null;
+    // Volume does NOT affect the curve — only Pressure (peak X) and Compliance (peak Y)
     const C = typeof compliance === 'number' && !Number.isNaN(compliance) ? compliance : null;
     const P = typeof mePressure === 'number' && !Number.isNaN(mePressure) ? mePressure : null;
-    const yMax = Math.max(1.5, (V ?? 0.5) + (C ?? 1.0) + 0.3);
+    // Y-axis max scales with compliance so the peak always fits comfortably
+    const yMax = Math.max(1.5, (C ?? 1.0) + 0.5);
 
     const X = (daPa) => pad.left + ((daPa - xMin) / (xMax - xMin)) * cw;
     const Y = (mL) => pad.top + (1 - (mL - yMin) / (yMax - yMin)) * ch;
@@ -70,48 +71,48 @@ const TympanogramCanvas = ({ jergerType, mePressure, compliance, volume, earSide
     ctx.fillText('mL', 0, 0);
     ctx.restore();
 
-    // Don't plot a curve unless we have enough data
-    if (P === null || C === null || V === null) {
+    // Don't plot a curve unless we have the required pressure + compliance
+    if (P === null || C === null) {
       ctx.fillStyle = '#9ca3af';
       ctx.font = 'italic 10px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText('Enter P · C · V to plot', pad.left + cw / 2, pad.top + ch / 2);
+      ctx.fillText('Enter Pressure · Compliance to plot', pad.left + cw / 2, pad.top + ch / 2);
       return;
     }
 
-    // Type-based sigma
+    // Type-based sigma — probe Hz also slightly broadens at higher freqs (infant-like)
     const typeSigma = { A: 60, As: 45, Ad: 55, B: 1000, C: 70 };
-    const sigma = typeSigma[jergerType] || 60;
+    const probeBroaden = probeHz >= 678 ? 1.25 : 1;
+    const sigma = (typeSigma[jergerType] || 60) * probeBroaden;
 
-    // For type B, treat as nearly flat — use a very broad sigma so peak barely shows
     const color = earSide === 'right' ? '#DC2626' : '#2563EB';
 
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let x = xMin; x <= xMax; x += 2) {
-      const y = V + C * Math.exp(-Math.pow(x - P, 2) / (2 * sigma * sigma));
+      // Pure Gaussian: peak at (P, C), baseline at 0 — volume has no role
+      const y = C * Math.exp(-Math.pow(x - P, 2) / (2 * sigma * sigma));
       const px = X(x), py = Y(y);
       if (x === xMin) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
     ctx.stroke();
 
-    // Peak marker
-    const peakY = V + C;
+    // Peak marker at (P, C)
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(X(P), Y(peakY), 3, 0, 2 * Math.PI);
+    ctx.arc(X(P), Y(C), 3, 0, 2 * Math.PI);
     ctx.fill();
 
-    // Peak label
+    // Labels
     ctx.font = 'bold 9px Arial';
     ctx.textAlign = 'left';
     ctx.fillStyle = color;
-    ctx.fillText(`Type ${jergerType || '—'}`, pad.left + 4, pad.top + 10);
+    ctx.fillText(`Type ${jergerType || '—'} · ${probeHz} Hz`, pad.left + 4, pad.top + 10);
     ctx.textAlign = 'right';
-    ctx.fillText(`P=${P} C=${C.toFixed(2)} V=${V.toFixed(2)}`, pad.left + cw - 4, pad.top + 10);
-  }, [jergerType, mePressure, compliance, volume, earSide]);
+    ctx.fillText(`P=${P} · C=${C.toFixed(2)}`, pad.left + cw - 4, pad.top + 10);
+  }, [jergerType, mePressure, compliance, earSide, probeHz]);
 
   return <canvas ref={canvasRef} className="w-full h-full bg-white" style={{ width: '100%', height: '100%' }} />;
 };
