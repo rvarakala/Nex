@@ -192,34 +192,43 @@ const effectiveJerger = (ear) =>
     volume: ear?.volume,
   });
 
-const TympanometrySummaryTable = ({ impedance }) => {
+// Central vertical summary table used in the 3-column tympanometry layout.
+// Columns: Right | Label | Left  (rows: Type / Pressure / Compliance / Volume)
+const TympanometrySummaryTable = ({ impedance, probeHz = 226 }) => {
   const R = impedance?.tympanometry?.right || {};
   const L = impedance?.tympanometry?.left || {};
-  const row = (ear, label, colour) => (
-    <tr>
-      <td className={`border border-gray-400 px-2 py-0.5 font-semibold ${colour}`}>{label}</td>
-      <td className="border border-gray-400 px-2 py-0.5 text-center">{effectiveJerger(ear) || '—'}</td>
-      <td className="border border-gray-400 px-2 py-0.5 text-center">{ear.me_pressure ?? '—'}</td>
-      <td className="border border-gray-400 px-2 py-0.5 text-center">{ear.compliance ?? '—'}</td>
-      <td className="border border-gray-400 px-2 py-0.5 text-center">{ear.volume ?? '—'}</td>
-    </tr>
-  );
+  const rows = [
+    { label: 'Type',             r: effectiveJerger(R) || '—',           l: effectiveJerger(L) || '—' },
+    { label: 'Pressure (daPa)',  r: R.me_pressure ?? '—',                l: L.me_pressure ?? '—' },
+    { label: 'Compliance (mL)',  r: R.compliance  != null ? Number(R.compliance).toFixed(2) : '—',
+                                 l: L.compliance  != null ? Number(L.compliance).toFixed(2) : '—' },
+    { label: 'Volume (cc)',      r: R.volume      != null ? Number(R.volume).toFixed(2)     : '—',
+                                 l: L.volume      != null ? Number(L.volume).toFixed(2)     : '—' },
+  ];
   return (
-    <table className="w-full text-[11px] border border-gray-400">
-      <thead className="bg-gray-100">
-        <tr>
-          <th className="border border-gray-400 px-2 py-0.5 text-left">Ear</th>
-          <th className="border border-gray-400 px-2 py-0.5">Type</th>
-          <th className="border border-gray-400 px-2 py-0.5">Pressure (daPa)</th>
-          <th className="border border-gray-400 px-2 py-0.5">Compliance (mL)</th>
-          <th className="border border-gray-400 px-2 py-0.5">Volume (cc)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {row(R, 'Right', 'text-red-600')}
-        {row(L, 'Left', 'text-blue-600')}
-      </tbody>
-    </table>
+    <div className="border-2 border-gray-700 rounded bg-white text-[10px] overflow-hidden">
+      <div className="bg-gray-100 border-b-2 border-gray-700 px-2 py-1 text-center">
+        <span className="font-bold text-[11px] tracking-wide">TYMPANOMETRY [{probeHz} Hz]</span>
+      </div>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-gray-700">
+            <th className="w-[32%] px-1 py-1 text-center font-bold text-red-600 border-r border-gray-400">Right</th>
+            <th className="w-[36%] px-1 py-1 text-center font-bold text-gray-700"></th>
+            <th className="w-[32%] px-1 py-1 text-center font-bold text-blue-600 border-l border-gray-400">Left</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-b border-gray-400 last:border-b-0">
+              <td className="px-1 py-1 text-center font-mono border-r border-gray-400">{r.r}</td>
+              <td className="px-1 py-1 text-center font-semibold text-gray-700 bg-gray-50">{r.label}</td>
+              <td className="px-1 py-1 text-center font-mono border-l border-gray-400">{r.l}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 };
 
@@ -303,54 +312,20 @@ const ETTable = ({ et }) => {
   );
 };
 
-// Compact tympanometry section (inline on PTA page)
+// Compact tympanometry section (inline on PTA page) — single-row 3-column layout
 const TympanometryInlineSection = ({ impedance }) => {
   const R = impedance?.tympanometry?.right || {};
   const L = impedance?.tympanometry?.left || {};
   return (
     <div>
       <SectionTitle>Tympanometry</SectionTitle>
-      <div className="flex gap-2">
-        <div className="flex-1 h-[180px] border border-gray-300 rounded">
-          <TympanogramCanvas
-            jergerType={effectiveJerger(R)}
-            mePressure={R.me_pressure}
-            compliance={R.compliance}
-            volume={R.volume}
-            earSide="right"
-          />
-        </div>
-        <div className="flex-1 h-[180px] border border-gray-300 rounded">
-          <TympanogramCanvas
-            jergerType={effectiveJerger(L)}
-            mePressure={L.me_pressure}
-            compliance={L.compliance}
-            volume={L.volume}
-            earSide="left"
-          />
-        </div>
-      </div>
-      <div className="mt-2">
-        <TympanometrySummaryTable impedance={impedance} />
-      </div>
-      {impedance?.acoustic_reflex?.enabled && (
-        <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
-      )}
-    </div>
-  );
-};
-
-// Full-page tympanometry section (with page break)
-const TympanometryFullPage = ({ impedance }) => {
-  const R = impedance?.tympanometry?.right || {};
-  const L = impedance?.tympanometry?.left || {};
-  return (
-    <div className="page-break-before">
-      <SectionTitle>Tympanometry & Immittance</SectionTitle>
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <div className="text-[11px] font-bold text-red-600 mb-1">Right Ear</div>
-          <div className="h-[260px] border border-gray-300 rounded">
+      <div className="flex gap-2 items-stretch">
+        {/* Right curve */}
+        <div className="flex-1 flex flex-col">
+          <div className="bg-yellow-50 border border-gray-400 text-[10px] font-bold text-gray-700 px-1.5 py-0.5">
+            Right Tympanogram
+          </div>
+          <div className="flex-1 h-[190px] border border-t-0 border-gray-400">
             <TympanogramCanvas
               jergerType={effectiveJerger(R)}
               mePressure={R.me_pressure}
@@ -360,9 +335,18 @@ const TympanometryFullPage = ({ impedance }) => {
             />
           </div>
         </div>
-        <div className="flex-1">
-          <div className="text-[11px] font-bold text-blue-600 mb-1">Left Ear</div>
-          <div className="h-[260px] border border-gray-300 rounded">
+        {/* Center summary */}
+        <div className="w-[200px] flex-shrink-0 flex items-stretch">
+          <div className="w-full">
+            <TympanometrySummaryTable impedance={impedance} />
+          </div>
+        </div>
+        {/* Left curve */}
+        <div className="flex-1 flex flex-col">
+          <div className="bg-yellow-50 border border-gray-400 text-[10px] font-bold text-gray-700 px-1.5 py-0.5">
+            Left Tympanogram
+          </div>
+          <div className="flex-1 h-[190px] border border-t-0 border-gray-400">
             <TympanogramCanvas
               jergerType={effectiveJerger(L)}
               mePressure={L.me_pressure}
@@ -373,8 +357,57 @@ const TympanometryFullPage = ({ impedance }) => {
           </div>
         </div>
       </div>
-      <div className="mt-3">
-        <TympanometrySummaryTable impedance={impedance} />
+      {impedance?.acoustic_reflex?.enabled && (
+        <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
+      )}
+    </div>
+  );
+};
+
+// Full-page tympanometry section (with page break) — single-row 3-column layout
+const TympanometryFullPage = ({ impedance }) => {
+  const R = impedance?.tympanometry?.right || {};
+  const L = impedance?.tympanometry?.left || {};
+  return (
+    <div className="page-break-before">
+      <SectionTitle>Tympanometry & Immittance</SectionTitle>
+      <div className="flex gap-3 items-stretch">
+        {/* Right curve */}
+        <div className="flex-1 flex flex-col">
+          <div className="bg-yellow-50 border border-gray-400 text-[11px] font-bold text-gray-700 px-2 py-1">
+            Right Tympanogram
+          </div>
+          <div className="flex-1 h-[260px] border border-t-0 border-gray-400">
+            <TympanogramCanvas
+              jergerType={effectiveJerger(R)}
+              mePressure={R.me_pressure}
+              compliance={R.compliance}
+              volume={R.volume}
+              earSide="right"
+            />
+          </div>
+        </div>
+        {/* Center summary */}
+        <div className="w-[220px] flex-shrink-0 flex items-stretch">
+          <div className="w-full">
+            <TympanometrySummaryTable impedance={impedance} />
+          </div>
+        </div>
+        {/* Left curve */}
+        <div className="flex-1 flex flex-col">
+          <div className="bg-yellow-50 border border-gray-400 text-[11px] font-bold text-gray-700 px-2 py-1">
+            Left Tympanogram
+          </div>
+          <div className="flex-1 h-[260px] border border-t-0 border-gray-400">
+            <TympanogramCanvas
+              jergerType={effectiveJerger(L)}
+              mePressure={L.me_pressure}
+              compliance={L.compliance}
+              volume={L.volume}
+              earSide="left"
+            />
+          </div>
+        </div>
       </div>
       {impedance?.acoustic_reflex?.enabled && (
         <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
