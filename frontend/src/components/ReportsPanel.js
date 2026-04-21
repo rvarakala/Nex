@@ -461,6 +461,11 @@ const PTAMiniTable = ({ rightEar, leftEar }) => {
   const rP2 = ptaAvg(rightEar, 'ac_measurements', [1000, 2000, 4000]);
   const lP1 = ptaAvg(leftEar,  'ac_measurements', [500, 1000, 2000]);
   const lP2 = ptaAvg(leftEar,  'ac_measurements', [1000, 2000, 4000]);
+  // BC PTA 1 averages (for AB Gap calculation)
+  const rB1 = ptaAvg(rightEar, 'bc_measurements', [500, 1000, 2000]);
+  const lB1 = ptaAvg(leftEar,  'bc_measurements', [500, 1000, 2000]);
+  const rABG = rP1 !== null && rB1 !== null ? rP1 - rB1 : null;
+  const lABG = lP1 !== null && lB1 !== null ? lP1 - lB1 : null;
   return (
     <div className="border border-gray-300 rounded bg-white">
       <div className="text-[10px] font-bold text-gray-700 bg-gray-100 text-center py-0.5 border-b border-gray-300">
@@ -472,6 +477,7 @@ const PTAMiniTable = ({ rightEar, leftEar }) => {
             <th className="px-1.5 py-0.5 text-left font-semibold text-gray-600">Ear</th>
             <th className="px-1.5 py-0.5 font-semibold text-gray-700" title="Average of 500, 1000, 2000 Hz">PTA 1</th>
             <th className="px-1.5 py-0.5 font-semibold text-gray-700" title="Average of 1000, 2000, 4000 Hz">PTA 2</th>
+            <th className="px-1.5 py-0.5 font-semibold text-gray-700" title="AC PTA1 − BC PTA1 (500·1K·2K Hz)">AB Gap</th>
           </tr>
         </thead>
         <tbody>
@@ -479,16 +485,18 @@ const PTAMiniTable = ({ rightEar, leftEar }) => {
             <td className="px-1.5 py-0.5 font-semibold text-red-600">R</td>
             <td className="px-1.5 py-0.5 text-center font-mono">{rP1 ?? '—'}</td>
             <td className="px-1.5 py-0.5 text-center font-mono">{rP2 ?? '—'}</td>
+            <td className="px-1.5 py-0.5 text-center font-mono">{rABG ?? '—'}</td>
           </tr>
           <tr>
             <td className="px-1.5 py-0.5 font-semibold text-blue-600">L</td>
             <td className="px-1.5 py-0.5 text-center font-mono">{lP1 ?? '—'}</td>
             <td className="px-1.5 py-0.5 text-center font-mono">{lP2 ?? '—'}</td>
+            <td className="px-1.5 py-0.5 text-center font-mono">{lABG ?? '—'}</td>
           </tr>
         </tbody>
       </table>
       <div className="text-[8px] text-gray-500 px-1.5 py-0.5 border-t border-gray-200 leading-tight">
-        PTA 1: 500·1K·2K · PTA 2: 1K·2K·4K Hz
+        PTA 1: 500·1K·2K · PTA 2: 1K·2K·4K · AB Gap: AC−BC @ PTA 1
       </div>
     </div>
   );
