@@ -1,78 +1,67 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 ## Original Problem Statement
-Build M03 Report Generation for audiology clinics (started as Phase 0 MVP), then expanded
-into a full ACS (Audiology Clinic Suite) per the Product Vision Blueprint v1.
-Multi-module India-first SaaS: M01 Front Desk → M02 Diagnostics → M03 Reports.
-Premium UI, tenant-scoped, role-based, WhatsApp-first workflows.
+Build a full ACS (Audiology Clinic Suite) per the Product Vision Blueprint v1.
+Multi-module India-first SaaS: **M01 Front Desk → M02 Diagnostics → M03 Reports**.
+Premium UI, tenant-scoped, role-based, WhatsApp-first workflows, GST-compliant billing.
 
 ## Tech Stack (locked)
 - **Frontend**: React 19 (CRA) + Tailwind + HTML5 Canvas + react-router-dom v7
 - **Backend**: FastAPI + motor (async MongoDB) + bcrypt + PyJWT
-- **Database**: MongoDB (Postgres migration = P2 infra task)
+- **Database**: MongoDB (Postgres migration = P2 infra task, deferred per user)
 - **Auth**: JWT HS256 + 4 roles (super_admin, front_desk, audiologist, accounts)
 - **Multi-tenant**: every query scoped by `clinic_id` from JWT claim
 - **Key env**: `JWT_SECRET`, `DEFAULT_CLINIC_ID`, `MONGO_URL`, `DB_NAME`
 
 ## Module Status
 
-### ✅ M01 — Front Desk & Registration (Sprint M01.A COMPLETE)
-- **UC-01 New Patient Walk-in**: Full registration form (demographics, contact, chief complaint triage, referral, insurance/CGHS), auto-MRD (`ACS-YYYY-NNNNNN`), duplicate detection (normalised mobile last-10-digit match), token issuance, 3 action buttons (Register / Register+Print / Register+Start Diagnostics)
-- **UC-02 Returning Patient**: Debounced search (name/mobile/MRD), result list, detail card with profile + previous visits + actions (Check In / Start Diagnostics)
-- **Front Desk Dashboard**: 7 KPI cards (walk-ins / returning / appointments / waiting / in-progress / collections / pending reports) + Live Queue table with token-status transitions
-- **A5 Token Print View**: Clinic branded, giant token number, patient info, auto-prints on open
-- **Auth**: Login page with 4 role quick-fills, JWT Bearer, role-based default landing (audiologist→/test, others→/frontdesk), logout clears localStorage
+### ✅ M01 — Front Desk & Registration (Sprint M01.A + M01.B + M01.C COMPLETE)
+- **UC-01 New Patient Walk-in** (A): Full registration with auto-MRD (`ACS-YYYY-NNNNNN`), duplicate detection (last-10-digit mobile match), token issuance, Register / Register+Print / Register+Start Diagnostics flows.
+- **UC-02 Returning Patient** (A): Debounced search (name/mobile/MRD), detail card with history + actions.
+- **Front Desk Dashboard** (A): 7 live KPI cards + Live Queue with token-state transitions.
+- **A5 Token Print** (A): Clinic branded, giant token number, auto-print.
+- **UC-03 Appointments** (B): Today/Week views, drag-drop reschedule, Book modal with free-slot suggestions, waitlist panel, filters (audiologist/service/priority/status), WhatsApp/SMS/Email reminder hooks (stubbed). Double-booking 409 prevention. Cancellation logging.
+- **UC-04 Billing & Report Handover** (C): Full GST invoice engine with CGST/SGST split (intra-state) or IGST (inter-state), mixed taxable (hearing aids / accessories) + exempt (healthcare) lines, HSN/SAC codes, discount per line, invoice numbering (`INV/YYYY/000001` per clinic-year). Split payments (cash/UPI/card/bank_transfer/insurance). A4 tax invoice + 80mm thermal receipt + WhatsApp share. Service catalogue CRUD (role-gated: accounts/admin only). Report Handover: lists unhandoured completed sessions, logs deliveries (print/whatsapp/email/in_person). Daily collections summary by method.
 
 ### ✅ M02 — Clinical Diagnostics (10 tabs)
-Pre-Test (case history + otoscopy + tuning fork), Pure Tone (Audiogram + Ghost overlay),
-Speech (Audiogram + WRS), Impedance (Tymp + Reflex + ETF), Special Tests, OAE,
-Sound Field (mini audiogram), ABR/ASSR (waveforms), Pediatric, Tinnitus.
-Bridged from M01 via `TestContext` (activeTest: {patient, sessionId, token?}).
+Pre-Test (case history + otoscopy + tuning fork), Pure Tone (+ Ghost overlay), Speech (Audiogram + WRS), Impedance (Tymp + Reflex + ETF), Special Tests, OAE, Sound Field, ABR/ASSR, Pediatric, Tinnitus. Bridged from M01 via `TestContext`.
 
 ### ✅ M03 — Report Generation
-Report Builder with sectionRegistry, 14 toggleable sections, A4 print CSS, audiogram size toggles,
-WhatsApp share deep-link with PTA summary + recs, historical audiogram ghost overlay.
+sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram size toggles, WhatsApp share deep-link, historical audiogram ghost overlay.
 
-## What's Implemented (timestamped changelog)
+## What's Implemented (changelog)
 
 - [Feb 2026] M03 initial build: 10 clinical tabs + canvases + Report Builder + A4 print
 - [Feb 2026] Phase 1 Patient Records: Patient CRUD + journal + referring doctors
 - [Feb 2026] Phase 1.5: WhatsApp Share + Ghost Overlay
-- [Feb 2026] **M01 Sprint A (THIS SESSION)**:
-  - Backend: JWT auth + bcrypt + 4 roles + clinic seeding, Clinic/User/OPDToken models, tenant scoping on all patient/session/note/referring-doctor endpoints, MRD counter, token counter, duplicate-check (last-10-digit normalisation), dashboard KPI endpoint, activity log collection
-  - Frontend: Complete re-shell with react-router, LoginPage, AppShell (left nav + topbar), ProtectedRoute/RoleGate, TestContext (M01→M02 handoff), FrontDeskModule sub-tabs, NewPatientPage (UC-01), ReturningPage (UC-02), DashboardPage, TokenPrintView (A5), thin TestProceduresModule wrapping the existing 10 tabs with "Back to Front Desk" context strip
-  - Testing: 25/25 backend pytest + frontend E2E ~92% → 3 flagged UX issues all fixed (duplicate warning visibility via mobile normalisation, logout activeTest cleanup, token-print StrictMode double-fire guard)
+- [Feb 2026] **M01 Sprint A**: JWT/bcrypt auth, tenant scoping, Clinic/User/OPDToken models, MRD counter, duplicate detection, KPI endpoint + Front Desk shell (Login, AppShell, NewPatient, Returning, Queue, Dashboard, TokenPrint).
+- [Feb 2026] **M01 Sprint B**: Appointments CRUD + waitlist + reminder stubs. Backend: appointment/waitlist/reminder routers; frontend: AppointmentsPage (Today/Week, drag-drop), BookAppointmentModal, WaitlistPanel. 21/21 backend pass, frontend ~95%. Follow-up fixes: status filter dropdown + email reminder button added.
+- [Feb 2026] **M01 Sprint C (THIS SESSION)**: Billing engine. New `/app/backend/billing.py` (~15 endpoints) + billing models (Service, Invoice, InvoiceLine, Payment, ReportDelivery). 12 default services auto-seeded per clinic. Frontend `/app/frontend/src/modules/billing/` — BillingModule (tabbed shell), InvoicesListPage, CreateInvoicePage (patient search + service catalogue dropdown + live totals preview + optional initial payment), InvoiceDetailPage (A4 layout + PaymentDialog + thermal popup + WhatsApp share + cancel), ReportHandoverPage, ServiceCatalogPage (role-gated nav + route). Backend role gates on POST/PUT/DELETE /billing/services and POST /billing/invoices/{id}/cancel. Dashboard `collections_today` now reads real payment sum. 16/16 backend pass; frontend ~95% pass, then 2 minor fixes applied (catalog route guard, option hydration warning).
 
 ## Seed Data / Credentials
-- Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai
-- Users (in `/app/memory/test_credentials.md`):
-  - `admin@acs.in` / `admin123` — Super Admin
-  - `frontdesk@acs.in` / `frontdesk123` — Front Desk
-  - `audiologist@acs.in` / `audio123` — Audiologist
-  - `accounts@acs.in` / `accounts123` — Accounts
+- Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
+- Users (in `/app/memory/test_credentials.md`): admin@acs.in / frontdesk@acs.in / audiologist@acs.in / accounts@acs.in
+- Default service catalogue (12 items): Consultation, PTA, Immittance, OAE, ABR/BERA, ASSR, Speech, HA Fitting (all exempt HSN 999312); HA-BTE & HA-RIC (12% GST, HSN 9021); Custom Ear Mould (12%, HSN 9021); Battery pack (18%, HSN 8506).
 
 ## Backlog / Roadmap
 
-### M01.B (next sprint)
-- [ ] **UC-03 Appointments**: Today/Week/Calendar views, drag-drop reschedule, waitlist, filters (audiologist/test type/room), cancellation logs
-- [ ] WhatsApp Business API / MSG91 SMS / SendGrid reminder hooks
-- [ ] Keyboard shortcuts + command palette (Cmd+K search)
+### P1 (next)
+- [ ] Real SMS/WhatsApp/Email reminder SDK wiring (currently stubbed — needs MSG91/SendGrid/WhatsApp Business keys from user). Use `integration_playbook_expert_v2`.
+- [ ] Print-from-appointment-card: direct "Create Invoice" shortcut on appointment + token cards.
+- [ ] Keyboard shortcuts + Cmd+K command palette.
 
-### M01.C (next sprint)
-- [ ] **UC-04 Billing + Report Handover**: GST invoice engine (GSTIN + HSN), split payments (Cash/UPI/Card/Bank), thermal receipt + A4 invoice PDF, WhatsApp receipt share, fetch M03 reports (delivered/pending status), mark delivered
-
-### P2 Infrastructure
-- [ ] PostgreSQL migration (blueprint target; not blocking clinical MVP)
-- [ ] Redis for session cache + dashboard KPI materialisation
-- [ ] AWS ap-south-1 deployment (ECS/ECR)
-- [ ] Data cleanup migration: reset `pending_reports` counter from legacy dev data
+### P2 infrastructure
+- [ ] PostgreSQL migration (blueprint target; not blocking clinical MVP).
+- [ ] Redis for session cache + dashboard KPI materialisation.
+- [ ] AWS ap-south-1 deployment (ECS/ECR).
+- [ ] Queue TV display (`/queue/:clinicId` read-only big-screen).
 
 ### P3
-- [ ] Hearing aid dispensing module (make/model/serial/warranty)
-- [ ] Marketing / re-engagement campaigns
-- [ ] Multi-clinic rollout (we're already tenant-scoped; just needs a Clinic admin UI)
-- [ ] ICD-10 coding (only if CGHS/ESIC contracts need it)
-- [ ] Audit log viewer UI (backend already logs to `activity_logs`)
+- [ ] Hearing aid dispensing module (serial/warranty, trial fitment workflow).
+- [ ] Marketing / re-engagement campaigns.
+- [ ] Clinic admin UI (multi-clinic rollout).
+- [ ] ICD-10 coding (CGHS/ESIC contracts).
+- [ ] Audit log viewer UI.
 
-### Explicitly Out of Scope (India context)
-- NOAH real-time sync, fax, US-style insurance/claims
+### Explicitly Out of Scope
+NOAH real-time sync, fax, US-style insurance/claims.

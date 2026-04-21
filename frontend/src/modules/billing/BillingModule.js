@@ -27,6 +27,9 @@ const Tab = ({ to, label, testid }) => {
   );
 };
 
+const CatalogGate = ({ canManageCatalog, children }) =>
+  (canManageCatalog ? children : <Navigate to="/billing" replace />);
+
 export default function BillingModule() {
   const { user } = useAuth();
   const canManageCatalog = user?.role === 'super_admin' || user?.role === 'accounts';
@@ -47,7 +50,10 @@ export default function BillingModule() {
           <Route path="new" element={<CreateInvoicePage />} />
           <Route path="invoice/:invoiceId" element={<InvoiceDetailPage />} />
           <Route path="handover" element={<ReportHandoverPage />} />
-          {canManageCatalog && <Route path="catalog" element={<ServiceCatalogPage />} />}
+          <Route
+            path="catalog"
+            element={<CatalogGate canManageCatalog={canManageCatalog}><ServiceCatalogPage /></CatalogGate>}
+          />
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
       </div>

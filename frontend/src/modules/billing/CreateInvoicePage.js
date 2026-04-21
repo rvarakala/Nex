@@ -211,11 +211,10 @@ export default function CreateInvoicePage() {
             <option value="">— Pick a service from catalogue —</option>
             {['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'].map((cat) => (
               <optgroup key={cat} label={cat}>
-                {services.filter((s) => s.category === cat).map((s) => (
-                  <option key={s.service_id} value={s.service_id}>
-                    {s.name} — ₹{s.price}{s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}
-                  </option>
-                ))}
+                {services.filter((s) => s.category === cat).map((s) => {
+                  const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
+                  return <option key={s.service_id} value={s.service_id}>{label}</option>;
+                })}
               </optgroup>
             ))}
           </select>

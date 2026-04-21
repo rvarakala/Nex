@@ -165,6 +165,8 @@ async def list_services(active_only: bool = True, search: Optional[str] = None, 
 
 @billing_router.post("/billing/services", response_model=Service)
 async def create_service(payload: ServiceCreate, user=Depends(get_current_user)):
+    if user["role"] not in {"super_admin", "accounts"}:
+        raise HTTPException(status_code=403, detail="Only accounts/admin can manage services")
     db = _db()
     obj = Service(clinic_id=user["clinic_id"], **payload.model_dump())
     await db.services.insert_one(_serialize(obj.model_dump()))
@@ -173,6 +175,8 @@ async def create_service(payload: ServiceCreate, user=Depends(get_current_user))
 
 @billing_router.put("/billing/services/{service_id}", response_model=Service)
 async def update_service(service_id: str, payload: dict, user=Depends(get_current_user)):
+    if user["role"] not in {"super_admin", "accounts"}:
+        raise HTTPException(status_code=403, detail="Only accounts/admin can manage services")
     db = _db()
     existing = await db.services.find_one({"service_id": service_id, "clinic_id": user["clinic_id"]})
     if not existing:
@@ -186,6 +190,8 @@ async def update_service(service_id: str, payload: dict, user=Depends(get_curren
 
 @billing_router.delete("/billing/services/{service_id}")
 async def deactivate_service(service_id: str, user=Depends(get_current_user)):
+    if user["role"] not in {"super_admin", "accounts"}:
+        raise HTTPException(status_code=403, detail="Only accounts/admin can manage services")
     db = _db()
     res = await db.services.update_one(
         {"service_id": service_id, "clinic_id": user["clinic_id"]},
