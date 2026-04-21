@@ -162,8 +162,8 @@ const SpeechPanel = ({ data, onChange }) => {
       </div>
 
       {/* ============ BOTTOM: Speech Audiogram (WRS curve) ============ */}
-      <div className="bg-white border border-gray-300 rounded shadow-sm flex-1 flex flex-col min-h-0">
-        <div className="bg-gray-100 border-b border-gray-300 px-3 py-1.5 flex items-center justify-between">
+      <div className="bg-white border border-gray-300 rounded shadow-sm flex flex-col" style={{ height: '420px' }}>
+        <div className="bg-gray-100 border-b border-gray-300 px-3 py-1.5 flex items-center justify-between flex-shrink-0">
           <h3 className="text-sm font-bold text-gray-800">Speech Audiogram (% vs dB HL)</h3>
           <div className="text-[10px] text-gray-500 italic">Click chart to add point · drag sliders to adjust</div>
         </div>
@@ -298,7 +298,7 @@ const SpeechPanel = ({ data, onChange }) => {
           </div>
 
           {/* Right: canvas */}
-          <div className="flex-1 p-2 min-h-[340px]">
+          <div className="flex-1 p-2 overflow-hidden">
             <div className="w-full h-full border border-gray-300 rounded bg-white">
               <SpeechAudiogramCanvas
                 points={currentPoints}
