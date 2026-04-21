@@ -9,6 +9,7 @@ import TabPlaceholder from "./components/TabPlaceholder";
 import PreTestPanel from "./components/PreTestPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import ImpedancePanel from "./components/ImpedancePanel";
+import SpeechPanel from "./components/SpeechPanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -99,8 +100,26 @@ function App() {
       right: { toynbee: {}, valsalva: {}, pressure_app: {} },
       left:  { toynbee: {}, valsalva: {}, pressure_app: {} },
     },
+    etf_intact: {
+      enabled: false,
+      right: { volume: null, pressure_1: null, pressure_2: null, pressure_3: null, notes: '' },
+      left:  { volume: null, pressure_1: null, pressure_2: null, pressure_3: null, notes: '' },
+    },
   };
   const [impedanceData, setImpedanceData] = useState(defaultImpedance);
+
+  // Speech Audiometry
+  const defaultSpeech = {
+    right: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
+    left: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
+    soundfield: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
+    soundfield_aided: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
+    wrs_right: [],
+    wrs_left: [],
+    wrs_soundfield: [],
+    wrs_soundfield_aided: [],
+  };
+  const [speechData, setSpeechData] = useState(defaultSpeech);
   
   // Audiogram data
   const [rightEarData, setRightEarData] = useState({
@@ -165,6 +184,25 @@ function App() {
       if (preTestSaveTimer.current) clearTimeout(preTestSaveTimer.current);
     };
   }, [preTestData, sessionId]);
+
+  // Debounced auto-save of speech audiometry data to backend
+  const speechSaveTimer = useRef(null);
+  useEffect(() => {
+    if (!sessionId) return;
+    if (speechSaveTimer.current) clearTimeout(speechSaveTimer.current);
+    speechSaveTimer.current = setTimeout(async () => {
+      try {
+        await axios.put(`${API}/sessions/${sessionId}`, {
+          speech_data: speechData,
+        });
+      } catch (err) {
+        console.error('Speech save failed', err);
+      }
+    }, 800);
+    return () => {
+      if (speechSaveTimer.current) clearTimeout(speechSaveTimer.current);
+    };
+  }, [speechData, sessionId]);
 
   // Determine active mode and ear from activeTest
   const getActiveMode = () => {
@@ -418,22 +456,9 @@ function App() {
             </div>
           )}
 
-          {/* Speech Tab (Placeholder) */}
+          {/* Speech Audiometry (Full functional panel) */}
           {activeTab === 'speech' && (
-            <TabPlaceholder
-              title="Speech Audiometry"
-              note="Speech reception & recognition under quiet and noise conditions."
-              subtests={[
-                'SRT (Speech Reception Threshold)',
-                'SDT (Speech Detection Threshold)',
-                'PB Word Discrimination (WRS)',
-                'Speech-in-Noise (HINT)',
-                'Sentence tests',
-                'Aided vs Unaided benefit',
-                'MCL / UCL (speech)',
-                'Speech-banana overlay',
-              ]}
-            />
+            <SpeechPanel data={speechData} onChange={setSpeechData} />
           )}
 
           {/* Impedance / Tympanometry (Full functional panel) */}

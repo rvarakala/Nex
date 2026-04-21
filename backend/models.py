@@ -64,6 +64,37 @@ class SpeechTest(BaseModel):
     ucl: Optional[int] = None  # Uncomfortable Loudness Level
 
 
+class SpeechRow(BaseModel):
+    """Single row of the Speech Audiometry grid (Right / Left / Soundfield / Soundfield Aided).
+    All values are free-form strings so clinicians can enter numbers ("55") or
+    markers ("NR", "CNT") interchangeably.
+    """
+    sat: Optional[str] = None
+    srt: Optional[str] = None
+    masking: Optional[str] = None
+    mcl: Optional[str] = None
+    ucl: Optional[str] = None
+
+
+class SpeechWRSPoint(BaseModel):
+    """Single plotted point on the Speech Audiogram (WRS curve)."""
+    db_hl: float
+    percent: float
+    masked: bool = False
+
+
+class SpeechAudiometryData(BaseModel):
+    """Full Speech Audiometry dataset — table rows + WRS curves per ear/soundfield."""
+    right: SpeechRow = Field(default_factory=SpeechRow)
+    left: SpeechRow = Field(default_factory=SpeechRow)
+    soundfield: SpeechRow = Field(default_factory=SpeechRow)
+    soundfield_aided: SpeechRow = Field(default_factory=SpeechRow)
+    wrs_right: List[SpeechWRSPoint] = []
+    wrs_left: List[SpeechWRSPoint] = []
+    wrs_soundfield: List[SpeechWRSPoint] = []
+    wrs_soundfield_aided: List[SpeechWRSPoint] = []
+
+
 # ==================== PRE-TEST MODELS (Case History / Tuning Fork / Otoscopy) ====================
 
 class HearingSpecifics(BaseModel):
@@ -323,6 +354,7 @@ class TestSession(BaseModel):
     # Speech Audiometry
     right_ear_speech: Optional[SpeechTest] = None
     left_ear_speech: Optional[SpeechTest] = None
+    speech_data: Optional[SpeechAudiometryData] = None
     
     # Results Interpretation
     right_ear_degree: Optional[Literal["normal", "slight", "mild", "moderate", "moderately_severe", "severe", "profound"]] = None
@@ -365,6 +397,7 @@ class TestSessionUpdate(BaseModel):
     left_ear_audiogram: Optional[AudiogramData] = None
     right_ear_speech: Optional[SpeechTest] = None
     left_ear_speech: Optional[SpeechTest] = None
+    speech_data: Optional[SpeechAudiometryData] = None
     right_ear_degree: Optional[str] = None
     right_ear_type: Optional[str] = None
     right_ear_config: Optional[str] = None
@@ -375,6 +408,7 @@ class TestSessionUpdate(BaseModel):
     puretone_findings: Optional[str] = None
     immitence_findings: Optional[str] = None
     provisional_diagnosis: Optional[str] = None
+    further_advice: Optional[str] = None
     referred_by: Optional[str] = None
     recommendations: Optional[List[str]] = None
     status: Optional[Literal["draft", "completed", "finalized"]] = None
