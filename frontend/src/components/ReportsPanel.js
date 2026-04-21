@@ -1238,29 +1238,25 @@ const ReportsPanel = ({
             </div>
           </header>
 
-          {/* ===== PATIENT INFO (aligned grid, 4 columns × 2 rows) ===== */}
-          <section className="mt-1.5 border border-gray-400 text-[11px] grid grid-cols-4">
+          {/* ===== PATIENT INFO (single continuous line) ===== */}
+          <section
+            data-testid="report-patient-strip"
+            className="mt-1.5 border border-gray-400 px-2 py-1 text-[11px] leading-snug flex flex-wrap items-center gap-x-4 gap-y-0.5"
+          >
             {[
-              { label: 'Patient Name',    value: patient.name || '—',                                              span: 'col-span-2' },
-              { label: 'MRD / Patient ID', value: mrdEdit || '—',                                                  span: '' },
-              { label: 'Date of Birth',   value: patient.dob || '—',                                               span: '' },
-              { label: 'Age / Gender',    value: `${patient.age ?? '—'}/${(patient.gender || '—').charAt(0).toUpperCase()}`, span: '' },
-              { label: 'Audiologist',     value: audiologistName || '—',                                           span: '' },
-              { label: 'Referred by',     value: referredBy || '—',                                                span: '' },
-              { label: 'Date of Service', value: fmtDate(),                                                        span: '' },
-            ].map((c, i, arr) => {
-              const isLastCol = (i + 1) % 4 === 0 || i === arr.length - 1;
-              const isLastRow = i >= arr.length - (arr.length % 4 || 4);
-              return (
-                <div
-                  key={c.label}
-                  className={`${c.span || ''} px-2 py-1 ${isLastCol ? '' : 'border-r border-gray-300'} ${isLastRow ? '' : 'border-b border-gray-300'}`}
-                >
-                  <div className="text-[8.5px] uppercase text-gray-500 leading-tight tracking-wide">{c.label}</div>
-                  <div className="font-semibold text-[11px] leading-tight">{c.value}</div>
-                </div>
-              );
-            })}
+              { label: 'Patient Name', value: patient.name || '—' },
+              { label: 'Age/Gender',   value: `${patient.age ?? '—'}/${(patient.gender || '—').charAt(0).toUpperCase()}` },
+              { label: 'Referred by',  value: referredBy || '—' },
+              { label: 'MRD',          value: mrdEdit || '—' },
+              { label: 'DOB',          value: patient.dob || '—' },
+              { label: 'Audiologist',  value: audiologistName || '—' },
+              { label: 'Date',         value: fmtDate() },
+            ].map((c) => (
+              <span key={c.label} className="whitespace-nowrap">
+                <span className="text-gray-500">{c.label}:</span>{' '}
+                <span className="font-semibold">{c.value}</span>
+              </span>
+            ))}
           </section>
 
           {/* ===== CONFIGURABLE SECTIONS ===== */}
