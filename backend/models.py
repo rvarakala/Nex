@@ -101,25 +101,16 @@ class WordRecognitionInNoiseRow(BaseModel):
 
 
 class SpeechAudiometryData(BaseModel):
-    """Full Speech Audiometry dataset — table rows + WRS curves + Word Recognition tables."""
-    right: SpeechRow = Field(default_factory=SpeechRow)
-    left: SpeechRow = Field(default_factory=SpeechRow)
-    soundfield: SpeechRow = Field(default_factory=SpeechRow)
-    soundfield_aided: SpeechRow = Field(default_factory=SpeechRow)
+    """Speech Audiometry dataset.
+    - WRS curves per channel (audiogram plotting points)
+    - `fields` is a flat key→string map for every SRT/SAT/WR/WRN/MCL/UCL/QSIN entry,
+      keeping the model schema-free so we can iterate on the form layout without migrations.
+    """
     wrs_right: List[SpeechWRSPoint] = []
     wrs_left: List[SpeechWRSPoint] = []
     wrs_soundfield: List[SpeechWRSPoint] = []
     wrs_soundfield_aided: List[SpeechWRSPoint] = []
-    # Word Recognition table (4 rows, shared word-list / presentation text)
-    word_list: Optional[str] = None
-    presentation: Optional[str] = None
-    wr_right: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
-    wr_left: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
-    wr_soundfield_right: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
-    wr_soundfield_left: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
-    # Word Recognition in Noise table (2 rows)
-    wrn_right: WordRecognitionInNoiseRow = Field(default_factory=WordRecognitionInNoiseRow)
-    wrn_left: WordRecognitionInNoiseRow = Field(default_factory=WordRecognitionInNoiseRow)
+    fields: Dict[str, str] = Field(default_factory=dict)
 
 
 # ==================== PRE-TEST MODELS (Case History / Tuning Fork / Otoscopy) ====================

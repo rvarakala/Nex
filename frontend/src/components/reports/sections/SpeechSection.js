@@ -2,88 +2,43 @@ import React from 'react';
 import SpeechAudiogramCanvas from '../../SpeechAudiogramCanvas';
 import { SectionTitle } from '../SectionTitle';
 
-const SPEECH_ROWS = [
-  { key: 'right',            label: 'Right',            color: 'text-red-600' },
-  { key: 'left',             label: 'Left',             color: 'text-blue-600' },
-  { key: 'soundfield',       label: 'Soundfield',       color: 'text-green-700' },
-  { key: 'soundfield_aided', label: 'Soundfield Aided', color: 'text-pink-700' },
-];
-const WR_ROWS = [
-  { key: 'wr_right',            label: 'Right',            color: 'text-red-600' },
-  { key: 'wr_left',             label: 'Left',             color: 'text-blue-600' },
-  { key: 'wr_soundfield_right', label: 'Soundfield Right', color: 'text-green-700' },
-  { key: 'wr_soundfield_left',  label: 'Soundfield Left',  color: 'text-green-700' },
-];
-const WRN_ROWS = [
-  { key: 'wrn_right', label: 'Right', color: 'text-red-600' },
-  { key: 'wrn_left',  label: 'Left',  color: 'text-blue-600' },
-];
-
 const cell = (v) => (v === null || v === undefined || v === '' ? '—' : v);
 
-// Speech Audiometry section for the printed report:
-//   1. Speech Audiometry table (SAT / SRT / Masking / MCL / UCL)
-//   2. Speech Audiogram (WRS curve chart)
-//   3. Word Recognition table (Word List + Presentation pair)
-//   4. Word Recognition in Noise table
-// Any missing sub-section is skipped silently.
+const Tag = ({ children }) => (
+  <td className="w-12 align-middle bg-gray-700 text-white text-[9px] font-bold text-center" rowSpan={1}>
+    {children}
+  </td>
+);
+
+// Compact "label: value" inline helper used for each field in the report printout.
+const Pair = ({ label, value, color = 'text-gray-700' }) => (
+  <span className="inline-flex items-center gap-1 mr-3 whitespace-nowrap">
+    <span className={`text-[9px] font-semibold ${color}`}>{label}</span>
+    <span className="font-mono text-[10px] border-b border-gray-300 px-1 min-w-[32px] inline-block text-center">
+      {cell(value)}
+    </span>
+  </span>
+);
+
 export const SpeechSection = ({ speech, channelsToPlot }) => {
   const s = speech || {};
-  const hasSpeechTable = SPEECH_ROWS.some((r) => {
-    const row = s[r.key] || {};
-    return ['sat', 'srt', 'masking', 'mcl', 'ucl'].some((c) => row[c]);
-  });
+  const f = s.fields || {};
+  const hasAnyField = Object.values(f).some((v) => v && String(v).trim() !== '');
   const hasWRS = ['wrs_right', 'wrs_left', 'wrs_soundfield', 'wrs_soundfield_aided']
     .some((k) => (s[k] || []).length > 0);
-  const hasWR = WR_ROWS.some((r) => {
-    const row = s[r.key] || {};
-    return ['db_hl_unaided', 'percent_unaided', 'masking_unaided', 'db_hl_aided', 'percent_aided', 'masking_aided']
-      .some((c) => row[c]);
-  });
-  const hasWRN = WRN_ROWS.some((r) => {
-    const row = s[r.key] || {};
-    return ['db_hl', 'percent', 'noise_level'].some((c) => row[c]);
-  });
 
   const enabled = channelsToPlot || { right: true, left: true, soundfield: false, soundfield_aided: false };
+
+  if (!hasAnyField && !hasWRS) return null;
 
   return (
     <div>
       <SectionTitle>Speech Audiometry</SectionTitle>
 
-      {/* ===== 1. Speech Audiometry table ===== */}
-      {hasSpeechTable && (
-        <table className="w-full text-[11px] border border-gray-400 mb-1">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="border border-gray-400 px-2 py-0.5 text-left"></th>
-              <th className="border border-gray-400 px-2 py-0.5">SAT</th>
-              <th className="border border-gray-400 px-2 py-0.5">SRT</th>
-              <th className="border border-gray-400 px-2 py-0.5">Masking</th>
-              <th className="border border-gray-400 px-2 py-0.5">MCL</th>
-              <th className="border border-gray-400 px-2 py-0.5">UCL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {SPEECH_ROWS.map((r) => (
-              <tr key={r.key}>
-                <td className={`border border-gray-400 px-2 py-0.5 font-semibold ${r.color}`}>{r.label}</td>
-                <td className="border border-gray-400 px-2 py-0.5 text-center">{cell(s[r.key]?.sat)}</td>
-                <td className="border border-gray-400 px-2 py-0.5 text-center">{cell(s[r.key]?.srt)}</td>
-                <td className="border border-gray-400 px-2 py-0.5 text-center">{cell(s[r.key]?.masking)}</td>
-                <td className="border border-gray-400 px-2 py-0.5 text-center">{cell(s[r.key]?.mcl)}</td>
-                <td className="border border-gray-400 px-2 py-0.5 text-center">{cell(s[r.key]?.ucl)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* ===== 2. Speech Audiogram (WRS curve) ===== */}
+      {/* ===== Speech Audiogram (WRS curves) ===== */}
       {hasWRS && (
-        <div className="mt-1 mb-1">
-          <div className="text-[11px] font-semibold text-gray-700 mb-0.5">Speech Audiogram (% vs dB HL)</div>
-          <div className="h-[240px] border border-gray-400 bg-white">
+        <div className="mb-1">
+          <div className="h-[220px] border border-gray-400 bg-white">
             <SpeechAudiogramCanvas
               points={{
                 right: s.wrs_right || [],
@@ -97,94 +52,171 @@ export const SpeechSection = ({ speech, channelsToPlot }) => {
         </div>
       )}
 
-      {/* ===== 3. Word Recognition ===== */}
-      {hasWR && (
-        <div className="mt-2">
-          <div className="text-[11px] font-semibold text-gray-700 mb-0.5">Word Recognition</div>
-          {(s.word_list || s.presentation) && (
-            <div className="grid grid-cols-2 text-[10px] border border-gray-400 border-b-0">
-              <div className="px-2 py-0.5 border-r border-gray-300">
-                <span className="font-semibold text-gray-600">Word List:</span> {s.word_list || '—'}
+      {/* ===== SRT / SAT row ===== */}
+      <table className="w-full text-[10px] border border-gray-400 mb-1">
+        <tbody>
+          <tr>
+            <Tag>SRT / SAT</Tag>
+            <td className="p-1 align-top">
+              <div className="flex flex-wrap gap-y-0.5">
+                <Pair label="R"          value={f.srt_r}        color="text-red-600" />
+                <Pair label="R Masked"   value={f.srt_r_masked} color="text-red-600" />
+                <Pair label="L"          value={f.srt_l}        color="text-blue-600" />
+                <Pair label="L Masked"   value={f.srt_l_masked} color="text-blue-600" />
+                <Pair label="Binaural R" value={f.srt_bin_r}    color="text-red-600" />
+                <Pair label="Binaural L" value={f.srt_bin_l}    color="text-blue-600" />
+                <Pair label="SAT R"      value={f.sat_r}        color="text-red-600" />
+                <Pair label="SAT L"      value={f.sat_l}        color="text-blue-600" />
+                <Pair label="SAT SF"     value={f.sat_sf}       color="text-green-700" />
+                <Pair label="SAT SFA"    value={f.sat_sfa}      color="text-pink-700" />
               </div>
-              <div className="px-2 py-0.5">
-                <span className="font-semibold text-gray-600">Presentation:</span> {s.presentation || '—'}
+              <div className="flex flex-wrap gap-y-0.5 mt-1 pt-1 border-t border-gray-200">
+                <Pair label="DiscrimList" value={f.discrim_list} />
+                <Pair label="Voice Type"  value={f.voice_type} />
+                <Pair label="Reliability" value={f.reliability || 'Good'} />
               </div>
-            </div>
-          )}
-          <table className="w-full text-[10px] border border-gray-400 mb-1">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border border-gray-400 px-1 py-0.5 text-left" rowSpan={2}></th>
-                <th className="border border-gray-400 px-1 py-0.5" colSpan={3}>Word List</th>
-                <th className="border border-gray-400 px-1 py-0.5" colSpan={3}>Presentation</th>
-              </tr>
-              <tr>
-                <th className="border border-gray-400 px-1 py-0.5">dBHL</th>
-                <th className="border border-gray-400 px-1 py-0.5">%</th>
-                <th className="border border-gray-400 px-1 py-0.5">Masking</th>
-                <th className="border border-gray-400 px-1 py-0.5">dBHL</th>
-                <th className="border border-gray-400 px-1 py-0.5">% (aided)</th>
-                <th className="border border-gray-400 px-1 py-0.5">Masking</th>
-              </tr>
-            </thead>
-            <tbody>
-              {WR_ROWS.map((r) => {
-                const isSoundfield = r.key.startsWith('wr_soundfield');
-                const row = s[r.key] || {};
-                return (
-                  <tr key={r.key}>
-                    <td className={`border border-gray-400 px-1 py-0.5 font-semibold ${r.color}`}>{r.label}</td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.db_hl_unaided)}</td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.percent_unaided)}</td>
-                    <td className={`border border-gray-400 px-1 py-0.5 text-center ${isSoundfield ? 'bg-gray-200' : ''}`}>
-                      {isSoundfield ? '' : cell(row.masking_unaided)}
-                    </td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.db_hl_aided)}</td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.percent_aided)}</td>
-                    <td className={`border border-gray-400 px-1 py-0.5 text-center ${isSoundfield ? 'bg-gray-200' : ''}`}>
-                      {isSoundfield ? '' : cell(row.masking_aided)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ===== Word Recognition (Quiet) ===== */}
+      {['unaided', 'aided', 'pipb'].some((row) =>
+        ['r', 'l', 'bin'].some((side) =>
+          ['pct', 'db', 'masked'].some((k) => f[`wr_${row}_${side}_${k}`])
+        )
+      ) && (
+        <table className="w-full text-[10px] border border-gray-400 mb-1">
+          <tbody>
+            <tr>
+              <Tag>WR</Tag>
+              <td className="p-1 align-top">
+                <div className="text-[9px] italic text-gray-500 mb-0.5">Word Recognition (Quiet)</div>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="text-[9px] text-gray-600">
+                      <th className="w-28"></th>
+                      {['R', 'L', 'Binaural'].map((s_) => (
+                        <th key={s_} colSpan={3} className="px-1 py-0.5 border-l border-gray-300">{s_}</th>
+                      ))}
+                    </tr>
+                    <tr className="text-[9px] text-gray-500">
+                      <th></th>
+                      {['r', 'l', 'bin'].map((s_) => (
+                        <React.Fragment key={s_}>
+                          <th className="px-1 py-0 border-l border-gray-200">%</th>
+                          <th className="px-1 py-0">dB</th>
+                          <th className="px-1 py-0">Masked</th>
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { key: 'unaided', label: 'Unaided',      color: 'text-purple-700' },
+                      { key: 'aided',   label: 'Aided',        color: 'text-green-700' },
+                      { key: 'pipb',    label: 'PIPB Unaided', color: 'text-purple-700' },
+                    ].map((row) => (
+                      <tr key={row.key} className="border-t border-gray-200">
+                        <td className={`px-1 py-0 font-semibold ${row.color}`}>{row.label}</td>
+                        {['r', 'l', 'bin'].map((side) => (
+                          <React.Fragment key={side}>
+                            <td className="px-1 py-0 text-center font-mono border-l border-gray-200">{cell(f[`wr_${row.key}_${side}_pct`])}</td>
+                            <td className="px-1 py-0 text-center font-mono">{cell(f[`wr_${row.key}_${side}_db`])}</td>
+                            <td className="px-1 py-0 text-center font-mono">{cell(f[`wr_${row.key}_${side}_masked`])}</td>
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       )}
 
-      {/* ===== 4. Word Recognition in Noise ===== */}
-      {hasWRN && (
-        <div className="mt-2">
-          <div className="text-[11px] font-semibold text-gray-700 mb-0.5">Word Recognition in Noise</div>
-          <table className="w-full text-[10px] border border-gray-400">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border border-gray-400 px-1 py-0.5 text-left"></th>
-                <th className="border border-gray-400 px-1 py-0.5">dBHL</th>
-                <th className="border border-gray-400 px-1 py-0.5">%</th>
-                <th className="border border-gray-400 px-1 py-0.5">N. Level</th>
-              </tr>
-            </thead>
-            <tbody>
-              {WRN_ROWS.map((r) => {
-                const row = s[r.key] || {};
-                return (
-                  <tr key={r.key}>
-                    <td className={`border border-gray-400 px-1 py-0.5 font-semibold ${r.color}`}>{r.label}</td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.db_hl)}</td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.percent)}</td>
-                    <td className="border border-gray-400 px-1 py-0.5 text-center">{cell(row.noise_level)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* ===== Word Recognition in Noise ===== */}
+      {['r', 'l', 'bin'].some((side) =>
+        ['pct', 'db', 'noise'].some((k) => f[`wrn_${side}_${k}`])
+      ) && (
+        <table className="w-full text-[10px] border border-gray-400 mb-1">
+          <tbody>
+            <tr>
+              <Tag>WRN</Tag>
+              <td className="p-1 align-top">
+                <div className="text-[9px] italic text-gray-500 mb-0.5">Word Recognition in Noise</div>
+                <div className="flex gap-x-6">
+                  {[
+                    { side: 'r', label: 'R', color: 'text-red-600' },
+                    { side: 'l', label: 'L', color: 'text-blue-600' },
+                    { side: 'bin', label: 'Binaural', color: 'text-gray-700' },
+                  ].map((col) => (
+                    <div key={col.side} className="flex items-center gap-1">
+                      <span className={`text-[10px] font-bold ${col.color} w-14`}>{col.label}</span>
+                      <Pair label="%"     value={f[`wrn_${col.side}_pct`]} />
+                      <Pair label="dB"    value={f[`wrn_${col.side}_db`]} />
+                      <Pair label="Noise" value={f[`wrn_${col.side}_noise`]} />
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       )}
 
-      {/* Empty-state hint if nothing entered */}
-      {!hasSpeechTable && !hasWRS && !hasWR && !hasWRN && (
-        <div className="text-[11px] italic text-gray-500">(no speech audiometry data recorded)</div>
+      {/* ===== MCL / Quick SIN / UCL-LDL ===== */}
+      {['mcl_r', 'mcl_l', 'mcl_bin_1', 'mcl_bin_2',
+        'qsin_r_score', 'qsin_bin_score', 'qsin_l_score',
+        'qsin_r_level', 'qsin_bin_level', 'qsin_l_level',
+        'ucl_r', 'ucl_l', 'ucl_bin_1', 'ucl_bin_2'].some((k) => f[k]) && (
+        <table className="w-full text-[10px] border border-gray-400">
+          <tbody>
+            <tr>
+              <Tag>MCL / UCL</Tag>
+              <td className="p-1 align-top">
+                <div className="grid grid-cols-3 gap-x-4">
+                  <div>
+                    <div className="text-[9px] italic text-gray-500 mb-0.5">Most Comfortable Level</div>
+                    <div className="flex flex-wrap gap-y-0.5">
+                      <Pair label="R"        value={f.mcl_r}     color="text-red-600" />
+                      <Pair label="L"        value={f.mcl_l}     color="text-blue-600" />
+                      <Pair label="Binaural" value={f.mcl_bin_1} />
+                      <Pair label="Binaural" value={f.mcl_bin_2} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] italic text-gray-500 mb-0.5">Quick SIN</div>
+                    <div>
+                      <div className="text-[9px] text-gray-600">Score</div>
+                      <div className="flex flex-wrap gap-y-0.5">
+                        <Pair label="R"        value={f.qsin_r_score}   color="text-red-600" />
+                        <Pair label="Binaural" value={f.qsin_bin_score} />
+                        <Pair label="L"        value={f.qsin_l_score}   color="text-blue-600" />
+                      </div>
+                      <div className="text-[9px] text-gray-600 mt-0.5">Level</div>
+                      <div className="flex flex-wrap gap-y-0.5">
+                        <Pair label="R"        value={f.qsin_r_level}   color="text-red-600" />
+                        <Pair label="Binaural" value={f.qsin_bin_level} />
+                        <Pair label="L"        value={f.qsin_l_level}   color="text-blue-600" />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] italic text-gray-500 mb-0.5">Uncomfortable Level / LDL</div>
+                    <div className="flex flex-wrap gap-y-0.5">
+                      <Pair label="R"        value={f.ucl_r}     color="text-red-600" />
+                      <Pair label="L"        value={f.ucl_l}     color="text-blue-600" />
+                      <Pair label="Binaural" value={f.ucl_bin_1} />
+                      <Pair label="Binaural" value={f.ucl_bin_2} />
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       )}
     </div>
   );

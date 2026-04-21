@@ -110,22 +110,11 @@ function App() {
 
   // Speech Audiometry
   const defaultSpeech = {
-    right: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
-    left: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
-    soundfield: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
-    soundfield_aided: { sat: null, srt: null, masking: null, mcl: null, ucl: null },
     wrs_right: [],
     wrs_left: [],
     wrs_soundfield: [],
     wrs_soundfield_aided: [],
-    word_list: '',
-    presentation: '',
-    wr_right: {},
-    wr_left: {},
-    wr_soundfield_right: {},
-    wr_soundfield_left: {},
-    wrn_right: {},
-    wrn_left: {},
+    fields: {},
   };
   const [speechData, setSpeechData] = useState(defaultSpeech);
   
