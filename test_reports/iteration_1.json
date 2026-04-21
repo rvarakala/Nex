@@ -1,0 +1,35 @@
+{
+  "summary": "End-to-end tested the new AI-Powered Report Narrative Generation feature (Claude Sonnet 4.5 via Emergent LLM Key). Backend: 7/7 pytest cases passed (health, /api/ai/narrative/generate for target=all/puretone_findings/immitence_findings/recommendations, invalid target, unknown session). Frontend: all 6 AI buttons render with correct data-testids, show 'Drafting…' loading state, and populate the corresponding textareas with clinically accurate narrative within 5-8 seconds when the session has PTA + tympanometry data. Preview pane reflects populated narrative correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai/narrative/generate", "issue": "Invalid target values return 422 (FastAPI Literal validation) rather than 400 as the review request hinted. Both are acceptable; test accepts 400 or 422."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "AI narrative generation on empty session", "issue": "When the auto-created session has NO clinical data, the backend (correctly per prompt) returns puretone_findings=\"\" and the frontend silently sets the empty string — no user feedback / toast indicating 'No clinical data yet — enter audiogram data first'. Could confuse clinicians who click AI before populating Pure Tone tab.", "affected_selectors": ["[data-testid='ai-generate-puretone_findings']", "[data-testid='ai-generate-all']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_ai_narrative.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "OPTIONAL UX polish: Show a subtle inline hint/toast on AI buttons when the server returns an empty string (e.g., 'AI returned no content — try adding audiogram data first'). This would prevent the current silent-no-op UX when a clinician clicks AI on an empty session.",
+    "OPTIONAL: Align the _Literal validation error status code to 400 via a custom exception handler if the spec strictly requires 400 (currently 422)."
+  ],
+  "critical_code_review_comments": [
+    "ai_narrative.py is clean and well-structured (~370 lines, single responsibility). Uses emergentintegrations + claude-sonnet-4-5-20250929 correctly with async send_message.",
+    "server.py AIGenerateRequest uses Pydantic Literal — rejects invalid targets as 422 before reaching the ValueError-raising generate_narrative. The VALUE_TARGETS check inside generate_narrative is therefore unreachable for the HTTP path; harmless but dead code.",
+    "BuilderSidebar.runAIGenerate uses a 60s axios timeout — fine, but there is no AbortController on tab switch, so switching away mid-request will still set state on an unmounted re-render path. Minor; React will warn but it works.",
+    "No retry/backoff on LLM 5xx; acceptable for MVP but consider adding one retry for transient Claude errors."
+  ],
+  "updated_files": ["/app/backend/tests/test_ai_narrative.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% (with populated session)"},
+  "test_credentials": "N/A — no auth on this app",
+  "seed_data_creation": "Backend tests create TEST_AI_Patient + a session populated with bilateral sloping SNHL AC/BC thresholds and Type A tymps. Frontend test seeds the auto-created session via fetch PUT /api/sessions/{id} with the same clinical data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "AI narrative endpoint fully verified. If re-testing, remember: the frontend auto-creates an empty session on load, so you MUST seed clinical data (PTA + tympanometry) either via Pure Tone tab clicks or via fetch PUT /api/sessions/{id} before clicking AI buttons — otherwise the LLM correctly returns empty strings (per prompt spec) and textareas stay blank, which is NOT a bug. Test file /app/backend/tests/test_ai_narrative.py runs in ~21s and exercises all target variants.",
+  "rca of the issue": "Initial frontend click produced no textarea population. RCA: the auto-created session had no audiogram/tympanometry data, so the Claude prompt's rule 'If data for a requested field is missing/empty, return an empty string' kicked in correctly — backend returned 200 with puretone_findings=\"\". Frontend faithfully applied the empty string. After seeding clinical data via PUT /api/sessions/{id}, the AI button populated the textarea in ~5s with clinically accurate content. NOT A BUG in the AI integration — just a UX gap (no feedback on empty result)."
+}

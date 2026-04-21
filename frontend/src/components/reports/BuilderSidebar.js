@@ -1,5 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
+import axios from 'axios';
 import { DEFAULT_CLINIC, fileToResizedBase64 } from './constants';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 const PrintIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -8,6 +12,45 @@ const PrintIcon = () => (
     <rect x="6" y="14" width="12" height="8"></rect>
   </svg>
 );
+
+const SparkleIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"></path>
+  </svg>
+);
+
+// Calls the backend and invokes setters for the returned fields.
+// targets: "all" | "puretone_findings" | "immitence_findings" | "speech_findings" | "recommendations" | "further_advice"
+const runAIGenerate = async ({ sessionId, target, setters, onStart, onEnd, onError }) => {
+  if (!sessionId) {
+    onError?.('No active session yet — please wait a moment and try again.');
+    return;
+  }
+  onStart?.();
+  try {
+    const res = await axios.post(`${API}/ai/narrative/generate`, {
+      session_id: sessionId,
+      target,
+    }, { timeout: 60000 });
+    const result = res?.data?.result || {};
+    if (target === 'all') {
+      if (typeof result.puretone_findings === 'string')   setters.setPtFindings?.(result.puretone_findings);
+      if (typeof result.immitence_findings === 'string')  setters.setImmFindings?.(result.immitence_findings);
+      if (typeof result.speech_findings === 'string')     setters.setSpeechFindings?.(result.speech_findings);
+      if (Array.isArray(result.recommendations))          setters.setRecText?.(result.recommendations.join('\n'));
+      if (typeof result.further_advice === 'string')      setters.setFurtherAdvice?.(result.further_advice);
+    } else if (target === 'puretone_findings'  && typeof result.puretone_findings === 'string')  setters.setPtFindings?.(result.puretone_findings);
+    else if  (target === 'immitence_findings' && typeof result.immitence_findings === 'string') setters.setImmFindings?.(result.immitence_findings);
+    else if  (target === 'speech_findings'    && typeof result.speech_findings === 'string')    setters.setSpeechFindings?.(result.speech_findings);
+    else if  (target === 'recommendations'    && Array.isArray(result.recommendations))         setters.setRecText?.(result.recommendations.join('\n'));
+    else if  (target === 'further_advice'     && typeof result.further_advice === 'string')     setters.setFurtherAdvice?.(result.further_advice);
+  } catch (err) {
+    console.error('AI generate failed', err);
+    onError?.(err?.response?.data?.detail || err?.message || 'AI generation failed');
+  } finally {
+    onEnd?.();
+  }
+};
 
 const ClinicBrandingPanel = ({ clinic, setClinic }) => {
   const logoFileRef = useRef(null);
@@ -296,19 +339,57 @@ const AudiogramSizeToggle = ({ audiogramSize, setAudiogramSize, useSeparatePage 
   );
 };
 
-const Textarea = ({ label, testid, value, onChange, rows = 3, placeholder }) => (
-  <div>
-    <div className="text-[10px] font-bold text-gray-600 mb-1">{label}</div>
-    <textarea
-      data-testid={testid}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      rows={rows}
-      placeholder={placeholder}
-      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
-    />
-  </div>
-);
+const Textarea = ({ label, testid, value, onChange, rows = 3, placeholder, aiTarget, aiCtx }) => {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const showAI = !!aiTarget && !!aiCtx;
+  const disabled = busy || (showAI && aiCtx.bulkBusy);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[10px] font-bold text-gray-600">{label}</div>
+        {showAI && (
+          <button
+            type="button"
+            onClick={() => runAIGenerate({
+              sessionId: aiCtx.sessionId,
+              target: aiTarget,
+              setters: aiCtx.setters,
+              onStart: () => { setBusy(true); setErr(null); },
+              onEnd:   () => setBusy(false),
+              onError: (m) => setErr(m),
+            })}
+            disabled={disabled}
+            data-testid={`ai-generate-${aiTarget}`}
+            title="Draft this field with AI using the current session data"
+            className={`inline-flex items-center gap-0.5 px-1.5 py-[1px] text-[9px] font-semibold rounded border transition-colors ${
+              disabled
+                ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
+                : 'bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100'
+            }`}
+          >
+            {busy ? (
+              <span className="animate-pulse">Drafting…</span>
+            ) : (
+              <><SparkleIcon /><span>AI</span></>
+            )}
+          </button>
+        )}
+      </div>
+      <textarea
+        data-testid={testid}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
+      />
+      {err && (
+        <div className="text-[9px] text-red-600 mt-0.5" data-testid={`ai-error-${aiTarget}`}>{err}</div>
+      )}
+    </div>
+  );
+};
 
 const TextInput = ({ label, testid, value, onChange, placeholder }) => (
   <div>
@@ -344,9 +425,30 @@ export const BuilderSidebar = ({
   recText, setRecText,
   furtherAdvice, setFurtherAdvice,
   license, setLicense,
+  // AI
+  sessionId,
   // Actions
   onPrint,
-}) => (
+}) => {
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkErr, setBulkErr] = useState(null);
+
+  const aiCtx = {
+    sessionId,
+    bulkBusy,
+    setters: { setPtFindings, setImmFindings, setSpeechFindings, setRecText, setFurtherAdvice },
+  };
+
+  const handleGenerateAll = () => runAIGenerate({
+    sessionId,
+    target: 'all',
+    setters: aiCtx.setters,
+    onStart: () => { setBulkBusy(true); setBulkErr(null); },
+    onEnd:   () => setBulkBusy(false),
+    onError: (m) => setBulkErr(m),
+  });
+
+  return (
   <aside className="w-[280px] flex-shrink-0 bg-white border-r border-gray-300 overflow-auto no-print">
     <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-2 py-1 border-b border-gray-300 sticky top-0 z-10">
       <h3 className="text-xs font-bold text-gray-700">Report Builder</h3>
@@ -361,6 +463,33 @@ export const BuilderSidebar = ({
         <PrintIcon />
         Print / Save as PDF
       </button>
+
+      {/* Bulk AI narrative */}
+      <div className="border border-violet-300 bg-gradient-to-r from-violet-50 to-fuchsia-50 rounded p-1.5">
+        <button
+          onClick={handleGenerateAll}
+          disabled={bulkBusy || !sessionId}
+          data-testid="ai-generate-all"
+          title="Let AI draft Puretone, Immitence, Speech findings + Recommendations + Further Advice in one go."
+          className={`w-full flex items-center justify-center gap-1 text-[11px] font-bold py-1 rounded transition-colors ${
+            bulkBusy || !sessionId
+              ? 'bg-violet-200 text-violet-500 cursor-not-allowed'
+              : 'bg-violet-600 hover:bg-violet-700 text-white shadow-sm'
+          }`}
+        >
+          {bulkBusy ? (
+            <span className="animate-pulse">Drafting full narrative…</span>
+          ) : (
+            <><SparkleIcon /><span>Generate full narrative with AI</span></>
+          )}
+        </button>
+        <div className="text-[9px] text-violet-700 mt-0.5 leading-tight">
+          Uses test data (PTA, tympanometry, speech, reflexes) to draft findings + recommendations. Review before signing.
+        </div>
+        {bulkErr && (
+          <div className="text-[9px] text-red-600 mt-0.5" data-testid="ai-bulk-error">{bulkErr}</div>
+        )}
+      </div>
 
       <ClinicBrandingPanel clinic={clinic} setClinic={setClinic} />
 
@@ -390,6 +519,8 @@ export const BuilderSidebar = ({
         value={ptFindings}
         onChange={setPtFindings}
         placeholder="Bilateral mild sloping SNHL…"
+        aiTarget="puretone_findings"
+        aiCtx={aiCtx}
       />
       <Textarea
         label="Results — Immitence findings"
@@ -397,6 +528,8 @@ export const BuilderSidebar = ({
         value={immFindings}
         onChange={setImmFindings}
         placeholder="Type A tympanograms bilaterally; acoustic reflexes present at normal levels…"
+        aiTarget="immitence_findings"
+        aiCtx={aiCtx}
       />
       <Textarea
         label="Results — Speech Audiometry findings"
@@ -404,6 +537,8 @@ export const BuilderSidebar = ({
         value={speechFindings}
         onChange={setSpeechFindings}
         placeholder="SRT consistent with PTA; excellent word recognition in quiet; mild deterioration in noise…"
+        aiTarget="speech_findings"
+        aiCtx={aiCtx}
       />
       <TextInput
         label="Referred by"
@@ -425,6 +560,8 @@ export const BuilderSidebar = ({
         onChange={setRecText}
         rows={5}
         placeholder={'Binaural amplification trial.\nCommunication strategies counselling.\nAnnual audiometric re-evaluation.'}
+        aiTarget="recommendations"
+        aiCtx={aiCtx}
       />
       <Textarea
         label="Further Advice (ENT)"
@@ -432,6 +569,8 @@ export const BuilderSidebar = ({
         value={furtherAdvice}
         onChange={setFurtherAdvice}
         placeholder="ENT consultation for…"
+        aiTarget="further_advice"
+        aiCtx={aiCtx}
       />
       <TextInput
         label="Audiologist License #"
@@ -442,4 +581,5 @@ export const BuilderSidebar = ({
       />
     </div>
   </aside>
-);
+  );
+};

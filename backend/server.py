@@ -19,6 +19,11 @@ from models import (
 # Import PDF generator
 from pdf_generator import generate_report_pdf
 
+# Import AI narrative generator
+from ai_narrative import generate_narrative, VALID_TARGETS
+from pydantic import BaseModel as _PydBaseModel
+from typing import Optional as _Optional, Literal as _Literal
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -246,6 +251,46 @@ async def generate_session_report(session_id: str):
     except Exception as e:
         logging.error(f"Error generating PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+
+# ==================== AI NARRATIVE GENERATION ====================
+
+class AIGenerateRequest(_PydBaseModel):
+    session_id: str
+    target: _Literal[
+        "all",
+        "puretone_findings",
+        "immitence_findings",
+        "speech_findings",
+        "recommendations",
+        "further_advice",
+    ] = "all"
+
+
+@api_router.post("/ai/narrative/generate")
+async def ai_generate_narrative(req: AIGenerateRequest):
+    """Generate AI-drafted clinical narrative for one or all report fields.
+
+    Uses Claude Sonnet 4.5 via Emergent LLM Key. Reads the latest saved session
+    data for the provided `session_id` and returns structured JSON the frontend
+    can map directly into Report Builder textareas.
+    """
+    session = await db.test_sessions.find_one({"session_id": req.session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    patient = await db.patients.find_one({"patient_id": session.get("patient_id")}, {"_id": 0})
+    # Patient may be missing in demo/mock mode — that's OK, narrative still works.
+
+    try:
+        result = await generate_narrative(session, patient, req.target)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.exception("AI narrative generation failed")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+    return {"target": req.target, "result": result}
+
 
 # Include the router in the main app
 app.include_router(api_router)

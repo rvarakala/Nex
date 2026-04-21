@@ -31,7 +31,7 @@ const ReportsPanel = ({
   abrData,
   pediatricData,
   tinnitusData,
-  sessionId, // eslint-disable-line no-unused-vars
+  sessionId,
   audiologistName,
   clinicalImpression,
   recommendations,
@@ -171,6 +171,7 @@ const ReportsPanel = ({
         recText={recText} setRecText={setRecText}
         furtherAdvice={furtherAdvice} setFurtherAdvice={setFurtherAdvice}
         license={license} setLicense={setLicense}
+        sessionId={sessionId}
         onPrint={handlePrint}
       />
 
