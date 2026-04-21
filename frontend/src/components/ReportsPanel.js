@@ -68,9 +68,11 @@ const ReportsPanel = ({
     } catch { /* ignore quota errors */ }
   }, [clinic]);
 
-  // Auto rule: Reflex Decay or ET Dysfunction -> separate page
+  // Auto rule: if Reflex Decay, ET Dysfunction, or ETF-Intact are enabled, default to separate page
   const autoSeparatePage = !!(
-    impedanceData?.reflex_decay?.enabled || impedanceData?.et_dysfunction?.enabled
+    impedanceData?.reflex_decay?.enabled ||
+    impedanceData?.et_dysfunction?.enabled ||
+    impedanceData?.etf_intact?.enabled
   );
   const useSeparatePage =
     tympPlacement === 'separate' ||
