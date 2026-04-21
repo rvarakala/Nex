@@ -97,7 +97,15 @@ const SpeechPanel = ({ data, onChange }) => {
 
   const addPoint = (dbHl, percent, masked = false) => {
     const key = wrsKey(activeChannel);
-    const next = [...(speech[key] || []), { db_hl: Number(dbHl), percent: Number(percent), masked }];
+    const db = Number(dbHl);
+    const pct = Number(percent);
+    const existing = speech[key] || [];
+    // Replace-or-append: behave like Pure Tone audiometry where plotting at the
+    // same frequency/dB overwrites the previous value instead of stacking.
+    const filtered = existing.filter((p) => p.db_hl !== db);
+    const next = [...filtered, { db_hl: db, percent: pct, masked }].sort(
+      (a, b) => a.db_hl - b.db_hl
+    );
     onChange({ ...speech, [key]: next });
   };
 
