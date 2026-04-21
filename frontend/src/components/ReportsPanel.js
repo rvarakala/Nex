@@ -52,6 +52,7 @@ const ReportsPanel = ({
   const [license, setLicense] = useState('');
   const [ptFindings, setPtFindings] = useState('');
   const [immFindings, setImmFindings] = useState('');
+  const [speechFindings, setSpeechFindings] = useState('');
   const [referredBy, setReferredBy] = useState('');
   const [mrdEdit, setMrdEdit] = useState(patient?.patient_id || '');
 
@@ -90,13 +91,14 @@ const ReportsPanel = ({
         clinical_impression: resultsText,
         puretone_findings: ptFindings,
         immitence_findings: immFindings,
+        speech_findings: speechFindings,
         referred_by: referredBy,
         further_advice: furtherAdvice,
         recommendations: recText.split('\n').map((l) => l.trim()).filter(Boolean),
       });
     }, 800);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [resultsText, recText, ptFindings, immFindings, referredBy, furtherAdvice, onPersist]);
+  }, [resultsText, recText, ptFindings, immFindings, speechFindings, referredBy, furtherAdvice, onPersist]);
 
   const toggleSection = (id) =>
     setSections((s) => s.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
@@ -113,6 +115,17 @@ const ReportsPanel = ({
     () => buildCaseHistoryNarrative(patient, preTestData?.case_history || {}),
     [patient, preTestData]
   );
+
+  // Which test sections are currently toggled ON — used to decide which Results
+  // findings cells to show. Impedance also shows when Tymp is on a separate page.
+  const isEnabled = (id) => !!sections.find((s) => s.id === id && s.enabled);
+  const buildResultEntries = () => {
+    const list = [];
+    if (isEnabled('pure_tone'))    list.push({ key: 'pt',     title: 'Puretone Audiometry Findings', text: ptFindings });
+    if (isEnabled('speech'))       list.push({ key: 'speech', title: 'Speech Audiometry Findings',   text: speechFindings });
+    if (isEnabled('tympanometry')) list.push({ key: 'imm',    title: 'Immitence Audiometry Findings', text: immFindings });
+    return list;
+  };
 
   // ========== Section renderer ==========
   const renderSection = (id) => {
@@ -147,7 +160,7 @@ const ReportsPanel = ({
       case 'tympanometry':
         return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
       case 'results':
-        return <ResultsGridSection key={id} puretone={ptFindings} immitence={immFindings} />;
+        return <ResultsGridSection key={id} entries={buildResultEntries()} />;
       case 'recommendations':
         return (
           <RecommendationsAdviceSection
@@ -189,6 +202,7 @@ const ReportsPanel = ({
         setAudiogramSize={setAudiogramSize}
         ptFindings={ptFindings} setPtFindings={setPtFindings}
         immFindings={immFindings} setImmFindings={setImmFindings}
+        speechFindings={speechFindings} setSpeechFindings={setSpeechFindings}
         referredBy={referredBy} setReferredBy={setReferredBy}
         mrdEdit={mrdEdit} setMrdEdit={setMrdEdit}
         recText={recText} setRecText={setRecText}
@@ -235,7 +249,7 @@ const ReportsPanel = ({
 
               {sections.find((s) => s.id === 'results' && s.enabled) && (
                 <div className="mt-4">
-                  <ResultsGridSection puretone={ptFindings} immitence={immFindings} />
+                  <ResultsGridSection entries={buildResultEntries()} />
                 </div>
               )}
               {sections.find((s) => s.id === 'recommendations' && s.enabled) && (

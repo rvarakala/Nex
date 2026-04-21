@@ -425,6 +425,7 @@ class TestSessionUpdate(BaseModel):
     clinical_impression: Optional[str] = None
     puretone_findings: Optional[str] = None
     immitence_findings: Optional[str] = None
+    speech_findings: Optional[str] = None
     provisional_diagnosis: Optional[str] = None
     further_advice: Optional[str] = None
     referred_by: Optional[str] = None

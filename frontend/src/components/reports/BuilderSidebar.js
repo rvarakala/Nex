@@ -338,6 +338,7 @@ export const BuilderSidebar = ({
   // Editable textareas / inputs
   ptFindings, setPtFindings,
   immFindings, setImmFindings,
+  speechFindings, setSpeechFindings,
   referredBy, setReferredBy,
   mrdEdit, setMrdEdit,
   recText, setRecText,
@@ -396,6 +397,13 @@ export const BuilderSidebar = ({
         value={immFindings}
         onChange={setImmFindings}
         placeholder="Type A tympanograms bilaterally; acoustic reflexes present at normal levels…"
+      />
+      <Textarea
+        label="Results — Speech Audiometry findings"
+        testid="report-speech-findings"
+        value={speechFindings}
+        onChange={setSpeechFindings}
+        placeholder="SRT consistent with PTA; excellent word recognition in quiet; mild deterioration in noise…"
       />
       <TextInput
         label="Referred by"
