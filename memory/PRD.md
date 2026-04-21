@@ -74,6 +74,7 @@ no modern SaaS fluff).
   All 6 share a schema-free `Dict[str, Dict[str, str]]` backend model (`special_tests_data`, `oae_data`, `soundfield_data`, `abr_data`, `pediatric_data`, `tinnitus_data`) on both `TestSession` and `TestSessionUpdate`. Auto-saves via a single debounced effect.
   Shared `ClinicalFormKit.js` module provides `CFField`, `CFSelect`, `CFSectionRow` (black-tag styled section), and `CFFreqTable` (freq × measurement grid with ear rows).
   Report rendering via generic `GenericClinicalSection.js` — walks populated fields, humanises keys (Wave I / III-V / SNR / SRT / dB etc.), alternates row shading, and prints an Impression line at the bottom. 6 new toggleable sections added to Report Builder sidebar (default OFF).
+- [Feb 2026] **Section-registry refactor**: extracted the `ReportsPanel.js` renderSection switch (14 sections) into a flat `reports/sectionRegistry.js` map keyed by section id. Each entry is a pure `(ctx) => ReactNode | null` function that receives a shared `sectionContext`. `ReportsPanel.js` slimmed from 289 → 233 lines (-19%); adding a new section is now a one-line registry entry (no more touching main panel). Lint clean, zero runtime regressions, verified with all 14 sections enabled.
 
 ## Backlog / Roadmap
 

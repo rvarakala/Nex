@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 
-// Constants, narrative builder, and report building blocks
-import { CLINIC_STORAGE_KEY, TOGGLEABLE_SECTIONS, loadClinic } from './reports/constants';
+// Constants, narrative builder
+import { CLINIC_STORAGE_KEY, TOGGLEABLE_SECTIONS, loadClinic, fmtDate } from './reports/constants';
 import { buildCaseHistoryNarrative } from './reports/narrative';
 
 // Layout pieces
@@ -9,23 +9,14 @@ import { ReportHeader } from './reports/layout/ReportHeader';
 import { PatientStrip } from './reports/layout/PatientStrip';
 import { SignatureFooter } from './reports/layout/SignatureFooter';
 
-// Body sections
-import { CaseHistorySection } from './reports/sections/CaseHistorySection';
-import { PureToneSection } from './reports/sections/PureToneSection';
-import { TuningForkSection } from './reports/sections/TuningForkSection';
-import { OtoscopySection } from './reports/sections/OtoscopySection';
-import { PlaceholderTable } from './reports/sections/PlaceholderTable';
-import { SpeechSection } from './reports/sections/SpeechSection';
-import { GenericClinicalSection } from './reports/sections/GenericClinicalSection';
+// Registry + sections only used directly by the deferred-page layout
+import { renderSectionById } from './reports/sectionRegistry';
 import { ResultsGridSection } from './reports/sections/ResultsGridSection';
 import { RecommendationsAdviceSection } from './reports/sections/RecommendationsAdviceSection';
-import { TympanometryInlineSection, TympanometryFullPage } from './reports/TympanometrySections';
+import { TympanometryFullPage } from './reports/TympanometrySections';
 
 // Builder sidebar (left aside)
 import { BuilderSidebar } from './reports/BuilderSidebar';
-
-// Mini utilities
-import { fmtDate } from './reports/constants';
 
 const ReportsPanel = ({
   patient,
@@ -134,63 +125,16 @@ const ReportsPanel = ({
     return list;
   };
 
-  // ========== Section renderer ==========
-  const renderSection = (id) => {
-    switch (id) {
-      case 'case_history':
-        return <CaseHistorySection key={id} narrative={caseHistoryNarrative} />;
-      case 'pure_tone': {
-        const tfSectionEnabled = !!sections.find((s) => s.id === 'tuning_fork' && s.enabled);
-        // Only apply custom audiogram size when there is vertical room (i.e. Tymp on a separate page).
-        // Otherwise stay at the compact "standard" height to preserve single-A4 fit.
-        const effectiveSize = useSeparatePage ? audiogramSize : 'standard';
-        return (
-          <PureToneSection
-            key={id}
-            rightEar={rightEarData}
-            leftEar={leftEarData}
-            mode={audiogramMode}
-            tuningFork={preTestData?.tuning_fork}
-            showTuningForkMini={tfSectionEnabled && !tuningForkFull}
-            size={effectiveSize}
-          />
-        );
-      }
-      case 'tuning_fork':
-        return tuningForkFull
-          ? <TuningForkSection key={id} tf={preTestData?.tuning_fork} showABC={showABC} showBing={showBing} />
-          : null;
-      case 'otoscopy':
-        return <OtoscopySection key={id} ot={preTestData?.otoscopy} />;
-      case 'speech':
-        return <SpeechSection key={id} speech={speechData} />;
-      case 'special_tests':
-        return <GenericClinicalSection key={id} title="Special Diagnostic Tests" data={specialTestsData} impressionKey="st_impression" />;
-      case 'oae':
-        return <GenericClinicalSection key={id} title="Otoacoustic Emissions" data={oaeData} impressionKey="oae_impression" />;
-      case 'soundfield':
-        return <GenericClinicalSection key={id} title="Sound Field / Aided" data={soundfieldData} impressionKey="sf_impression" />;
-      case 'abr':
-        return <GenericClinicalSection key={id} title="ABR / ASSR" data={abrData} impressionKey="abr_impression" />;
-      case 'pediatric':
-        return <GenericClinicalSection key={id} title="Pediatric Audiometry" data={pediatricData} impressionKey="ped_impression" />;
-      case 'tinnitus':
-        return <GenericClinicalSection key={id} title="Tinnitus Assessment" data={tinnitusData} impressionKey="tin_impression" />;
-      case 'tympanometry':
-        return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
-      case 'results':
-        return <ResultsGridSection key={id} entries={buildResultEntries()} />;
-      case 'recommendations':
-        return (
-          <RecommendationsAdviceSection
-            key={id}
-            recommendations={recText}
-            advice={furtherAdvice}
-          />
-        );
-      default:
-        return null;
-    }
+  // Shared context consumed by the section registry's render functions.
+  const sectionContext = {
+    isEnabled,
+    caseHistoryNarrative,
+    rightEarData, leftEarData, preTestData, impedanceData, speechData,
+    specialTestsData, oaeData, soundfieldData, abrData, pediatricData, tinnitusData,
+    audiogramMode, audiogramSize, useSeparatePage, tuningForkFull,
+    showABC, showBing,
+    recText, furtherAdvice,
+    buildResultEntries,
   };
 
   const handlePrint = () => window.print();
@@ -246,7 +190,7 @@ const ReportsPanel = ({
           />
 
           {/* Configurable sections (minus conclusion when tymp uses separate page) */}
-          {mainPageSections.map((s) => renderSection(s.id))}
+          {mainPageSections.map((s) => renderSectionById(s.id, sectionContext))}
 
           {/* Signature on main page only when Tymp is inline */}
           {!useSeparatePage && (
