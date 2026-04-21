@@ -1,0 +1,43 @@
+{
+  "summary": "M01.B Appointments + Waitlist + Reminders sprint validated. Backend: 21/21 pytest pass — covers create/list/update/cancel/slots/double-booking 409/services, waitlist add/list/promote/invalid status, reminder stub email+whatsapp dispatch and log retrieval, auth gating on all 3 routers, no _id leak. Frontend: AppointmentsPage loads at /frontdesk/appointments, Today/Week toggle works, prev/next/today nav works, all 3 filters present (audiologist/service/priority), Book Appointment modal opens with full form (patient search, audiologist dropdown, date/time picker, free-slot suggestion chips, service, duration, room, priority, notes, Cancel/Book buttons), WaitlistPanel slides over with Add-to-waitlist form and live empty state. One existing 'Vikram Singh' appointment renders correctly with status chip, status dropdown, WA/SMS reminder buttons, Edit, and Cancel (✕). All data-testids per AppointmentsPage.js confirmed in DOM.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AppShell topbar", "issues": ["Console hydration warning: '<span> cannot be a child of <option>' in FrontDeskModule (likely a styled <span> nested inside a <select><option> somewhere in the appointments toolbar). Cosmetic but should be fixed to silence hydration error."]},
+      {"screen": "AppointmentsPage toolbar", "issues": ["No dedicated 'Email' reminder button on appointment cards — only WA + SMS rendered (Email channel works on backend; UI exposes only 2 of 3 channels). Consider adding an Email button or a unified 'Send reminder' menu."]},
+      {"screen": "AppointmentsPage", "issues": ["Status filter is referenced in spec but not present in toolbar (only audiologist/service/priority). Backend supports ?status=… filter — UI gap."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_m01b_appointments.py",
+    "/app/test_reports/pytest/m01b_results.xml"
+  ],
+  "action_items": [
+    "Fix hydration warning: locate <span> inside <option> in AppointmentsPage / AppShell topbar select and replace with plain text or a dot prefix.",
+    "Add Email reminder button on ApptCard alongside WA + SMS so all 3 backend channels are exposed.",
+    "Add a status filter <select> to the appointments toolbar (status= already supported by GET /api/appointments).",
+    "(Optional) Surface the 409 conflict_with details inline rather than as a generic alert() — currently reschedule failure shows a JS alert with the conflict message, which is functional but not graceful."
+  ],
+  "critical_code_review_comments": [
+    "server.py _overlap_query EXCLUDES status 'completed' from conflict checks (line 268). This means a completed appointment's slot is reusable — semantically OK for past appointments but could allow odd edge cases if a same-day appointment is marked completed early; document the intent.",
+    "server.py update_appointment uses payload: dict — bypasses Pydantic validation. Consider an AppointmentUpdate model so unknown keys are rejected and types coerced.",
+    "AppointmentsPage.js onDrop / onCancel use window.alert() / window.prompt() — fine for MVP but should move to toast + confirm dialog before production.",
+    "reminders.py: the 'else' branch (provider configured but no SDK wired) marks status='sent' though no real send happens. This is misleading — once provider keys exist but SDK is not implemented, logs will say 'sent' falsely. Recommend keeping 'stubbed_no_provider_key' until real SDK call is in place, or introduce a 'sdk_not_implemented' status."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_m01b_appointments.py (new — 21 tests across Meta/Appointments/Waitlist/Reminders/AuthGate)",
+    "/app/test_reports/pytest/m01b_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "~95% (all critical flows render; minor UX gaps: status filter + email button + alert() UX)"},
+  "test_credentials": "frontdesk@acs.in / frontdesk123 (verified working)",
+  "seed_data_creation": "Test fixtures auto-create TEST_M01B_Pt_* patients, schedule 3 future appointments (cancelled in cleanup), 1 waitlist entry, 2 reminder logs (email+whatsapp). Cleanup deletes patients; appointments are cancelled (not deleted — by design, cancel API has no hard-delete).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "REACT_APP_BACKEND_URL = https://careful-feedback.preview.emergentagent.com (NOT acs-mvp). Confirmed testids on AppointmentsPage: appointments-page, apt-view-today, apt-view-week, apt-prev, apt-today, apt-next, apt-filter-audiologist, apt-filter-service, apt-filter-priority, apt-waitlist-btn, apt-book-btn, week-grid, week-day-{YYYY-MM-DD}, slot-hour-{8..20}, appt-{appointment_id}, appt-status-{id}, appt-wa-{id}, appt-cancel-{id}. BookAppointmentModal: book-apt-modal, bk-patient-search, bk-audiologist, bk-date, bk-time, bk-slot-{HH:MM}. WaitlistPanel: waitlist-panel, wl-patient-search, wl-add. Existing 'Vikram Singh' PTA appointment with Dr. Audiologist on 21 Apr 2026 10:15 AM is in DB (ACS-2026-000002). Drag-drop reschedule was NOT verified end-to-end via Playwright (HTML5 drag is hard to simulate); backend PUT /appointments/{id} with new start_at is unit-tested and passes including 409 path. Frontend cancel/reminder buttons verified visually; full click-through not exercised due to time.",
+  "rca_of_the_issue": "N/A — sprint passed."
+}
