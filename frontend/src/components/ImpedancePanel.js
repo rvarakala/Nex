@@ -66,7 +66,7 @@ const PROBE_HZ_OPTIONS = [
   { value: '1000', label: '1000 Hz' },
 ];
 
-const REFLEX_FREQS = ['250', '500', '1000', '2000', '4000'];
+const REFLEX_FREQS = ['250', '500', '1000', '2000', '4000', '6000', 'BBN', 'LBN', 'HBN'];
 const DECAY_FREQS = ['500', '1000'];
 
 // ==================== Tympanogram block (per ear) ====================
@@ -168,76 +168,143 @@ const TympanogramBlock = ({ earLabel, earSide, value, onChange }) => {
   );
 };
 
-// ==================== Acoustic Reflex / Decay Grid ====================
-const ReflexGrid = ({ title, earLabel, earSide, value, onChange, freqs }) => {
+// ==================== Acoustic Reflex — Contra / Ipsi rows ====================
+// Each "side" (ipsi | contra) renders a single-row strip: freq headers on top,
+// one free-text input per cell below. Accepts numbers AND alphabetic markers
+// (e.g. "85", "NR", "CNT", "90 NR").
+const ReflexRow = ({ earLabel, earSide, freqs, side, reflexData, onChange, testPrefix }) => {
   const colorCls = earSide === 'right' ? 'text-red-600' : 'text-blue-600';
-  const updateCell = (side, freq, field, v) => {
+  const earData = reflexData?.[earSide] || {};
+  const sideData = earData?.[side] || { freqs: {} };
+
+  const updateCell = (freq, v) => {
     const next = {
-      ...value,
-      [side]: {
-        ...value[side],
-        freqs: {
-          ...(value[side]?.freqs || {}),
-          [freq]: { ...((value[side]?.freqs || {})[freq] || {}), [field]: v },
+      ...reflexData,
+      [earSide]: {
+        ...earData,
+        [side]: {
+          ...sideData,
+          freqs: {
+            ...(sideData.freqs || {}),
+            [freq]: { ...((sideData.freqs || {})[freq] || {}), level: v },
+          },
         },
       },
     };
     onChange(next);
   };
 
-  const renderSide = (sideKey, sideLabel) => {
-    const sideData = value[sideKey] || { freqs: {} };
+  return (
+    <div className="flex-1 min-w-0">
+      <div className={`text-[11px] font-bold ${colorCls} mb-0.5`}>
+        Stimulus (Probe) {earLabel} Ear
+      </div>
+      <div className={`border-t-2 ${earSide === 'right' ? 'border-red-500' : 'border-blue-500'} mb-1`}></div>
+      <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${freqs.length}, minmax(0, 1fr))` }}>
+        {freqs.map((f) => (
+          <div key={f} className="flex flex-col items-center">
+            <div className={`text-[10px] font-bold ${colorCls} leading-tight`}>{f}</div>
+            <input
+              type="text"
+              value={sideData.freqs?.[f]?.level ?? ''}
+              onChange={(e) => updateCell(f, e.target.value || null)}
+              data-testid={`${testPrefix}-${earSide}-${side}-${f}`}
+              className="w-full text-[11px] border border-gray-300 rounded px-0.5 py-0.5 text-center focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Contra- or Ipsi-lateral Acoustic Reflex section (both ears side by side).
+const AcousticReflexSection = ({ title, side, reflexData, onChange, freqs, testPrefix }) => (
+  <div className="border border-gray-300 rounded bg-white shadow-sm">
+    <div className="text-xs font-bold text-gray-800 px-2 py-1 border-b border-gray-300 bg-gray-50">
+      {title}
+    </div>
+    <div className="flex gap-4 p-2">
+      <ReflexRow
+        earLabel="Right"
+        earSide="right"
+        freqs={freqs}
+        side={side}
+        reflexData={reflexData}
+        onChange={onChange}
+        testPrefix={testPrefix}
+      />
+      <ReflexRow
+        earLabel="Left"
+        earSide="left"
+        freqs={freqs}
+        side={side}
+        reflexData={reflexData}
+        onChange={onChange}
+        testPrefix={testPrefix}
+      />
+    </div>
+  </div>
+);
+
+// ==================== Acoustic Reflex Decay ====================
+// Two ear blocks, each with label like "Earphone R (probe L)". Accepts
+// alphanumeric decay markers (e.g. "NR", "P", "N").
+const DecaySection = ({ decayData, onChange }) => {
+  const updateCell = (earSide, freq, v) => {
+    // In Decay, measurements are contralateral only. We store under `contra.freqs` for consistency.
+    const earData = decayData?.[earSide] || {};
+    const sideData = earData?.contra || { freqs: {} };
+    const next = {
+      ...decayData,
+      [earSide]: {
+        ...earData,
+        contra: {
+          ...sideData,
+          freqs: {
+            ...(sideData.freqs || {}),
+            [freq]: { ...((sideData.freqs || {})[freq] || {}), level: v },
+          },
+        },
+      },
+    };
+    onChange(next);
+  };
+
+  const Block = ({ earphoneLabel, earSide, colorCls }) => {
+    const sideData = decayData?.[earSide]?.contra || { freqs: {} };
     return (
-      <div className="border border-gray-300 rounded">
-        <div className="text-[10px] font-bold text-gray-700 bg-gray-100 px-1.5 py-0.5 border-b border-gray-300">
-          {sideLabel}
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className={`text-[11px] font-bold ${colorCls} whitespace-nowrap`}>{earphoneLabel}</div>
+        <div className="flex gap-2">
+          {DECAY_FREQS.map((f) => (
+            <div key={f} className="flex flex-col items-center">
+              <div className={`text-[10px] font-bold ${colorCls} leading-tight`}>{f}</div>
+              <input
+                type="text"
+                value={sideData.freqs?.[f]?.level ?? ''}
+                onChange={(e) => updateCell(earSide, f, e.target.value || null)}
+                data-testid={`decay-${earSide}-${f}`}
+                className="w-14 text-[11px] border border-gray-300 rounded px-0.5 py-0.5 text-center focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          ))}
         </div>
-        <table className="w-full text-[10px]">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-1 py-0.5 font-semibold"></th>
-              {freqs.map((f) => (
-                <th key={f} className="px-1 py-0.5 font-semibold text-gray-700">
-                  {parseInt(f) >= 1000 ? `${parseInt(f) / 1000}K` : f}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {['level', 'volume', 'pressure'].map((row) => (
-              <tr key={row} className="border-b border-gray-100">
-                <td className="px-1 py-0.5 text-gray-600 font-medium capitalize">{row}</td>
-                {freqs.map((f) => (
-                  <td key={f} className="px-0.5 py-0.5">
-                    <input
-                      type="number"
-                      step={row === 'level' ? 1 : 0.01}
-                      value={sideData.freqs?.[f]?.[row] ?? ''}
-                      onChange={(e) => {
-                        const n = parseFloat(e.target.value);
-                        updateCell(sideKey, f, row, Number.isNaN(n) ? null : n);
-                      }}
-                      data-testid={`${title.toLowerCase().replace(/\s/g, '-')}-${earSide}-${sideKey}-${f}-${row}`}
-                      className="w-full text-[10px] border border-gray-200 rounded px-0.5 py-0 text-center focus:outline-none focus:border-blue-500"
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     );
   };
 
   return (
-    <div className="flex-1 min-w-0 border border-gray-300 rounded bg-white shadow-sm">
-      <div className="px-2 py-1 border-b border-gray-300 bg-gray-50">
-        <span className={`text-xs font-bold ${colorCls}`}>{earLabel} Ear</span>
+    <div className="border border-gray-300 rounded bg-white shadow-sm">
+      <div className="text-xs font-bold text-gray-800 px-2 py-1 border-b border-gray-300 bg-gray-50">
+        Acoustic Reflex Decay
       </div>
-      <div className="p-2 space-y-1.5">
-        {renderSide('ipsi', 'Ipsilateral')}
-        {renderSide('contra', 'Contralateral')}
+      <div className="flex gap-6 p-2">
+        {/* Note on ear-label convention:
+            "Earphone R (probe L)" = stimulus delivered via the Right earphone, probe placed in the Left ear.
+            Per the contralateral convention that's a LEFT-ear contralateral measurement → stored at decayData.left.contra. */}
+        <Block earphoneLabel="Earphone R (probe L)" earSide="left"  colorCls="text-orange-600" />
+        <Block earphoneLabel="Earphone L (probe R)" earSide="right" colorCls="text-blue-600" />
       </div>
     </div>
   );
@@ -477,54 +544,34 @@ const ImpedancePanel = ({ data, onChange }) => {
           </div>
         </div>
 
-        {/* Acoustic Reflex */}
+        {/* Acoustic Reflex — Contralateral + Ipsilateral sections */}
         {reflex.enabled && (
-          <div>
-            <div className="text-xs font-bold text-gray-700 mb-1 px-0.5">Acoustic Reflex</div>
-            <div className="flex gap-2">
-              <ReflexGrid
-                title="Reflex"
-                earLabel="Right"
-                earSide="right"
-                value={reflex.right}
-                onChange={(next) => updateReflexEar('acoustic_reflex', 'right', next)}
-                freqs={REFLEX_FREQS}
-              />
-              <ReflexGrid
-                title="Reflex"
-                earLabel="Left"
-                earSide="left"
-                value={reflex.left}
-                onChange={(next) => updateReflexEar('acoustic_reflex', 'left', next)}
-                freqs={REFLEX_FREQS}
-              />
-            </div>
+          <div className="space-y-2">
+            <AcousticReflexSection
+              title="Contralateral Acoustic Reflexes"
+              side="contra"
+              reflexData={reflex}
+              onChange={(next) => onChange({ ...data, acoustic_reflex: next })}
+              freqs={REFLEX_FREQS}
+              testPrefix="reflex-contra"
+            />
+            <AcousticReflexSection
+              title="Ipsilateral Acoustic Reflexes"
+              side="ipsi"
+              reflexData={reflex}
+              onChange={(next) => onChange({ ...data, acoustic_reflex: next })}
+              freqs={REFLEX_FREQS}
+              testPrefix="reflex-ipsi"
+            />
           </div>
         )}
 
-        {/* Reflex Decay */}
+        {/* Reflex Decay — compact contralateral-only block */}
         {decay.enabled && (
-          <div>
-            <div className="text-xs font-bold text-gray-700 mb-1 px-0.5">Reflex Decay</div>
-            <div className="flex gap-2">
-              <ReflexGrid
-                title="Decay"
-                earLabel="Right"
-                earSide="right"
-                value={decay.right}
-                onChange={(next) => updateReflexEar('reflex_decay', 'right', next)}
-                freqs={DECAY_FREQS}
-              />
-              <ReflexGrid
-                title="Decay"
-                earLabel="Left"
-                earSide="left"
-                value={decay.left}
-                onChange={(next) => updateReflexEar('reflex_decay', 'left', next)}
-                freqs={DECAY_FREQS}
-              />
-            </div>
-          </div>
+          <DecaySection
+            decayData={decay}
+            onChange={(next) => onChange({ ...data, reflex_decay: next })}
+          />
         )}
 
         {/* ET Dysfunction */}

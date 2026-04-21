@@ -149,9 +149,9 @@ class Tympanometry(BaseModel):
 
 
 class ReflexCell(BaseModel):
-    level: Optional[float] = None
-    volume: Optional[float] = None
-    pressure: Optional[float] = None
+    level: Optional[str] = None     # free-form: numbers ("85"), alphabetic markers ("NR", "CNT"), or any combination
+    volume: Optional[float] = None  # legacy — kept for backward compatibility, no longer displayed
+    pressure: Optional[float] = None  # legacy — kept for backward compatibility, no longer displayed
 
 
 class ReflexSide(BaseModel):

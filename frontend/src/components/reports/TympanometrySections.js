@@ -168,7 +168,11 @@ export const TympanometryInlineSection = ({ impedance }) => {
         </div>
       </div>
       {impedance?.acoustic_reflex?.enabled && (
-        <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
+        <ReflexTable
+          title="Acoustic Reflex"
+          reflex={impedance.acoustic_reflex}
+          freqs={['250', '500', '1000', '2000', '4000', '6000', 'BBN', 'LBN', 'HBN']}
+        />
       )}
     </div>
   );
@@ -217,7 +221,11 @@ export const TympanometryFullPage = ({ impedance }) => {
         </div>
       </div>
       {impedance?.acoustic_reflex?.enabled && (
-        <ReflexTable title="Acoustic Reflex" reflex={impedance.acoustic_reflex} freqs={['250', '500', '1000', '2000', '4000']} />
+        <ReflexTable
+          title="Acoustic Reflex"
+          reflex={impedance.acoustic_reflex}
+          freqs={['250', '500', '1000', '2000', '4000', '6000', 'BBN', 'LBN', 'HBN']}
+        />
       )}
       {impedance?.reflex_decay?.enabled && (
         <ReflexTable title="Reflex Decay" reflex={impedance.reflex_decay} freqs={['500', '1000']} />
