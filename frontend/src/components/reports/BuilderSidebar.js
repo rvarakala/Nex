@@ -9,6 +9,73 @@ const PrintIcon = () => (
   </svg>
 );
 
+// WhatsApp brand glyph (monochrome — coloured via parent)
+const WhatsAppIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 2.1.66 4.05 1.79 5.67L2 22l4.56-1.86a9.96 9.96 0 0 0 5.48 1.62h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 18.15h-.01a8.23 8.23 0 0 1-4.2-1.15l-.3-.18-3.12 1.27 1.28-3.04-.2-.32a8.18 8.18 0 0 1-1.27-4.43c0-4.54 3.7-8.23 8.24-8.23 2.2 0 4.26.86 5.82 2.41a8.18 8.18 0 0 1 2.41 5.83c0 4.53-3.69 8.22-8.23 8.22Zm4.52-6.15c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.16.25-.64.81-.78.98-.15.16-.29.18-.54.06-.25-.12-1.05-.39-2-1.23a7.44 7.44 0 0 1-1.37-1.71c-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43l-.48-.01c-.16 0-.43.06-.65.31-.22.25-.85.83-.85 2.02 0 1.19.87 2.34 1 2.5.12.16 1.71 2.6 4.13 3.65.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.11-.23-.18-.48-.3Z"/>
+  </svg>
+);
+
+/**
+ * Builds a patient-friendly WhatsApp message with a quick clinical summary.
+ * Returns a string ready to be URL-encoded.
+ */
+const buildWhatsappMessage = ({ patient, clinic, rightEarData, leftEarData, ptFindings, recText }) => {
+  const calcPta = (measurements) => {
+    if (!measurements?.length) return null;
+    const byF = Object.fromEntries(measurements.map((m) => [m.frequency, m]));
+    const vals = [500, 1000, 2000]
+      .map((f) => byF[f])
+      .filter((m) => m && m.threshold_db != null && !m.no_response)
+      .map((m) => m.threshold_db);
+    if (vals.length < 2) return null;
+    return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  };
+
+  const ptaR = calcPta(rightEarData?.ac_measurements);
+  const ptaL = calcPta(leftEarData?.ac_measurements);
+
+  const lines = [];
+  lines.push(`Hello${patient?.name ? ' ' + patient.name.split(' ')[0] : ''},`);
+  lines.push('');
+  lines.push(`Your hearing assessment report from ${clinic?.name || 'the clinic'} is ready.`);
+  lines.push('');
+  if (ptaR !== null || ptaL !== null) {
+    lines.push('*Quick summary (PTA 500/1k/2k Hz):*');
+    if (ptaR !== null) lines.push(`• Right ear: ${ptaR} dB`);
+    if (ptaL !== null) lines.push(`• Left ear:  ${ptaL} dB`);
+    lines.push('');
+  }
+  if (ptFindings?.trim()) {
+    lines.push('*Findings:*');
+    lines.push(ptFindings.trim());
+    lines.push('');
+  }
+  const recs = (recText || '').split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  if (recs.length) {
+    lines.push('*Recommendations:*');
+    recs.forEach((r) => lines.push(`• ${r}`));
+    lines.push('');
+  }
+  lines.push(`Please find the full report PDF attached to this message.`);
+  lines.push('');
+  lines.push(`— ${clinic?.name || 'ACS Audiology Clinic'}${clinic?.tel ? ' · ' + clinic.tel : ''}`);
+  return lines.join('\n');
+};
+
+/**
+ * Normalises an Indian mobile number for wa.me — digits only, leading 91 ensured.
+ * Returns '' if the input cannot be normalised (user will pick contact in WhatsApp).
+ */
+const normaliseMobile = (raw) => {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('91') && digits.length >= 12) return digits;
+  if (digits.length === 10) return '91' + digits;
+  return digits;
+};
+
 const ClinicBrandingPanel = ({ clinic, setClinic }) => {
   const logoFileRef = useRef(null);
   const updateClinic = (patch) => setClinic((c) => ({ ...c, ...patch }));
@@ -344,23 +411,49 @@ export const BuilderSidebar = ({
   recText, setRecText,
   furtherAdvice, setFurtherAdvice,
   license, setLicense,
+  // WhatsApp share context
+  patient, rightEarData, leftEarData,
   // Actions
   onPrint,
-}) => (
+}) => {
+  const handleWhatsappShare = () => {
+    const msg = buildWhatsappMessage({ patient, clinic, rightEarData, leftEarData, ptFindings, recText });
+    const phone = normaliseMobile(patient?.mobile || patient?.phone);
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
   <aside className="w-[280px] flex-shrink-0 bg-white border-r border-gray-300 overflow-auto no-print">
     <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-2 py-1 border-b border-gray-300 sticky top-0 z-10">
       <h3 className="text-xs font-bold text-gray-700">Report Builder</h3>
     </div>
 
     <div className="p-2 space-y-2">
-      <button
-        onClick={onPrint}
-        data-testid="report-print-btn"
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-1.5 rounded flex items-center justify-center gap-1.5 shadow-sm"
-      >
-        <PrintIcon />
-        Print / Save as PDF
-      </button>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          onClick={onPrint}
+          data-testid="report-print-btn"
+          className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 rounded flex items-center justify-center gap-1 shadow-sm"
+        >
+          <PrintIcon />
+          Print / PDF
+        </button>
+        <button
+          onClick={handleWhatsappShare}
+          data-testid="report-whatsapp-btn"
+          title={patient?.mobile ? `Share summary to ${patient.mobile} on WhatsApp` : 'Share summary on WhatsApp (pick recipient)'}
+          className="bg-[#25D366] hover:bg-[#1ebe5a] text-white text-[11px] font-semibold py-1.5 rounded flex items-center justify-center gap-1 shadow-sm"
+        >
+          <WhatsAppIcon />
+          WhatsApp
+        </button>
+      </div>
+      <div className="text-[9px] text-gray-500 italic leading-tight px-0.5">
+        WhatsApp opens a pre-filled message with the clinical summary. Print as PDF first and attach it to the chat for the full report.
+      </div>
 
       <ClinicBrandingPanel clinic={clinic} setClinic={setClinic} />
 
@@ -442,4 +535,5 @@ export const BuilderSidebar = ({
       />
     </div>
   </aside>
-);
+  );
+};

@@ -89,25 +89,25 @@ no modern SaaS fluff).
   - **App.js refactor** — removed hardcoded demo patient entirely. New flow: bootstrap reads `acs.lastPatientId` from localStorage and restores last patient+session. Switching patients loads their sessions, auto-picks latest, rehydrates all 10 tab states from session doc. "+ New Visit" creates a fresh session and appends an AUTO journal entry ("New test session started."). `loadingRef` prevents debounced auto-save from firing during rehydration (otherwise defaults would overwrite real data). Single unified auto-save effect covers all 10 tabs.
   - **Empty state** — when no patient is loaded, renders a centered "No patient selected" card with a CTA "+ New Patient" button. All 10 clinical tabs are hidden until a patient is picked.
   - **Testing** — 14/14 backend pytest cases pass, frontend E2E ~92% with 2 race fixes applied (ESC key listener on journal + awaited auto-note POST).
+- [Feb 2026] **Phase 1.5: WhatsApp Share + Historical Audiogram Ghost Overlay (India-first workflows)**:
+  - **WhatsApp Share** — New green "💬 WhatsApp" button in the Report Builder sidebar, side-by-side with "📄 Print / PDF" in a 2-column grid. Opens `wa.me/<mobile>?text=<encoded>` with a pre-filled clinical summary: patient greeting, 3-freq PTA R/L, Puretone findings, up to 3 recommendations, clinic sign-off. Normalises Indian mobiles (10 digits → adds +91 prefix; existing 91-prefix preserved). If patient has no mobile on file, opens `wa.me/?text=…` so the clinician picks the contact. Inline hint: "Print as PDF first and attach it to the chat for the full report."
+  - **Historical Audiogram Ghost Overlay** — When a patient has 2+ visits, a "Show Previous Visit (DD MMM YY)" checkbox appears in the Pure Tone top bar (default ON). `AudiogramCanvas` gained `ghostData` + `ghostLabel` props. The prior visit's AC (dotted line) + BC (dashed line) thresholds render as faint grey hollow circles (α 0.55, neutral grey #6b7280) drawn BEFORE the current session so real thresholds always sit on top. Small "◌ prev: <date>" italic badge in the chart's top-left corner confirms which visit is being compared. Live-updates on visit dropdown switch — the prior session is computed as `sessions[currentIdx + 1]` in the DESC-sorted list. Verified end-to-end: plotted sloping SNHL on older visit, switched to newer visit → ghost curve visible on both R+L canvases; toggle OFF cleanly removes it.
 
 ## Backlog / Roadmap
-
-### P1.5 (next)
-- [ ] **WhatsApp share PDF** — `wa.me` deep-link after generating the report
-- [ ] **Historical audiogram ghost overlay** — plot prior-session thresholds as faint grey markers on the Pure Tone canvas (now that session history exists)
-- [ ] **Bilingual report template toggle** — English clinical + Hindi patient summary
 
 ### P2
 - [ ] **Comprehensive E2E testing run** — cross-tab form persistence + chart state save/restore + all 10 tabs CRUD
 - [ ] **Hearing aid dispensing module** — make/model/serial/warranty/battery tracking
 - [ ] **GST invoice generation** — GSTIN + HSN codes (India mandatory ≥ ₹20L turnover)
 - [ ] **Appointment reminders** — WhatsApp deep-link scheduling
+- [ ] **Bilingual report template toggle** — English clinical + Hindi patient summary
 - [ ] PDF report generation with embedded audiogram render (server-side, for email/archival)
 
 ### P3
 - [ ] Audiologist auth + multi-user sessions
 - [ ] Patient photo upload (webcam or file)
 - [ ] Referral commission tracking per ENT
+- [ ] Progression badge on Visit dropdown ("2nd visit · 45 days since last · PTA R worsened by 8 dB")
 
 ### Explicitly Out of Scope (India context)
 - NOAH real-time sync (used by <15% of Indian clinics, high integration effort)

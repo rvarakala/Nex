@@ -129,6 +129,10 @@ function App() {
   const [extendedFrequency, setExtendedFrequency] = useState(false);
   const [reportAudiogramMode, setReportAudiogramMode] = useState('separate');
 
+  // Ghost overlay (previous-visit audiogram)
+  const [showGhost, setShowGhost] = useState(true);
+  const [prevSession, setPrevSession] = useState(null);
+
   const [preTestData, setPreTestData] = useState(DEFAULT_PRE_TEST);
   const [impedanceData, setImpedanceData] = useState(DEFAULT_IMPEDANCE);
   const [speechData, setSpeechData] = useState(DEFAULT_SPEECH);
@@ -199,7 +203,9 @@ function App() {
       setSessionId(latest.session_id);
       localStorage.setItem(LAST_SESSION_KEY, latest.session_id);
       rehydrateFromSession(latest);
+      setPrevSession(sess[1] || null);
     } else {
+      setPrevSession(null);
       // No sessions yet — auto-create one
       try {
         const r = await axios.post(`${API}/sessions`, {
@@ -235,10 +241,13 @@ function App() {
       setSessionId(sid);
       localStorage.setItem(LAST_SESSION_KEY, sid);
       rehydrateFromSession(r.data);
+      // Find previous session — the one immediately after the selected one in DESC list
+      const idx = sessions.findIndex((s) => s.session_id === sid);
+      setPrevSession(idx >= 0 ? (sessions[idx + 1] || null) : null);
     } catch (e) {
       console.error('Failed to load session', e);
     }
-  }, [sessionId, rehydrateFromSession]);
+  }, [sessionId, rehydrateFromSession, sessions]);
 
   const createNewSession = useCallback(async () => {
     if (!patient) return;
@@ -250,6 +259,11 @@ function App() {
         test_methods: ["headphones"],
       });
       const newSess = r.data;
+      // The session that was selected becomes the "previous" for ghost overlay
+      setPrevSession((prev) => {
+        const currentSession = sessions.find((s) => s.session_id === sessionId);
+        return currentSession || prev;
+      });
       setSessions((list) => [newSess, ...list]);
       setSessionId(newSess.session_id);
       localStorage.setItem(LAST_SESSION_KEY, newSess.session_id);
@@ -265,7 +279,7 @@ function App() {
     } catch (e) {
       console.error('Create session failed', e);
     }
-  }, [patient, resetClinicalState]);
+  }, [patient, resetClinicalState, sessions, sessionId]);
 
   // ==================== PATIENT MODAL HANDLERS ====================
   const handleSavePatient = async (payload) => {
@@ -428,7 +442,7 @@ function App() {
 
               {activeTab === 'pure_tone' && (
                 <div className="flex-1 flex flex-col min-h-0">
-                  <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 border-b border-gray-300 flex-shrink-0">
+                  <div className="flex items-center gap-4 px-3 py-1 bg-gray-50 border-b border-gray-300 flex-shrink-0">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -440,6 +454,23 @@ function App() {
                         Extended Audiogram (High Frequencies: 10K, 12.5K, 16K)
                       </span>
                     </label>
+                    {prevSession && (
+                      <label className="flex items-center gap-2 cursor-pointer" data-testid="ghost-toggle-label">
+                        <input
+                          type="checkbox"
+                          checked={showGhost}
+                          onChange={(e) => setShowGhost(e.target.checked)}
+                          data-testid="ghost-toggle"
+                          className="w-3.5 h-3.5 cursor-pointer"
+                        />
+                        <span className="text-xs font-medium text-gray-700">
+                          Show Previous Visit
+                        </span>
+                        <span className="text-[10px] text-gray-500 italic">
+                          ({new Date(prevSession.test_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })})
+                        </span>
+                      </label>
+                    )}
                   </div>
 
                   <div className="flex-1 flex min-h-0 relative">
@@ -455,6 +486,8 @@ function App() {
                           extendedFrequency={extendedFrequency}
                           onClearAudiogram={handleClearAudiogram}
                           onDeletePoint={handleDeletePoint}
+                          ghostData={showGhost ? prevSession?.right_ear_audiogram : null}
+                          ghostLabel={showGhost && prevSession ? new Date(prevSession.test_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : null}
                         />
                       </div>
                     </div>
@@ -482,6 +515,8 @@ function App() {
                           extendedFrequency={extendedFrequency}
                           onClearAudiogram={handleClearAudiogram}
                           onDeletePoint={handleDeletePoint}
+                          ghostData={showGhost ? prevSession?.left_ear_audiogram : null}
+                          ghostLabel={showGhost && prevSession ? new Date(prevSession.test_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : null}
                         />
                       </div>
                     </div>

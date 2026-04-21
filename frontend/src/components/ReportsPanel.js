@@ -171,6 +171,9 @@ const ReportsPanel = ({
         recText={recText} setRecText={setRecText}
         furtherAdvice={furtherAdvice} setFurtherAdvice={setFurtherAdvice}
         license={license} setLicense={setLicense}
+        patient={patient}
+        rightEarData={rightEarData}
+        leftEarData={leftEarData}
         onPrint={handlePrint}
       />
 

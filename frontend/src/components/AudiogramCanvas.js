@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noResponse, extendedFrequency = false, onClearAudiogram, onDeletePoint }) => {
+const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noResponse, extendedFrequency = false, onClearAudiogram, onDeletePoint, ghostData = null, ghostLabel = null }) => {
   const canvasRef = useRef(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -245,6 +245,63 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       ctx.setLineDash([]);
     };
     
+    // ==================== GHOST OVERLAY (previous visit) ====================
+    // Drawn BEFORE current-session AC/BC so real thresholds always render on top.
+    if (ghostData && (ghostData.ac_measurements?.length || ghostData.bc_measurements?.length)) {
+      const drawGhostChannel = (measurements, dashed) => {
+        if (!measurements || measurements.length === 0) return;
+        const pts = measurements
+          .filter((m) => m.threshold_db !== null && m.threshold_db !== undefined && !m.no_response)
+          .map((m) => ({ freq: m.frequency, db: m.threshold_db }))
+          .sort((a, b) => a.freq - b.freq);
+        if (pts.length === 0) return;
+
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = '#6b7280';  // neutral grey — de-emphasises past data vs ear-coloured current
+        ctx.fillStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash(dashed ? [3, 3] : [5, 3]);
+
+        // Connecting polyline
+        ctx.beginPath();
+        pts.forEach((p, i) => {
+          const c = getCoords(p.freq, p.db);
+          if (!c) return;
+          if (i === 0) ctx.moveTo(c.x, c.y);
+          else ctx.lineTo(c.x, c.y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Small hollow circles at each threshold
+        pts.forEach((p) => {
+          const c = getCoords(p.freq, p.db);
+          if (!c) return;
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.stroke();
+        });
+        ctx.restore();
+      };
+      drawGhostChannel(ghostData.ac_measurements, false);
+      drawGhostChannel(ghostData.bc_measurements, true);
+
+      // Ghost label — small badge top-left of chart area
+      if (ghostLabel) {
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.font = 'italic 9px Arial';
+        ctx.fillStyle = '#6b7280';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`◌ prev: ${ghostLabel}`, padding.left + 4, padding.top + 2);
+        ctx.restore();
+      }
+    }
+
     // Draw AC line and symbols
     if (data && data.ac_measurements && data.ac_measurements.length > 0) {
       const acPoints = data.ac_measurements
@@ -428,7 +485,7 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       });
     }
     
-  }, [data, ear, color]);
+  }, [data, ear, color, ghostData, ghostLabel, extendedFrequency]);
   
   const handleCanvasClick = (e) => {
     if (!onPlotPoint) return;
