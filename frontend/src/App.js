@@ -8,6 +8,7 @@ import AppShell from './shell/AppShell';
 import LoginPage from './pages/LoginPage';
 import TokenPrintView from './pages/TokenPrintView';
 import FrontDeskModule from './modules/frontdesk/FrontDeskModule';
+import BillingModule from './modules/billing/BillingModule';
 import TestProceduresModule from './modules/test/TestProceduresModule';
 
 // Entry — picks initial landing based on user role
@@ -34,6 +35,7 @@ function App() {
             <Route path="/token/:tokenId" element={<ProtectedRoute><TokenPrintView /></ProtectedRoute>} />
 
             <Route path="/frontdesk/*" element={<ShelledRoute><FrontDeskModule /></ShelledRoute>} />
+            <Route path="/billing/*" element={<ShelledRoute><BillingModule /></ShelledRoute>} />
             <Route path="/test/*" element={<ShelledRoute><TestProceduresModule /></ShelledRoute>} />
             <Route path="/reports" element={<ShelledRoute><TestProceduresModule /></ShelledRoute>} />
 

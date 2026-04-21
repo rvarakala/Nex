@@ -163,6 +163,159 @@ class ReminderLog(BaseModel):
     sent_by_user_id: Optional[str] = None
 
 
+# ==================== UC-04 BILLING + REPORT HANDOVER ====================
+
+PAYMENT_METHODS = ["cash", "upi", "card", "bank_transfer", "insurance"]
+INVOICE_STATUSES = ["draft", "paid", "partial", "refunded", "cancelled"]
+
+
+class Service(BaseModel):
+    """Clinic service catalogue item (audiology procedure / hearing aid / accessory).
+    Prices are inclusive of GST unless gst_inclusive=False."""
+    model_config = ConfigDict(extra="ignore")
+    service_id: str = Field(default_factory=lambda: f"SVC-{str(uuid4())[:8].upper()}")
+    clinic_id: str
+    code: Optional[str] = None                                   # Short alias (e.g., "PTA")
+    name: str                                                    # e.g., "Pure Tone Audiometry"
+    category: Optional[str] = None                               # Audiology / Hearing Aid / Consultation / Accessory
+    hsn_sac: Optional[str] = None                                # HSN/SAC for GST compliance (e.g., "999312")
+    price: float                                                 # Base price (in INR)
+    gst_rate: float = 0.0                                        # GST % (0/5/12/18). 0 for exempt healthcare.
+    gst_inclusive: bool = True                                   # Whether `price` already includes GST
+    is_taxable: bool = False                                     # Healthcare services are usually exempt
+    active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ServiceCreate(BaseModel):
+    code: Optional[str] = None
+    name: str
+    category: Optional[str] = None
+    hsn_sac: Optional[str] = None
+    price: float
+    gst_rate: float = 0.0
+    gst_inclusive: bool = True
+    is_taxable: bool = False
+
+
+class InvoiceLine(BaseModel):
+    line_id: str = Field(default_factory=lambda: str(uuid4())[:8])
+    service_id: Optional[str] = None
+    description: str
+    hsn_sac: Optional[str] = None
+    quantity: float = 1.0
+    unit_price: float                                            # Pre-discount, pre-tax unit amount
+    discount_amount: float = 0.0                                 # Flat amount off this line
+    is_taxable: bool = False
+    gst_rate: float = 0.0                                        # % e.g. 18
+    taxable_value: float = 0.0                                   # = qty*unit_price - discount (stored)
+    cgst_amount: float = 0.0
+    sgst_amount: float = 0.0
+    igst_amount: float = 0.0
+    line_total: float = 0.0                                      # taxable_value + cgst + sgst (or + igst)
+
+
+class Payment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    payment_id: str = Field(default_factory=lambda: f"PAY-{str(uuid4())[:8].upper()}")
+    clinic_id: str
+    invoice_id: str
+    method: Literal["cash", "upi", "card", "bank_transfer", "insurance"]
+    amount: float
+    reference: Optional[str] = None                              # Txn ref / UPI UTR / card last-4
+    paid_at: datetime = Field(default_factory=datetime.utcnow)
+    received_by_user_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PaymentCreate(BaseModel):
+    method: Literal["cash", "upi", "card", "bank_transfer", "insurance"]
+    amount: float
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class Invoice(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    invoice_id: str = Field(default_factory=lambda: f"INV-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    invoice_no: str                                              # Human-facing, e.g. "INV/2026/000123"
+
+    patient_id: str
+    patient_name: str
+    patient_mobile: Optional[str] = None
+    mrd: Optional[str] = None
+    patient_address: Optional[str] = None
+    patient_gstin: Optional[str] = None                          # B2B invoice
+
+    appointment_id: Optional[str] = None
+    session_id: Optional[str] = None                             # Linked M02 test session (for handover)
+
+    invoice_date: datetime = Field(default_factory=datetime.utcnow)
+
+    lines: List[InvoiceLine] = []
+
+    subtotal: float = 0.0                                        # Sum of line taxable_value
+    discount_total: float = 0.0
+    cgst_total: float = 0.0
+    sgst_total: float = 0.0
+    igst_total: float = 0.0
+    tax_total: float = 0.0
+    grand_total: float = 0.0
+    rounded_total: float = 0.0                                   # After nearest-rupee round
+    round_off: float = 0.0
+
+    paid_total: float = 0.0
+    due_total: float = 0.0
+
+    status: Literal["draft", "paid", "partial", "refunded", "cancelled"] = "draft"
+
+    payments: List[Payment] = []
+
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    cancelled_reason: Optional[str] = None
+
+
+class InvoiceLineCreate(BaseModel):
+    service_id: Optional[str] = None
+    description: Optional[str] = None                            # Override service name if needed
+    quantity: float = 1.0
+    unit_price: Optional[float] = None                           # Override service price
+    discount_amount: float = 0.0
+    is_taxable: Optional[bool] = None                            # Override
+    gst_rate: Optional[float] = None
+    hsn_sac: Optional[str] = None
+
+
+class InvoiceCreate(BaseModel):
+    patient_id: str
+    appointment_id: Optional[str] = None
+    session_id: Optional[str] = None
+    lines: List[InvoiceLineCreate]
+    patient_gstin: Optional[str] = None
+    notes: Optional[str] = None
+    initial_payment: Optional[PaymentCreate] = None              # Optional single-shot payment on create
+
+
+class ReportDelivery(BaseModel):
+    """Log of each time a report was handed over (printed / emailed / WhatsApp'd)."""
+    model_config = ConfigDict(extra="ignore")
+    delivery_id: str = Field(default_factory=lambda: f"DEL-{str(uuid4())[:8].upper()}")
+    clinic_id: str
+    session_id: str
+    patient_id: str
+    invoice_id: Optional[str] = None
+    channel: Literal["print", "whatsapp", "email", "in_person"]
+    delivered_at: datetime = Field(default_factory=datetime.utcnow)
+    delivered_by_user_id: str
+    recipient: Optional[str] = None                              # Phone or email
+    notes: Optional[str] = None
+
+
+
 # ==================== PATIENT MODELS ====================
 
 class Patient(BaseModel):

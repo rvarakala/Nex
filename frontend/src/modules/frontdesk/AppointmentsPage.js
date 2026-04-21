@@ -139,6 +139,13 @@ export default function AppointmentsPage() {
           <option value="">All priorities</option>
           <option value="normal">Normal</option><option value="urgent">Urgent</option><option value="vip">VIP</option>
         </select>
+        <select value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })}
+          data-testid="apt-filter-status" className="text-xs border border-slate-300 rounded px-1.5 py-0.5 bg-white">
+          <option value="">All statuses</option>
+          {['scheduled', 'confirmed', 'checked_in', 'in_progress', 'completed', 'no_show', 'cancelled'].map((s) => (
+            <option key={s} value={s}>{s.replace('_', ' ')}</option>
+          ))}
+        </select>
 
         <button onClick={() => setWaitlistOpen(true)} data-testid="apt-waitlist-btn"
           className="px-2.5 py-1 text-xs bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded">Waitlist</button>
@@ -282,7 +289,8 @@ const ApptCard = ({ a, onStatusChange, onCancel, onSendReminder, onEdit, onDragS
               </select>
             )}
             <button onClick={() => onSendReminder(a, 'whatsapp')} data-testid={`appt-wa-${a.appointment_id}`} title="WhatsApp reminder" className="px-1 text-[9px] bg-[#25D366] hover:bg-[#1ebe5a] text-white font-bold rounded">WA</button>
-            <button onClick={() => onSendReminder(a, 'sms')} title="SMS reminder" className="px-1 text-[9px] bg-slate-600 hover:bg-slate-700 text-white font-bold rounded">SMS</button>
+            <button onClick={() => onSendReminder(a, 'sms')} data-testid={`appt-sms-${a.appointment_id}`} title="SMS reminder" className="px-1 text-[9px] bg-slate-600 hover:bg-slate-700 text-white font-bold rounded">SMS</button>
+            <button onClick={() => onSendReminder(a, 'email')} data-testid={`appt-email-${a.appointment_id}`} title="Email reminder" className="px-1 text-[9px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded">@</button>
             <button onClick={() => onEdit(a)} title="Edit" className="px-1 text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded">Edit</button>
             {a.status !== 'cancelled' && (
               <button onClick={() => onCancel(a)} data-testid={`appt-cancel-${a.appointment_id}`} title="Cancel" className="px-1 text-[9px] border border-red-300 text-red-600 hover:bg-red-50 font-bold rounded">✕</button>

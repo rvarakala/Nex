@@ -21,12 +21,18 @@ from models import (
     WaitlistEntry, WaitlistCreate,
     CancellationLog,
     APPOINTMENT_SERVICES,
+    Service, ServiceCreate,
+    Invoice, InvoiceCreate, InvoiceLine, InvoiceLineCreate,
+    Payment, PaymentCreate,
+    ReportDelivery,
+    PAYMENT_METHODS, INVOICE_STATUSES,
 )
 from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, require_roles, VALID_ROLES,
 )
 from reminders import dispatch_reminder
+import billing as billing_module
 
 # Import PDF generator
 from pdf_generator import generate_report_pdf
@@ -677,6 +683,17 @@ async def frontdesk_dashboard(user=Depends(get_current_user)):
     })
     waitlist_active = await db.waitlist.count_documents({"clinic_id": clinic_id, "status": "active"})
 
+    # Collections today (M01.C) — sum of today's payments
+    collections_today = 0.0
+    try:
+        pay_rows = await db.payments.find(
+            {"clinic_id": clinic_id, "paid_at": {"$gte": today_start.isoformat()}},
+            {"_id": 0, "amount": 1},
+        ).to_list(1000)
+        collections_today = round(sum(float(r.get("amount", 0)) for r in pay_rows), 2)
+    except Exception:
+        pass
+
     # Pending reports = sessions marked as draft (or not finalized) today
     pending_reports = await db.test_sessions.count_documents({
         "clinic_id": clinic_id,
@@ -694,7 +711,7 @@ async def frontdesk_dashboard(user=Depends(get_current_user)):
             "waitlist_active": waitlist_active,
             "waiting_now": waiting_now,
             "in_progress": in_progress,
-            "collections_today": 0,   # UC-04 in M01.C
+            "collections_today": collections_today,   # UC-04 M01.C
             "pending_reports": pending_reports,
         },
         "queue": [deserialize_datetime(t) for t in queue[:50]],
@@ -930,6 +947,8 @@ async def generate_session_report(session_id: str):
 
 # Include the router in the main app
 app.include_router(api_router)
+app.include_router(billing_module.billing_router)
+billing_module.attach_db(db)
 
 app.add_middleware(
     CORSMiddleware,
@@ -974,6 +993,18 @@ async def on_startup():
         await db.waitlist.create_index([("clinic_id", 1), ("status", 1), ("created_at", 1)])
         await db.reminder_logs.create_index([("clinic_id", 1), ("sent_at", -1)])
         await db.cancellation_logs.create_index([("clinic_id", 1), ("cancelled_at", -1)])
+        # M01.C billing indexes
+        await db.services.create_index("service_id", unique=True)
+        await db.services.create_index([("clinic_id", 1), ("active", 1), ("name", 1)])
+        await db.invoices.create_index("invoice_id", unique=True)
+        await db.invoices.create_index([("clinic_id", 1), ("invoice_date", -1)])
+        await db.invoices.create_index([("clinic_id", 1), ("patient_id", 1)])
+        await db.invoices.create_index("invoice_no")
+        await db.payments.create_index("payment_id", unique=True)
+        await db.payments.create_index([("clinic_id", 1), ("paid_at", -1)])
+        await db.payments.create_index("invoice_id")
+        await db.report_deliveries.create_index("delivery_id", unique=True)
+        await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         logger.info("MongoDB indexes ensured")
     except Exception as e:
         logging.warning(f"Index creation skipped: {e}")
@@ -1042,6 +1073,14 @@ async def _seed_defaults():
             await db[coll].update_many({"clinic_id": None}, {"$set": {"clinic_id": clinic_id}})
         except Exception as e:
             logger.warning(f"Backfill skipped for {coll}: {e}")
+
+    # Seed default service catalogue for the default clinic (idempotent)
+    try:
+        inserted = await billing_module.seed_default_services(db, clinic_id)
+        if inserted:
+            logger.info(f"Seeded {inserted} default services for {clinic_id}")
+    except Exception as e:
+        logger.warning(f"Service seeding skipped: {e}")
 
 
 @app.on_event("shutdown")

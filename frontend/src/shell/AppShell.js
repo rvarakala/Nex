@@ -43,6 +43,14 @@ export default function AppShell({ children }) {
             label="Front Desk"
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h18M3 6h18M3 18h12"/></svg>}
           />
+          {user?.role !== 'audiologist' && (
+            <NavItem
+              to="/billing"
+              testid="nav-billing"
+              label="Billing"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>}
+            />
+          )}
           <NavItem
             to="/test"
             testid="nav-test"

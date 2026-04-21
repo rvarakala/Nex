@@ -79,6 +79,24 @@
     .report-page-break {
         page-break-before: always;
     }
+
+    /* A4 Tax invoice (UC-04) */
+    #a4-invoice, #a4-invoice * {
+        visibility: visible;
+    }
+    #a4-invoice {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 210mm;
+        min-height: 297mm;
+        box-shadow: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 15mm !important;
+        background: white !important;
+    }
 }
 
 /* On-screen separation between main report page and separate tympanometry page */
