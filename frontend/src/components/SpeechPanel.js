@@ -24,6 +24,22 @@ const CHANNEL_LABEL = {
 };
 
 const DEFAULT_ROW = { sat: null, srt: null, masking: null, mcl: null, ucl: null };
+const DEFAULT_WR_ROW = {
+  db_hl_unaided: null, percent_unaided: null, masking_unaided: null,
+  db_hl_aided: null,   percent_aided: null,   masking_aided: null,
+};
+const DEFAULT_WRN_ROW = { db_hl: null, percent: null, noise_level: null };
+
+const WR_ROWS = [
+  { key: 'wr_right',            label: 'Right',            color: 'text-red-600' },
+  { key: 'wr_left',             label: 'Left',             color: 'text-blue-600' },
+  { key: 'wr_soundfield_right', label: 'Soundfield Right', color: 'text-green-700' },
+  { key: 'wr_soundfield_left',  label: 'Soundfield Left',  color: 'text-green-700' },
+];
+const WRN_ROWS = [
+  { key: 'wrn_right', label: 'Right', color: 'text-red-600' },
+  { key: 'wrn_left',  label: 'Left',  color: 'text-blue-600' },
+];
 
 // Merge incoming data with defaults so undefined keys don't crash the UI.
 const normalize = (data) => ({
@@ -35,6 +51,14 @@ const normalize = (data) => ({
   wrs_left: data?.wrs_left || [],
   wrs_soundfield: data?.wrs_soundfield || [],
   wrs_soundfield_aided: data?.wrs_soundfield_aided || [],
+  word_list: data?.word_list || '',
+  presentation: data?.presentation || '',
+  wr_right: { ...DEFAULT_WR_ROW, ...(data?.wr_right || {}) },
+  wr_left: { ...DEFAULT_WR_ROW, ...(data?.wr_left || {}) },
+  wr_soundfield_right: { ...DEFAULT_WR_ROW, ...(data?.wr_soundfield_right || {}) },
+  wr_soundfield_left:  { ...DEFAULT_WR_ROW, ...(data?.wr_soundfield_left || {}) },
+  wrn_right: { ...DEFAULT_WRN_ROW, ...(data?.wrn_right || {}) },
+  wrn_left:  { ...DEFAULT_WRN_ROW, ...(data?.wrn_left || {}) },
 });
 
 const SpeechPanel = ({ data, onChange }) => {
@@ -48,6 +72,18 @@ const SpeechPanel = ({ data, onChange }) => {
   });
 
   const updateCell = (row, col, value) => {
+    onChange({ ...speech, [row]: { ...speech[row], [col]: value || null } });
+  };
+
+  const updateTopField = (field, value) => {
+    onChange({ ...speech, [field]: value });
+  };
+
+  const updateWRCell = (row, col, value) => {
+    onChange({ ...speech, [row]: { ...speech[row], [col]: value || null } });
+  };
+
+  const updateWRNCell = (row, col, value) => {
     onChange({ ...speech, [row]: { ...speech[row], [col]: value || null } });
   };
 
@@ -273,6 +309,119 @@ const SpeechPanel = ({ data, onChange }) => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ============ Word Recognition table ============ */}
+      <div className="bg-white border border-gray-300 rounded shadow-sm">
+        <div className="bg-gray-100 border-b border-gray-300 px-3 py-1.5">
+          <h3 className="text-sm font-bold text-gray-800 text-center">Word Recognition</h3>
+        </div>
+        {/* Word List + Presentation text inputs */}
+        <div className="grid grid-cols-2 border-b border-gray-200 text-xs">
+          <div className="px-2 py-1 border-r border-gray-200 flex items-center gap-2">
+            <span className="font-semibold text-gray-700 w-20 flex-shrink-0">Word List:</span>
+            <input
+              type="text"
+              value={speech.word_list}
+              onChange={(e) => updateTopField('word_list', e.target.value)}
+              data-testid="wr-word-list"
+              className="flex-1 text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="px-2 py-1 flex items-center gap-2">
+            <span className="font-semibold text-gray-700 w-20 flex-shrink-0">Presentation:</span>
+            <input
+              type="text"
+              value={speech.presentation}
+              onChange={(e) => updateTopField('presentation', e.target.value)}
+              data-testid="wr-presentation"
+              className="flex-1 text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+        <table className="w-full text-sm" data-testid="wr-table">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-300">
+              <th className="px-2 py-1 text-left text-xs font-bold text-gray-700 w-36" rowSpan={2}></th>
+              <th className="px-2 py-0.5 text-xs font-bold text-gray-700 text-center border-l border-gray-300" colSpan={3}>
+                Word List
+              </th>
+              <th className="px-2 py-0.5 text-xs font-bold text-gray-700 text-center border-l border-gray-300" colSpan={3}>
+                Presentation
+              </th>
+            </tr>
+            <tr className="bg-gray-50 border-b border-gray-300">
+              <th className="px-2 py-0.5 text-[11px] font-semibold text-gray-600 text-center border-l border-gray-300">dBHL</th>
+              <th className="px-2 py-0.5 text-[11px] font-semibold text-gray-600 text-center">%</th>
+              <th className="px-2 py-0.5 text-[11px] font-semibold text-gray-600 text-center">Masking</th>
+              <th className="px-2 py-0.5 text-[11px] font-semibold text-gray-600 text-center border-l border-gray-300">dBHL</th>
+              <th className="px-2 py-0.5 text-[11px] font-semibold text-gray-600 text-center">% (aided)</th>
+              <th className="px-2 py-0.5 text-[11px] font-semibold text-gray-600 text-center">Masking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {WR_ROWS.map((r) => {
+              const isSoundfield = r.key.startsWith('wr_soundfield');
+              return (
+                <tr key={r.key} className="border-b border-gray-200">
+                  <td className={`px-2 py-1 text-xs font-bold ${r.color}`}>{r.label}</td>
+                  {['db_hl_unaided', 'percent_unaided', 'masking_unaided', 'db_hl_aided', 'percent_aided', 'masking_aided'].map((col, idx) => {
+                    const isMasking = col.startsWith('masking');
+                    // Greyed cell for Soundfield + Masking (as in reference image)
+                    const disabled = isSoundfield && isMasking;
+                    return (
+                      <td key={col} className={`px-1 py-0.5 ${idx === 0 || idx === 3 ? 'border-l border-gray-200' : ''} ${disabled ? 'bg-gray-200' : ''}`}>
+                        <input
+                          type="text"
+                          value={speech[r.key][col] ?? ''}
+                          onChange={(e) => updateWRCell(r.key, col, e.target.value)}
+                          data-testid={`${r.key}-${col}`}
+                          disabled={disabled}
+                          className={`w-full text-sm border border-gray-200 rounded px-1 py-0.5 text-center focus:outline-none focus:border-blue-500 ${disabled ? 'bg-gray-200 cursor-not-allowed' : ''}`}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ============ Word Recognition in Noise table ============ */}
+      <div className="bg-white border border-gray-300 rounded shadow-sm">
+        <div className="bg-gray-100 border-b border-gray-300 px-3 py-1.5">
+          <h3 className="text-sm font-bold text-gray-800 text-center">Word Recognition in Noise</h3>
+        </div>
+        <table className="w-full text-sm" data-testid="wrn-table">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-300">
+              <th className="px-2 py-1 text-left text-xs font-bold text-gray-700 w-36"></th>
+              <th className="px-2 py-1 text-xs font-bold text-gray-700 text-center">dBHL</th>
+              <th className="px-2 py-1 text-xs font-bold text-gray-700 text-center">%</th>
+              <th className="px-2 py-1 text-xs font-bold text-gray-700 text-center">N. Level</th>
+            </tr>
+          </thead>
+          <tbody>
+            {WRN_ROWS.map((r) => (
+              <tr key={r.key} className="border-b border-gray-200">
+                <td className={`px-2 py-1 text-xs font-bold ${r.color}`}>{r.label}</td>
+                {['db_hl', 'percent', 'noise_level'].map((col) => (
+                  <td key={col} className="px-1 py-0.5">
+                    <input
+                      type="text"
+                      value={speech[r.key][col] ?? ''}
+                      onChange={(e) => updateWRNCell(r.key, col, e.target.value)}
+                      data-testid={`${r.key}-${col}`}
+                      className="w-full text-sm border border-gray-200 rounded px-1 py-0.5 text-center focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -83,8 +83,25 @@ class SpeechWRSPoint(BaseModel):
     masked: bool = False
 
 
+class WordRecognitionRow(BaseModel):
+    """Row of the Word Recognition table — unaided (Word List) + aided (Presentation) pair."""
+    db_hl_unaided: Optional[str] = None
+    percent_unaided: Optional[str] = None
+    masking_unaided: Optional[str] = None
+    db_hl_aided: Optional[str] = None
+    percent_aided: Optional[str] = None
+    masking_aided: Optional[str] = None
+
+
+class WordRecognitionInNoiseRow(BaseModel):
+    """Row of the Word Recognition in Noise table."""
+    db_hl: Optional[str] = None
+    percent: Optional[str] = None
+    noise_level: Optional[str] = None
+
+
 class SpeechAudiometryData(BaseModel):
-    """Full Speech Audiometry dataset — table rows + WRS curves per ear/soundfield."""
+    """Full Speech Audiometry dataset — table rows + WRS curves + Word Recognition tables."""
     right: SpeechRow = Field(default_factory=SpeechRow)
     left: SpeechRow = Field(default_factory=SpeechRow)
     soundfield: SpeechRow = Field(default_factory=SpeechRow)
@@ -93,6 +110,16 @@ class SpeechAudiometryData(BaseModel):
     wrs_left: List[SpeechWRSPoint] = []
     wrs_soundfield: List[SpeechWRSPoint] = []
     wrs_soundfield_aided: List[SpeechWRSPoint] = []
+    # Word Recognition table (4 rows, shared word-list / presentation text)
+    word_list: Optional[str] = None
+    presentation: Optional[str] = None
+    wr_right: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
+    wr_left: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
+    wr_soundfield_right: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
+    wr_soundfield_left: WordRecognitionRow = Field(default_factory=WordRecognitionRow)
+    # Word Recognition in Noise table (2 rows)
+    wrn_right: WordRecognitionInNoiseRow = Field(default_factory=WordRecognitionInNoiseRow)
+    wrn_left: WordRecognitionInNoiseRow = Field(default_factory=WordRecognitionInNoiseRow)
 
 
 # ==================== PRE-TEST MODELS (Case History / Tuning Fork / Otoscopy) ====================

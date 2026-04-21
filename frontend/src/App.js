@@ -118,6 +118,14 @@ function App() {
     wrs_left: [],
     wrs_soundfield: [],
     wrs_soundfield_aided: [],
+    word_list: '',
+    presentation: '',
+    wr_right: {},
+    wr_left: {},
+    wr_soundfield_right: {},
+    wr_soundfield_left: {},
+    wrn_right: {},
+    wrn_left: {},
   };
   const [speechData, setSpeechData] = useState(defaultSpeech);
   
@@ -571,6 +579,7 @@ function App() {
               recommendations={[]}
               audiogramMode={reportAudiogramMode}
               impedanceData={impedanceData}
+              speechData={speechData}
               onPersist={async (partial) => {
                 if (!sessionId) return;
                 try {

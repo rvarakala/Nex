@@ -15,6 +15,7 @@ import { PureToneSection } from './reports/sections/PureToneSection';
 import { TuningForkSection } from './reports/sections/TuningForkSection';
 import { OtoscopySection } from './reports/sections/OtoscopySection';
 import { PlaceholderTable } from './reports/sections/PlaceholderTable';
+import { SpeechSection } from './reports/sections/SpeechSection';
 import { ResultsGridSection } from './reports/sections/ResultsGridSection';
 import { RecommendationsAdviceSection } from './reports/sections/RecommendationsAdviceSection';
 import { TympanometryInlineSection, TympanometryFullPage } from './reports/TympanometrySections';
@@ -31,6 +32,7 @@ const ReportsPanel = ({
   leftEarData,
   preTestData,
   impedanceData,
+  speechData,
   sessionId, // eslint-disable-line no-unused-vars
   audiologistName,
   clinicalImpression,
@@ -141,7 +143,7 @@ const ReportsPanel = ({
       case 'otoscopy':
         return <OtoscopySection key={id} ot={preTestData?.otoscopy} />;
       case 'speech':
-        return <PlaceholderTable key={id} title="Speech Audiometry" columns={['SAT', 'SRT', 'Mask', 'MCL', 'UCL', 'WR %', 'WR Level']} />;
+        return <SpeechSection key={id} speech={speechData} />;
       case 'tympanometry':
         return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
       case 'results':
