@@ -4,7 +4,7 @@ import { SectionTitle } from '../SectionTitle';
 import { ptaAvg } from '../ptaCalc';
 import { LABELS, pick } from '../constants';
 
-// Compact PTA table below the legend. PTA 1 = 500·1K·2K, PTA 2 = 1K·2K·4K, AB Gap = AC PTA1 − BC PTA1.
+// Compact PTA table. PTA 1 = 500·1K·2K, PTA 2 = 1K·2K·4K, AB Gap = AC PTA1 − BC PTA1.
 const PTAMiniTable = ({ rightEar, leftEar }) => {
   const rP1 = ptaAvg(rightEar, 'ac_measurements', [500, 1000, 2000]);
   const rP2 = ptaAvg(rightEar, 'ac_measurements', [1000, 2000, 4000]);
@@ -50,7 +50,7 @@ const PTAMiniTable = ({ rightEar, leftEar }) => {
   );
 };
 
-// Compact Rinne + Weber micro-table living inside the PTA sidebar (shown when ABC/Bing opt-ins are OFF).
+// Compact Rinne + Weber micro-table (shown when ABC/Bing opt-ins are OFF).
 const TuningForkMiniTable = ({ tf = {} }) => (
   <div className="border border-gray-300 rounded bg-white">
     <div className="text-[10px] font-bold text-gray-700 bg-gray-100 text-center py-0.5 border-b border-gray-300">
@@ -79,6 +79,20 @@ const TuningForkMiniTable = ({ tf = {} }) => (
   </div>
 );
 
+// Audiogram legend box — used in both layouts.
+const Legend = () => (
+  <div className="border border-gray-300 rounded p-1.5 bg-gray-50 text-[10px] text-gray-700">
+    <div className="font-bold text-[11px] mb-1">Legend</div>
+    <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
+    <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">△</span> Right AC (masked)</div>
+    <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">&lt;</span> Right BC</div>
+    <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">X</span> Left AC (unmasked)</div>
+    <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">□</span> Left AC (masked)</div>
+    <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
+    <div className="flex items-center gap-1.5 mt-0.5 pt-0.5 border-t border-gray-300">↙ ↘ No Response</div>
+  </div>
+);
+
 export const PureToneSection = ({
   rightEar,
   leftEar,
@@ -94,20 +108,57 @@ export const PureToneSection = ({
   };
   const chartHeight = HEIGHTS[mode === 'separate' ? 'separate' : 'combined'][size] || HEIGHTS.combined.standard;
 
-  const Sidebar = (
-    <div className="w-[180px] flex-shrink-0 flex flex-col gap-1.5 text-[10px] text-gray-700">
-      <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
-        <div className="font-bold text-[11px] mb-1">Legend</div>
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">△</span> Right AC (masked)</div>
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">&lt;</span> Right BC</div>
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">X</span> Left AC (unmasked)</div>
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">□</span> Left AC (masked)</div>
-        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
-        <div className="flex items-center gap-1.5 mt-0.5 pt-0.5 border-t border-gray-300">↙ ↘ No Response</div>
+  // When the chart has room to breathe (Large / XLarge), we stack:
+  //   Row 1: audiogram(s) spanning full page width
+  //   Row 2: Legend + PTA Summary (+ Tuning Fork mini) in a single horizontal strip
+  const stacked = size !== 'standard';
+
+  // --- Sidebar layout (standard / compact) ---
+  if (!stacked) {
+    const Sidebar = (
+      <div className="w-[180px] flex-shrink-0 flex flex-col gap-1.5">
+        <Legend />
+        <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
+        {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
       </div>
-      <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
-      {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
+    );
+    if (mode === 'separate') {
+      return (
+        <div>
+          <SectionTitle>Puretone Audiometry</SectionTitle>
+          <div className="flex gap-2 items-stretch">
+            <div className="flex-1" style={{ height: `${chartHeight}px` }}>
+              <ReportAudiogram rightEarData={rightEar} leftEarData={null} title="Right Ear" />
+            </div>
+            <div className="flex-1" style={{ height: `${chartHeight}px` }}>
+              <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
+            </div>
+            {Sidebar}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <SectionTitle>Puretone Audiometry</SectionTitle>
+        <div className="flex gap-3">
+          <div className="flex-1" style={{ height: `${chartHeight}px` }}>
+            <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
+          </div>
+          {Sidebar}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Stacked layout (Large / XLarge): full-width audiograms, Legend+PTA row below ---
+  const InfoRow = (
+    <div className="flex gap-2 mt-2 items-stretch">
+      <div className="flex-1"><Legend /></div>
+      <div className="flex-1"><PTAMiniTable rightEar={rightEar} leftEar={leftEar} /></div>
+      {showTuningForkMini && (
+        <div className="flex-1"><TuningForkMiniTable tf={tuningFork} /></div>
+      )}
     </div>
   );
 
@@ -122,22 +173,20 @@ export const PureToneSection = ({
           <div className="flex-1" style={{ height: `${chartHeight}px` }}>
             <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
           </div>
-          {Sidebar}
         </div>
+        {InfoRow}
       </div>
     );
   }
 
-  // combined (default)
+  // combined — full-width single audiogram
   return (
     <div>
       <SectionTitle>Puretone Audiometry</SectionTitle>
-      <div className="flex gap-3">
-        <div className="flex-1" style={{ height: `${chartHeight}px` }}>
-          <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
-        </div>
-        {Sidebar}
+      <div style={{ height: `${chartHeight}px` }}>
+        <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
       </div>
+      {InfoRow}
     </div>
   );
 };
