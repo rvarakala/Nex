@@ -55,6 +55,7 @@ const ReportsPanel = ({
 
   // ========== Layout preferences ==========
   const [tympPlacement, setTympPlacement] = useState('auto'); // auto | inline | separate
+  const [audiogramSize, setAudiogramSize] = useState('large'); // standard | large | xlarge — only honored when Tymp is on new page
   const [showABC, setShowABC] = useState(false);
   const [showBing, setShowBing] = useState(false);
   const tuningForkFull = showABC || showBing;
@@ -116,6 +117,9 @@ const ReportsPanel = ({
         return <CaseHistorySection key={id} narrative={caseHistoryNarrative} />;
       case 'pure_tone': {
         const tfSectionEnabled = !!sections.find((s) => s.id === 'tuning_fork' && s.enabled);
+        // Only apply custom audiogram size when there is vertical room (i.e. Tymp on a separate page).
+        // Otherwise stay at the compact "standard" height to preserve single-A4 fit.
+        const effectiveSize = useSeparatePage ? audiogramSize : 'standard';
         return (
           <PureToneSection
             key={id}
@@ -124,6 +128,7 @@ const ReportsPanel = ({
             mode={audiogramMode}
             tuningFork={preTestData?.tuning_fork}
             showTuningForkMini={tfSectionEnabled && !tuningForkFull}
+            size={effectiveSize}
           />
         );
       }
@@ -176,6 +181,8 @@ const ReportsPanel = ({
         setTympPlacement={setTympPlacement}
         useSeparatePage={useSeparatePage}
         autoSeparatePage={autoSeparatePage}
+        audiogramSize={audiogramSize}
+        setAudiogramSize={setAudiogramSize}
         ptFindings={ptFindings} setPtFindings={setPtFindings}
         immFindings={immFindings} setImmFindings={setImmFindings}
         referredBy={referredBy} setReferredBy={setReferredBy}

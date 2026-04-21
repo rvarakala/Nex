@@ -256,6 +256,46 @@ const TympPlacementToggle = ({ tympPlacement, setTympPlacement, useSeparatePage,
   </div>
 );
 
+// Audiogram size toggle — only meaningful when the Tympanogram is on a separate page,
+// because the main page has extra vertical space and the chart can grow without
+// pushing the conclusion block off A4.
+const AudiogramSizeToggle = ({ audiogramSize, setAudiogramSize, useSeparatePage }) => {
+  const options = [
+    { k: 'standard', label: 'Standard', title: '240 / 280 px — current default' },
+    { k: 'large',    label: 'Large',    title: '380 / 400 px — fills the page nicely' },
+    { k: 'xlarge',   label: 'Extra Large', title: '550 px — audiogram dominates page 1' },
+  ];
+  return (
+    <div>
+      <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Audiogram size</div>
+      <div className="flex gap-1">
+        {options.map((opt) => (
+          <button
+            key={opt.k}
+            type="button"
+            onClick={() => setAudiogramSize(opt.k)}
+            data-testid={`report-audiogram-size-${opt.k}`}
+            title={opt.title}
+            disabled={!useSeparatePage}
+            className={`flex-1 px-1 py-1 text-[10px] font-medium border rounded ${
+              audiogramSize === opt.k
+                ? 'bg-blue-100 border-blue-400 text-blue-700 font-bold'
+                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+            } ${!useSeparatePage ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <div className="text-[9px] text-gray-500 mt-0.5 italic">
+        {useSeparatePage
+          ? `Active (Tymp on separate page)`
+          : `Applies when Tympanometry is on a separate page`}
+      </div>
+    </div>
+  );
+};
+
 const Textarea = ({ label, testid, value, onChange, rows = 3, placeholder }) => (
   <div>
     <div className="text-[10px] font-bold text-gray-600 mb-1">{label}</div>
@@ -293,6 +333,8 @@ export const BuilderSidebar = ({
   showABC, setShowABC, showBing, setShowBing,
   // Tymp placement
   tympPlacement, setTympPlacement, useSeparatePage, autoSeparatePage,
+  // Audiogram size (effective only when useSeparatePage)
+  audiogramSize, setAudiogramSize,
   // Editable textareas / inputs
   ptFindings, setPtFindings,
   immFindings, setImmFindings,
@@ -333,6 +375,12 @@ export const BuilderSidebar = ({
         setTympPlacement={setTympPlacement}
         useSeparatePage={useSeparatePage}
         autoSeparatePage={autoSeparatePage}
+      />
+
+      <AudiogramSizeToggle
+        audiogramSize={audiogramSize}
+        setAudiogramSize={setAudiogramSize}
+        useSeparatePage={useSeparatePage}
       />
 
       <Textarea

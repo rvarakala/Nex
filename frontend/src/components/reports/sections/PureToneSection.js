@@ -85,7 +85,15 @@ export const PureToneSection = ({
   mode = 'combined',
   tuningFork,
   showTuningForkMini = false,
+  size = 'standard', // 'standard' | 'large' | 'xlarge' — only effective when report has room (Tymp on new page)
 }) => {
+  // Height map keyed by (mode, size). Standard values preserve the compact A4-fit default.
+  const HEIGHTS = {
+    combined: { standard: 240, large: 380, xlarge: 550 },
+    separate: { standard: 280, large: 400, xlarge: 550 },
+  };
+  const chartHeight = HEIGHTS[mode === 'separate' ? 'separate' : 'combined'][size] || HEIGHTS.combined.standard;
+
   const Sidebar = (
     <div className="w-[180px] flex-shrink-0 flex flex-col gap-1.5 text-[10px] text-gray-700">
       <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
@@ -108,10 +116,10 @@ export const PureToneSection = ({
       <div>
         <SectionTitle>Puretone Audiometry</SectionTitle>
         <div className="flex gap-2 items-stretch">
-          <div className="flex-1 h-[280px]">
+          <div className="flex-1" style={{ height: `${chartHeight}px` }}>
             <ReportAudiogram rightEarData={rightEar} leftEarData={null} title="Right Ear" />
           </div>
-          <div className="flex-1 h-[280px]">
+          <div className="flex-1" style={{ height: `${chartHeight}px` }}>
             <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
           </div>
           {Sidebar}
@@ -125,7 +133,7 @@ export const PureToneSection = ({
     <div>
       <SectionTitle>Puretone Audiometry</SectionTitle>
       <div className="flex gap-3">
-        <div className="flex-1 h-[240px]">
+        <div className="flex-1" style={{ height: `${chartHeight}px` }}>
           <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
         </div>
         {Sidebar}
