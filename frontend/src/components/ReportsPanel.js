@@ -207,24 +207,24 @@ const TympanometrySummaryTable = ({ impedance }) => {
                                  l: L.volume      != null ? Number(L.volume).toFixed(2)     : '—' },
   ];
   return (
-    <div className="border-2 border-gray-700 rounded bg-white text-[10px] overflow-hidden">
-      <div className="bg-gray-100 border-b-2 border-gray-700 px-2 py-1 text-center">
+    <div className="border border-gray-400 rounded bg-white text-[10px] overflow-hidden">
+      <div className="bg-gray-100 border-b border-gray-400 px-2 py-1 text-center">
         <span className="font-bold text-[11px] tracking-wide">TYMPANOMETRY [{probeHz} Hz]</span>
       </div>
       <table className="w-full border-collapse">
         <thead>
-          <tr className="border-b border-gray-700">
-            <th className="w-[32%] px-1 py-1 text-center font-bold text-red-600 border-r border-gray-400">Right</th>
+          <tr className="border-b border-gray-300">
+            <th className="w-[32%] px-1 py-1 text-center font-bold text-red-600 border-r border-gray-300">Right</th>
             <th className="w-[36%] px-1 py-1 text-center font-bold text-gray-700"></th>
-            <th className="w-[32%] px-1 py-1 text-center font-bold text-blue-600 border-l border-gray-400">Left</th>
+            <th className="w-[32%] px-1 py-1 text-center font-bold text-blue-600 border-l border-gray-300">Left</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.label} className="border-b border-gray-400 last:border-b-0">
-              <td className="px-1 py-1 text-center font-mono border-r border-gray-400">{r.r}</td>
+            <tr key={r.label} className="border-b border-gray-200 last:border-b-0">
+              <td className="px-1 py-1 text-center font-mono border-r border-gray-300">{r.r}</td>
               <td className="px-1 py-1 text-center font-semibold text-gray-700 bg-gray-50">{r.label}</td>
-              <td className="px-1 py-1 text-center font-mono border-l border-gray-400">{r.l}</td>
+              <td className="px-1 py-1 text-center font-mono border-l border-gray-300">{r.l}</td>
             </tr>
           ))}
         </tbody>
@@ -435,45 +435,41 @@ const CaseHistorySection = ({ narrative }) => (
 );
 
 const PureToneSection = ({ rightEar, leftEar, mode = 'combined', tuningFork, showTuningForkMini = false }) => {
+  // Shared legend + PTA sidebar block (used in both modes)
+  const Sidebar = (
+    <div className="w-[180px] flex-shrink-0 flex flex-col gap-1.5 text-[10px] text-gray-700">
+      <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
+        <div className="font-bold text-[11px] mb-1">Legend</div>
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">△</span> Right AC (masked)</div>
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">&lt;</span> Right BC</div>
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">X</span> Left AC (unmasked)</div>
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">□</span> Left AC (masked)</div>
+        <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
+        <div className="flex items-center gap-1.5 mt-0.5 pt-0.5 border-t border-gray-300">↙ ↘ No Response</div>
+      </div>
+      <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
+      {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
+    </div>
+  );
+
   if (mode === 'separate') {
     return (
       <div>
         <SectionTitle>Puretone Audiometry</SectionTitle>
-        <div className="flex gap-2">
-          <div className="flex-1 h-[220px]">
+        <div className="flex gap-2 items-stretch">
+          <div className="flex-1 h-[280px]">
             <ReportAudiogram rightEarData={rightEar} leftEarData={null} title="Right Ear" />
           </div>
-          <div className="flex-1 h-[220px]">
+          <div className="flex-1 h-[280px]">
             <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
           </div>
-        </div>
-        {/* Single-row summary: Legend | PTA Summary | Tuning Fork */}
-        <div className="flex gap-2 mt-2 items-stretch">
-          <div className="flex-1 border border-gray-300 rounded bg-gray-50 p-1.5 text-[10px] text-gray-700">
-            <div className="font-bold text-[11px] mb-1">Legend</div>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-              <span><span className="text-red-600 font-bold">O</span> Right AC</span>
-              <span><span className="text-red-600 font-bold">△</span> Right AC masked</span>
-              <span><span className="text-red-600 font-bold">&lt;</span> Right BC</span>
-              <span><span className="text-blue-600 font-bold">X</span> Left AC</span>
-              <span><span className="text-blue-600 font-bold">□</span> Left AC masked</span>
-              <span><span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
-              <span>↙ ↘ No Response</span>
-            </div>
-          </div>
-          <div className="w-[220px] flex-shrink-0">
-            <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
-          </div>
-          {showTuningForkMini && (
-            <div className="w-[200px] flex-shrink-0">
-              <TuningForkMiniTable tf={tuningFork} />
-            </div>
-          )}
+          {Sidebar}
         </div>
       </div>
     );
   }
-  // combined (default) — PTA mini-table (and optional Tuning Fork mini) in the right sidebar
+  // combined (default)
   return (
     <div>
       <SectionTitle>Puretone Audiometry</SectionTitle>
@@ -481,20 +477,7 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined', tuningFork, sho
         <div className="flex-1 h-[240px]">
           <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
         </div>
-        <div className="w-[200px] flex flex-col gap-2 text-[10px] text-gray-700">
-          <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
-            <div className="font-bold text-[11px] mb-1">Legend</div>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">△</span> Right AC (masked)</div>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">&lt;</span> Right BC</div>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">X</span> Left AC (unmasked)</div>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">□</span> Left AC (masked)</div>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-blue-600 font-bold">&gt;</span> Left BC</div>
-            <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-gray-300">↙ ↘ No Response</div>
-          </div>
-          <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
-          {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
-        </div>
+        {Sidebar}
       </div>
     </div>
   );
@@ -685,6 +668,34 @@ const NarrativeSection = ({ title, text }) => (
   </div>
 );
 
+// 2x2 Results grid — Row1: Puretone | Immitence · Row2: Provisional Diagnosis (full width)
+const ResultsGridSection = ({ puretone, immitence, diagnosis }) => {
+  const Cell = ({ title, text }) => (
+    <div className="border border-gray-400 p-1.5">
+      <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-0.5">{title}</div>
+      <p className="text-[11px] leading-snug text-gray-800 whitespace-pre-wrap min-h-[32px]">
+        {text || <span className="italic text-gray-400">—</span>}
+      </p>
+    </div>
+  );
+  return (
+    <div>
+      <SectionTitle>Results</SectionTitle>
+      <div className="grid grid-cols-2 gap-0 border border-gray-400 border-b-0">
+        <div className="border-r border-b border-gray-400 -mr-px">
+          <Cell title="Puretone Audiometry Findings" text={puretone} />
+        </div>
+        <div className="border-b border-gray-400">
+          <Cell title="Immitence Audiometry Findings" text={immitence} />
+        </div>
+        <div className="col-span-2 border-t border-gray-400">
+          <Cell title="Provisional Diagnosis" text={diagnosis} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ==================== MAIN COMPONENT ====================
 
 const ReportsPanel = ({
@@ -707,6 +718,13 @@ const ReportsPanel = ({
   const [resultsText, setResultsText] = useState(clinicalImpression || '');
   const [recText, setRecText] = useState((recommendations || []).join('\n'));
   const [license, setLicense] = useState('');
+  // Results 2x2 fields (Puretone findings / Immitence findings / Provisional diagnosis)
+  const [ptFindings, setPtFindings] = useState('');
+  const [immFindings, setImmFindings] = useState('');
+  const [provDiagnosis, setProvDiagnosis] = useState('');
+  // Patient strip editable fields
+  const [referredBy, setReferredBy] = useState('');
+  const [mrdEdit, setMrdEdit] = useState(patient?.patient_id || '');
   // Tympanometry placement: auto | inline | separate
   const [tympPlacement, setTympPlacement] = useState('auto');
   // Tuning fork — Rinne + Weber always. ABC / Bing opt-in.
@@ -751,11 +769,15 @@ const ReportsPanel = ({
     saveTimer.current = setTimeout(() => {
       onPersist({
         clinical_impression: resultsText,
+        puretone_findings: ptFindings,
+        immitence_findings: immFindings,
+        provisional_diagnosis: provDiagnosis,
+        referred_by: referredBy,
         recommendations: recText.split('\n').map((l) => l.trim()).filter(Boolean),
       });
     }, 800);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [resultsText, recText, onPersist]);
+  }, [resultsText, recText, ptFindings, immFindings, provDiagnosis, referredBy, onPersist]);
 
   const toggleSection = (id) =>
     setSections((s) => s.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
@@ -805,7 +827,7 @@ const ReportsPanel = ({
         // Inline render at this slot ONLY if not using separate page
         return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
       case 'results':
-        return <NarrativeSection key={id} title="Results" text={resultsText} />;
+        return <ResultsGridSection key={id} puretone={ptFindings} immitence={immFindings} diagnosis={provDiagnosis} />;
       case 'recommendations':
         return <NarrativeSection key={id} title="Recommendations" text={recText} />;
       default:
@@ -1086,14 +1108,57 @@ const ReportsPanel = ({
           </div>
 
           <div>
-            <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Results (narrative)</div>
+            <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Results — Puretone findings</div>
             <textarea
-              data-testid="report-results"
-              value={resultsText}
-              onChange={(e) => setResultsText(e.target.value)}
-              rows={5}
-              placeholder="e.g., Patient presents with bilateral mild sloping sensorineural hearing loss…"
+              data-testid="report-pt-findings"
+              value={ptFindings}
+              onChange={(e) => setPtFindings(e.target.value)}
+              rows={3}
+              placeholder="Bilateral mild sloping SNHL…"
               className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-gray-600 mb-1">Results — Immitence findings</div>
+            <textarea
+              data-testid="report-imm-findings"
+              value={immFindings}
+              onChange={(e) => setImmFindings(e.target.value)}
+              rows={3}
+              placeholder="Type A tympanograms bilaterally; acoustic reflexes present at normal levels…"
+              className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-gray-600 mb-1">Provisional Diagnosis</div>
+            <textarea
+              data-testid="report-prov-dx"
+              value={provDiagnosis}
+              onChange={(e) => setProvDiagnosis(e.target.value)}
+              rows={3}
+              placeholder="B/L mild sloping sensorineural hearing loss; normal middle-ear function."
+              className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-gray-600 mb-1">Referred by</div>
+            <input
+              type="text"
+              data-testid="report-referred-by"
+              value={referredBy}
+              onChange={(e) => setReferredBy(e.target.value)}
+              placeholder="Dr. / Self / Clinic"
+              className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-gray-600 mb-1">MRD / Patient ID</div>
+            <input
+              type="text"
+              data-testid="report-mrd"
+              value={mrdEdit}
+              onChange={(e) => setMrdEdit(e.target.value)}
+              className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1"
             />
           </div>
           <div>
@@ -1176,13 +1241,13 @@ const ReportsPanel = ({
           {/* ===== PATIENT INFO (aligned grid, 4 columns × 2 rows) ===== */}
           <section className="mt-1.5 border border-gray-400 text-[11px] grid grid-cols-4">
             {[
-              { label: 'Patient Name',  value: patient.name || '—',       span: 'col-span-2' },
-              { label: 'MRD / Patient ID', value: patient.patient_id || '—', span: '' },
-              { label: 'Date of Birth', value: patient.dob || '—',        span: '' },
-              { label: 'Age',           value: String(patient.age ?? '—'), span: '' },
-              { label: 'Gender',        value: patient.gender || '—',     span: '' },
-              { label: 'Audiologist',   value: audiologistName || '—',    span: '' },
-              { label: 'Date of Service', value: fmtDate(),               span: '' },
+              { label: 'Patient Name',    value: patient.name || '—',                                              span: 'col-span-2' },
+              { label: 'MRD / Patient ID', value: mrdEdit || '—',                                                  span: '' },
+              { label: 'Date of Birth',   value: patient.dob || '—',                                               span: '' },
+              { label: 'Age / Gender',    value: `${patient.age ?? '—'}/${(patient.gender || '—').charAt(0).toUpperCase()}`, span: '' },
+              { label: 'Audiologist',     value: audiologistName || '—',                                           span: '' },
+              { label: 'Referred by',     value: referredBy || '—',                                                span: '' },
+              { label: 'Date of Service', value: fmtDate(),                                                        span: '' },
             ].map((c, i, arr) => {
               const isLastCol = (i + 1) % 4 === 0 || i === arr.length - 1;
               const isLastRow = i >= arr.length - (arr.length % 4 || 4);

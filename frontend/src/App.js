@@ -29,7 +29,7 @@ function App() {
   const [activeTest, setActiveTest] = useState('ac_right');
   const [masked, setMasked] = useState(false);
   const [extendedFrequency, setExtendedFrequency] = useState(false);
-  const [reportAudiogramMode, setReportAudiogramMode] = useState('combined'); // 'combined' | 'separate'
+  const [reportAudiogramMode, setReportAudiogramMode] = useState('separate'); // 'combined' | 'separate'
   
   // Pre-Test (Case History + Tuning Fork + Otoscopy)
   const defaultPreTest = {
