@@ -97,16 +97,21 @@ const SpeechPanel = ({ data, onChange }) => {
     soundfield_aided: speech.wrs_soundfield_aided,
   };
 
-  const addPoint = (dbHl, percent, masked = false) => {
+  const addPoint = (dbHl, percent, opts = {}) => {
+    const { masked = false, noResponse = false } = opts;
     const key = wrsKey(activeChannel);
     const db = Number(dbHl);
     const pct = Number(percent);
     const existing = speech[key] || [];
-    // Replace-or-append: plot at same dB overwrites (like Pure Tone audiometry).
+    // Replace-or-append at the same dB (Pure Tone audiometry convention).
     const filtered = existing.filter((p) => p.db_hl !== db);
-    const next = [...filtered, { db_hl: db, percent: pct, masked }].sort(
-      (a, b) => a.db_hl - b.db_hl
-    );
+    const next = [...filtered, { db_hl: db, percent: pct, masked, no_response: noResponse }]
+      .sort((a, b) => a.db_hl - b.db_hl);
+    onChange({ ...speech, [key]: next });
+  };
+  const deletePointAtDb = (dbHl) => {
+    const key = wrsKey(activeChannel);
+    const next = (speech[key] || []).filter((p) => p.db_hl !== Number(dbHl));
     onChange({ ...speech, [key]: next });
   };
   const removeLastPoint = () => {
@@ -123,7 +128,7 @@ const SpeechPanel = ({ data, onChange }) => {
     const db = parseFloat(inputDb);
     const pct = parseFloat(inputPct);
     if (Number.isNaN(db) || Number.isNaN(pct)) return;
-    addPoint(db, pct, inputMasked);
+    addPoint(db, pct, { masked: inputMasked });
     setInputDb('');
     setInputPct('');
   };
@@ -207,10 +212,15 @@ const SpeechPanel = ({ data, onChange }) => {
 
             <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-600 space-y-0.5">
               <div className="font-bold text-gray-700 mb-0.5">Legend</div>
-              <div><span className="text-red-600 font-bold">○</span> Right</div>
-              <div><span className="text-blue-600 font-bold">○</span> Left</div>
-              <div><span className="text-green-700 font-bold">○</span> Soundfield</div>
-              <div><span className="text-pink-700 font-bold">○</span> Soundfield Aided</div>
+              <div className="flex items-center gap-1.5"><span className="text-red-600 font-bold w-4 text-center">O</span> Right (unmasked)</div>
+              <div className="flex items-center gap-1.5"><span className="text-red-600 font-bold w-4 text-center">△</span> Right (masked)</div>
+              <div className="flex items-center gap-1.5"><span className="text-blue-600 font-bold w-4 text-center">X</span> Left (unmasked)</div>
+              <div className="flex items-center gap-1.5"><span className="text-blue-600 font-bold w-4 text-center">□</span> Left (masked)</div>
+              <div className="flex items-center gap-1.5"><span className="text-green-700 font-bold w-4 text-center">S</span> Soundfield</div>
+              <div className="flex items-center gap-1.5"><span className="text-pink-700 font-bold w-4 text-center">A</span> Soundfield Aided</div>
+              <div className="mt-0.5 pt-0.5 border-t border-gray-200 text-gray-500 italic">
+                Right-click → NR · Delete · Clear
+              </div>
             </div>
           </div>
 
@@ -221,7 +231,10 @@ const SpeechPanel = ({ data, onChange }) => {
                 points={currentPoints}
                 enabledChannels={enabledChannels}
                 activeChannel={activeChannel}
-                onAddPoint={(db, pct) => addPoint(db, pct, inputMasked)}
+                masked={inputMasked}
+                onPlotPoint={(db, pct, opts) => addPoint(db, pct, opts)}
+                onDeletePoint={deletePointAtDb}
+                onClearChannel={clearChannel}
               />
             </div>
           </div>

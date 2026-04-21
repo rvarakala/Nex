@@ -58,19 +58,21 @@ export const SpeechSection = ({ speech, channelsToPlot }) => {
           <tr>
             <Tag>SRT / SAT</Tag>
             <td className="p-1 align-top">
-              <div className="flex flex-wrap gap-y-0.5">
+              <div className="grid grid-cols-5 gap-y-0.5 gap-x-2">
                 <Pair label="R"          value={f.srt_r}        color="text-red-600" />
                 <Pair label="R Masked"   value={f.srt_r_masked} color="text-red-600" />
                 <Pair label="L"          value={f.srt_l}        color="text-blue-600" />
                 <Pair label="L Masked"   value={f.srt_l_masked} color="text-blue-600" />
+                <span />
                 <Pair label="Binaural R" value={f.srt_bin_r}    color="text-red-600" />
                 <Pair label="Binaural L" value={f.srt_bin_l}    color="text-blue-600" />
                 <Pair label="SAT R"      value={f.sat_r}        color="text-red-600" />
                 <Pair label="SAT L"      value={f.sat_l}        color="text-blue-600" />
+                <span />
                 <Pair label="SAT SF"     value={f.sat_sf}       color="text-green-700" />
                 <Pair label="SAT SFA"    value={f.sat_sfa}      color="text-pink-700" />
               </div>
-              <div className="flex flex-wrap gap-y-0.5 mt-1 pt-1 border-t border-gray-200">
+              <div className="grid grid-cols-3 gap-x-2 mt-1 pt-1 border-t border-gray-200">
                 <Pair label="DiscrimList" value={f.discrim_list} />
                 <Pair label="Voice Type"  value={f.voice_type} />
                 <Pair label="Reliability" value={f.reliability || 'Good'} />
@@ -146,20 +148,44 @@ export const SpeechSection = ({ speech, channelsToPlot }) => {
               <Tag>WRN</Tag>
               <td className="p-1 align-top">
                 <div className="text-[9px] italic text-gray-500 mb-0.5">Word Recognition in Noise</div>
-                <div className="flex gap-x-6">
-                  {[
-                    { side: 'r', label: 'R', color: 'text-red-600' },
-                    { side: 'l', label: 'L', color: 'text-blue-600' },
-                    { side: 'bin', label: 'Binaural', color: 'text-gray-700' },
-                  ].map((col) => (
-                    <div key={col.side} className="flex items-center gap-1">
-                      <span className={`text-[10px] font-bold ${col.color} w-14`}>{col.label}</span>
-                      <Pair label="%"     value={f[`wrn_${col.side}_pct`]} />
-                      <Pair label="dB"    value={f[`wrn_${col.side}_db`]} />
-                      <Pair label="Noise" value={f[`wrn_${col.side}_noise`]} />
-                    </div>
-                  ))}
-                </div>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="text-[9px] text-gray-600">
+                      <th className="w-16"></th>
+                      {[
+                        { side: 'r', label: 'R', color: 'text-red-600' },
+                        { side: 'l', label: 'L', color: 'text-blue-600' },
+                        { side: 'bin', label: 'Binaural', color: 'text-gray-700' },
+                      ].map((col) => (
+                        <th key={col.side} colSpan={3} className={`px-1 py-0.5 border-l border-gray-300 ${col.color} font-bold`}>
+                          {col.label}
+                        </th>
+                      ))}
+                    </tr>
+                    <tr className="text-[9px] text-gray-500">
+                      <th></th>
+                      {['r', 'l', 'bin'].map((side) => (
+                        <React.Fragment key={side}>
+                          <th className="px-1 py-0 border-l border-gray-200">%</th>
+                          <th className="px-1 py-0">dB</th>
+                          <th className="px-1 py-0">Noise</th>
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-gray-200">
+                      <td className="px-1 py-0 font-semibold text-gray-700">Unaided</td>
+                      {['r', 'l', 'bin'].map((side) => (
+                        <React.Fragment key={side}>
+                          <td className="px-1 py-0 text-center font-mono border-l border-gray-200">{cell(f[`wrn_${side}_pct`])}</td>
+                          <td className="px-1 py-0 text-center font-mono">{cell(f[`wrn_${side}_db`])}</td>
+                          <td className="px-1 py-0 text-center font-mono">{cell(f[`wrn_${side}_noise`])}</td>
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
               </td>
             </tr>
           </tbody>
@@ -179,7 +205,7 @@ export const SpeechSection = ({ speech, channelsToPlot }) => {
                 <div className="grid grid-cols-3 gap-x-4">
                   <div>
                     <div className="text-[9px] italic text-gray-500 mb-0.5">Most Comfortable Level</div>
-                    <div className="flex flex-wrap gap-y-0.5">
+                    <div className="grid grid-cols-2 gap-y-0.5 gap-x-2">
                       <Pair label="R"        value={f.mcl_r}     color="text-red-600" />
                       <Pair label="L"        value={f.mcl_l}     color="text-blue-600" />
                       <Pair label="Binaural" value={f.mcl_bin_1} />
@@ -188,24 +214,22 @@ export const SpeechSection = ({ speech, channelsToPlot }) => {
                   </div>
                   <div>
                     <div className="text-[9px] italic text-gray-500 mb-0.5">Quick SIN</div>
-                    <div>
-                      <div className="text-[9px] text-gray-600">Score</div>
-                      <div className="flex flex-wrap gap-y-0.5">
-                        <Pair label="R"        value={f.qsin_r_score}   color="text-red-600" />
-                        <Pair label="Binaural" value={f.qsin_bin_score} />
-                        <Pair label="L"        value={f.qsin_l_score}   color="text-blue-600" />
-                      </div>
-                      <div className="text-[9px] text-gray-600 mt-0.5">Level</div>
-                      <div className="flex flex-wrap gap-y-0.5">
-                        <Pair label="R"        value={f.qsin_r_level}   color="text-red-600" />
-                        <Pair label="Binaural" value={f.qsin_bin_level} />
-                        <Pair label="L"        value={f.qsin_l_level}   color="text-blue-600" />
-                      </div>
+                    <div className="text-[9px] text-gray-600">Score</div>
+                    <div className="grid grid-cols-3 gap-x-1 mb-0.5">
+                      <Pair label="R"        value={f.qsin_r_score}   color="text-red-600" />
+                      <Pair label="Binaural" value={f.qsin_bin_score} />
+                      <Pair label="L"        value={f.qsin_l_score}   color="text-blue-600" />
+                    </div>
+                    <div className="text-[9px] text-gray-600">Level</div>
+                    <div className="grid grid-cols-3 gap-x-1">
+                      <Pair label="R"        value={f.qsin_r_level}   color="text-red-600" />
+                      <Pair label="Binaural" value={f.qsin_bin_level} />
+                      <Pair label="L"        value={f.qsin_l_level}   color="text-blue-600" />
                     </div>
                   </div>
                   <div>
                     <div className="text-[9px] italic text-gray-500 mb-0.5">Uncomfortable Level / LDL</div>
-                    <div className="flex flex-wrap gap-y-0.5">
+                    <div className="grid grid-cols-2 gap-y-0.5 gap-x-2">
                       <Pair label="R"        value={f.ucl_r}     color="text-red-600" />
                       <Pair label="L"        value={f.ucl_l}     color="text-blue-600" />
                       <Pair label="Binaural" value={f.ucl_bin_1} />
