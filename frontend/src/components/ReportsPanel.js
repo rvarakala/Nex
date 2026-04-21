@@ -62,7 +62,7 @@ const fileToResizedBase64 = (file, maxSize = 400) =>
 const TOGGLEABLE_SECTIONS = [
   { id: 'case_history',   label: 'Case History (summary)',   defaultEnabled: true },
   { id: 'pure_tone',      label: 'Pure Tone Audiometry',     defaultEnabled: true },
-  { id: 'tuning_fork',    label: 'Tuning Fork Tests',        defaultEnabled: true },
+  { id: 'tuning_fork',    label: 'Tuning Fork Tests',        defaultEnabled: false },
   { id: 'otoscopy',       label: 'Otoscopic Examination',    defaultEnabled: false },
   { id: 'speech',         label: 'Speech Audiometry',        defaultEnabled: false },
   { id: 'tympanometry',   label: 'Tympanometry / Impedance', defaultEnabled: true },
@@ -778,7 +778,9 @@ const ReportsPanel = ({
     switch (id) {
       case 'case_history':
         return <CaseHistorySection key={id} narrative={caseHistoryNarrative} />;
-      case 'pure_tone':
+      case 'pure_tone': {
+        // Show inline Rinne+Weber mini ONLY when Tuning Fork section is enabled AND neither ABC nor Bing are requested
+        const tfSectionEnabled = !!sections.find((s) => s.id === 'tuning_fork' && s.enabled);
         return (
           <PureToneSection
             key={id}
@@ -786,11 +788,12 @@ const ReportsPanel = ({
             leftEar={leftEarData}
             mode={audiogramMode}
             tuningFork={preTestData?.tuning_fork}
-            showTuningForkMini={!tuningForkFull}
+            showTuningForkMini={tfSectionEnabled && !tuningForkFull}
           />
         );
+      }
       case 'tuning_fork':
-        // If no ABC or Bing requested, skip main-body section (data is shown inline in PTA sidebar)
+        // If no ABC or Bing requested, the Rinne+Weber mini already shows inside PureToneSection
         return tuningForkFull
           ? <TuningForkSection key={id} tf={preTestData?.tuning_fork} showABC={showABC} showBing={showBing} />
           : null;
@@ -1026,7 +1029,7 @@ const ReportsPanel = ({
           <div>
             <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Tuning Fork extras</div>
             <div className="text-[10px] text-gray-500 mb-1">
-              Rinne + Weber show inline below PTA by default. Enable below to add a full-section with notes.
+              Enable <b>Tuning Fork Tests</b> in Sections above to show Rinne + Weber on the report. ABC / Bing are opt-in extras shown in a full section with notes.
             </div>
             <div className="grid grid-cols-2 gap-1">
               <label className={`flex items-center gap-1 px-2 py-1 text-[11px] border rounded cursor-pointer ${showABC ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-300'}`}>
