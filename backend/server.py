@@ -6,14 +6,16 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 # Import our models
 from models import (
     Patient, PatientCreate,
     TestSession, TestSessionCreate, TestSessionUpdate,
-    AudiogramData, SpeechTest
+    AudiogramData, SpeechTest,
+    ReferringDoctor, ReferringDoctorCreate,
+    PatientNote, PatientNoteCreate,
 )
 
 # Import PDF generator
@@ -48,15 +50,18 @@ def serialize_datetime(obj):
     return obj
 
 def deserialize_datetime(obj):
-    """Convert ISO format strings back to datetime objects"""
+    """Convert ISO format strings back to datetime objects.
+    Skips known string-typed date fields (e.g., 'dob') to avoid coercing them into datetimes.
+    """
+    STRING_DATE_KEYS = {"dob"}
     if isinstance(obj, dict):
-        return {k: deserialize_datetime(v) for k, v in obj.items()}
+        return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [deserialize_datetime(item) for item in obj]
     elif isinstance(obj, str):
         try:
             return datetime.fromisoformat(obj)
-        except:
+        except:  # noqa: E722
             return obj
     return obj
 
@@ -84,9 +89,21 @@ async def create_patient(patient: PatientCreate):
     return patient_obj
 
 @api_router.get("/patients", response_model=List[Patient])
-async def get_patients(limit: int = 100):
-    """Get all patients"""
-    patients = await db.patients.find({}, {"_id": 0}).to_list(limit)
+async def get_patients(search: Optional[str] = None, limit: int = 100):
+    """Get all patients, optionally filtered by case-insensitive search across name / mobile / patient_id."""
+    query: dict = {}
+    if search:
+        import re as _re
+        safe = _re.escape(search.strip())
+        if safe:
+            rx = {"$regex": safe, "$options": "i"}
+            query = {"$or": [
+                {"name": rx},
+                {"mobile": rx},
+                {"phone": rx},
+                {"patient_id": rx},
+            ]}
+    patients = await db.patients.find(query, {"_id": 0}).sort("updated_at", -1).to_list(limit)
     return [deserialize_datetime(p) for p in patients]
 
 @api_router.get("/patients/{patient_id}", response_model=Patient)
@@ -114,6 +131,89 @@ async def update_patient(patient_id: str, patient_update: PatientCreate):
     
     updated_patient = await db.patients.find_one({"patient_id": patient_id}, {"_id": 0})
     return deserialize_datetime(updated_patient)
+
+
+@api_router.delete("/patients/{patient_id}")
+async def delete_patient(patient_id: str):
+    """Delete a patient + their notes. Sessions are kept (soft archival by patient_id)."""
+    existing = await db.patients.find_one({"patient_id": patient_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    await db.patients.delete_one({"patient_id": patient_id})
+    await db.patient_notes.delete_many({"patient_id": patient_id})
+    return {"message": "Patient deleted", "patient_id": patient_id}
+
+
+# ==================== REFERRING DOCTORS ====================
+
+@api_router.get("/referring-doctors", response_model=List[ReferringDoctor])
+async def list_referring_doctors(search: Optional[str] = None, limit: int = 200):
+    query: dict = {}
+    if search:
+        import re as _re
+        safe = _re.escape(search.strip())
+        if safe:
+            rx = {"$regex": safe, "$options": "i"}
+            query = {"$or": [{"name": rx}, {"specialty": rx}, {"clinic": rx}, {"phone": rx}]}
+    docs = await db.referring_doctors.find(query, {"_id": 0}).sort("name", 1).to_list(limit)
+    return [deserialize_datetime(d) for d in docs]
+
+
+@api_router.post("/referring-doctors", response_model=ReferringDoctor)
+async def create_referring_doctor(doc: ReferringDoctorCreate):
+    obj = ReferringDoctor(**doc.model_dump())
+    await db.referring_doctors.insert_one(serialize_datetime(obj.model_dump()))
+    return obj
+
+
+@api_router.put("/referring-doctors/{doctor_id}", response_model=ReferringDoctor)
+async def update_referring_doctor(doctor_id: str, payload: ReferringDoctorCreate):
+    existing = await db.referring_doctors.find_one({"doctor_id": doctor_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Referring doctor not found")
+    data = payload.model_dump()
+    data["updated_at"] = datetime.utcnow()
+    await db.referring_doctors.update_one(
+        {"doctor_id": doctor_id},
+        {"$set": serialize_datetime(data)}
+    )
+    updated = await db.referring_doctors.find_one({"doctor_id": doctor_id}, {"_id": 0})
+    return deserialize_datetime(updated)
+
+
+@api_router.delete("/referring-doctors/{doctor_id}")
+async def delete_referring_doctor(doctor_id: str):
+    res = await db.referring_doctors.delete_one({"doctor_id": doctor_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Referring doctor not found")
+    return {"message": "Deleted", "doctor_id": doctor_id}
+
+
+# ==================== PATIENT JOURNAL / CHART NOTES ====================
+
+@api_router.get("/patient-notes", response_model=List[PatientNote])
+async def list_patient_notes(patient_id: str, limit: int = 500):
+    notes = await db.patient_notes.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return [deserialize_datetime(n) for n in notes]
+
+
+@api_router.post("/patient-notes", response_model=PatientNote)
+async def create_patient_note(note: PatientNoteCreate):
+    # Ensure patient exists
+    p = await db.patients.find_one({"patient_id": note.patient_id})
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    obj = PatientNote(**note.model_dump())
+    await db.patient_notes.insert_one(serialize_datetime(obj.model_dump()))
+    return obj
+
+
+@api_router.delete("/patient-notes/{note_id}")
+async def delete_patient_note(note_id: str):
+    res = await db.patient_notes.delete_one({"note_id": note_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"message": "Deleted", "note_id": note_id}
 
 
 # ==================== TEST SESSION ROUTES ====================

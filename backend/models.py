@@ -13,10 +13,14 @@ class Patient(BaseModel):
     age: int
     gender: Literal["Male", "Female", "Other"]
     dob: Optional[str] = None
-    phone: Optional[str] = None
+    mobile: Optional[str] = None           # Primary identifier in India
+    aadhaar_last4: Optional[str] = None    # Optional, last 4 digits only (privacy)
+    phone: Optional[str] = None            # Legacy — kept for backward compatibility
     address: Optional[str] = None
     email: Optional[str] = None
-    referring_physician: Optional[str] = None
+    referring_physician: Optional[str] = None       # Free-text fallback
+    referring_doctor_id: Optional[str] = None       # FK into referring_doctors
+    notes: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -25,10 +29,59 @@ class PatientCreate(BaseModel):
     age: int
     gender: Literal["Male", "Female", "Other"]
     dob: Optional[str] = None
+    mobile: Optional[str] = None
+    aadhaar_last4: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     email: Optional[str] = None
     referring_physician: Optional[str] = None
+    referring_doctor_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ==================== REFERRING DOCTOR MODELS ====================
+
+class ReferringDoctor(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doctor_id: str = Field(default_factory=lambda: f"DR-{str(uuid4())[:8].upper()}")
+    name: str
+    specialty: Optional[str] = None        # e.g., ENT, GP, Paediatrics, Neurology
+    clinic: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ReferringDoctorCreate(BaseModel):
+    name: str
+    specialty: Optional[str] = None
+    clinic: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ==================== PATIENT JOURNAL / CHART NOTES ====================
+
+class PatientNote(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    note_id: str = Field(default_factory=lambda: f"NOTE-{str(uuid4())[:10].upper()}")
+    patient_id: str
+    audiologist: Optional[str] = None
+    text: str
+    auto: bool = False                     # True for system-generated entries (session created, report printed, etc.)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PatientNoteCreate(BaseModel):
+    patient_id: str
+    text: str
+    audiologist: Optional[str] = None
+    auto: bool = False
 
 
 # ==================== AUDIOGRAM MODELS ====================

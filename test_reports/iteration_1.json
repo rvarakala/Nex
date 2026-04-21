@@ -1,0 +1,44 @@
+{
+  "summary": "Phase 1 Patient Records Module — full backend (14/14 pytest pass) + frontend E2E tested. Patient CRUD with India fields (mobile, aadhaar_last4, referring_doctor_id), case-insensitive search by name/mobile/patient_id, ReferringDoctor CRUD, PatientNote CRUD with cascade-on-patient-delete, sessions sorted DESC by test_date — all verified. Frontend: empty state, top-bar PatientSwitcher search + result selection, PatientModal create+edit with prefill, ReferringDoctorPicker inline-add-new+auto-select, header (name+ID+age+gender+mobile, Visit dropdown, Edit, Journal), auto-session creation for new patient, '__new__' option creates+adds visit to dropdown, Journal side drawer with AUTO 'New test session started.' entry + manual notes — all working. Visit-switching fires session GET and rehydrates state. Reports tab not fully reachable in this run due to the Escape-key drawer-dismiss bug (overlay intercepts subsequent clicks).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PatientJournal", "issue": "Pressing Escape key does NOT close the journal side drawer; the [data-testid='patient-journal-overlay'] continues to intercept pointer events and blocks subsequent clicks (e.g., switching to a tab like Pure Tone or Reports while drawer is logically dismissed). Users must use the explicit × close button.", "selector": "[data-testid='patient-journal-overlay']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "New patient → open Journal immediately", "issue": "The system-generated AUTO note 'New test session started.' is not yet rendered when the Journal is opened immediately after patient/session creation (race between session-create POST + auto-note POST + GET /api/patient-notes). On a subsequent visit it is correctly present. Consider: optimistically render the auto-entry locally before the GET round-trip, or await the create-note promise before opening the drawer.", "affected_selectors": ["[data-testid='patient-journal']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_patient_records.py",
+    "/app/test_reports/pytest/phase1_results.xml"
+  ],
+  "action_items": [
+    "Wire Escape key (and overlay click) to actually dismiss the journal drawer + remove overlay (likely a missing onClick on patient-journal-overlay or missing keydown listener).",
+    "Eliminate the create-session → auto-note race so the AUTO entry shows up on first journal open after creating a patient (await the note POST before opening, or insert into local state immediately)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: DELETE /api/patients cascades patient_notes but NOT test_sessions (intentional per docstring, 'soft archival') — verify this is the intended product behavior; orphan sessions remain queryable by their patient_id.",
+    "server.py: bare 'except:' in deserialize_datetime catches everything (incl. KeyboardInterrupt). Use 'except (ValueError, TypeError):' .",
+    "models.py is ~500 lines — consider splitting into models/patient.py, models/session.py, models/clinical.py for maintainability.",
+    "Patient search regex uses re.escape on the raw input but does not strip-validate empty/whitespace-only after escape; the current guard 'if safe' suffices but minor.",
+    "No backend index on patients.patient_id / mobile / referring_doctors.doctor_id / patient_notes.patient_id — once dataset grows, search/list/sort will scan. Add Mongo indexes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_patient_records.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "~92%"},
+  "test_credentials": "N/A — no auth in app",
+  "seed_data_creation": "Test data prefixed with TEST_ created during pytest run is auto-cleaned via module-scoped fixture. UI test left a real patient 'Anita Patel' (ACS-2026-3E94C28D) in DB with 2 sessions and 1 manual + 2 auto journal notes (intentional, used as fixture for visit-switch test).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/test_phase1_patient_records.py — re-run anytime, all 14 tests should pass. Frontend testids confirmed: empty-state-new-patient (in App.js empty view), patient-search-input, patient-result-{id} (NOT patient-search-result-), patient-add-new + patient-add-new-empty, patient-modal + patient-modal-save/cancel/close, patient-field-{name|age|gender|mobile|aadhaar|address|email|dob|notes|refdoc|refdoc-input|refdoc-new-name|refdoc-new-specialty|refdoc-new-clinic|refdoc-new-phone|refdoc-new-save|refdoc-new-cancel}, patient-edit-btn, patient-journal-btn, session-select, patient-journal, patient-journal-overlay, journal-draft, journal-add. NOTE: After opening the Journal, ESC does not close it; click the explicit × (or implement overlay click-to-close) before doing further tab navigation. To reach Reports/Pure Tone: close drawer first via the × button.",
+  "rca of the issue": {
+    "journal_overlay_traps_clicks": "PatientJournal renders a fixed inset-0 z-40 overlay div (data-testid=patient-journal-overlay). The overlay has no onClick handler and the parent does not listen for keydown('Escape'). When the test pressed Escape, React state for 'journal open' did not flip → overlay stayed in DOM → all clicks on tabs underneath were intercepted. Fix: add onClick={onClose} to the overlay div, and useEffect(()=>{const h=e=>e.key==='Escape'&&onClose(); window.addEventListener('keydown',h); return ()=>window.removeEventListener('keydown',h);},[]).",
+    "auto_note_race_on_first_open": "When a new patient is created, the flow is: POST /patients → POST /sessions → POST /patient-notes (auto entry) → setState selectedPatient/selectedSession. If the user clicks Journal before the auto-note POST resolves, the GET /patient-notes?patient_id=X returns []. Mitigation: either (a) push a synthetic local note into state immediately so the UI reflects the auto-entry, or (b) await the note-create promise before flipping setSelectedPatient/setSelectedSession."
+  }
+}
