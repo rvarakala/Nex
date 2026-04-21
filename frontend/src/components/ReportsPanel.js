@@ -3,18 +3,57 @@ import ReportAudiogram from './ReportAudiogram';
 import TympanogramCanvas from './TympanogramCanvas';
 import { autoClassifyJerger } from './ImpedancePanel';
 
-// ==================== CLINIC BRANDING (hardcoded) ====================
-const CLINIC = {
+// ==================== CLINIC BRANDING (user-customisable, persisted to localStorage) ====================
+const CLINIC_STORAGE_KEY = 'acs_clinic_branding_v1';
+
+const DEFAULT_CLINIC = {
   name: 'ACS Audiology Clinic',
   tagline: 'Hearing & Balance Centre',
   address_line1: '123 Medical Plaza, MG Road',
-  city: 'Bangalore',
-  state: 'Karnataka',
-  postal: '560001',
+  address_line2: 'Bangalore, Karnataka 560001',
   tel: '+91 80 1234 5678',
-  fax: '+91 80 1234 5679',
   email: 'info@acsaudiology.com',
+  logo_base64: null,          // data URL or null
+  logo_shape: 'circle',       // 'circle' | 'square' | 'rectangle'
 };
+
+const loadClinic = () => {
+  try {
+    const raw = localStorage.getItem(CLINIC_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_CLINIC };
+    return { ...DEFAULT_CLINIC, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_CLINIC };
+  }
+};
+
+// Client-side resize + base64 (used for logo upload)
+const fileToResizedBase64 = (file, maxSize = 400) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 // ==================== SECTION CATALOGUE ====================
 // `fixed` sections always appear (header/patient/signature).
@@ -568,6 +607,27 @@ const ReportsPanel = ({
   const [license, setLicense] = useState('');
   // Tympanometry placement: auto | inline | separate
   const [tympPlacement, setTympPlacement] = useState('auto');
+  // Clinic branding (persisted to localStorage)
+  const [clinic, setClinic] = useState(loadClinic);
+  const logoFileRef = useRef(null);
+
+  // Persist branding whenever changed
+  useEffect(() => {
+    try {
+      localStorage.setItem(CLINIC_STORAGE_KEY, JSON.stringify(clinic));
+    } catch { /* ignore quota errors */ }
+  }, [clinic]);
+
+  const handleLogoUpload = async (file) => {
+    if (!file) return;
+    try {
+      const b64 = await fileToResizedBase64(file, 400);
+      setClinic((c) => ({ ...c, logo_base64: b64 }));
+    } catch (err) {
+      console.error('Logo upload failed', err);
+    }
+  };
+  const updateClinic = (patch) => setClinic((c) => ({ ...c, ...patch }));
 
   // Auto rule: if Reflex Decay or ET Dysfunction are enabled, default to separate page
   const autoSeparatePage = !!(
@@ -655,6 +715,160 @@ const ReportsPanel = ({
             </svg>
             Print / Save as PDF
           </button>
+
+          {/* ========== Clinic Branding ========== */}
+          <details className="bg-gray-50 border border-gray-200 rounded overflow-hidden" data-testid="clinic-branding-details">
+            <summary className="cursor-pointer px-2 py-1 text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200">
+              Clinic Branding
+            </summary>
+            <div className="p-2 space-y-1.5">
+              {/* Logo */}
+              <div>
+                <div className="text-[10px] font-semibold text-gray-600 mb-1">Logo</div>
+                <div className="flex items-start gap-2">
+                  {clinic.logo_base64 ? (
+                    <div className="relative group flex-shrink-0">
+                      <img
+                        src={clinic.logo_base64}
+                        alt="Clinic logo"
+                        data-testid="clinic-logo-preview"
+                        className={`bg-white border border-gray-300 object-contain ${
+                          clinic.logo_shape === 'circle'
+                            ? 'w-14 h-14 rounded-full'
+                            : clinic.logo_shape === 'rectangle'
+                            ? 'w-20 h-12 rounded'
+                            : 'w-14 h-14 rounded'
+                        }`}
+                      />
+                      <button
+                        onClick={() => updateClinic({ logo_base64: null })}
+                        data-testid="clinic-logo-remove"
+                        className="absolute -top-1 -right-1 bg-white text-red-600 text-[9px] font-bold px-1 rounded-full border border-red-300 opacity-0 group-hover:opacity-100"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => logoFileRef.current?.click()}
+                      data-testid="clinic-logo-upload"
+                      className="w-14 h-14 border-2 border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 bg-white text-[9px]"
+                    >
+                      Upload
+                    </button>
+                  )}
+                  <div className="flex-1 flex flex-col gap-1">
+                    <button
+                      onClick={() => logoFileRef.current?.click()}
+                      data-testid="clinic-logo-change"
+                      className="px-1.5 py-0.5 text-[10px] border border-gray-300 rounded hover:bg-gray-100"
+                    >
+                      {clinic.logo_base64 ? 'Change' : 'Pick file'}
+                    </button>
+                    <input
+                      ref={logoFileRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleLogoUpload(e.target.files?.[0])}
+                      className="hidden"
+                    />
+                    <div className="flex gap-0.5" data-testid="clinic-logo-shape">
+                      {[
+                        { k: 'circle', label: '●' },
+                        { k: 'square', label: '■' },
+                        { k: 'rectangle', label: '▭' },
+                      ].map((s) => (
+                        <button
+                          key={s.k}
+                          onClick={() => updateClinic({ logo_shape: s.k })}
+                          data-testid={`clinic-logo-shape-${s.k}`}
+                          title={s.k}
+                          className={`flex-1 px-1 py-0.5 text-[11px] border rounded ${
+                            clinic.logo_shape === s.k
+                              ? 'bg-blue-100 border-blue-400 text-blue-700 font-bold'
+                              : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Text fields */}
+              <div>
+                <div className="text-[10px] font-semibold text-gray-600">Clinic name</div>
+                <input
+                  type="text"
+                  data-testid="clinic-name"
+                  value={clinic.name}
+                  onChange={(e) => updateClinic({ name: e.target.value })}
+                  className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5"
+                />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold text-gray-600">Tagline</div>
+                <input
+                  type="text"
+                  data-testid="clinic-tagline"
+                  value={clinic.tagline}
+                  onChange={(e) => updateClinic({ tagline: e.target.value })}
+                  className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5"
+                />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold text-gray-600">Address line 1</div>
+                <input
+                  type="text"
+                  data-testid="clinic-address-1"
+                  value={clinic.address_line1}
+                  onChange={(e) => updateClinic({ address_line1: e.target.value })}
+                  className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5"
+                />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold text-gray-600">Address line 2</div>
+                <input
+                  type="text"
+                  data-testid="clinic-address-2"
+                  value={clinic.address_line2}
+                  onChange={(e) => updateClinic({ address_line2: e.target.value })}
+                  className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-600">Phone</div>
+                  <input
+                    type="text"
+                    data-testid="clinic-tel"
+                    value={clinic.tel}
+                    onChange={(e) => updateClinic({ tel: e.target.value })}
+                    className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5"
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-600">Email</div>
+                  <input
+                    type="text"
+                    data-testid="clinic-email"
+                    value={clinic.email}
+                    onChange={(e) => updateClinic({ email: e.target.value })}
+                    className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => setClinic(DEFAULT_CLINIC)}
+                data-testid="clinic-reset"
+                className="w-full mt-1 text-[10px] text-gray-500 hover:text-red-600 underline"
+              >
+                Reset to defaults
+              </button>
+            </div>
+          </details>
 
           <div>
             <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Sections</div>
@@ -764,60 +978,71 @@ const ReportsPanel = ({
           className="mx-auto bg-white shadow-lg report-page"
           style={{ width: '210mm', minHeight: '297mm', padding: '12mm 14mm', fontFamily: 'Arial, sans-serif', color: '#1f2937' }}
         >
-          {/* ===== HEADER ===== */}
-          <header className="flex items-start justify-between border-b-2 border-blue-700 pb-2">
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-blue-700 text-white flex items-center justify-center font-black text-xl">A</div>
-              <div>
-                <div className="text-[11px] text-gray-500">{CLINIC.tagline}</div>
-                <div className="text-[18px] font-extrabold text-blue-900 leading-tight">{CLINIC.name}</div>
+          {/* ===== HEADER (logo + clinic info on row 1, title on row 2) ===== */}
+          <header className="border-b-2 border-blue-700 pb-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {clinic.logo_base64 ? (
+                  <img
+                    src={clinic.logo_base64}
+                    alt={`${clinic.name} logo`}
+                    className={`bg-white border border-gray-200 object-contain flex-shrink-0 ${
+                      clinic.logo_shape === 'circle'
+                        ? 'w-16 h-16 rounded-full'
+                        : clinic.logo_shape === 'rectangle'
+                        ? 'w-24 h-14 rounded'
+                        : 'w-16 h-16 rounded'
+                    }`}
+                  />
+                ) : (
+                  <div className={`bg-blue-700 text-white flex items-center justify-center font-black text-xl flex-shrink-0 ${
+                    clinic.logo_shape === 'circle'
+                      ? 'w-16 h-16 rounded-full'
+                      : clinic.logo_shape === 'rectangle'
+                      ? 'w-24 h-14 rounded'
+                      : 'w-16 h-16 rounded'
+                  }`}>
+                    {(clinic.name || 'C').trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="text-[11px] text-gray-500 truncate">{clinic.tagline}</div>
+                  <div className="text-[18px] font-extrabold text-blue-900 leading-tight truncate">{clinic.name}</div>
+                </div>
+              </div>
+              <div className="text-[10px] text-right text-gray-700 leading-tight flex-shrink-0">
+                {clinic.address_line1 && <div>{clinic.address_line1}</div>}
+                {clinic.address_line2 && <div>{clinic.address_line2}</div>}
+                {clinic.tel && <div>Tel: {clinic.tel}</div>}
+                {clinic.email && <div>{clinic.email}</div>}
               </div>
             </div>
-            <div className="text-center flex-1 px-4">
-              <h1 className="text-[20px] font-extrabold text-gray-800">Hearing Assessment</h1>
-            </div>
-            <div className="text-[10px] text-right text-gray-700 leading-tight">
-              <div>{CLINIC.address_line1}</div>
-              <div>{CLINIC.city}, {CLINIC.state} {CLINIC.postal}</div>
-              <div>Tel: {CLINIC.tel}</div>
-              <div>Fax: {CLINIC.fax}</div>
+            {/* Title one step below */}
+            <div className="text-center mt-2">
+              <h1 className="text-[20px] font-extrabold text-gray-800 tracking-wide">Hearing Assessment</h1>
             </div>
           </header>
 
-          {/* ===== PATIENT INFO ===== */}
-          <section className="grid grid-cols-4 gap-0 mt-3 border border-gray-400 text-[11px]">
-            <div className="p-1.5 border-r border-b border-gray-400 col-span-3">
-              <div className="text-[9px] text-gray-500 uppercase">Patient Name</div>
-              <div className="font-semibold">{patient.name || '—'}</div>
-            </div>
-            <div className="p-1.5 border-b border-gray-400">
-              <div className="text-[9px] text-gray-500 uppercase">Date of Birth</div>
-              <div className="font-semibold">{patient.dob || '—'}</div>
-            </div>
-            <div className="p-1.5 border-r border-b border-gray-400 col-span-2">
-              <div className="text-[9px] text-gray-500 uppercase">MRD / Patient ID</div>
-              <div className="font-semibold">{patient.patient_id || '—'}</div>
-            </div>
-            <div className="p-1.5 border-r border-b border-gray-400">
-              <div className="text-[9px] text-gray-500 uppercase">Age</div>
-              <div className="font-semibold">{patient.age || '—'}</div>
-            </div>
-            <div className="p-1.5 border-b border-gray-400">
-              <div className="text-[9px] text-gray-500 uppercase">Gender</div>
-              <div className="font-semibold">{patient.gender || '—'}</div>
-            </div>
-            <div className="p-1.5 border-r border-gray-400 col-span-2">
-              <div className="text-[9px] text-gray-500 uppercase">Audiologist</div>
-              <div className="font-semibold">{audiologistName || '—'}</div>
-            </div>
-            <div className="p-1.5 border-r border-gray-400">
-              <div className="text-[9px] text-gray-500 uppercase">Date of Service</div>
-              <div className="font-semibold">{fmtDate()}</div>
-            </div>
-            <div className="p-1.5">
-              <div className="text-[9px] text-gray-500 uppercase">Session ID</div>
-              <div className="font-semibold text-[10px]">{sessionId || '—'}</div>
-            </div>
+          {/* ===== PATIENT INFO (compact single-row strip) ===== */}
+          <section className="mt-2 border border-gray-400 text-[11px] flex flex-wrap items-stretch">
+            {[
+              { label: 'Patient', value: patient.name || '—', flex: 'min-w-[180px] flex-[2]' },
+              { label: 'MRD',     value: patient.patient_id || '—', flex: 'min-w-[120px] flex-1' },
+              { label: 'DOB',     value: patient.dob || '—',        flex: 'min-w-[90px]' },
+              { label: 'Age',     value: String(patient.age ?? '—'), flex: 'min-w-[60px]' },
+              { label: 'Gender',  value: patient.gender || '—',     flex: 'min-w-[80px]' },
+              { label: 'Audiologist', value: audiologistName || '—', flex: 'min-w-[130px] flex-1' },
+              { label: 'Date',    value: fmtDate(),                  flex: 'min-w-[90px]' },
+              { label: 'Session', value: sessionId || '—',           flex: 'min-w-[150px]' },
+            ].map((c, i, arr) => (
+              <div
+                key={c.label}
+                className={`${c.flex} px-2 py-0.5 ${i < arr.length - 1 ? 'border-r border-gray-300' : ''}`}
+              >
+                <span className="text-[9px] uppercase text-gray-500 mr-1">{c.label}:</span>
+                <span className="font-semibold text-[11px]">{c.value}</span>
+              </div>
+            ))}
           </section>
 
           {/* ===== CONFIGURABLE SECTIONS ===== */}
@@ -847,7 +1072,7 @@ const ReportsPanel = ({
             <div className="report-page-break">
               <header className="flex items-center justify-between border-b-2 border-blue-700 pb-2 mb-3 pt-3">
                 <div className="text-[11px] text-gray-700">
-                  <span className="font-semibold">{CLINIC.name}</span> · {CLINIC.tel}
+                  <span className="font-semibold">{clinic.name}</span>{clinic.tel ? ` · ${clinic.tel}` : ''}
                 </div>
                 <div className="text-[11px] text-gray-800">
                   <span className="font-bold">{patient.name || '—'}</span> · ID: {patient.patient_id || '—'} · {fmtDate()}
