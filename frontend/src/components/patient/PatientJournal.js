@@ -28,6 +28,14 @@ export const PatientJournal = ({ patient, audiologist, open, onClose }) => {
     return () => { cancel = true; };
   }, [open, patient?.patient_id]);
 
+  // Escape key closes the drawer
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   useEffect(() => {
     if (open) setTimeout(() => textareaRef.current?.focus(), 100);
   }, [open]);

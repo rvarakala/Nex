@@ -365,6 +365,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@app.on_event("startup")
+async def on_startup():
+    """Create MongoDB indexes for frequently-queried fields."""
+    try:
+        await db.patients.create_index("patient_id", unique=True)
+        await db.patients.create_index("mobile")
+        await db.patients.create_index("updated_at")
+        await db.referring_doctors.create_index("doctor_id", unique=True)
+        await db.referring_doctors.create_index("name")
+        await db.patient_notes.create_index("patient_id")
+        await db.patient_notes.create_index("created_at")
+        await db.test_sessions.create_index("session_id", unique=True)
+        await db.test_sessions.create_index([("patient_id", 1), ("test_date", -1)])
+        logger.info("MongoDB indexes ensured")
+    except Exception as e:
+        logging.warning(f"Index creation skipped: {e}")
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

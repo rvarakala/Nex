@@ -213,13 +213,15 @@ function App() {
         setSessionId(newSess.session_id);
         localStorage.setItem(LAST_SESSION_KEY, newSess.session_id);
         resetClinicalState();
-        // Journal: auto-log session creation
-        axios.post(`${API}/patient-notes`, {
-          patient_id: p.patient_id,
-          text: 'New test session started.',
-          audiologist: AUDIOLOGIST_NAME,
-          auto: true,
-        }).catch(() => {});
+        // Journal: auto-log session creation (await so first journal-open sees it)
+        try {
+          await axios.post(`${API}/patient-notes`, {
+            patient_id: p.patient_id,
+            text: 'New test session started.',
+            audiologist: AUDIOLOGIST_NAME,
+            auto: true,
+          });
+        } catch (err) { console.error('Auto-note failed', err); }
       } catch (e) {
         console.error('Failed to create first session', e);
       }
@@ -252,12 +254,14 @@ function App() {
       setSessionId(newSess.session_id);
       localStorage.setItem(LAST_SESSION_KEY, newSess.session_id);
       resetClinicalState();
-      axios.post(`${API}/patient-notes`, {
-        patient_id: patient.patient_id,
-        text: 'New test session started.',
-        audiologist: AUDIOLOGIST_NAME,
-        auto: true,
-      }).catch(() => {});
+      try {
+        await axios.post(`${API}/patient-notes`, {
+          patient_id: patient.patient_id,
+          text: 'New test session started.',
+          audiologist: AUDIOLOGIST_NAME,
+          auto: true,
+        });
+      } catch (err) { console.error('Auto-note failed', err); }
     } catch (e) {
       console.error('Create session failed', e);
     }

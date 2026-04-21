@@ -79,22 +79,41 @@ no modern SaaS fluff).
   - New `ABRWaveformCanvas.js` — stacked dual-trace synthetic ABR waveform. Reads Wave I / III / V latencies per ear from the shared `fields` dict and plots Right (red) / Left (blue) traces across 0-10 ms with I / III / V peak markers. Renders "(no data)" placeholder when nothing is entered.
   - New `SoundFieldMiniAudiogram.js` — 6-freq audiogram overlay (250-8000 Hz). Grey dashed line + open circles for Unaided thresholds, orange solid line + filled squares for Aided. Collapses R + L thresholds to best-ear per frequency.
   - Both canvases embedded at the **top of their respective panels** (auto-updates as the user types) and rendered in the **printed report** via registry entries that wrap `GenericClinicalSection` with the canvas preceding the field table + impression. Verified report canvas count 3 → 6 with both sections enabled.
+- [Feb 2026] **Phase 1: Patient Records Module (P1 ✅ India-tuned)** — transformed the app from a hardcoded demo into a real clinic tool.
+  - **Backend** extended `Patient` with India fields (`mobile` as primary identifier, `aadhaar_last4` optional, `referring_doctor_id` FK). New models: `ReferringDoctor`, `PatientNote`. New endpoints: `GET /api/patients?search=` (case-insensitive across name/mobile/patient_id), `DELETE /api/patients/{id}` (cascade-deletes notes), full CRUD at `/api/referring-doctors` and `/api/patient-notes`. MongoDB indexes added on patient_id / mobile / doctor_id / patient_notes.patient_id / sessions.(patient_id, test_date DESC). Fixed `deserialize_datetime` to skip string-typed date fields like `dob`.
+  - **Frontend** new `patient/` component folder with 4 focused files:
+    - `PatientSwitcher.js` — top-header compact combobox with debounced search by name/mobile/MRD, session dropdown ("Visit:" with formatted "DD MMM YY · HH:mm"), Edit button, Journal button, "+ New Visit" option.
+    - `PatientModal.js` — create/edit form (name, mobile, age, gender, DOB, address, email, optional Aadhaar last-4, embedded ReferringDoctorPicker, notes). Full validation.
+    - `ReferringDoctorPicker.js` — autocomplete combobox with inline "+ Add new doctor" modal (name + specialty + clinic + phone). Newly-created doctor auto-selects.
+    - `PatientJournal.js` — right-side drawer showing chronological chart notes with timestamp + author, "AUTO" badge for system entries, textarea composer. ESC key closes. Click-outside-overlay closes.
+  - **App.js refactor** — removed hardcoded demo patient entirely. New flow: bootstrap reads `acs.lastPatientId` from localStorage and restores last patient+session. Switching patients loads their sessions, auto-picks latest, rehydrates all 10 tab states from session doc. "+ New Visit" creates a fresh session and appends an AUTO journal entry ("New test session started."). `loadingRef` prevents debounced auto-save from firing during rehydration (otherwise defaults would overwrite real data). Single unified auto-save effect covers all 10 tabs.
+  - **Empty state** — when no patient is loaded, renders a centered "No patient selected" card with a CTA "+ New Patient" button. All 10 clinical tabs are hidden until a patient is picked.
+  - **Testing** — 14/14 backend pytest cases pass, frontend E2E ~92% with 2 race fixes applied (ESC key listener on journal + awaited auto-note POST).
 
 ## Backlog / Roadmap
 
-### P1
-- [ ] **Comprehensive E2E testing run** — cross-tab form persistence + chart state save/restore + all 10 tabs CRUD
-- [ ] Replace mocked patient demographics with real patient create/lookup flow (currently hardcoded demo `ACS-2025-001234 — Ramesh Kumar`)
-- [ ] NR diagonal arrows for MCL/UCL/FF/FFA symbols when NR is toggled for those modes
+### P1.5 (next)
+- [ ] **WhatsApp share PDF** — `wa.me` deep-link after generating the report
+- [ ] **Historical audiogram ghost overlay** — plot prior-session thresholds as faint grey markers on the Pure Tone canvas (now that session history exists)
+- [ ] **Bilingual report template toggle** — English clinical + Hindi patient summary
 
 ### P2
-- [ ] **Impedance / Tympanometry tab** — interactive full-screen tympanogram plotting (Type A, B, C curves)
-- [ ] PDF report generation with embedded audiogram render
+- [ ] **Comprehensive E2E testing run** — cross-tab form persistence + chart state save/restore + all 10 tabs CRUD
+- [ ] **Hearing aid dispensing module** — make/model/serial/warranty/battery tracking
+- [ ] **GST invoice generation** — GSTIN + HSN codes (India mandatory ≥ ₹20L turnover)
+- [ ] **Appointment reminders** — WhatsApp deep-link scheduling
+- [ ] PDF report generation with embedded audiogram render (server-side, for email/archival)
 
 ### P3
-- [ ] Historical comparison overlay (previous session threshold ghosts)
-- [ ] Patient DB CRUD UI (currently hardcoded demo patient)
 - [ ] Audiologist auth + multi-user sessions
+- [ ] Patient photo upload (webcam or file)
+- [ ] Referral commission tracking per ENT
+
+### Explicitly Out of Scope (India context)
+- NOAH real-time sync (used by <15% of Indian clinics, high integration effort)
+- Fax (channel is dead in India)
+- ICD-10 coding (US insurance construct; optional for ESIC/CGHS only)
+- Marketing/re-sell module (overkill for single-clinic MVP)
 
 ## Key Technical Invariants (DO NOT BREAK)
 1. `getLogPosition(freq)` provides logarithmic X mapping — must stay log scale.
