@@ -373,7 +373,15 @@ class TestSession(BaseModel):
     right_ear_speech: Optional[SpeechTest] = None
     left_ear_speech: Optional[SpeechTest] = None
     speech_data: Optional[SpeechAudiometryData] = None
-    
+
+    # P2 clinical tabs — schema-free (evolves without migrations)
+    special_tests_data: Optional[Dict[str, Dict[str, str]]] = None
+    oae_data: Optional[Dict[str, Dict[str, str]]] = None
+    soundfield_data: Optional[Dict[str, Dict[str, str]]] = None
+    abr_data: Optional[Dict[str, Dict[str, str]]] = None
+    pediatric_data: Optional[Dict[str, Dict[str, str]]] = None
+    tinnitus_data: Optional[Dict[str, Dict[str, str]]] = None
+
     # Results Interpretation
     right_ear_degree: Optional[Literal["normal", "slight", "mild", "moderate", "moderately_severe", "severe", "profound"]] = None
     right_ear_type: Optional[Literal["normal", "conductive", "sensorineural", "mixed"]] = None
@@ -416,6 +424,12 @@ class TestSessionUpdate(BaseModel):
     right_ear_speech: Optional[SpeechTest] = None
     left_ear_speech: Optional[SpeechTest] = None
     speech_data: Optional[SpeechAudiometryData] = None
+    special_tests_data: Optional[Dict[str, Dict[str, str]]] = None
+    oae_data: Optional[Dict[str, Dict[str, str]]] = None
+    soundfield_data: Optional[Dict[str, Dict[str, str]]] = None
+    abr_data: Optional[Dict[str, Dict[str, str]]] = None
+    pediatric_data: Optional[Dict[str, Dict[str, str]]] = None
+    tinnitus_data: Optional[Dict[str, Dict[str, str]]] = None
     right_ear_degree: Optional[str] = None
     right_ear_type: Optional[str] = None
     right_ear_config: Optional[str] = None

@@ -10,6 +10,12 @@ import PreTestPanel from "./components/PreTestPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import ImpedancePanel from "./components/ImpedancePanel";
 import SpeechPanel from "./components/SpeechPanel";
+import SpecialTestsPanel from "./components/SpecialTestsPanel";
+import OAEPanel from "./components/OAEPanel";
+import SoundFieldPanel from "./components/SoundFieldPanel";
+import ABRPanel from "./components/ABRPanel";
+import PediatricPanel from "./components/PediatricPanel";
+import TinnitusPanel from "./components/TinnitusPanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -117,6 +123,14 @@ function App() {
     fields: {},
   };
   const [speechData, setSpeechData] = useState(defaultSpeech);
+
+  // P2 clinical tabs — schema-free
+  const [specialTestsData, setSpecialTestsData] = useState({ fields: {} });
+  const [oaeData, setOaeData]                   = useState({ fields: {} });
+  const [soundfieldData, setSoundfieldData]     = useState({ fields: {} });
+  const [abrData, setAbrData]                   = useState({ fields: {} });
+  const [pediatricData, setPediatricData]       = useState({ fields: {} });
+  const [tinnitusData, setTinnitusData]         = useState({ fields: {} });
   
   // Audiogram data
   const [rightEarData, setRightEarData] = useState({
@@ -181,6 +195,30 @@ function App() {
       if (preTestSaveTimer.current) clearTimeout(preTestSaveTimer.current);
     };
   }, [preTestData, sessionId]);
+
+  // Debounced auto-save of P2 clinical tab data (schema-free dicts)
+  const p2SaveTimer = useRef(null);
+  useEffect(() => {
+    if (!sessionId) return;
+    if (p2SaveTimer.current) clearTimeout(p2SaveTimer.current);
+    p2SaveTimer.current = setTimeout(async () => {
+      try {
+        await axios.put(`${API}/sessions/${sessionId}`, {
+          special_tests_data: specialTestsData,
+          oae_data: oaeData,
+          soundfield_data: soundfieldData,
+          abr_data: abrData,
+          pediatric_data: pediatricData,
+          tinnitus_data: tinnitusData,
+        });
+      } catch (err) {
+        console.error('P2 save failed', err);
+      }
+    }, 800);
+    return () => {
+      if (p2SaveTimer.current) clearTimeout(p2SaveTimer.current);
+    };
+  }, [specialTestsData, oaeData, soundfieldData, abrData, pediatricData, tinnitusData, sessionId]);
 
   // Debounced auto-save of speech audiometry data to backend
   const speechSaveTimer = useRef(null);
@@ -463,96 +501,34 @@ function App() {
             <ImpedancePanel data={impedanceData} onChange={setImpedanceData} />
           )}
 
-          {/* Special Tests (Placeholder) */}
+          {/* Special Tests */}
           {activeTab === 'special' && (
-            <TabPlaceholder
-              title="Special Diagnostic Tests"
-              note="Site-of-lesion and functional hearing tests."
-              subtests={[
-                'SISI (Short Increment Sensitivity Index)',
-                'ABLB (Alternate Binaural Loudness Balance)',
-                'Stenger Test',
-                'Tone Decay Test',
-                'MML (Masking Level Differences)',
-              ]}
-            />
+            <SpecialTestsPanel data={specialTestsData} onChange={setSpecialTestsData} />
           )}
 
-          {/* OAE (Placeholder) */}
+          {/* OAE */}
           {activeTab === 'oae' && (
-            <TabPlaceholder
-              title="Otoacoustic Emissions"
-              note="Objective cochlear outer-hair-cell function screening."
-              subtests={[
-                'TEOAE — SNR per band',
-                'TEOAE — Reproducibility %',
-                'DPOAE — DP-gram (F1/F2)',
-                'DPOAE — Pass / Refer criteria',
-              ]}
-            />
+            <OAEPanel data={oaeData} onChange={setOaeData} />
           )}
 
-          {/* Sound Field / Aided (Placeholder) */}
+          {/* Sound Field / Aided */}
           {activeTab === 'soundfield' && (
-            <TabPlaceholder
-              title="Sound Field / Aided"
-              note="Aided vs unaided thresholds measured in free field."
-              subtests={[
-                'Soundfield audiogram (unaided)',
-                'Aided soundfield (with processor)',
-                'Aided vs Unaided benefit curve',
-                'Ling-6 sound test',
-                'Speech-banana coverage overlay',
-              ]}
-            />
+            <SoundFieldPanel data={soundfieldData} onChange={setSoundfieldData} />
           )}
 
-          {/* ABR / ASSR (Placeholder) */}
+          {/* ABR / ASSR */}
           {activeTab === 'abr' && (
-            <TabPlaceholder
-              title="ABR / ASSR (Electrophysiology)"
-              note="Auditory Brainstem Response & Auditory Steady-State Response."
-              subtests={[
-                'Click ABR — Wave I / III / V latencies',
-                'Tone-burst ABR (500, 1k, 2k, 4k Hz)',
-                'Interpeak Latencies (I-III, III-V, I-V)',
-                'Neurodiagnostic ABR',
-                'ASSR — frequency-specific thresholds',
-                'ASSR — nHL → eHL conversion',
-                'ECochG — SP/AP ratio',
-              ]}
-            />
+            <ABRPanel data={abrData} onChange={setAbrData} />
           )}
 
-          {/* Pediatric (Placeholder) */}
+          {/* Pediatric */}
           {activeTab === 'pediatric' && (
-            <TabPlaceholder
-              title="Pediatric Audiometry"
-              note="Age-appropriate behavioural hearing assessment."
-              subtests={[
-                'BOA (Behavioural Observation Audiometry)',
-                'VRA (Visual Reinforcement Audiometry)',
-                'Play Audiometry',
-                'Test reliability rating',
-                'Parent counselling checklist',
-                'Developmental milestones reference',
-              ]}
-            />
+            <PediatricPanel data={pediatricData} onChange={setPediatricData} />
           )}
 
-          {/* Tinnitus (Placeholder) */}
+          {/* Tinnitus */}
           {activeTab === 'tinnitus' && (
-            <TabPlaceholder
-              title="Tinnitus Assessment"
-              note="Psychoacoustic characterisation and management planning."
-              subtests={[
-                'Pitch matching',
-                'Loudness matching',
-                'MML (Minimum Masking Level)',
-                'Residual Inhibition',
-                'THI / TFI questionnaire score',
-              ]}
-            />
+            <TinnitusPanel data={tinnitusData} onChange={setTinnitusData} />
           )}
 
           {/* Reports (live print preview with configurable sections) */}
@@ -569,6 +545,12 @@ function App() {
               audiogramMode={reportAudiogramMode}
               impedanceData={impedanceData}
               speechData={speechData}
+              specialTestsData={specialTestsData}
+              oaeData={oaeData}
+              soundfieldData={soundfieldData}
+              abrData={abrData}
+              pediatricData={pediatricData}
+              tinnitusData={tinnitusData}
               onPersist={async (partial) => {
                 if (!sessionId) return;
                 try {

@@ -16,6 +16,7 @@ import { TuningForkSection } from './reports/sections/TuningForkSection';
 import { OtoscopySection } from './reports/sections/OtoscopySection';
 import { PlaceholderTable } from './reports/sections/PlaceholderTable';
 import { SpeechSection } from './reports/sections/SpeechSection';
+import { GenericClinicalSection } from './reports/sections/GenericClinicalSection';
 import { ResultsGridSection } from './reports/sections/ResultsGridSection';
 import { RecommendationsAdviceSection } from './reports/sections/RecommendationsAdviceSection';
 import { TympanometryInlineSection, TympanometryFullPage } from './reports/TympanometrySections';
@@ -33,6 +34,12 @@ const ReportsPanel = ({
   preTestData,
   impedanceData,
   speechData,
+  specialTestsData,
+  oaeData,
+  soundfieldData,
+  abrData,
+  pediatricData,
+  tinnitusData,
   sessionId, // eslint-disable-line no-unused-vars
   audiologistName,
   clinicalImpression,
@@ -157,6 +164,18 @@ const ReportsPanel = ({
         return <OtoscopySection key={id} ot={preTestData?.otoscopy} />;
       case 'speech':
         return <SpeechSection key={id} speech={speechData} />;
+      case 'special_tests':
+        return <GenericClinicalSection key={id} title="Special Diagnostic Tests" data={specialTestsData} impressionKey="st_impression" />;
+      case 'oae':
+        return <GenericClinicalSection key={id} title="Otoacoustic Emissions" data={oaeData} impressionKey="oae_impression" />;
+      case 'soundfield':
+        return <GenericClinicalSection key={id} title="Sound Field / Aided" data={soundfieldData} impressionKey="sf_impression" />;
+      case 'abr':
+        return <GenericClinicalSection key={id} title="ABR / ASSR" data={abrData} impressionKey="abr_impression" />;
+      case 'pediatric':
+        return <GenericClinicalSection key={id} title="Pediatric Audiometry" data={pediatricData} impressionKey="ped_impression" />;
+      case 'tinnitus':
+        return <GenericClinicalSection key={id} title="Tinnitus Assessment" data={tinnitusData} impressionKey="tin_impression" />;
       case 'tympanometry':
         return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
       case 'results':

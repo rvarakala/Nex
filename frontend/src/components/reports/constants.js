@@ -59,6 +59,12 @@ export const TOGGLEABLE_SECTIONS = [
   { id: 'otoscopy',        label: 'Otoscopic Examination',     defaultEnabled: false },
   { id: 'speech',          label: 'Speech Audiometry',         defaultEnabled: false },
   { id: 'tympanometry',    label: 'Tympanometry / Impedance',  defaultEnabled: true },
+  { id: 'special_tests',   label: 'Special Tests',             defaultEnabled: false },
+  { id: 'oae',             label: 'Otoacoustic Emissions',     defaultEnabled: false },
+  { id: 'soundfield',      label: 'Sound Field / Aided',       defaultEnabled: false },
+  { id: 'abr',             label: 'ABR / ASSR',                defaultEnabled: false },
+  { id: 'pediatric',       label: 'Pediatric Audiometry',      defaultEnabled: false },
+  { id: 'tinnitus',        label: 'Tinnitus Assessment',       defaultEnabled: false },
   { id: 'results',         label: 'Results (narrative)',       defaultEnabled: true },
   { id: 'recommendations', label: 'Recommendations',           defaultEnabled: true },
 ];
