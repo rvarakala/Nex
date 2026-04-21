@@ -3,40 +3,143 @@ from typing import Optional, List, Literal, Dict
 from datetime import datetime
 from uuid import uuid4
 
+
+# ==================== MULTI-TENANT + AUTH MODELS ====================
+
+class Clinic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    clinic_id: str
+    name: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    gstin: Optional[str] = None
+    mrd_prefix: str = "ACS"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str = Field(default_factory=lambda: f"USR-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    email: str
+    name: str
+    role: Literal["super_admin", "front_desk", "audiologist", "accounts"]
+    active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+# ==================== TOKEN + QUEUE (UC-01 front-desk) ====================
+
+class OPDToken(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    token_id: str = Field(default_factory=lambda: str(uuid4()))
+    clinic_id: str
+    token_no: int                                      # Resets daily per clinic
+    patient_id: str
+    patient_name: str                                  # Denormalised for fast print
+    patient_mobile: Optional[str] = None
+    mrd: Optional[str] = None
+    issued_at: datetime = Field(default_factory=datetime.utcnow)
+    issued_by_user_id: Optional[str] = None
+    status: Literal["waiting", "in_consultation", "in_testing", "billing", "completed", "cancelled"] = "waiting"
+    called_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    service: Optional[str] = None
+    priority: Literal["normal", "urgent", "vip"] = "normal"
+    notes: Optional[str] = None
+
+
 # ==================== PATIENT MODELS ====================
 
 class Patient(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    
+
     patient_id: str = Field(default_factory=lambda: f"ACS-{datetime.now().year}-{str(uuid4())[:8].upper()}")
+    clinic_id: str                                      # Tenant scope
+    mrd: Optional[str] = None                           # Human-facing Medical Record Document number
+
+    # Demographics
     name: str
     age: int
     gender: Literal["Male", "Female", "Other"]
     dob: Optional[str] = None
-    mobile: Optional[str] = None           # Primary identifier in India
-    aadhaar_last4: Optional[str] = None    # Optional, last 4 digits only (privacy)
-    phone: Optional[str] = None            # Legacy — kept for backward compatibility
-    address: Optional[str] = None
+    occupation: Optional[str] = None
+
+    # Contact
+    mobile: Optional[str] = None
+    alternate_mobile: Optional[str] = None
     email: Optional[str] = None
-    referring_physician: Optional[str] = None       # Free-text fallback
-    referring_doctor_id: Optional[str] = None       # FK into referring_doctors
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+
+    # Identity
+    aadhaar_last4: Optional[str] = None
+
+    # Clinical triage at registration (one-liner — full case history lives in M02 Pre-Test)
+    chief_complaint: Optional[str] = None
+    complaint_duration: Optional[str] = None
+    ear_side: Optional[Literal["Left", "Right", "Bilateral"]] = None
+
+    # Referral + insurance
+    referring_physician: Optional[str] = None           # Free-text fallback
+    referring_doctor_id: Optional[str] = None           # FK into referring_doctors
+    referral_source: Optional[str] = None               # Walk-in / Doctor / Online / Camp / Family / Other
+
+    insurance_scheme: Optional[str] = None              # Cash / CGHS / ECHS / ESIC / Ayushman / Private / Other
+    insurance_card_number: Optional[str] = None
+    insurance_validity: Optional[str] = None
+    insurance_beneficiary: Optional[str] = None         # e.g. "Self", "Spouse", "Dependant"
+
     notes: Optional[str] = None
+    phone: Optional[str] = None  # Legacy compatibility
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 class PatientCreate(BaseModel):
     name: str
     age: int
     gender: Literal["Male", "Female", "Other"]
     dob: Optional[str] = None
+    occupation: Optional[str] = None
+
     mobile: Optional[str] = None
-    aadhaar_last4: Optional[str] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
+    alternate_mobile: Optional[str] = None
     email: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+
+    aadhaar_last4: Optional[str] = None
+
+    chief_complaint: Optional[str] = None
+    complaint_duration: Optional[str] = None
+    ear_side: Optional[Literal["Left", "Right", "Bilateral"]] = None
+
     referring_physician: Optional[str] = None
     referring_doctor_id: Optional[str] = None
+    referral_source: Optional[str] = None
+
+    insurance_scheme: Optional[str] = None
+    insurance_card_number: Optional[str] = None
+    insurance_validity: Optional[str] = None
+    insurance_beneficiary: Optional[str] = None
+
     notes: Optional[str] = None
+    phone: Optional[str] = None  # Legacy
 
 
 # ==================== REFERRING DOCTOR MODELS ====================
@@ -45,6 +148,7 @@ class ReferringDoctor(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     doctor_id: str = Field(default_factory=lambda: f"DR-{str(uuid4())[:8].upper()}")
+    clinic_id: Optional[str] = None                # Populated by server from auth
     name: str
     specialty: Optional[str] = None        # e.g., ENT, GP, Paediatrics, Neurology
     clinic: Optional[str] = None
