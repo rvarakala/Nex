@@ -194,11 +194,30 @@ class ETDysfunction(BaseModel):
     left: ETEar = Field(default_factory=ETEar)
 
 
+class ETFIntactEar(BaseModel):
+    """Williams ETF-Intact TM test — 3 sequential tympanograms produce 3 peak pressures.
+    P1 = baseline · P2 = after Valsalva (positive swing) · P3 = after Toynbee (negative swing).
+    ETF is considered intact if consecutive peaks shift by ≥15-30 daPa.
+    """
+    volume: Optional[float] = None         # mL (ECV — single value for the ear)
+    pressure_1: Optional[float] = None     # daPa — baseline peak
+    pressure_2: Optional[float] = None     # daPa — post-Valsalva peak
+    pressure_3: Optional[float] = None     # daPa — post-Toynbee peak
+    notes: Optional[str] = None
+
+
+class ETFIntact(BaseModel):
+    enabled: bool = False
+    right: ETFIntactEar = Field(default_factory=ETFIntactEar)
+    left: ETFIntactEar = Field(default_factory=ETFIntactEar)
+
+
 class ImpedanceData(BaseModel):
     tympanometry: Tympanometry = Field(default_factory=Tympanometry)
     acoustic_reflex: AcousticReflex = Field(default_factory=AcousticReflex)
     reflex_decay: ReflexDecay = Field(default_factory=ReflexDecay)
     et_dysfunction: ETDysfunction = Field(default_factory=ETDysfunction)
+    etf_intact: ETFIntact = Field(default_factory=ETFIntact)
 
 
 

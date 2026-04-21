@@ -1,5 +1,6 @@
 import React from 'react';
 import TympanogramCanvas from './TympanogramCanvas';
+import ETFCanvas from './ETFCanvas';
 
 // ==================== Auto-classify Jerger Type ====================
 // Clinical thresholds (simplified): used when user hasn't explicitly chosen a type
@@ -313,12 +314,93 @@ const ETBlock = ({ earLabel, earSide, value, onChange }) => {
   );
 };
 
+// ==================== ETF-Intact TM (Williams) ====================
+// One plot per ear — overlays 3 tympanogram curves at Pressure 1/2/3, plus a
+// shaded normal-range rectangle. Volume is entered once per ear and scales the
+// peak amplitudes shared across all 3 curves.
+const ETFBlock = ({ earLabel, earSide, value, onChange }) => {
+  const colorCls = earSide === 'right' ? 'text-red-600' : 'text-blue-600';
+  const update = (field, v) => onChange({ ...value, [field]: v });
+
+  return (
+    <div className="flex-1 min-w-0 border border-gray-300 rounded bg-white shadow-sm">
+      <div className="px-2 py-1 border-b border-gray-300 bg-gray-50 flex items-center justify-between">
+        <span className={`text-xs font-bold ${colorCls}`}>{earLabel} Ear</span>
+        <span className="text-[9px] text-gray-500 italic">ETF-Intact (Williams)</span>
+      </div>
+      <div className="p-2 space-y-2">
+        {/* Canvas */}
+        <div className="h-[200px] border border-gray-300 rounded bg-white">
+          <ETFCanvas
+            volume={value?.volume}
+            pressure_1={value?.pressure_1}
+            pressure_2={value?.pressure_2}
+            pressure_3={value?.pressure_3}
+            earSide={earSide}
+          />
+        </div>
+
+        {/* Inputs — 2 columns to stay compact */}
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+          <div>
+            <div className="text-[9px] text-gray-600">Volume (mL)</div>
+            <NumInput
+              testId={`etf-${earSide}-volume`}
+              value={value?.volume}
+              onChange={(v) => update('volume', v)}
+              step={0.01}
+            />
+          </div>
+          <div>
+            <div className="text-[9px] text-gray-600">Pressure 1 — Baseline (daPa)</div>
+            <NumInput
+              testId={`etf-${earSide}-p1`}
+              value={value?.pressure_1}
+              onChange={(v) => update('pressure_1', v)}
+              step={1}
+            />
+          </div>
+          <div>
+            <div className="text-[9px] text-gray-600">Pressure 2 — post-Valsalva (daPa)</div>
+            <NumInput
+              testId={`etf-${earSide}-p2`}
+              value={value?.pressure_2}
+              onChange={(v) => update('pressure_2', v)}
+              step={1}
+            />
+          </div>
+          <div>
+            <div className="text-[9px] text-gray-600">Pressure 3 — post-Toynbee (daPa)</div>
+            <NumInput
+              testId={`etf-${earSide}-p3`}
+              value={value?.pressure_3}
+              onChange={(v) => update('pressure_3', v)}
+              step={1}
+            />
+          </div>
+          <div className="col-span-2">
+            <div className="text-[9px] text-gray-600">Notes</div>
+            <input
+              type="text"
+              value={value?.notes || ''}
+              onChange={(e) => update('notes', e.target.value)}
+              data-testid={`etf-${earSide}-notes`}
+              className="w-full text-xs border border-gray-300 rounded px-1 py-0.5"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ==================== Main Panel ====================
 const ImpedancePanel = ({ data, onChange }) => {
   const tymp = data.tympanometry;
   const reflex = data.acoustic_reflex;
   const decay = data.reflex_decay;
   const et = data.et_dysfunction;
+  const etf = data.etf_intact || { enabled: false, right: {}, left: {} };
 
   const update = (key, patch) => onChange({ ...data, [key]: { ...data[key], ...patch } });
   const updateTympEar = (ear, next) =>
@@ -327,6 +409,8 @@ const ImpedancePanel = ({ data, onChange }) => {
     onChange({ ...data, [key]: { ...data[key], [ear]: next } });
   const updateEtEar = (ear, next) =>
     onChange({ ...data, et_dysfunction: { ...et, [ear]: next } });
+  const updateEtfEar = (ear, next) =>
+    onChange({ ...data, etf_intact: { ...etf, [ear]: next } });
 
   const Toggle = ({ label, value, onChange: onT, testId }) => (
     <label className="flex items-center gap-1.5 px-2 py-1 border border-gray-300 rounded bg-white hover:bg-gray-50 cursor-pointer">
@@ -363,6 +447,12 @@ const ImpedancePanel = ({ data, onChange }) => {
           value={et.enabled}
           onChange={(v) => update('et_dysfunction', { enabled: v })}
           testId="imp-toggle-et"
+        />
+        <Toggle
+          label="ETF-Intact (Williams)"
+          value={etf.enabled}
+          onChange={(v) => update('etf_intact', { enabled: v })}
+          testId="imp-toggle-etf"
         />
       </div>
 
@@ -453,6 +543,29 @@ const ImpedancePanel = ({ data, onChange }) => {
                 earSide="left"
                 value={et.left}
                 onChange={(next) => updateEtEar('left', next)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ETF-Intact TM (Williams) */}
+        {etf.enabled && (
+          <div>
+            <div className="text-xs font-bold text-gray-700 mb-1 px-0.5">
+              Eustachian Tube Function — Intact TM (Williams Test)
+            </div>
+            <div className="flex gap-2">
+              <ETFBlock
+                earLabel="Right"
+                earSide="right"
+                value={etf.right}
+                onChange={(next) => updateEtfEar('right', next)}
+              />
+              <ETFBlock
+                earLabel="Left"
+                earSide="left"
+                value={etf.left}
+                onChange={(next) => updateEtfEar('left', next)}
               />
             </div>
           </div>
