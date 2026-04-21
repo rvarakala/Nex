@@ -79,21 +79,24 @@ no modern SaaS fluff).
   - New `ABRWaveformCanvas.js` — stacked dual-trace synthetic ABR waveform. Reads Wave I / III / V latencies per ear from the shared `fields` dict and plots Right (red) / Left (blue) traces across 0-10 ms with I / III / V peak markers. Renders "(no data)" placeholder when nothing is entered.
   - New `SoundFieldMiniAudiogram.js` — 6-freq audiogram overlay (250-8000 Hz). Grey dashed line + open circles for Unaided thresholds, orange solid line + filled squares for Aided. Collapses R + L thresholds to best-ear per frequency.
   - Both canvases embedded at the **top of their respective panels** (auto-updates as the user types) and rendered in the **printed report** via registry entries that wrap `GenericClinicalSection` with the canvas preceding the field table + impression. Verified report canvas count 3 → 6 with both sections enabled.
+- [Feb 2026] **AI-Powered Report Narrative Generation (P0 ✅)**: Integrated Claude Sonnet 4.5 via Emergent LLM Key (`emergentintegrations`) for clinical narrative drafting in the Report Builder.
+  - New backend module `/app/backend/ai_narrative.py` with `build_clinical_brief()` (condenses session audiogram/tympanometry/speech/reflexes/case-history into a compact LLM prompt) + `generate_narrative()` (async Claude call + JSON extraction + normalisation).
+  - New endpoint `POST /api/ai/narrative/generate` with `{session_id, target}` payload. Target values: `all`, `puretone_findings`, `immitence_findings`, `speech_findings`, `recommendations`, `further_advice`. Returns `{target, result: {...}}` with clinically-accurate drafts (standard PTA descriptors + Jerger tympanogram classification + conductive/SNHL/mixed type classification).
+  - Frontend: `BuilderSidebar.js` gained a purple "✨ Generate full narrative with AI" bulk button at the top + inline "✨ AI" per-field buttons next to each of the 5 textareas (Puretone / Immitence / Speech findings / Recommendations / Further Advice). Loading state shows "Drafting…" / "Drafting full narrative…" with disabled cross-field interaction during bulk.
+  - Empty-data handling: LLM system prompt instructs "return empty string if data missing"; frontend shows an amber inline hint ("No clinical data yet — enter audiogram / tympanometry values first") when all requested fields come back empty.
+  - End-to-end testing: 7/7 backend pytest cases passing (target=all, single-target, invalid target → 422, unknown session → 404). Frontend E2E confirms AI buttons populate textareas within ~5-8s of clicking with populated session data.
 
 ## Backlog / Roadmap
 
 ### P1
-- [ ] **Speech Audiometry tab** — Acoustic Reflexes grid + Speech data entry table (SRT, MCL, UCL, WRS)
+- [ ] **Comprehensive E2E testing run** — cross-tab form persistence + chart state save/restore + all 10 tabs CRUD
+- [ ] Replace mocked patient demographics with real patient create/lookup flow (currently hardcoded demo `ACS-2025-001234 — Ramesh Kumar`)
 - [ ] NR diagonal arrows for MCL/UCL/FF/FFA symbols when NR is toggled for those modes
 
 ### P2
-- [ ] **Impedance / Tympanometry tab** — interactive full-screen tympanogram plotting (Type A, B, C curves)
-- [ ] **AI-powered report narrative** — Emergent LLM key → GPT-5.2/Claude Sonnet integration for auto-generated diagnostic impressions
-- [ ] PDF report generation with embedded audiogram render
-
-### P3
+- [ ] **AbortController on tab-switch / component unmount** for in-flight AI calls (current behaviour: request completes and React warns; harmless but noisy)
+- [ ] LLM retry/backoff on transient Claude 5xx errors (1 retry)
 - [ ] Historical comparison overlay (previous session threshold ghosts)
-- [ ] Patient DB CRUD UI (currently hardcoded demo patient)
 - [ ] Audiologist auth + multi-user sessions
 
 ## Key Technical Invariants (DO NOT BREAK)

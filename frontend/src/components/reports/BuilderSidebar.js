@@ -21,7 +21,7 @@ const SparkleIcon = () => (
 
 // Calls the backend and invokes setters for the returned fields.
 // targets: "all" | "puretone_findings" | "immitence_findings" | "speech_findings" | "recommendations" | "further_advice"
-const runAIGenerate = async ({ sessionId, target, setters, onStart, onEnd, onError }) => {
+const runAIGenerate = async ({ sessionId, target, setters, onStart, onEnd, onError, onInfo }) => {
   if (!sessionId) {
     onError?.('No active session yet — please wait a moment and try again.');
     return;
@@ -33,17 +33,31 @@ const runAIGenerate = async ({ sessionId, target, setters, onStart, onEnd, onErr
       target,
     }, { timeout: 60000 });
     const result = res?.data?.result || {};
+
+    // Detect empty response (LLM told us there's no data to draft from)
+    const isEmpty = (v) => v == null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
+    let emptyFields = [];
     if (target === 'all') {
       if (typeof result.puretone_findings === 'string')   setters.setPtFindings?.(result.puretone_findings);
       if (typeof result.immitence_findings === 'string')  setters.setImmFindings?.(result.immitence_findings);
       if (typeof result.speech_findings === 'string')     setters.setSpeechFindings?.(result.speech_findings);
       if (Array.isArray(result.recommendations))          setters.setRecText?.(result.recommendations.join('\n'));
       if (typeof result.further_advice === 'string')      setters.setFurtherAdvice?.(result.further_advice);
-    } else if (target === 'puretone_findings'  && typeof result.puretone_findings === 'string')  setters.setPtFindings?.(result.puretone_findings);
-    else if  (target === 'immitence_findings' && typeof result.immitence_findings === 'string') setters.setImmFindings?.(result.immitence_findings);
-    else if  (target === 'speech_findings'    && typeof result.speech_findings === 'string')    setters.setSpeechFindings?.(result.speech_findings);
-    else if  (target === 'recommendations'    && Array.isArray(result.recommendations))         setters.setRecText?.(result.recommendations.join('\n'));
-    else if  (target === 'further_advice'     && typeof result.further_advice === 'string')     setters.setFurtherAdvice?.(result.further_advice);
+      const allBlank = isEmpty(result.puretone_findings) && isEmpty(result.immitence_findings)
+        && isEmpty(result.speech_findings) && isEmpty(result.recommendations) && isEmpty(result.further_advice);
+      if (allBlank) emptyFields.push('all fields');
+    } else {
+      if (target === 'puretone_findings'  && typeof result.puretone_findings === 'string')  setters.setPtFindings?.(result.puretone_findings);
+      else if (target === 'immitence_findings' && typeof result.immitence_findings === 'string') setters.setImmFindings?.(result.immitence_findings);
+      else if (target === 'speech_findings'    && typeof result.speech_findings === 'string')    setters.setSpeechFindings?.(result.speech_findings);
+      else if (target === 'recommendations'    && Array.isArray(result.recommendations))         setters.setRecText?.(result.recommendations.join('\n'));
+      else if (target === 'further_advice'     && typeof result.further_advice === 'string')     setters.setFurtherAdvice?.(result.further_advice);
+      if (isEmpty(result[target])) emptyFields.push(target);
+    }
+
+    if (emptyFields.length > 0) {
+      onInfo?.('No clinical data yet — enter audiogram / tympanometry values first, then try again.');
+    }
   } catch (err) {
     console.error('AI generate failed', err);
     onError?.(err?.response?.data?.detail || err?.message || 'AI generation failed');
@@ -342,6 +356,7 @@ const AudiogramSizeToggle = ({ audiogramSize, setAudiogramSize, useSeparatePage 
 const Textarea = ({ label, testid, value, onChange, rows = 3, placeholder, aiTarget, aiCtx }) => {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [info, setInfo] = useState(null);
   const showAI = !!aiTarget && !!aiCtx;
   const disabled = busy || (showAI && aiCtx.bulkBusy);
   return (
@@ -355,9 +370,10 @@ const Textarea = ({ label, testid, value, onChange, rows = 3, placeholder, aiTar
               sessionId: aiCtx.sessionId,
               target: aiTarget,
               setters: aiCtx.setters,
-              onStart: () => { setBusy(true); setErr(null); },
+              onStart: () => { setBusy(true); setErr(null); setInfo(null); },
               onEnd:   () => setBusy(false),
               onError: (m) => setErr(m),
+              onInfo:  (m) => setInfo(m),
             })}
             disabled={disabled}
             data-testid={`ai-generate-${aiTarget}`}
@@ -386,6 +402,11 @@ const Textarea = ({ label, testid, value, onChange, rows = 3, placeholder, aiTar
       />
       {err && (
         <div className="text-[9px] text-red-600 mt-0.5" data-testid={`ai-error-${aiTarget}`}>{err}</div>
+      )}
+      {info && !err && (
+        <div className="text-[9px] text-amber-700 mt-0.5 bg-amber-50 border border-amber-200 rounded px-1 py-0.5" data-testid={`ai-info-${aiTarget}`}>
+          {info}
+        </div>
       )}
     </div>
   );
@@ -432,6 +453,7 @@ export const BuilderSidebar = ({
 }) => {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkErr, setBulkErr] = useState(null);
+  const [bulkInfo, setBulkInfo] = useState(null);
 
   const aiCtx = {
     sessionId,
@@ -443,9 +465,10 @@ export const BuilderSidebar = ({
     sessionId,
     target: 'all',
     setters: aiCtx.setters,
-    onStart: () => { setBulkBusy(true); setBulkErr(null); },
+    onStart: () => { setBulkBusy(true); setBulkErr(null); setBulkInfo(null); },
     onEnd:   () => setBulkBusy(false),
     onError: (m) => setBulkErr(m),
+    onInfo:  (m) => setBulkInfo(m),
   });
 
   return (
@@ -488,6 +511,11 @@ export const BuilderSidebar = ({
         </div>
         {bulkErr && (
           <div className="text-[9px] text-red-600 mt-0.5" data-testid="ai-bulk-error">{bulkErr}</div>
+        )}
+        {bulkInfo && !bulkErr && (
+          <div className="text-[9px] text-amber-700 mt-1 bg-amber-50 border border-amber-200 rounded px-1 py-0.5" data-testid="ai-bulk-info">
+            {bulkInfo}
+          </div>
         )}
       </div>
 
