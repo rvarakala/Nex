@@ -9,6 +9,8 @@ import { ResultsGridSection } from './sections/ResultsGridSection';
 import { RecommendationsAdviceSection } from './sections/RecommendationsAdviceSection';
 import { GenericClinicalSection } from './sections/GenericClinicalSection';
 import { TympanometryInlineSection } from './TympanometrySections';
+import ABRWaveformCanvas from '../ABRWaveformCanvas';
+import SoundFieldMiniAudiogram from '../SoundFieldMiniAudiogram';
 
 /**
  * Section registry — one entry per toggleable section id. Each entry is a
@@ -60,12 +62,34 @@ export const SECTION_REGISTRY = {
   oae: (ctx) => (
     <GenericClinicalSection title="Otoacoustic Emissions" data={ctx.oaeData} impressionKey="oae_impression" />
   ),
-  soundfield: (ctx) => (
-    <GenericClinicalSection title="Sound Field / Aided" data={ctx.soundfieldData} impressionKey="sf_impression" />
-  ),
-  abr: (ctx) => (
-    <GenericClinicalSection title="ABR / ASSR" data={ctx.abrData} impressionKey="abr_impression" />
-  ),
+  soundfield: (ctx) => {
+    const hasAnyField = Object.values(ctx.soundfieldData?.fields || {}).some((v) => v && String(v).trim() !== '');
+    if (!hasAnyField) return null;
+    return (
+      <div>
+        <div className="mb-1">
+          <div className="h-[180px] border border-gray-400 bg-white">
+            <SoundFieldMiniAudiogram fields={ctx.soundfieldData?.fields || {}} height={180} />
+          </div>
+        </div>
+        <GenericClinicalSection title="Sound Field / Aided" data={ctx.soundfieldData} impressionKey="sf_impression" />
+      </div>
+    );
+  },
+  abr: (ctx) => {
+    const hasAnyField = Object.values(ctx.abrData?.fields || {}).some((v) => v && String(v).trim() !== '');
+    if (!hasAnyField) return null;
+    return (
+      <div>
+        <div className="mb-1">
+          <div className="h-[180px] border border-gray-400 bg-white">
+            <ABRWaveformCanvas fields={ctx.abrData?.fields || {}} height={180} />
+          </div>
+        </div>
+        <GenericClinicalSection title="ABR / ASSR" data={ctx.abrData} impressionKey="abr_impression" />
+      </div>
+    );
+  },
   pediatric: (ctx) => (
     <GenericClinicalSection title="Pediatric Audiometry" data={ctx.pediatricData} impressionKey="ped_impression" />
   ),

@@ -1,5 +1,6 @@
 import React from 'react';
 import { CFField, CFSelect, CFSectionRow, CFFreqTable } from './ClinicalFormKit';
+import ABRWaveformCanvas from './ABRWaveformCanvas';
 
 // ABR / ASSR — waveform latencies, inter-peak intervals, and threshold estimation.
 const ASSR_FREQS = [500, 1000, 2000, 4000];
@@ -32,6 +33,12 @@ const ABRPanel = ({ data, onChange }) => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 overflow-auto p-3">
+      <CFSectionRow tag="Traces" subtitle="Synthetic ABR waveform visualisation — peaks render automatically from the Wave I / III / V latencies entered below">
+        <div className="bg-white border border-gray-300 rounded">
+          <ABRWaveformCanvas fields={f} height={220} />
+        </div>
+      </CFSectionRow>
+
       <CFSectionRow tag="Setup" subtitle="Stimulus parameters">
         <div className="flex gap-6 items-end flex-wrap">
           <CFField label="Stimulus" testId="abr-stim" value={f.abr_stim} onChange={(v) => setF('abr_stim', v)} placeholder="Click 100 μs / TB 500 Hz" width="w-32" />

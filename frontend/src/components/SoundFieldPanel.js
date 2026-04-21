@@ -1,5 +1,6 @@
 import React from 'react';
 import { CFField, CFSelect, CFSectionRow, CFFreqTable } from './ClinicalFormKit';
+import SoundFieldMiniAudiogram from './SoundFieldMiniAudiogram';
 
 // Sound Field / Aided Audiometry — warble tones, speech, noise thresholds
 // plus aided-vs-unaided benefit comparison.
@@ -17,6 +18,12 @@ const SoundFieldPanel = ({ data, onChange }) => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50 overflow-auto p-3">
+      <CFSectionRow tag="Audiogram" subtitle="Aided vs Unaided soundfield thresholds — auto-plotted from the tables below">
+        <div className="bg-white border border-gray-300 rounded">
+          <SoundFieldMiniAudiogram fields={f} height={220} />
+        </div>
+      </CFSectionRow>
+
       <CFSectionRow tag="Setup" subtitle="Sound field configuration">
         <div className="flex gap-6 items-end flex-wrap">
           <CFSelect label="Stimulus" testId="sf-stimulus" value={f.sf_stimulus} onChange={(v) => setF('sf_stimulus', v)} options={STIMULI} />
