@@ -43,9 +43,9 @@ class OPDToken(BaseModel):
     model_config = ConfigDict(extra="ignore")
     token_id: str = Field(default_factory=lambda: str(uuid4()))
     clinic_id: str
-    token_no: int                                      # Resets daily per clinic
+    token_no: int
     patient_id: str
-    patient_name: str                                  # Denormalised for fast print
+    patient_name: str
     patient_mobile: Optional[str] = None
     mrd: Optional[str] = None
     issued_at: datetime = Field(default_factory=datetime.utcnow)
@@ -56,6 +56,111 @@ class OPDToken(BaseModel):
     service: Optional[str] = None
     priority: Literal["normal", "urgent", "vip"] = "normal"
     notes: Optional[str] = None
+
+
+# ==================== UC-03 APPOINTMENTS ====================
+
+APPOINTMENT_SERVICES = [
+    "Consultation", "PTA", "Immittance", "OAE", "ABR/BERA", "ASSR",
+    "Vestibular Tests", "Follow-up", "Speech Audiometry", "Hearing Aid Fitting",
+]
+APPOINTMENT_PRIORITIES = ["normal", "urgent", "vip"]
+APPOINTMENT_STATUSES = ["scheduled", "confirmed", "checked_in", "in_progress", "completed", "no_show", "cancelled"]
+
+
+class Appointment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    appointment_id: str = Field(default_factory=lambda: f"APT-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+
+    patient_id: str
+    patient_name: str                                 # Denormalised for fast list render
+    patient_mobile: Optional[str] = None
+    mrd: Optional[str] = None
+
+    audiologist_id: str
+    audiologist_name: str                             # Denormalised
+    room: Optional[str] = None
+
+    service: str
+    priority: Literal["normal", "urgent", "vip"] = "normal"
+
+    start_at: datetime                                # Full timestamp (UTC)
+    end_at: datetime
+    duration_minutes: int = 30
+
+    status: Literal["scheduled", "confirmed", "checked_in", "in_progress", "completed", "no_show", "cancelled"] = "scheduled"
+
+    notes: Optional[str] = None
+    reminder_sent: bool = False
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: Optional[str] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AppointmentCreate(BaseModel):
+    patient_id: str
+    audiologist_id: str
+    service: str
+    start_at: datetime
+    duration_minutes: int = 30
+    priority: Literal["normal", "urgent", "vip"] = "normal"
+    room: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class WaitlistEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    entry_id: str = Field(default_factory=lambda: f"WL-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    patient_id: str
+    patient_name: str
+    patient_mobile: Optional[str] = None
+    mrd: Optional[str] = None
+    preferred_audiologist_id: Optional[str] = None
+    preferred_service: Optional[str] = None
+    preferred_date: Optional[str] = None              # 'YYYY-MM-DD'
+    notes: Optional[str] = None
+    status: Literal["active", "scheduled", "cancelled"] = "active"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WaitlistCreate(BaseModel):
+    patient_id: str
+    preferred_audiologist_id: Optional[str] = None
+    preferred_service: Optional[str] = None
+    preferred_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CancellationLog(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    log_id: str = Field(default_factory=lambda: f"CAN-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    appointment_id: str
+    patient_id: str
+    patient_name: str
+    cancelled_at: datetime = Field(default_factory=datetime.utcnow)
+    cancelled_by_user_id: str
+    reason: Optional[str] = None
+    was_same_day: bool = False
+
+
+class ReminderLog(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    reminder_id: str = Field(default_factory=lambda: f"REM-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    appointment_id: Optional[str] = None
+    patient_id: str
+    channel: Literal["whatsapp", "sms", "email"]
+    recipient: str                                    # Phone or email used
+    subject: Optional[str] = None
+    body: str
+    status: Literal["pending", "sent", "failed", "stubbed_no_provider_key"] = "pending"
+    provider_response: Optional[str] = None
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_by_user_id: Optional[str] = None
 
 
 # ==================== PATIENT MODELS ====================

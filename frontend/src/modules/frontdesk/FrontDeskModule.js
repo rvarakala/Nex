@@ -4,6 +4,7 @@ import DashboardPage from './DashboardPage';
 import NewPatientPage from './NewPatientPage';
 import ReturningPage from './ReturningPage';
 import QueuePage from './QueuePage';
+import AppointmentsPage from './AppointmentsPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -28,6 +29,7 @@ export default function FrontDeskModule() {
         <Tab to="/frontdesk" testid="fd-tab-dashboard" label="Dashboard" />
         <Tab to="/frontdesk/new" testid="fd-tab-new" label="+ New Patient" />
         <Tab to="/frontdesk/returning" testid="fd-tab-returning" label="Returning Patient" />
+        <Tab to="/frontdesk/appointments" testid="fd-tab-appointments" label="Appointments" />
         <Tab to="/frontdesk/queue" testid="fd-tab-queue" label="Queue" />
       </div>
 
@@ -36,6 +38,7 @@ export default function FrontDeskModule() {
           <Route index element={<DashboardPage />} />
           <Route path="new" element={<NewPatientPage />} />
           <Route path="returning" element={<ReturningPage />} />
+          <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="queue" element={<QueuePage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>

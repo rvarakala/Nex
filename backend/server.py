@@ -17,11 +17,16 @@ from models import (
     ReferringDoctor, ReferringDoctorCreate,
     PatientNote, PatientNoteCreate,
     Clinic, User, LoginRequest, OPDToken,
+    Appointment, AppointmentCreate,
+    WaitlistEntry, WaitlistCreate,
+    CancellationLog,
+    APPOINTMENT_SERVICES,
 )
 from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, require_roles, VALID_ROLES,
 )
+from reminders import dispatch_reminder
 
 # Import PDF generator
 from pdf_generator import generate_report_pdf
@@ -239,7 +244,327 @@ async def delete_patient(patient_id: str, user=Depends(get_current_user)):
     return {"message": "Patient deleted", "patient_id": patient_id}
 
 
-# ==================== M01: TOKEN / QUEUE ====================
+# ==================== M01.B: APPOINTMENTS / WAITLIST / REMINDERS ====================
+
+@api_router.get("/users")
+async def list_users(role: Optional[str] = None, user=Depends(get_current_user)):
+    """Used by the appointment scheduler to pick an audiologist."""
+    q: dict = {"clinic_id": user["clinic_id"], "active": True}
+    if role:
+        q["role"] = role
+    us = await db.users.find(q, {"_id": 0, "password_hash": 0}).sort("name", 1).to_list(100)
+    return [deserialize_datetime(u) for u in us]
+
+
+@api_router.get("/appointments/services")
+async def list_services(user=Depends(get_current_user)):
+    return {"services": APPOINTMENT_SERVICES}
+
+
+def _overlap_query(clinic_id: str, audiologist_id: str, start: datetime, end: datetime, exclude_id: Optional[str] = None) -> dict:
+    q: dict = {
+        "clinic_id": clinic_id,
+        "audiologist_id": audiologist_id,
+        "status": {"$nin": ["cancelled", "no_show", "completed"]},
+        "start_at": {"$lt": end.isoformat()},
+        "end_at":   {"$gt": start.isoformat()},
+    }
+    if exclude_id:
+        q["appointment_id"] = {"$ne": exclude_id}
+    return q
+
+
+@api_router.post("/appointments", response_model=Appointment)
+async def create_appointment(payload: AppointmentCreate, user=Depends(get_current_user)):
+    clinic_id = user["clinic_id"]
+    # Resolve patient + audiologist for denormalised copy
+    p = await db.patients.find_one({"patient_id": payload.patient_id, "clinic_id": clinic_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    a = await db.users.find_one({"user_id": payload.audiologist_id, "clinic_id": clinic_id}, {"_id": 0, "password_hash": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Audiologist not found")
+
+    from datetime import timedelta
+    start = payload.start_at
+    end = start + timedelta(minutes=payload.duration_minutes)
+
+    # Double-booking guard
+    overlap = await db.appointments.find_one(_overlap_query(clinic_id, payload.audiologist_id, start, end))
+    if overlap:
+        raise HTTPException(status_code=409, detail={
+            "message": "Time slot conflicts with an existing appointment",
+            "conflict_with": {
+                "appointment_id": overlap.get("appointment_id"),
+                "patient_name": overlap.get("patient_name"),
+                "start_at": overlap.get("start_at"),
+                "end_at": overlap.get("end_at"),
+            },
+        })
+
+    obj = Appointment(
+        clinic_id=clinic_id,
+        patient_id=p["patient_id"],
+        patient_name=p.get("name", ""),
+        patient_mobile=p.get("mobile") or p.get("phone"),
+        mrd=p.get("mrd"),
+        audiologist_id=a["user_id"],
+        audiologist_name=a.get("name", ""),
+        room=payload.room,
+        service=payload.service,
+        priority=payload.priority,
+        start_at=start,
+        end_at=end,
+        duration_minutes=payload.duration_minutes,
+        notes=payload.notes,
+        created_by_user_id=user["user_id"],
+    )
+    await db.appointments.insert_one(serialize_datetime(obj.model_dump()))
+    return obj
+
+
+@api_router.get("/appointments", response_model=List[Appointment])
+async def list_appointments(
+    from_date: Optional[str] = None,      # 'YYYY-MM-DD'
+    to_date: Optional[str] = None,        # 'YYYY-MM-DD'
+    audiologist_id: Optional[str] = None,
+    service: Optional[str] = None,
+    room: Optional[str] = None,
+    priority: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 500,
+    user=Depends(get_current_user),
+):
+    q: dict = {"clinic_id": user["clinic_id"]}
+    if from_date or to_date:
+        rng: dict = {}
+        if from_date: rng["$gte"] = f"{from_date}T00:00:00"
+        if to_date:   rng["$lte"] = f"{to_date}T23:59:59"
+        q["start_at"] = rng
+    if audiologist_id: q["audiologist_id"] = audiologist_id
+    if service:        q["service"] = service
+    if room:           q["room"] = room
+    if priority:       q["priority"] = priority
+    if status:         q["status"] = status
+    rows = await db.appointments.find(q, {"_id": 0}).sort("start_at", 1).to_list(limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+@api_router.put("/appointments/{appointment_id}", response_model=Appointment)
+async def update_appointment(appointment_id: str, payload: dict, user=Depends(get_current_user)):
+    """Accepts any subset of: start_at, duration_minutes, audiologist_id, service, room, priority, status, notes.
+    Re-runs double-booking guard if start/duration/audiologist changes."""
+    existing = await db.appointments.find_one({"appointment_id": appointment_id, "clinic_id": user["clinic_id"]})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    from datetime import timedelta
+    update: dict = {"updated_at": datetime.utcnow()}
+
+    # Track if schedule-impacting fields changed
+    impacts_schedule = any(k in payload for k in ("start_at", "duration_minutes", "audiologist_id"))
+
+    if "start_at" in payload:
+        val = payload["start_at"]
+        start = datetime.fromisoformat(val) if isinstance(val, str) else val
+        update["start_at"] = start
+    else:
+        start = datetime.fromisoformat(existing["start_at"]) if isinstance(existing["start_at"], str) else existing["start_at"]
+
+    duration = payload.get("duration_minutes", existing.get("duration_minutes", 30))
+    update["duration_minutes"] = duration
+    end = start + timedelta(minutes=duration)
+    update["end_at"] = end
+
+    aud_id = payload.get("audiologist_id", existing["audiologist_id"])
+    if payload.get("audiologist_id"):
+        a = await db.users.find_one({"user_id": aud_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
+        if not a:
+            raise HTTPException(status_code=404, detail="Audiologist not found")
+        update["audiologist_id"] = a["user_id"]
+        update["audiologist_name"] = a.get("name", "")
+
+    if impacts_schedule:
+        overlap = await db.appointments.find_one(_overlap_query(user["clinic_id"], aud_id, start, end, exclude_id=appointment_id))
+        if overlap:
+            raise HTTPException(status_code=409, detail={
+                "message": "Time slot conflicts with an existing appointment",
+                "conflict_with": {
+                    "appointment_id": overlap.get("appointment_id"),
+                    "patient_name": overlap.get("patient_name"),
+                    "start_at": overlap.get("start_at"),
+                },
+            })
+
+    for k in ("service", "room", "priority", "status", "notes"):
+        if k in payload:
+            update[k] = payload[k]
+
+    await db.appointments.update_one(
+        {"appointment_id": appointment_id, "clinic_id": user["clinic_id"]},
+        {"$set": serialize_datetime(update)},
+    )
+    updated = await db.appointments.find_one({"appointment_id": appointment_id}, {"_id": 0})
+    return deserialize_datetime(updated)
+
+
+@api_router.post("/appointments/{appointment_id}/cancel")
+async def cancel_appointment(appointment_id: str, payload: dict, user=Depends(get_current_user)):
+    existing = await db.appointments.find_one({"appointment_id": appointment_id, "clinic_id": user["clinic_id"]})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if existing.get("status") == "cancelled":
+        return {"message": "Already cancelled"}
+    reason = (payload or {}).get("reason", "")
+    start_at = existing.get("start_at", "")
+    was_same_day = False
+    try:
+        was_same_day = isinstance(start_at, str) and start_at[:10] == datetime.utcnow().strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    await db.appointments.update_one(
+        {"appointment_id": appointment_id},
+        {"$set": {"status": "cancelled", "updated_at": datetime.utcnow().isoformat()}},
+    )
+    log = CancellationLog(
+        clinic_id=user["clinic_id"],
+        appointment_id=appointment_id,
+        patient_id=existing["patient_id"],
+        patient_name=existing["patient_name"],
+        cancelled_by_user_id=user["user_id"],
+        reason=reason,
+        was_same_day=was_same_day,
+    )
+    await db.cancellation_logs.insert_one(serialize_datetime(log.model_dump()))
+    return {"message": "Cancelled", "appointment_id": appointment_id}
+
+
+@api_router.get("/appointments/slots")
+async def suggest_slots(
+    audiologist_id: str,
+    date: str,                            # 'YYYY-MM-DD'
+    duration_minutes: int = 30,
+    start_hour: int = 9,
+    end_hour: int = 18,
+    user=Depends(get_current_user),
+):
+    """Returns 15-min-granularity free slots for an audiologist on a given date."""
+    from datetime import timedelta
+    day_start = datetime.fromisoformat(f"{date}T00:00:00")
+    day_end = datetime.fromisoformat(f"{date}T23:59:59")
+    busy = await db.appointments.find(
+        {
+            "clinic_id": user["clinic_id"],
+            "audiologist_id": audiologist_id,
+            "status": {"$nin": ["cancelled", "no_show"]},
+            "start_at": {"$gte": day_start.isoformat(), "$lte": day_end.isoformat()},
+        },
+        {"_id": 0, "start_at": 1, "end_at": 1},
+    ).to_list(200)
+    busy_ranges = []
+    for b in busy:
+        try:
+            busy_ranges.append((datetime.fromisoformat(b["start_at"]), datetime.fromisoformat(b["end_at"])))
+        except Exception:
+            pass
+
+    slots = []
+    cur = day_start.replace(hour=start_hour, minute=0)
+    dayEnd = day_start.replace(hour=end_hour, minute=0)
+    step = timedelta(minutes=15)
+    dur = timedelta(minutes=duration_minutes)
+    while cur + dur <= dayEnd:
+        slot_end = cur + dur
+        conflict = any(not (slot_end <= bs or cur >= be) for (bs, be) in busy_ranges)
+        if not conflict:
+            slots.append({"start_at": cur.isoformat(), "end_at": slot_end.isoformat()})
+        cur += step
+    return {"slots": slots, "busy": [{"start_at": bs.isoformat(), "end_at": be.isoformat()} for bs, be in busy_ranges]}
+
+
+# ==================== WAITLIST ====================
+
+@api_router.post("/waitlist", response_model=WaitlistEntry)
+async def add_to_waitlist(payload: WaitlistCreate, user=Depends(get_current_user)):
+    p = await db.patients.find_one({"patient_id": payload.patient_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    obj = WaitlistEntry(
+        clinic_id=user["clinic_id"],
+        patient_id=p["patient_id"],
+        patient_name=p.get("name", ""),
+        patient_mobile=p.get("mobile") or p.get("phone"),
+        mrd=p.get("mrd"),
+        preferred_audiologist_id=payload.preferred_audiologist_id,
+        preferred_service=payload.preferred_service,
+        preferred_date=payload.preferred_date,
+        notes=payload.notes,
+    )
+    await db.waitlist.insert_one(serialize_datetime(obj.model_dump()))
+    return obj
+
+
+@api_router.get("/waitlist", response_model=List[WaitlistEntry])
+async def list_waitlist(status: Optional[str] = "active", limit: int = 200, user=Depends(get_current_user)):
+    q: dict = {"clinic_id": user["clinic_id"]}
+    if status:
+        q["status"] = status
+    rows = await db.waitlist.find(q, {"_id": 0}).sort("created_at", 1).to_list(limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+@api_router.put("/waitlist/{entry_id}/status")
+async def update_waitlist_status(entry_id: str, payload: dict, user=Depends(get_current_user)):
+    new_status = payload.get("status")
+    if new_status not in {"active", "scheduled", "cancelled"}:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    res = await db.waitlist.update_one(
+        {"entry_id": entry_id, "clinic_id": user["clinic_id"]},
+        {"$set": {"status": new_status}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Waitlist entry not found")
+    return {"message": "Updated", "entry_id": entry_id, "status": new_status}
+
+
+# ==================== REMINDERS ====================
+
+@api_router.post("/reminders/send")
+async def send_reminder(payload: dict, user=Depends(get_current_user)):
+    """Body: {appointment_id?, patient_id, channel: 'whatsapp'|'sms'|'email'}"""
+    channel = payload.get("channel")
+    patient_id = payload.get("patient_id")
+    appointment_id = payload.get("appointment_id")
+    if channel not in {"whatsapp", "sms", "email"}:
+        raise HTTPException(status_code=400, detail="Invalid channel")
+    if not patient_id:
+        raise HTTPException(status_code=400, detail="patient_id required")
+    p = await db.patients.find_one({"patient_id": patient_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    appt = None
+    if appointment_id:
+        appt = await db.appointments.find_one({"appointment_id": appointment_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
+    clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0}) or {}
+    log = await dispatch_reminder(db, channel=channel, patient=p, appointment=appt, clinic=clinic, sent_by_user_id=user["user_id"])
+    return log
+
+
+@api_router.get("/reminders")
+async def list_reminders(
+    appointment_id: Optional[str] = None,
+    patient_id: Optional[str] = None,
+    limit: int = 50,
+    user=Depends(get_current_user),
+):
+    q: dict = {"clinic_id": user["clinic_id"]}
+    if appointment_id: q["appointment_id"] = appointment_id
+    if patient_id:     q["patient_id"] = patient_id
+    rows = await db.reminder_logs.find(q, {"_id": 0}).sort("sent_at", -1).to_list(limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+# ==================== TOKEN / QUEUE ====================
 
 async def _next_token_no(clinic_id: str) -> int:
     """Daily-resetting token counter per clinic."""
@@ -343,6 +668,15 @@ async def frontdesk_dashboard(user=Depends(get_current_user)):
     waiting_now = sum(1 for t in all_tokens_today if t.get("status") == "waiting")
     in_progress = sum(1 for t in all_tokens_today if t.get("status") in {"in_consultation", "in_testing"})
 
+    # Appointments today (M01.B)
+    day_key = today_start.strftime("%Y-%m-%d")
+    appointments_today = await db.appointments.count_documents({
+        "clinic_id": clinic_id,
+        "start_at": {"$gte": f"{day_key}T00:00:00", "$lte": f"{day_key}T23:59:59"},
+        "status": {"$nin": ["cancelled"]},
+    })
+    waitlist_active = await db.waitlist.count_documents({"clinic_id": clinic_id, "status": "active"})
+
     # Pending reports = sessions marked as draft (or not finalized) today
     pending_reports = await db.test_sessions.count_documents({
         "clinic_id": clinic_id,
@@ -356,7 +690,8 @@ async def frontdesk_dashboard(user=Depends(get_current_user)):
         "kpis": {
             "walkins_today": walkins_today,
             "returning_today": returning_today,
-            "appointments_today": 0,  # UC-03 in M01.B
+            "appointments_today": appointments_today,
+            "waitlist_active": waitlist_active,
             "waiting_now": waiting_now,
             "in_progress": in_progress,
             "collections_today": 0,   # UC-04 in M01.C
@@ -632,6 +967,13 @@ async def on_startup():
         await db.tokens.create_index("token_id", unique=True)
         await db.patients.create_index([("clinic_id", 1), ("updated_at", -1)])
         await db.patients.create_index("mrd")
+        # M01.B appointment indexes
+        await db.appointments.create_index("appointment_id", unique=True)
+        await db.appointments.create_index([("clinic_id", 1), ("start_at", 1)])
+        await db.appointments.create_index([("clinic_id", 1), ("audiologist_id", 1), ("start_at", 1)])
+        await db.waitlist.create_index([("clinic_id", 1), ("status", 1), ("created_at", 1)])
+        await db.reminder_logs.create_index([("clinic_id", 1), ("sent_at", -1)])
+        await db.cancellation_logs.create_index([("clinic_id", 1), ("cancelled_at", -1)])
         logger.info("MongoDB indexes ensured")
     except Exception as e:
         logging.warning(f"Index creation skipped: {e}")
