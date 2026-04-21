@@ -400,7 +400,7 @@ const CaseHistorySection = ({ narrative }) => (
   </div>
 );
 
-const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
+const PureToneSection = ({ rightEar, leftEar, mode = 'combined', tuningFork, showTuningForkMini = false }) => {
   if (mode === 'separate') {
     return (
       <div>
@@ -419,14 +419,15 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
             <span><span className="text-blue-600 font-bold">X</span> Left AC · <span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
             <span>↙↘ No Response</span>
           </div>
-          <div className="w-[200px] flex-shrink-0">
+          <div className="w-[220px] flex-shrink-0 flex flex-col gap-2">
             <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
+            {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
           </div>
         </div>
       </div>
     );
   }
-  // combined (default) — PTA mini-table sits below the legend in the right sidebar
+  // combined (default) — PTA mini-table (and optional Tuning Fork mini) in the right sidebar
   return (
     <div>
       <SectionTitle>Puretone Audiometry</SectionTitle>
@@ -434,7 +435,7 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
         <div className="flex-1 h-[320px]">
           <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
         </div>
-        <div className="w-[180px] flex flex-col gap-2 text-[10px] text-gray-700">
+        <div className="w-[200px] flex flex-col gap-2 text-[10px] text-gray-700">
           <div className="border border-gray-300 rounded p-1.5 bg-gray-50">
             <div className="font-bold text-[11px] mb-1">Legend</div>
             <div className="flex items-center gap-1.5 mb-0.5"><span className="text-red-600 font-bold">O</span> Right AC (unmasked)</div>
@@ -446,6 +447,7 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined' }) => {
             <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-gray-300">↙ ↘ No Response</div>
           </div>
           <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
+          {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
         </div>
       </div>
     </div>
@@ -492,23 +494,69 @@ const PTAMiniTable = ({ rightEar, leftEar }) => {
   );
 };
 
-const TuningForkSection = ({ tf = {} }) => (
-  <div>
-    <SectionTitle>Tuning Fork Tests ({tf.frequency_hz || 512} Hz)</SectionTitle>
-    <table className="w-full text-[11px] border border-gray-400">
-      <thead className="bg-gray-100">
-        <tr>
-          <th className="border border-gray-400 px-2 py-0.5 text-left">Test</th>
-          <th className="border border-gray-400 px-2 py-0.5">Right</th>
-          <th className="border border-gray-400 px-2 py-0.5">Left</th>
-          <th className="border border-gray-400 px-2 py-0.5 text-left">Notes</th>
+const TuningForkSection = ({ tf = {}, showABC = false, showBing = false }) => {
+  const rows = [];
+  rows.push({ id: 'rinne', label: 'Rinne', r: pick(LABELS.rinne, tf.rinne_right), l: pick(LABELS.rinne, tf.rinne_left), notes: tf.rinne_notes || '' });
+  rows.push({ id: 'weber', label: 'Weber', both: pick(LABELS.weber, tf.weber), notes: tf.weber_notes || '' });
+  if (showABC) rows.push({ id: 'abc', label: 'ABC', r: pick(LABELS.abc, tf.abc_right), l: pick(LABELS.abc, tf.abc_left), notes: tf.abc_notes || '' });
+  if (showBing) rows.push({ id: 'bing', label: 'Bing', r: pick(LABELS.bing, tf.bing_right), l: pick(LABELS.bing, tf.bing_left), notes: tf.bing_notes || '' });
+  return (
+    <div>
+      <SectionTitle>Tuning Fork Tests ({tf.frequency_hz || 512} Hz)</SectionTitle>
+      <table className="w-full text-[11px] border border-gray-400">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="border border-gray-400 px-2 py-0.5 text-left">Test</th>
+            <th className="border border-gray-400 px-2 py-0.5">Right</th>
+            <th className="border border-gray-400 px-2 py-0.5">Left</th>
+            <th className="border border-gray-400 px-2 py-0.5 text-left">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td className="border border-gray-400 px-2 py-0.5 font-medium">{r.label}</td>
+              {r.both ? (
+                <td className="border border-gray-400 px-2 py-0.5" colSpan={2}>{r.both}</td>
+              ) : (
+                <>
+                  <td className="border border-gray-400 px-2 py-0.5">{r.r}</td>
+                  <td className="border border-gray-400 px-2 py-0.5">{r.l}</td>
+                </>
+              )}
+              <td className="border border-gray-400 px-2 py-0.5">{r.notes}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+// Compact Rinne + Weber micro-table (lives inside PTA sidebar when ABC/Bing are OFF)
+const TuningForkMiniTable = ({ tf = {} }) => (
+  <div className="border border-gray-300 rounded bg-white">
+    <div className="text-[10px] font-bold text-gray-700 bg-gray-100 text-center py-0.5 border-b border-gray-300">
+      Tuning Fork ({tf.frequency_hz || 512} Hz)
+    </div>
+    <table className="w-full text-[10px]">
+      <thead>
+        <tr className="border-b border-gray-200">
+          <th className="px-1.5 py-0.5 text-left font-semibold text-gray-600">Test</th>
+          <th className="px-1.5 py-0.5 font-semibold text-gray-700">R</th>
+          <th className="px-1.5 py-0.5 font-semibold text-gray-700">L</th>
         </tr>
       </thead>
       <tbody>
-        <tr><td className="border border-gray-400 px-2 py-0.5 font-medium">Rinne</td><td className="border border-gray-400 px-2 py-0.5">{pick(LABELS.rinne, tf.rinne_right)}</td><td className="border border-gray-400 px-2 py-0.5">{pick(LABELS.rinne, tf.rinne_left)}</td><td className="border border-gray-400 px-2 py-0.5">{tf.rinne_notes || ''}</td></tr>
-        <tr><td className="border border-gray-400 px-2 py-0.5 font-medium">Weber</td><td className="border border-gray-400 px-2 py-0.5" colSpan={2}>{pick(LABELS.weber, tf.weber)}</td><td className="border border-gray-400 px-2 py-0.5">{tf.weber_notes || ''}</td></tr>
-        <tr><td className="border border-gray-400 px-2 py-0.5 font-medium">ABC</td><td className="border border-gray-400 px-2 py-0.5">{pick(LABELS.abc, tf.abc_right)}</td><td className="border border-gray-400 px-2 py-0.5">{pick(LABELS.abc, tf.abc_left)}</td><td className="border border-gray-400 px-2 py-0.5">{tf.abc_notes || ''}</td></tr>
-        <tr><td className="border border-gray-400 px-2 py-0.5 font-medium">Bing</td><td className="border border-gray-400 px-2 py-0.5">{pick(LABELS.bing, tf.bing_right)}</td><td className="border border-gray-400 px-2 py-0.5">{pick(LABELS.bing, tf.bing_left)}</td><td className="border border-gray-400 px-2 py-0.5">{tf.bing_notes || ''}</td></tr>
+        <tr className="border-b border-gray-100">
+          <td className="px-1.5 py-0.5 font-medium">Rinne</td>
+          <td className="px-1.5 py-0.5 text-center">{pick(LABELS.rinne, tf.rinne_right)}</td>
+          <td className="px-1.5 py-0.5 text-center">{pick(LABELS.rinne, tf.rinne_left)}</td>
+        </tr>
+        <tr>
+          <td className="px-1.5 py-0.5 font-medium">Weber</td>
+          <td className="px-1.5 py-0.5 text-center" colSpan={2}>{pick(LABELS.weber, tf.weber)}</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -607,6 +655,10 @@ const ReportsPanel = ({
   const [license, setLicense] = useState('');
   // Tympanometry placement: auto | inline | separate
   const [tympPlacement, setTympPlacement] = useState('auto');
+  // Tuning fork — Rinne + Weber always. ABC / Bing opt-in.
+  const [showABC, setShowABC] = useState(false);
+  const [showBing, setShowBing] = useState(false);
+  const tuningForkFull = showABC || showBing;
   // Clinic branding (persisted to localStorage)
   const [clinic, setClinic] = useState(loadClinic);
   const logoFileRef = useRef(null);
@@ -673,9 +725,21 @@ const ReportsPanel = ({
       case 'case_history':
         return <CaseHistorySection key={id} narrative={caseHistoryNarrative} />;
       case 'pure_tone':
-        return <PureToneSection key={id} rightEar={rightEarData} leftEar={leftEarData} mode={audiogramMode} />;
+        return (
+          <PureToneSection
+            key={id}
+            rightEar={rightEarData}
+            leftEar={leftEarData}
+            mode={audiogramMode}
+            tuningFork={preTestData?.tuning_fork}
+            showTuningForkMini={!tuningForkFull}
+          />
+        );
       case 'tuning_fork':
-        return <TuningForkSection key={id} tf={preTestData?.tuning_fork} />;
+        // If no ABC or Bing requested, skip main-body section (data is shown inline in PTA sidebar)
+        return tuningForkFull
+          ? <TuningForkSection key={id} tf={preTestData?.tuning_fork} showABC={showABC} showBing={showBing} />
+          : null;
       case 'otoscopy':
         return <OtoscopySection key={id} ot={preTestData?.otoscopy} />;
       case 'speech':
@@ -902,6 +966,35 @@ const ReportsPanel = ({
                   >▼</button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Tuning Fork extras</div>
+            <div className="text-[10px] text-gray-500 mb-1">
+              Rinne + Weber show inline below PTA by default. Enable below to add a full-section with notes.
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <label className={`flex items-center gap-1 px-2 py-1 text-[11px] border rounded cursor-pointer ${showABC ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-300'}`}>
+                <input
+                  type="checkbox"
+                  checked={showABC}
+                  onChange={(e) => setShowABC(e.target.checked)}
+                  data-testid="report-show-abc"
+                  className="w-3.5 h-3.5"
+                />
+                <span className="font-medium">Show ABC</span>
+              </label>
+              <label className={`flex items-center gap-1 px-2 py-1 text-[11px] border rounded cursor-pointer ${showBing ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-300'}`}>
+                <input
+                  type="checkbox"
+                  checked={showBing}
+                  onChange={(e) => setShowBing(e.target.checked)}
+                  data-testid="report-show-bing"
+                  className="w-3.5 h-3.5"
+                />
+                <span className="font-medium">Show Bing</span>
+              </label>
             </div>
           </div>
 
