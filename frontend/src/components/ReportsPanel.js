@@ -668,8 +668,8 @@ const NarrativeSection = ({ title, text }) => (
   </div>
 );
 
-// 2x2 Results grid — Row1: Puretone | Immitence · Row2: Provisional Diagnosis (full width)
-const ResultsGridSection = ({ puretone, immitence, diagnosis }) => {
+// Results grid — Puretone | Immitence (two columns)
+const ResultsGridSection = ({ puretone, immitence }) => {
   const Cell = ({ title, text }) => (
     <div className="border border-gray-400 p-1.5">
       <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-0.5">{title}</div>
@@ -681,15 +681,12 @@ const ResultsGridSection = ({ puretone, immitence, diagnosis }) => {
   return (
     <div>
       <SectionTitle>Results</SectionTitle>
-      <div className="grid grid-cols-2 gap-0 border border-gray-400 border-b-0">
-        <div className="border-r border-b border-gray-400 -mr-px">
+      <div className="grid grid-cols-2 gap-0 border border-gray-400">
+        <div className="border-r border-gray-400 -mr-px">
           <Cell title="Puretone Audiometry Findings" text={puretone} />
         </div>
-        <div className="border-b border-gray-400">
+        <div>
           <Cell title="Immitence Audiometry Findings" text={immitence} />
-        </div>
-        <div className="col-span-2 border-t border-gray-400">
-          <Cell title="Provisional Diagnosis" text={diagnosis} />
         </div>
       </div>
     </div>
@@ -718,10 +715,9 @@ const ReportsPanel = ({
   const [resultsText, setResultsText] = useState(clinicalImpression || '');
   const [recText, setRecText] = useState((recommendations || []).join('\n'));
   const [license, setLicense] = useState('');
-  // Results 2x2 fields (Puretone findings / Immitence findings / Provisional diagnosis)
+  // Results fields (Puretone findings / Immitence findings)
   const [ptFindings, setPtFindings] = useState('');
   const [immFindings, setImmFindings] = useState('');
-  const [provDiagnosis, setProvDiagnosis] = useState('');
   // Patient strip editable fields
   const [referredBy, setReferredBy] = useState('');
   const [mrdEdit, setMrdEdit] = useState(patient?.patient_id || '');
@@ -771,13 +767,12 @@ const ReportsPanel = ({
         clinical_impression: resultsText,
         puretone_findings: ptFindings,
         immitence_findings: immFindings,
-        provisional_diagnosis: provDiagnosis,
         referred_by: referredBy,
         recommendations: recText.split('\n').map((l) => l.trim()).filter(Boolean),
       });
     }, 800);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [resultsText, recText, ptFindings, immFindings, provDiagnosis, referredBy, onPersist]);
+  }, [resultsText, recText, ptFindings, immFindings, referredBy, onPersist]);
 
   const toggleSection = (id) =>
     setSections((s) => s.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
@@ -827,7 +822,7 @@ const ReportsPanel = ({
         // Inline render at this slot ONLY if not using separate page
         return useSeparatePage ? null : <TympanometryInlineSection key={id} impedance={impedanceData} />;
       case 'results':
-        return <ResultsGridSection key={id} puretone={ptFindings} immitence={immFindings} diagnosis={provDiagnosis} />;
+        return <ResultsGridSection key={id} puretone={ptFindings} immitence={immFindings} />;
       case 'recommendations':
         return <NarrativeSection key={id} title="Recommendations" text={recText} />;
       default:
@@ -1126,17 +1121,6 @@ const ReportsPanel = ({
               onChange={(e) => setImmFindings(e.target.value)}
               rows={3}
               placeholder="Type A tympanograms bilaterally; acoustic reflexes present at normal levels…"
-              className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <div className="text-[10px] font-bold text-gray-600 mb-1">Provisional Diagnosis</div>
-            <textarea
-              data-testid="report-prov-dx"
-              value={provDiagnosis}
-              onChange={(e) => setProvDiagnosis(e.target.value)}
-              rows={3}
-              placeholder="B/L mild sloping sensorineural hearing loss; normal middle-ear function."
               className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
             />
           </div>
