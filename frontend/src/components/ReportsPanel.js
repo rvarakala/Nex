@@ -326,7 +326,7 @@ const TympanometryInlineSection = ({ impedance }) => {
           <div className="bg-yellow-50 border border-gray-400 text-[10px] font-bold text-gray-700 px-1.5 py-0.5">
             Right Tympanogram
           </div>
-          <div className="flex-1 h-[190px] border border-t-0 border-gray-400">
+          <div className="flex-1 h-[160px] border border-t-0 border-gray-400">
             <TympanogramCanvas
               jergerType={effectiveJerger(R)}
               mePressure={R.me_pressure}
@@ -347,7 +347,7 @@ const TympanometryInlineSection = ({ impedance }) => {
           <div className="bg-yellow-50 border border-gray-400 text-[10px] font-bold text-gray-700 px-1.5 py-0.5">
             Left Tympanogram
           </div>
-          <div className="flex-1 h-[190px] border border-t-0 border-gray-400">
+          <div className="flex-1 h-[160px] border border-t-0 border-gray-400">
             <TympanogramCanvas
               jergerType={effectiveJerger(L)}
               mePressure={L.me_pressure}
@@ -424,7 +424,7 @@ const TympanometryFullPage = ({ impedance }) => {
 // ==================== REPORT PREVIEW SECTIONS ====================
 
 const SectionTitle = ({ children }) => (
-  <h3 className="text-[13px] font-bold text-blue-800 border-b border-gray-300 pb-0.5 mt-3 mb-1.5">{children}</h3>
+  <h3 className="text-[12px] font-bold text-blue-800 border-b border-gray-300 pb-0.5 mt-2 mb-1">{children}</h3>
 );
 
 const CaseHistorySection = ({ narrative }) => (
@@ -440,10 +440,10 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined', tuningFork, sho
       <div>
         <SectionTitle>Puretone Audiometry</SectionTitle>
         <div className="flex gap-2">
-          <div className="flex-1 h-[300px]">
+          <div className="flex-1 h-[220px]">
             <ReportAudiogram rightEarData={rightEar} leftEarData={null} title="Right Ear" />
           </div>
-          <div className="flex-1 h-[300px]">
+          <div className="flex-1 h-[220px]">
             <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
           </div>
         </div>
@@ -478,7 +478,7 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined', tuningFork, sho
     <div>
       <SectionTitle>Puretone Audiometry</SectionTitle>
       <div className="flex gap-3">
-        <div className="flex-1 h-[320px]">
+        <div className="flex-1 h-[240px]">
           <ReportAudiogram rightEarData={rightEar} leftEarData={leftEar} />
         </div>
         <div className="w-[200px] flex flex-col gap-2 text-[10px] text-gray-700">
@@ -1126,38 +1126,38 @@ const ReportsPanel = ({
         <div
           id="report-preview"
           className="mx-auto bg-white shadow-lg report-page"
-          style={{ width: '210mm', minHeight: '297mm', padding: '12mm 14mm', fontFamily: 'Arial, sans-serif', color: '#1f2937' }}
+          style={{ width: '210mm', minHeight: '297mm', padding: '10mm 12mm', fontFamily: 'Arial, sans-serif', color: '#1f2937' }}
         >
           {/* ===== HEADER (logo + clinic info on row 1, title on row 2) ===== */}
-          <header className="border-b-2 border-blue-700 pb-2">
+          <header className="border-b-2 border-blue-700 pb-1.5">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
                 {clinic.logo_base64 ? (
                   <img
                     src={clinic.logo_base64}
                     alt={`${clinic.name} logo`}
                     className={`bg-white border border-gray-200 object-contain flex-shrink-0 ${
                       clinic.logo_shape === 'circle'
-                        ? 'w-16 h-16 rounded-full'
+                        ? 'w-14 h-14 rounded-full'
                         : clinic.logo_shape === 'rectangle'
-                        ? 'w-24 h-14 rounded'
-                        : 'w-16 h-16 rounded'
+                        ? 'w-20 h-12 rounded'
+                        : 'w-14 h-14 rounded'
                     }`}
                   />
                 ) : (
-                  <div className={`bg-blue-700 text-white flex items-center justify-center font-black text-xl flex-shrink-0 ${
+                  <div className={`bg-blue-700 text-white flex items-center justify-center font-black text-lg flex-shrink-0 ${
                     clinic.logo_shape === 'circle'
-                      ? 'w-16 h-16 rounded-full'
+                      ? 'w-14 h-14 rounded-full'
                       : clinic.logo_shape === 'rectangle'
-                      ? 'w-24 h-14 rounded'
-                      : 'w-16 h-16 rounded'
+                      ? 'w-20 h-12 rounded'
+                      : 'w-14 h-14 rounded'
                   }`}>
                     {(clinic.name || 'C').trim().charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0">
-                  <div className="text-[11px] text-gray-500 truncate">{clinic.tagline}</div>
-                  <div className="text-[18px] font-extrabold text-blue-900 leading-tight truncate">{clinic.name}</div>
+                  <div className="text-[10px] text-gray-500 truncate leading-tight">{clinic.tagline}</div>
+                  <div className="text-[17px] font-extrabold text-blue-900 leading-tight truncate">{clinic.name}</div>
                 </div>
               </div>
               <div className="text-[10px] text-right text-gray-700 leading-tight flex-shrink-0">
@@ -1168,50 +1168,53 @@ const ReportsPanel = ({
               </div>
             </div>
             {/* Title one step below */}
-            <div className="text-center mt-2">
-              <h1 className="text-[20px] font-extrabold text-gray-800 tracking-wide">Hearing Assessment</h1>
+            <div className="text-center mt-1">
+              <h1 className="text-[18px] font-extrabold text-gray-800 tracking-wide">Hearing Assessment</h1>
             </div>
           </header>
 
-          {/* ===== PATIENT INFO (compact single-row strip) ===== */}
-          <section className="mt-2 border border-gray-400 text-[11px] flex flex-wrap items-stretch">
+          {/* ===== PATIENT INFO (aligned grid, 4 columns × 2 rows) ===== */}
+          <section className="mt-1.5 border border-gray-400 text-[11px] grid grid-cols-4">
             {[
-              { label: 'Patient', value: patient.name || '—', flex: 'min-w-[180px] flex-[2]' },
-              { label: 'MRD',     value: patient.patient_id || '—', flex: 'min-w-[120px] flex-1' },
-              { label: 'DOB',     value: patient.dob || '—',        flex: 'min-w-[90px]' },
-              { label: 'Age',     value: String(patient.age ?? '—'), flex: 'min-w-[60px]' },
-              { label: 'Gender',  value: patient.gender || '—',     flex: 'min-w-[80px]' },
-              { label: 'Audiologist', value: audiologistName || '—', flex: 'min-w-[130px] flex-1' },
-              { label: 'Date',    value: fmtDate(),                  flex: 'min-w-[90px]' },
-              { label: 'Session', value: sessionId || '—',           flex: 'min-w-[150px]' },
-            ].map((c, i, arr) => (
-              <div
-                key={c.label}
-                className={`${c.flex} px-2 py-0.5 ${i < arr.length - 1 ? 'border-r border-gray-300' : ''}`}
-              >
-                <span className="text-[9px] uppercase text-gray-500 mr-1">{c.label}:</span>
-                <span className="font-semibold text-[11px]">{c.value}</span>
-              </div>
-            ))}
+              { label: 'Patient Name',  value: patient.name || '—',       span: 'col-span-2' },
+              { label: 'MRD / Patient ID', value: patient.patient_id || '—', span: '' },
+              { label: 'Date of Birth', value: patient.dob || '—',        span: '' },
+              { label: 'Age',           value: String(patient.age ?? '—'), span: '' },
+              { label: 'Gender',        value: patient.gender || '—',     span: '' },
+              { label: 'Audiologist',   value: audiologistName || '—',    span: '' },
+              { label: 'Date of Service', value: fmtDate(),               span: '' },
+            ].map((c, i, arr) => {
+              const isLastCol = (i + 1) % 4 === 0 || i === arr.length - 1;
+              const isLastRow = i >= arr.length - (arr.length % 4 || 4);
+              return (
+                <div
+                  key={c.label}
+                  className={`${c.span || ''} px-2 py-1 ${isLastCol ? '' : 'border-r border-gray-300'} ${isLastRow ? '' : 'border-b border-gray-300'}`}
+                >
+                  <div className="text-[8.5px] uppercase text-gray-500 leading-tight tracking-wide">{c.label}</div>
+                  <div className="font-semibold text-[11px] leading-tight">{c.value}</div>
+                </div>
+              );
+            })}
           </section>
 
           {/* ===== CONFIGURABLE SECTIONS ===== */}
           {sections.filter((s) => s.enabled).map((s) => renderSection(s.id))}
 
           {/* ===== SIGNATURE ===== */}
-          <footer className="mt-6 pt-3 border-t border-gray-400 grid grid-cols-3 gap-4 text-[11px]">
+          <footer className="mt-4 pt-2 border-t border-gray-400 grid grid-cols-3 gap-4 text-[11px]">
             <div>
-              <div className="text-gray-500 mb-6">Signature</div>
+              <div className="text-gray-500 mb-4">Signature</div>
               <div className="border-b border-gray-400"></div>
               <div className="mt-0.5 font-semibold">{audiologistName || '—'}</div>
             </div>
             <div>
-              <div className="text-gray-500 mb-6">License No.</div>
+              <div className="text-gray-500 mb-4">License No.</div>
               <div className="border-b border-gray-400"></div>
               <div className="mt-0.5 font-semibold">{license || '—'}</div>
             </div>
             <div>
-              <div className="text-gray-500 mb-6">Date</div>
+              <div className="text-gray-500 mb-4">Date</div>
               <div className="border-b border-gray-400"></div>
               <div className="mt-0.5 font-semibold">{fmtDate()}</div>
             </div>
