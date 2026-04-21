@@ -659,6 +659,39 @@ const PlaceholderTable = ({ title, columns }) => (
   </div>
 );
 
+// Recommendations + Further Advice in a single row (Recommendations wider, Advice smaller)
+const RecommendationsAdviceSection = ({ recommendations, advice }) => {
+  const Cell = ({ title, text, placeholder }) => (
+    <div className="border border-gray-400 p-1.5">
+      <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-0.5">{title}</div>
+      <p className="text-[11px] leading-snug text-gray-800 whitespace-pre-wrap min-h-[40px]">
+        {text || <span className="italic text-gray-400">{placeholder}</span>}
+      </p>
+    </div>
+  );
+  return (
+    <div>
+      <div className="grid gap-0" style={{ gridTemplateColumns: '3fr 2fr' }}>
+        <div className="-mr-px">
+          <Cell
+            title="Recommendations"
+            text={recommendations}
+            placeholder="(no recommendations entered)"
+          />
+        </div>
+        <div>
+          <Cell
+            title="Further Advice (ENT)"
+            text={advice}
+            placeholder="(no further advice)"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Standalone Results heading above the grid (kept as separate title for consistency)
 const NarrativeSection = ({ title, text }) => (
   <div>
     <SectionTitle>{title}</SectionTitle>
@@ -714,6 +747,7 @@ const ReportsPanel = ({
   );
   const [resultsText, setResultsText] = useState(clinicalImpression || '');
   const [recText, setRecText] = useState((recommendations || []).join('\n'));
+  const [furtherAdvice, setFurtherAdvice] = useState('');
   const [license, setLicense] = useState('');
   // Results fields (Puretone findings / Immitence findings)
   const [ptFindings, setPtFindings] = useState('');
@@ -768,11 +802,12 @@ const ReportsPanel = ({
         puretone_findings: ptFindings,
         immitence_findings: immFindings,
         referred_by: referredBy,
+        further_advice: furtherAdvice,
         recommendations: recText.split('\n').map((l) => l.trim()).filter(Boolean),
       });
     }, 800);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [resultsText, recText, ptFindings, immFindings, referredBy, onPersist]);
+  }, [resultsText, recText, ptFindings, immFindings, referredBy, furtherAdvice, onPersist]);
 
   const toggleSection = (id) =>
     setSections((s) => s.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
@@ -824,7 +859,13 @@ const ReportsPanel = ({
       case 'results':
         return <ResultsGridSection key={id} puretone={ptFindings} immitence={immFindings} />;
       case 'recommendations':
-        return <NarrativeSection key={id} title="Recommendations" text={recText} />;
+        return (
+          <RecommendationsAdviceSection
+            key={id}
+            recommendations={recText}
+            advice={furtherAdvice}
+          />
+        );
       default:
         return null;
     }
@@ -1157,6 +1198,17 @@ const ReportsPanel = ({
             />
           </div>
           <div>
+            <div className="text-[10px] font-bold text-gray-600 mb-1">Further Advice (ENT)</div>
+            <textarea
+              data-testid="report-further-advice"
+              value={furtherAdvice}
+              onChange={(e) => setFurtherAdvice(e.target.value)}
+              rows={3}
+              placeholder="ENT consultation for…"
+              className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 resize-y focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
             <div className="text-[10px] font-bold text-gray-600 mb-1">Audiologist License #</div>
             <input
               type="text"
@@ -1243,29 +1295,38 @@ const ReportsPanel = ({
             ))}
           </section>
 
-          {/* ===== CONFIGURABLE SECTIONS ===== */}
-          {sections.filter((s) => s.enabled).map((s) => renderSection(s.id))}
+          {/* ===== CONFIGURABLE SECTIONS =====
+              When "New page" is active for Tympanometry, we defer Results +
+              Recommendations + Signature to the END of the report (after the
+              Tymp full-page), so the ENT reads test data first, conclusions last.
+          */}
+          {sections
+            .filter((s) => s.enabled)
+            .filter((s) => !(useSeparatePage && (s.id === 'results' || s.id === 'recommendations')))
+            .map((s) => renderSection(s.id))}
 
-          {/* ===== SIGNATURE ===== */}
-          <footer className="mt-4 pt-2 border-t border-gray-400 grid grid-cols-3 gap-4 text-[11px]">
-            <div>
-              <div className="text-gray-500 mb-4">Signature</div>
-              <div className="border-b border-gray-400"></div>
-              <div className="mt-0.5 font-semibold">{audiologistName || '—'}</div>
-            </div>
-            <div>
-              <div className="text-gray-500 mb-4">License No.</div>
-              <div className="border-b border-gray-400"></div>
-              <div className="mt-0.5 font-semibold">{license || '—'}</div>
-            </div>
-            <div>
-              <div className="text-gray-500 mb-4">Date</div>
-              <div className="border-b border-gray-400"></div>
-              <div className="mt-0.5 font-semibold">{fmtDate()}</div>
-            </div>
-          </footer>
+          {/* ===== SIGNATURE (main page only when Tymp is inline) ===== */}
+          {!useSeparatePage && (
+            <footer className="mt-4 pt-2 border-t border-gray-400 grid grid-cols-3 gap-4 text-[11px]">
+              <div>
+                <div className="text-gray-500 mb-4">Signature</div>
+                <div className="border-b border-gray-400"></div>
+                <div className="mt-0.5 font-semibold">{audiologistName || '—'}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 mb-4">License No.</div>
+                <div className="border-b border-gray-400"></div>
+                <div className="mt-0.5 font-semibold">{license || '—'}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 mb-4">Date</div>
+                <div className="border-b border-gray-400"></div>
+                <div className="mt-0.5 font-semibold">{fmtDate()}</div>
+              </div>
+            </footer>
+          )}
 
-          {/* Tympanometry (separate page) */}
+          {/* Tympanometry (separate page) + deferred Results/Recs/Signature */}
           {sections.find((s) => s.id === 'tympanometry' && s.enabled) && useSeparatePage && (
             <div className="report-page-break">
               <header className="flex items-center justify-between border-b-2 border-blue-700 pb-2 mb-3 pt-3">
@@ -1277,6 +1338,37 @@ const ReportsPanel = ({
                 </div>
               </header>
               <TympanometryFullPage impedance={impedanceData} />
+
+              {/* Results + Recommendations/Advice appear at end of report */}
+              {sections.find((s) => s.id === 'results' && s.enabled) && (
+                <div className="mt-4">
+                  <ResultsGridSection puretone={ptFindings} immitence={immFindings} />
+                </div>
+              )}
+              {sections.find((s) => s.id === 'recommendations' && s.enabled) && (
+                <div className="mt-3">
+                  <RecommendationsAdviceSection recommendations={recText} advice={furtherAdvice} />
+                </div>
+              )}
+
+              {/* Signature always at the very end */}
+              <footer className="mt-4 pt-2 border-t border-gray-400 grid grid-cols-3 gap-4 text-[11px]">
+                <div>
+                  <div className="text-gray-500 mb-4">Signature</div>
+                  <div className="border-b border-gray-400"></div>
+                  <div className="mt-0.5 font-semibold">{audiologistName || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 mb-4">License No.</div>
+                  <div className="border-b border-gray-400"></div>
+                  <div className="mt-0.5 font-semibold">{license || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 mb-4">Date</div>
+                  <div className="border-b border-gray-400"></div>
+                  <div className="mt-0.5 font-semibold">{fmtDate()}</div>
+                </div>
+              </footer>
             </div>
           )}
         </div>
