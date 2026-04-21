@@ -447,16 +447,28 @@ const PureToneSection = ({ rightEar, leftEar, mode = 'combined', tuningFork, sho
             <ReportAudiogram rightEarData={null} leftEarData={leftEar} title="Left Ear" />
           </div>
         </div>
-        <div className="flex gap-3 mt-2 items-start">
-          <div className="flex-1 text-[10px] text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5 pt-1">
-            <span><span className="text-red-600 font-bold">O</span> Right AC · <span className="text-red-600 font-bold">&lt;</span> Right BC</span>
-            <span><span className="text-blue-600 font-bold">X</span> Left AC · <span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
-            <span>↙↘ No Response</span>
+        {/* Single-row summary: Legend | PTA Summary | Tuning Fork */}
+        <div className="flex gap-2 mt-2 items-stretch">
+          <div className="flex-1 border border-gray-300 rounded bg-gray-50 p-1.5 text-[10px] text-gray-700">
+            <div className="font-bold text-[11px] mb-1">Legend</div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              <span><span className="text-red-600 font-bold">O</span> Right AC</span>
+              <span><span className="text-red-600 font-bold">△</span> Right AC masked</span>
+              <span><span className="text-red-600 font-bold">&lt;</span> Right BC</span>
+              <span><span className="text-blue-600 font-bold">X</span> Left AC</span>
+              <span><span className="text-blue-600 font-bold">□</span> Left AC masked</span>
+              <span><span className="text-blue-600 font-bold">&gt;</span> Left BC</span>
+              <span>↙ ↘ No Response</span>
+            </div>
           </div>
-          <div className="w-[220px] flex-shrink-0 flex flex-col gap-2">
+          <div className="w-[220px] flex-shrink-0">
             <PTAMiniTable rightEar={rightEar} leftEar={leftEar} />
-            {showTuningForkMini && <TuningForkMiniTable tf={tuningFork} />}
           </div>
+          {showTuningForkMini && (
+            <div className="w-[200px] flex-shrink-0">
+              <TuningForkMiniTable tf={tuningFork} />
+            </div>
+          )}
         </div>
       </div>
     );
