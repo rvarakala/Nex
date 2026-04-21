@@ -164,17 +164,25 @@ async def check_duplicate_patient(
     name: Optional[str] = None,
     user=Depends(get_current_user),
 ):
-    """Returns potential duplicates by mobile (exact) or name (case-insensitive) within the user's clinic."""
+    """Returns potential duplicates. Mobile matching normalises to last 10 digits so
+    '9988776600' == '+91-9988776600' == '91-9988776600'. Name is case-insensitive substring."""
     if not mobile and not name:
         return {"matches": []}
     import re as _re
     ors = []
     if mobile:
-        ors.append({"mobile": mobile})
-        ors.append({"alternate_mobile": mobile})
-        ors.append({"phone": mobile})
-    if name:
+        digits = _re.sub(r"\D", "", str(mobile))
+        last10 = digits[-10:] if len(digits) >= 10 else digits
+        if last10:
+            # Match last-10-digits anywhere in stored mobile/alternate_mobile/phone
+            rx = {"$regex": _re.escape(last10), "$options": "i"}
+            ors.append({"mobile": rx})
+            ors.append({"alternate_mobile": rx})
+            ors.append({"phone": rx})
+    if name and len(name.strip()) >= 3:
         ors.append({"name": {"$regex": _re.escape(name.strip()), "$options": "i"}})
+    if not ors:
+        return {"matches": []}
     matches = await db.patients.find(
         {"clinic_id": user["clinic_id"], "$or": ors},
         {"_id": 0, "patient_id": 1, "mrd": 1, "name": 1, "mobile": 1, "age": 1, "gender": 1, "updated_at": 1},

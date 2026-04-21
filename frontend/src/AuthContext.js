@@ -47,6 +47,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('acs.activeTest');  // Prevent ghost-context leak between users on shared terminal
     setUser(null);
     setClinic(null);
   };

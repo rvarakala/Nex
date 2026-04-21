@@ -76,19 +76,21 @@ export default function NewPatientPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.dob]);
 
-  // Duplicate detection (debounced)
+  // Duplicate detection (debounced) — triggers on 3+ chars name or 4+ digits in mobile
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!form.mobile && !form.name) { setDupMatches([]); return; }
+    const mobileDigits = (form.mobile || '').replace(/\D/g, '');
+    const nameTrimmed = (form.name || '').trim();
+    if (mobileDigits.length < 4 && nameTrimmed.length < 3) { setDupMatches([]); return; }
     debounceRef.current = setTimeout(async () => {
       try {
         const params = {};
-        if (form.mobile) params.mobile = form.mobile;
-        if (form.name && form.name.trim().length >= 3) params.name = form.name.trim();
+        if (mobileDigits.length >= 4) params.mobile = mobileDigits;
+        if (nameTrimmed.length >= 3) params.name = nameTrimmed;
         const r = await axios.get(`${API}/patients/check-duplicate`, { params });
         setDupMatches(r.data?.matches || []);
       } catch { /* ignore */ }
-    }, 500);
+    }, 400);
     return () => debounceRef.current && clearTimeout(debounceRef.current);
   }, [form.mobile, form.name]);
 

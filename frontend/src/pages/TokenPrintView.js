@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
@@ -30,8 +30,12 @@ export default function TokenPrintView() {
     })();
   }, [tokenId]);
 
+  const printed = useRef(false);
   useEffect(() => {
-    if (token) setTimeout(() => window.print(), 300);
+    if (token && !printed.current) {
+      printed.current = true;
+      setTimeout(() => window.print(), 300);
+    }
   }, [token]);
 
   if (err) return (
