@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { API, fmtINR, fmtDate, fmtDateTime, PAYMENT_METHODS, StatusPill } from './billingUtils';
 import { useAuth } from '../../AuthContext';
 
 export default function InvoiceDetailPage() {
   const { invoiceId } = useParams();
+  const navigate = useNavigate();
   const { user, clinic } = useAuth();
   const [inv, setInv] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +65,23 @@ export default function InvoiceDetailPage() {
         {inv.status !== 'cancelled' && inv.due_total > 0.01 && (
           <button onClick={() => setPayOpen(true)} data-testid="inv-add-payment"
             className="px-3 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded">+ Collect Payment</button>
+        )}
+        {inv.status === 'paid' && (
+          <button
+            onClick={() => {
+              const followUp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+              navigate('/frontdesk/appointments', {
+                state: {
+                  bookForPatient: { patient_id: inv.patient_id, name: inv.patient_name },
+                  suggestedDate: followUp.toISOString(),
+                },
+              });
+            }}
+            data-testid="inv-book-next"
+            title="Schedule a follow-up appointment for this patient"
+            className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded shadow-sm">
+            📅 Book Next Appointment
+          </button>
         )}
         {inv.status !== 'cancelled' && (user?.role === 'super_admin' || user?.role === 'accounts') && (
           <button onClick={cancelInvoice} data-testid="inv-cancel"

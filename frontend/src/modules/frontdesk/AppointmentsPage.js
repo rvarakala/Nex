@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import BookAppointmentModal from './appointments/BookAppointmentModal';
 import WaitlistPanel from './appointments/WaitlistPanel';
@@ -39,7 +39,27 @@ export default function AppointmentsPage() {
   const [modalInitial, setModalInitial] = useState(null);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { clinic } = useAuth();
+
+  // Auto-open Book modal if navigated here with a patient to pre-fill (from paid invoice CTA or Cmd+K)
+  useEffect(() => {
+    const pre = location.state?.bookForPatient;
+    if (pre && !modalOpen) {
+      const suggestedDate = location.state?.suggestedDate
+        ? new Date(location.state.suggestedDate)
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);  // default +30 days
+      setAnchorDate(suggestedDate);
+      setModalInitial({
+        patient_id: pre.patient_id,
+        patient_name: pre.name,
+      });
+      setModalOpen(true);
+      // Clear state so we don't reopen on subsequent renders
+      window.history.replaceState({}, document.title);
+    }
+     
+  }, [location.state]);
 
   useEffect(() => {
     axios.get(`${API}/users?role=audiologist`).then((r) => setAudiologists(r.data || [])).catch(() => {});

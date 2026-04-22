@@ -647,6 +647,53 @@ async def update_token_status(token_id: str, payload: dict, user=Depends(get_cur
     return deserialize_datetime(t)
 
 
+# ==================== PUBLIC QUEUE TV DISPLAY ====================
+
+@api_router.get("/queue/public/{clinic_id}")
+async def public_queue(clinic_id: str):
+    """UNAUTHENTICATED endpoint for waiting-room TV. Returns ONLY:
+    - clinic name + city
+    - currently-serving tokens (in_consultation / in_testing)
+    - next waiting tokens (up to 10)
+    Patient names are redacted to first-name + last-initial for privacy.
+    """
+    clinic = await db.clinics.find_one({"clinic_id": clinic_id}, {"_id": 0, "name": 1, "city": 1})
+    if not clinic:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    tokens = await db.tokens.find(
+        {
+            "clinic_id": clinic_id,
+            "issued_at": {"$gte": today_start.isoformat()},
+            "status": {"$in": ["waiting", "in_consultation", "in_testing"]},
+        },
+        {"_id": 0, "token_no": 1, "patient_name": 1, "service": 1, "status": 1, "called_at": 1, "issued_at": 1},
+    ).sort("issued_at", 1).to_list(50)
+
+    def _redact(name: str) -> str:
+        if not name:
+            return ""
+        parts = name.strip().split()
+        if len(parts) == 1:
+            return parts[0]
+        return f"{parts[0]} {parts[-1][0]}."
+
+    for t in tokens:
+        t["patient_name"] = _redact(t.get("patient_name", ""))
+
+    now_serving = [t for t in tokens if t.get("status") in {"in_consultation", "in_testing"}]
+    next_up = [t for t in tokens if t.get("status") == "waiting"][:10]
+
+    return {
+        "clinic": clinic,
+        "now_serving": now_serving,
+        "next_up": next_up,
+        "total_waiting": sum(1 for t in tokens if t.get("status") == "waiting"),
+        "fetched_at": datetime.utcnow().isoformat(),
+    }
+
+
 # ==================== M01: FRONT DESK DASHBOARD ====================
 
 @api_router.get("/dashboard/frontdesk")

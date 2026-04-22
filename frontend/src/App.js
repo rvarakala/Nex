@@ -7,6 +7,7 @@ import { ProtectedRoute } from './shell/ProtectedRoute';
 import AppShell from './shell/AppShell';
 import LoginPage from './pages/LoginPage';
 import TokenPrintView from './pages/TokenPrintView';
+import QueueTVPage from './pages/QueueTVPage';
 import FrontDeskModule from './modules/frontdesk/FrontDeskModule';
 import BillingModule from './modules/billing/BillingModule';
 import TestProceduresModule from './modules/test/TestProceduresModule';
@@ -32,6 +33,7 @@ function App() {
         <TestContextProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/queue/:clinicId" element={<QueueTVPage />} />
             <Route path="/token/:tokenId" element={<ProtectedRoute><TokenPrintView /></ProtectedRoute>} />
 
             <Route path="/frontdesk/*" element={<ShelledRoute><FrontDeskModule /></ShelledRoute>} />

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { useTestContext } from '../TestContext';
+import CommandPalette from './CommandPalette';
 
 const NavItem = ({ to, icon, label, testid }) => (
   <NavLink
@@ -22,6 +23,38 @@ export default function AppShell({ children }) {
   const { user, clinic, logout } = useAuth();
   const { activeTest } = useTestContext();
   const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      // Ignore when user is typing in an input/textarea (except Cmd/Ctrl+K which toggles even in inputs)
+      const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) ||
+                      document.activeElement?.isContentEditable;
+      const meta = e.metaKey || e.ctrlKey;
+
+      // Cmd/Ctrl+K — toggle palette (always)
+      if (meta && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
+      if (inField) return;
+      // Single-key shortcuts (when not typing)
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'n') { e.preventDefault(); navigate('/frontdesk/new'); }
+        else if (k === 'a') { e.preventDefault(); navigate('/frontdesk/appointments'); }
+        else if (k === 'i') { e.preventDefault(); navigate('/billing/new'); }
+        else if (k === 'r') { e.preventDefault(); navigate('/frontdesk/returning'); }
+        else if (k === 'd') { e.preventDefault(); navigate('/frontdesk'); }
+        else if (k === 'q') { e.preventDefault(); navigate('/frontdesk/queue'); }
+        else if (k === '/') { e.preventDefault(); setPaletteOpen(true); }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate]);
 
   return (
     <div className="h-screen w-screen flex bg-slate-100 overflow-hidden">
@@ -93,6 +126,18 @@ export default function AppShell({ children }) {
                 Active test: <b>{activeTest.patient.name}</b> · {activeTest.patient.mrd || activeTest.patient.patient_id}
               </div>
             )}
+            <button
+              onClick={() => setPaletteOpen(true)}
+              data-testid="cmdk-trigger"
+              title="Command palette (Cmd/Ctrl+K)"
+              className="hidden md:flex items-center gap-2 text-[11px] text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-2 py-1 transition-colors"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+              </svg>
+              <span>Search…</span>
+              <span className="ml-2 font-mono bg-white border border-slate-300 text-slate-600 rounded px-1 text-[9px]">⌘K</span>
+            </button>
             <div className="text-xs text-slate-700">
               <span className="font-semibold">{user?.name}</span>
               <span className="ml-1.5 text-[10px] text-slate-500 uppercase tracking-wider">{(user?.role || '').replace('_', ' ')}</span>
@@ -105,6 +150,8 @@ export default function AppShell({ children }) {
           {children}
         </main>
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

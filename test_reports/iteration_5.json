@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 5 enhancements (Public Queue TV / Book-Next CTA / Cmd+K Command Palette) validated end-to-end. Backend: 7/7 pytest pass on /api/queue/public/{clinic_id} — returns 200 unauth with correct shape {clinic, now_serving, next_up, total_waiting, fetched_at}, 404 for bogus clinic, NO sensitive fields leaked (patient_id/mobile/mrd absent), patient_name redacted to 'First L.' format ('TESTQTV K.' from 'TESTQTV Ramesh Kumar'), sibling /api/tokens still 401 without Bearer, polling-freshness verified (newly issued token visible within 3s), and a paid invoice exists for the Book-Next CTA test. Frontend: /queue/clinic-acs-demo loads WITHOUT login (no redirect), shows ACS Audiology Clinic name, Mumbai city, big clock (02:14), 'Now Serving' + 'Next in Queue' sections with empty-state copy in English+Hindi. Cmd+K (Meta+K) AND Ctrl+K AND topbar trigger button (data-testid='cmdk-trigger') all open palette; ESC closes. Empty palette shows 8 quick actions with hint keys (N/R/A/I/—/—/D/Q). Typing 'test' (2+ chars) returned both 'Patients' and 'Invoices' result sections (debounced search worked). Single-key 'A' (outside input) navigated to /frontdesk/appointments; typing 'd' INSIDE cmdk input did NOT navigate (value 'd' stayed in input). Book-Next CTA: visible on PAID invoice INV-150AB175-A (data-testid='inv-book-next'), HIDDEN on DRAFT invoice INV-FF0EA1C3-E. Clicking it navigated to /frontdesk/appointments AND auto-opened BookAppointmentModal with patient_name='TEST_BILL Intra MH' pre-filled and date=2026-05-22 (+30d from today 22 Apr 2026). Audiologist role: nav-billing hidden as expected, Cmd+K palette still shows 'New Invoice' action (universal palette per spec — backend gates).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "InvoiceDetailPage / CreateInvoicePage console", "issues": ["Recurring React hydration warning '<span> cannot be a child of <option>' surfaced again when navigating from /billing list to a detail page (carryover from iter_3/iter_4 — root cause: dynamic JSX expression inside <option> labels in the service catalogue dropdown). Not functional, but pollutes console on every page mount."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_enhancements.py",
+    "/app/test_reports/pytest/iter5_results.xml"
+  ],
+  "action_items": [
+    "(Carryover, not regressed) Fix the <span> in <option> hydration warning in CreateInvoicePage.js around the service catalogue dropdown — render the option label as a plain string."
+  ],
+  "critical_code_review_comments": [
+    "server.py public_queue endpoint correctly excludes patient_id/mobile/mrd from the projection ({_id:0, token_no:1, patient_name:1, service:1, status:1, called_at:1, issued_at:1}) — privacy redaction is enforced both by projection AND by the _redact() function. Good defense-in-depth.",
+    "Public endpoint has no rate-limit. For a TV-display polling every 5s that's fine, but a malicious actor could enumerate clinic IDs (404 vs 200). Consider clinic_id format whitelist or basic per-IP rate-limit if exposed beyond LAN.",
+    "_redact() uses last token's first character — for single-word names returns full name (e.g., 'Madhuri'). Acceptable per spec (privacy-best-effort), but worth documenting.",
+    "public_queue uses `today_start = datetime.utcnow()` with no IST offset. For a Mumbai clinic running past 5:30am UTC (=11am IST), this is fine, but tokens issued after 18:30 IST will roll into the next UTC day and disappear from the TV until midnight IST. Document the UTC-day assumption or switch to clinic-timezone-aware day boundaries.",
+    "InvoiceDetailPage.js sends `suggestedDate: followUp.toISOString()` and AppointmentsPage parses it via `new Date(...)` — works, but the time component will be 'now' UTC which may translate to an off-hour local time (test showed 10:00 AM IST default — likely the modal's own default override, good).",
+    "Book-Next button only shows on status==='paid'. Spec also says 'fully-paid' — code uses inv.status which is correct (paid_total >= grand_total). No edge-case for refunded paid invoices but those aren't modelled yet.",
+    "AppointmentsPage uses `location.state?.bookForPatient` — if user manually refreshes /frontdesk/appointments, the state is lost. Acceptable for one-shot CTA flow but document.",
+    "CommandPalette debounce is fine; result section headers 'Patients' and 'Invoices' confirmed visible. ArrowUp/ArrowDown not exhaustively keyboard-tested but trigger and ESC both fire correctly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter5_enhancements.py (new — 7 pytest covering public queue + privacy redaction + paid invoice prep)",
+    "/app/test_reports/pytest/iter5_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% on critical flows (queue tv, cmd+k, single-key shortcuts, book-next show/hide, modal pre-fill, +30d date)"},
+  "test_credentials": "frontdesk@acs.in/frontdesk123 verified; audiologist@acs.in/audio123 verified",
+  "seed_data_creation": "Created TEST_QTV patient 'TESTQTV Ramesh Kumar' (ACS-2026-000011) for redaction tests, issued one OPD token then marked completed for cleanup. Existing INV/2026/000007 (PAID) was used for Book-Next; INV/2026/000001 (DRAFT) used for the negative case. No long-lived test pollution.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration-5 features all green. Backend test file /app/backend/tests/test_iter5_enhancements.py is reusable for regression. Confirmed testids: cmdk-trigger, cmdk-palette, cmdk-input, cmdk-results, cmdk-item-{id} (8 items: new-patient, returning, book-appointment, new-invoice, invoices, handover, dashboard, queue), inv-book-next. Public queue route is /queue/:clinicId (not under AppShell). Book-Next CTA navigates with location.state={bookForPatient, suggestedDate}; AppointmentsPage line 47 reads it. Default clinic clinic-acs-demo, Mumbai. Note: backend public_queue uses UTC day boundary — IST evening tokens may not appear after UTC midnight rollover. Hydration warning '<span> in <option>' is a long-standing carryover from iter_3 (CreateInvoicePage.js service dropdown), still not fixed.",
+  "rca_of_the_issue": "N/A — sprint passed."
+}
