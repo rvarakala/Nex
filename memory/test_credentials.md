@@ -17,8 +17,23 @@
 
 All four users are scoped to `clinic-acs-demo` + branch `Mumbai HQ` (primary). The seed is idempotent — passwords are re-synced to the above values on every backend restart.
 
-### Expanded role enum (Phase 1 HA Foundation)
-Valid roles: `super_admin`, `clinic_owner`, `front_desk`, `audiologist`, `accounts`, `inventory_manager`, `technician`. Tests that need a `clinic_owner` / `inventory_manager` / `technician` user must insert one directly via motor (no admin-UI yet).
+### Expanded role enum (Phase 1 HA Foundation + Phase 13-14)
+Valid roles: `super_admin`, `clinic_owner`, `front_desk`, `audiologist`, `accounts`, `inventory_manager`, `technician`, `referral_partner`, `founder`. `super_admin` and `founder` bypass every `require_roles` + `require_tier` check.
+
+## AUDINEXA Super Admin Panel (Phase 14A — Founder Command Centre)
+- **Founder login**: `founder@audinexa.com` / `founder123` → lands on `/admin/dashboard`
+  - Scoped to virtual platform clinic `audinexa-platform`
+  - Only role allowed to DELETE tenants (audit-logged)
+- **Super Admin**: `admin@acs.in` / `admin123` — also lands on `/admin/dashboard` but cannot delete tenants
+
+### Seeded demo tenants (for Admin Panel screenshots)
+| Clinic | Tier | Owner email | Password |
+|---|---|---|---|
+| KIMS Hearing Center (`tenant-kims-hearing`) | PREMIUM | `support@kimshearing.in` | `demo123` |
+| Apollo Audiology (`tenant-apollo-audiology`) | PREMIUM | `audiology@apollohospitals.in` | `demo123` |
+| SoundCare Hyderabad (`tenant-soundcare-hyd`) | STANDARD | `hello@soundcare.in` | `demo123` |
+| ENT Plus Clinic (`tenant-ent-plus`) | BASIC (on trial) | `admin@entplus.in` | `demo123` |
+
 
 ## Second Test Clinic (Delhi — for cross-tenant isolation tests)
 - **clinic_id**: `clinic-delhi-test`

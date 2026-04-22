@@ -106,10 +106,12 @@ async def get_current_user(request: Request):
 
 
 def require_roles(*roles: str):
-    """Returns a FastAPI dependency that enforces one of the given roles."""
+    """Returns a FastAPI dependency that enforces one of the given roles.
+    `super_admin` and `founder` always bypass every role gate in the codebase.
+    """
     async def checker(request: Request):
         user = await get_current_user(request)
-        if user["role"] not in set(roles) | {"super_admin"}:
+        if user["role"] not in set(roles) | {"super_admin", "founder"}:
             raise HTTPException(status_code=403, detail=f"Requires one of: {roles}")
         return user
     return checker

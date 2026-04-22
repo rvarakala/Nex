@@ -418,7 +418,10 @@ async def delete_tenant(
         "service_tickets", "ha_loaners", "ha_trade_ins", "ha_followups",
         "ha_subscriptions", "ha_amc_plans", "ha_amc_contracts",
         "referral_partners", "partner_payouts", "tenant_feature_flags",
-        "tenant_invoices", "closeouts", "waitlist",
+        "tenant_invoices", "closeouts", "waitlist_signups",
+        "patient_otps", "patient_appointment_requests", "patient_feedback",
+        "service_estimates", "service_couriers", "service_approvals",
+        "report_deliveries",
     ]
     deleted = {}
     for coll in collections_to_purge:
@@ -530,19 +533,25 @@ async def issue_tenant_invoice(
     return doc
 
 
+class InvoicePaidPayload(BaseModel):
+    payment_ref: Optional[str] = None
+
+
 @router.post("/subscriptions/invoices/{invoice_id}/mark-paid")
 async def mark_tenant_invoice_paid(
     invoice_id: str, request: Request,
+    payload: Optional[InvoicePaidPayload] = None,
     payment_ref: Optional[str] = None,
     user=Depends(require_roles(*ADMIN_ROLES)),
     db=Depends(get_db),
 ):
+    ref = (payload.payment_ref if payload else None) or payment_ref
     r = await db.tenant_invoices.find_one_and_update(
         {"invoice_id": invoice_id, "status": "pending"},
         {"$set": {
             "status": "paid",
             "paid_at": datetime.now(timezone.utc).isoformat(),
-            "payment_ref": payment_ref,
+            "payment_ref": ref,
             "paid_by": user["user_id"],
         }},
         projection={"_id": 0},
@@ -550,7 +559,7 @@ async def mark_tenant_invoice_paid(
     )
     if not r:
         raise HTTPException(404, detail="Pending invoice not found")
-    await _log_audit(db, user, "tenant_invoice.paid", r.get("clinic_id", invoice_id), after={"invoice_id": invoice_id, "ref": payment_ref}, request=request)
+    await _log_audit(db, user, "tenant_invoice.paid", r.get("clinic_id", invoice_id), after={"invoice_id": invoice_id, "ref": ref}, request=request)
     return r
 
 
