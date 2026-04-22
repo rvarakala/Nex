@@ -130,6 +130,9 @@ async def lifespan(_app: FastAPI):
         await db.ha_trade_ins.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.ha_trade_ins.create_index([("clinic_id", 1), ("patient_id", 1)])
         await db.ha_trade_ins.create_index("old_serial_id")
+        # Waitlist (Phase 12.0 — public signup)
+        await db.waitlist_signups.create_index("email", unique=True)
+        await db.waitlist_signups.create_index([("created_at", -1)])
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         _log.info("MongoDB indexes ensured")
@@ -290,6 +293,7 @@ from routers import ha_analytics as ha_analytics_router       # noqa: E402
 from routers import ha_service as ha_service_router           # noqa: E402
 from routers import ha_loaners as ha_loaners_router           # noqa: E402
 from routers import ha_tradeins as ha_tradeins_router         # noqa: E402
+from routers import subscription as subscription_router       # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -312,6 +316,7 @@ app.include_router(ha_analytics_router.router)
 app.include_router(ha_service_router.router)
 app.include_router(ha_loaners_router.router)
 app.include_router(ha_tradeins_router.router)
+app.include_router(subscription_router.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -347,9 +352,19 @@ async def _seed_defaults():
             "phone": "+91-22-00000000",
             "email": "clinic@acsdemo.in",
             "mrd_prefix": "ACS",
+            # Phase 12.0 — demo clinic seeded on PREMIUM so every feature is visible
+            # for showcase. New real clinics start on BASIC + 30-day Premium trial.
+            "subscription_tier": "PREMIUM",
             "created_at": datetime.utcnow(),
         }))
         logger.info(f"Seeded default clinic: {clinic_id}")
+    else:
+        # Ensure subscription_tier is set on existing demo clinic (idempotent)
+        if not existing.get("subscription_tier"):
+            await db.clinics.update_one(
+                {"clinic_id": clinic_id},
+                {"$set": {"subscription_tier": "PREMIUM"}},
+            )
 
     demo_users = [
         {"email": "admin@acs.in",      "password": "admin123",     "name": "Super Admin",   "role": "super_admin"},

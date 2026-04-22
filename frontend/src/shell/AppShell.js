@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
+import AppSwitcher from './AppSwitcher';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -185,6 +186,7 @@ export default function AppShell({ children }) {
               <span className="font-semibold">{user?.name}</span>
               <span className="ml-1.5 text-[10px] text-slate-500 uppercase tracking-wider">{(user?.role || '').replace('_', ' ')}</span>
             </div>
+            <AppSwitcher />
           </div>
         </header>
 
