@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import ClinicPulse from './ClinicPulse';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -57,6 +58,9 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 space-y-3">
+      {/* Clinic Pulse — at-a-glance premium tile */}
+      <ClinicPulse kpis={k} />
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2" data-testid="dashboard-kpis">
         <KpiCard testid="kpi-walkins" label="Walk-ins Today" value={loading ? '—' : k.walkins_today ?? 0} accent="text-blue-700" />

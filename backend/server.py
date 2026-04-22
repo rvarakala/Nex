@@ -434,11 +434,17 @@ async def calculate_pta(audiogram: AudiogramData):
 app.include_router(api_router)
 app.include_router(billing_module.billing_router)
 
-from routers import closeouts as closeouts_router  # noqa: E402
-from routers import reports as reports_router       # noqa: E402
+from routers import closeouts as closeouts_router    # noqa: E402
+from routers import reports as reports_router         # noqa: E402
+from routers import patients as patients_router       # noqa: E402
+from routers import appointments as appointments_router  # noqa: E402
+from routers import tokens as tokens_router           # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
+app.include_router(patients_router.router)
+app.include_router(appointments_router.router)
+app.include_router(tokens_router.router)
 
 app.add_middleware(
     CORSMiddleware,

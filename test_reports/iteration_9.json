@@ -1,0 +1,25 @@
+{
+  "summary": "Iter 9 — Verified (a) newly mounted routers/patients, routers/appointments, routers/tokens are reachable and fully functional after the app.include_router() additions in server.py, and (b) the new ClinicPulse at-a-glance tile on /frontdesk Dashboard. Backend: 22/22 pytest cases PASS (patients CRUD + duplicate-check + MRD autogen; appointments services/users/list/slots/create-update-cancel; tokens issue/list/status-advance + public unauth queue (200 for valid clinic, 404 unknown); /api/dashboard/frontdesk KPI shape; /api/closeouts/trend/collections auth-gating 401 + shape + days=14 honouring; regression smoke on /auth/me, /billing/services, /closeouts, /referring-doctors, /waitlist, /reminders). Frontend: ClinicPulse renders above the KPI grid (DOM compareDocumentPosition confirmed), pulse-today shows ₹55,500 collected today, pulse-sparkline SVG renders (2 path elements), pulse-chiplets shows all 5 chips (Walk-ins / Appts / Waiting / Live / Reports), 7 KPI cards still render, quick-new-patient + quick-returning buttons visible, /frontdesk/appointments page loads (no 404 regression — existing scheduled appt 'UITest Pt 796976' rendered). Zero console / page errors across both dashboard + appointments pages. Both GETs (/api/dashboard/frontdesk and /api/closeouts/trend/collections?days=14) return 200 on page load.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_remount.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 529 lines — still holds referring-doctors, patient-notes, test-sessions, calculate/pta. Next natural extractions are test-sessions (into routers/sessions.py) and referring-doctors/patient-notes (into routers/ref_docs.py) for consistency with the newly-extracted patients/appointments/tokens. Keeps the 700 LOC guideline headroom.",
+    "routers/tokens.py line 183 does a double find_one on db.test_sessions in the pending_reports count (the outer count_documents gate by clinic_id, then a second find_one to check schema). This is a legacy guard; can be simplified to a single count_documents({clinic_id, report_status: {$ne: finalized}}) with a default of 0 via try/except — saves a round trip on every dashboard refresh (every 15s).",
+    "ClinicPulse.js fetch does not include an error-UI retry or loading skeleton — only a minimal 'Collecting data…' text when the trend series hasn't arrived yet. Fine UX but if the endpoint flakes, users see stale/empty state silently. Could add a small retry-on-stale pill.",
+    "routers/tokens.py frontdesk_dashboard loops over tokens and does per-token db.patients.find_one to compute returning_today (N+1 pattern). At 100+ tokens/day this is 100 round-trips per dashboard refresh. Consider $lookup aggregation or bulk-fetch patients once and join in Python.",
+    "ClinicPulse mounts a useEffect with [] deps but uses kpis prop — intentional (trend is fetched once, chiplets update via parent re-render). Document this to avoid future 'fix' PRs adding kpis to the dep array and causing unnecessary refetches."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9_remount.py (new)"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% (clinic-pulse + sparkline + 5 chiplets + ordering + 7 KPIs + appointments page regression)"},
+  "test_credentials": "frontdesk@acs.in / frontdesk123, accounts@acs.in / accounts123 — from /app/memory/test_credentials.md (seed is idempotent).",
+  "seed_data_creation": "None — test cases create+delete TEST_ prefixed transient data (patients, appointments, tokens) within each test class and clean up.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Router mount blocker is fixed — patients/appointments/tokens all work via Depends(get_db). ClinicPulse component at /app/frontend/src/modules/frontdesk/ClinicPulse.js renders at top of DashboardPage. When testing via Playwright, wait ~3s after landing on /frontdesk for the axios trend fetch to resolve — the sparkline SVG only mounts after series data arrives (initial render shows 'Collecting data…' placeholder which is NOT a bug). New regression baseline: /app/backend/tests/test_iter9_remount.py (22 cases). /api/closeouts/trend/collections currently returns this_week=55500, last_week=0, wow_delta_pct=null (per seed), days defaults to 30.",
+  "rca of the issue": "No bugs found in this iteration. The reported P0 (404 on /api/patients etc.) was already fixed in THIS session's prior step by adding app.include_router(patients_router.router / appointments_router.router / tokens_router.router) at server.py:445-447, and this test iteration verified the fix end-to-end."
+}
