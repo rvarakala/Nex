@@ -272,6 +272,7 @@ from routers import ha_sales as ha_sales_router             # noqa: E402
 from routers import ha_fittings as ha_fittings_router       # noqa: E402
 from routers import ha_trials as ha_trials_router             # noqa: E402
 from routers import ha_crm as ha_crm_router                   # noqa: E402
+from routers import ha_analytics as ha_analytics_router       # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -290,6 +291,7 @@ app.include_router(ha_sales_router.router)
 app.include_router(ha_fittings_router.router)
 app.include_router(ha_trials_router.router)
 app.include_router(ha_crm_router.router)
+app.include_router(ha_analytics_router.router)
 
 app.add_middleware(
     CORSMiddleware,

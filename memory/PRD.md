@@ -136,6 +136,17 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
      - `/ha/subscriptions` → Consumable subscription manager (list + create modal with patient search + kind/item-label/cadence-days + Deliver/Pause/Resume actions).
   6. **30/30 backend pytest green** (iter 18). Combined P3+P4+P4.5+P6 = **127/127** passing. Baseline at `/app/backend/tests/test_phase6_ha_crm.py`.
   7. **Bug fix caught during build**: a prior `mcp_insert_text` mis-landed inside the `TrialConvert` class, merging its fields into `SubscriptionDeliver` — caused a 422 "unit_prices required" on deliver endpoint. Fixed by rewriting the affected class boundaries in `models_ha.py`. All tests now green.
+- [Feb 2026] **HA Module — Phase 7 (Analytics & Owner Dashboard — FINAL PHASE) (THIS SESSION)**:
+  1. **Backend — new router** `routers/ha_analytics.py` — 5 aggregation endpoints (all using MongoDB `$group` / `$lookup` / `$dateFromString`+`$dateToString(tz=Asia/Kolkata)` pipelines for IST-bucketed monthly series; no per-doc looping):
+     - `GET /ha/analytics/revenue?months=N` — monthly revenue series + brand-wise split (last 12mo) + totals (revenue / sales / avg ticket).
+     - `GET /ha/analytics/audiologists?days=N` — per-user sales count, revenue, below-floor %, paid-conversion %, WhatsApp send volume (from `sent_channels.actor_user_id` aggregation).
+     - `GET /ha/analytics/inventory?aging_days=N&dead_days=N` — in-stock totals + aging/dead rollup per product (with cost-blocked ₹) + fast-moving accessories (30-day burn).
+     - `GET /ha/analytics/funnel?days=N` — consultations → quotations → trials → converted/returned/lost → sales → paid + 5 conversion rates + avg trial-to-convert days.
+     - `GET /ha/analytics/retention` — missed follow-ups, dismissal %, active subscriptions, loyalty (≥2 deliveries), upgrade pipeline size.
+  2. **Role gates**: all 5 endpoints require `clinic_owner` + `super_admin` + `accounts`. Front-desk & audiologists blocked (403).
+  3. **Frontend** `OwnerAnalyticsPage.js` — single responsive grid dashboard: 4 top-line KPI tiles + 12-month revenue bar chart (pure CSS) + Brand Split table with share bars + Team Performance table (below-floor % color-coded rose/amber/emerald) + Commercial Funnel horizontal bar view with rates + Inventory Health (in-stock/aging/dead mini-KPIs + per-product table) + Retention Health (4 big metrics). Denied-role card for unauthorized roles.
+  4. **41/41 backend pytest green** (iter 19). Combined **P3+P4+P4.5+P6+P7 = 168/168** passing. Frontend screenshot-verified — full dashboard renders with live data (₹17.55L revenue, 85.9%/14.1% brand split, funnel 18→67→32→4, team performance rows, etc.). Baseline at `/app/backend/tests/test_phase7_ha_analytics.py`.
+  5. 🎉 **The full 7-phase Hearing Aid Commerce & Lifecycle Engine v2.0 is now shipped.** Aligned end-to-end with user's original blueprint: P0 Architecture ✅ → P1 Foundation ✅ → P2 Inventory ✅ → P3 Procurement ✅ → P4 Trial+Sales ✅ → P5 Fitting+Programming ✅ → P6 CRM+Retention ✅ → P7 Analytics ✅.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra

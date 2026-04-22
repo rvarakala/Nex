@@ -8,6 +8,7 @@ import FittingLedgerPage from './FittingLedgerPage';
 import TrialsPage from './TrialsPage';
 import FollowupBoardPage from './FollowupBoardPage';
 import SubscriptionsPage from './SubscriptionsPage';
+import OwnerAnalyticsPage from './OwnerAnalyticsPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -39,6 +40,7 @@ export default function HAModule() {
         <Tab to="/ha/subscriptions" label="Subscriptions" testid="ha-tab-subs" />
         <Tab to="/ha/procurement" label="Procurement" testid="ha-tab-procurement" />
         <Tab to="/ha/products" label="Catalogue" testid="ha-tab-products" />
+        <Tab to="/ha/analytics" label="Analytics" testid="ha-tab-analytics" />
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -50,6 +52,7 @@ export default function HAModule() {
           <Route path="fittings" element={<FittingLedgerPage />} />
           <Route path="followups" element={<FollowupBoardPage />} />
           <Route path="subscriptions" element={<SubscriptionsPage />} />
+          <Route path="analytics" element={<OwnerAnalyticsPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="products" element={<ProductCataloguePage />} />
         </Routes>
