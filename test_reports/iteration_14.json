@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 2 HA Core Inventory — full backend & smoke frontend testing. Backend: 30/30 new tests green in /app/backend/tests/test_phase2_ha_core.py covering products CRUD + role gates + filters, serial-items list/summary/get/timeline + illegal transition 409 (no audit row), accessory stock adjust + below-zero reject, PO create with totals validation (subtotal=100400, gst=18072, total=118472) + PO-2026-NNNN numbering + role gate + unknown product 400 + unknown vendor 404 + GRN-against-draft 409, PO status transitions legal (draft→approved→ordered) + illegal 409, GRN happy path (serialised + accessory in same PO — partial_received → received), GRN validations (serial_count≠qty 400, duplicate-serials-in-line 400, duplicate-serial-in-clinic 409, GRN-against-closed 409), serial spawning with warranty_end computed from received_at+warranty_months and (new)→IN_STOCK event, cross-tenant 403/404 (Delhi admin on Mumbai PO + Mumbai serial). Regression: all 35 phase-1 HA foundation tests (iter13 baseline) still pass — zero regressions. Frontend smoke: nav-ha visible for admin+frontdesk, hidden for audiologist; /ha/inventory renders ha-inventory-page with ha-chip-IN_STOCK chip + serial table + ha-timeline-drawer opening with events and state-transition form; /ha/procurement renders ha-procurement-page; /ha/products renders (uses data-testid='ha-products-page' — NOT 'ha-catalogue-page' as in the spec, see action items).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/auth/me", "issue": "branch_ids is nested under response.user, not at top-level — review spec wording implied top-level; keep nested but document."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_ha_core.py",
+    "/app/backend/tests/test_phase1_ha_foundation.py",
+    "/app/test_reports/pytest/phase2_ha_core.xml"
+  ],
+  "action_items": [
+    "Product Catalogue page wrapper uses data-testid='ha-products-page' — review spec references 'ha-catalogue-page'. Pick one and align (test spec or component). Currently all functional checks pass via ha-products-page.",
+    "Consider adding an explicit 'has serial items' dataset-level index on (clinic_id, serial_no) — the duplicate-serial check is a find_one scan today; fine at demo scale, harden with unique partial index for prod.",
+    "ha_procurement.create_grn line 287: warranty_months * 30 days is a crude calendar approximation; use relativedelta(months=wmonths) for exact month boundaries (leap year safe).",
+    "ha_procurement.create_grn PO status transition at line 362 does not pass through the allowed-transitions state machine — it can silently move 'approved' → 'received' without the intermediate 'ordered'. Low risk (fine because receiving implies ordered), but inconsistent with the PO status-transition endpoint's strict table."
+  ],
+  "critical_code_review_comments": [
+    "ha_procurement.create_grn writes `received_at` straight through from payload without ISO validation — a garbage string would break warranty calculation (silently falls back to now() due to broad `except Exception`). Add a Pydantic validator.",
+    "ha_procurement.create_grn: after serial-clash check, serials are inserted via insert_many with no unique index — a race between two concurrent GRNs for the same serial_no could insert duplicates. Harden with unique index on (clinic_id, serial_no) for serialised products.",
+    "ha_inventory.list_serial_items: `search` does substring regex on serial_no; escape is correct but no index exists — add (clinic_id, serial_no) index.",
+    "ha_products.create_product does NOT check for duplicate (brand, model) within a clinic — duplicates are allowed (we saw multiple TEST_B/A rows from re-runs). Either unique-index or flag in UI.",
+    "ha_procurement.transition_po_status: the allowed table is defined inside the endpoint — extract to utils/po_states.py for testability + reuse (mirrors utils/ha_states.py).",
+    "ha_inventory.transition_serial_state permits role 'front_desk' and 'audiologist' to fire ANY state transition — they can DAMAGE/RETIRE units. Consider stricter per-transition role policy (e.g. audiologist → TRIAL_OUT/SERVICE_IN only, front_desk → RESERVED only).",
+    "ha_procurement.create_grn accumulates received quantities by (product_id, variant) and compares to PO — but does not detect over-receipt (received > ordered). Currently allows it silently; should 400 or at minimum warn."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_ha_core.py (new, 30 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 phase2 new + 35/35 phase1 regression = 65/65)",
+    "frontend": "100% smoke (nav visibility by role, inventory board + chips + timeline drawer, procurement page render, catalogue page render)"
+  },
+  "test_credentials": "admin@acs.in/admin123, frontdesk@acs.in/frontdesk123, audiologist@acs.in/audio123, admin@delhi.test/delhiadmin123 — all validated.",
+  "seed_data_creation": "Tests create TEST_-prefixed products, PO-2026-0008+ and GRN-2026-NNNN rows, and a handful of serial items with serial_no=TEST-SN-*. These are NOT cleaned up at end of run (scope kept small; run on demo/staging only). Seeded P90-SN-001 was temporarily walked through SOLD→SERVICE_IN→IN_STOCK during test-authoring and restored to IN_STOCK at end.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 locked at 65/65 green (30 new + 35 phase1 regression). Re-run with: `set -a && source /app/backend/.env && source /app/frontend/.env && set +a && pytest /app/backend/tests/test_phase2_ha_core.py /app/backend/tests/test_phase1_ha_foundation.py` (both env sources required — phase1 uses direct motor). The phase2 test file ships its own fallback reader for REACT_APP_BACKEND_URL from /app/frontend/.env so it works even without env export. Known good fixtures: mumbai_branch_id + mumbai_vendor_id resolvers. Product Catalogue page uses data-testid='ha-products-page' (NOT ha-catalogue-page). Timeline drawer is confirmed working with (new)→IN_STOCK event after GRN. Cross-tenant returns 404 (not 403) for serial-items/{id} and PO read-by-id because the Mongo filter excludes the other clinic — treat either code as valid isolation.",
+  "rca of the issue": "Test-authoring bug I hit and fixed: (1) initial test assumed IN_STOCK→SOLD was illegal; ALLOWED_TRANSITIONS actually permits it (IN_STOCK → {RESERVED, TRIAL_OUT, SOLD, LOANER, SERVICE_IN, DAMAGED}). Replaced with IN_STOCK→RETIRED which IS illegal. (2) /auth/me payload shape: `{user: {...}, clinic: {...}}`, not flat. Test updated. One transient network flake on one assertion (test_grn_against_closed_po_409) timed out at request layer; passed cleanly on retry — environment jitter, not a code issue."
+}

@@ -206,6 +206,9 @@ from routers import sessions as sessions_router       # noqa: E402
 from routers import ref_docs as ref_docs_router       # noqa: E402
 from routers import branches as branches_router       # noqa: E402
 from routers import vendors as vendors_router         # noqa: E402
+from routers import ha_products as ha_products_router       # noqa: E402
+from routers import ha_inventory as ha_inventory_router     # noqa: E402
+from routers import ha_procurement as ha_procurement_router # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -216,6 +219,9 @@ app.include_router(sessions_router.router)
 app.include_router(ref_docs_router.router)
 app.include_router(branches_router.router)
 app.include_router(vendors_router.router)
+app.include_router(ha_products_router.router)
+app.include_router(ha_inventory_router.router)
+app.include_router(ha_procurement_router.router)
 
 app.add_middleware(
     CORSMiddleware,

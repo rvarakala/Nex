@@ -1,0 +1,367 @@
+"""HA Procurement — PurchaseOrder + GRN — Phase 2.
+
+Lifecycle:
+  PO draft → approved → ordered → (partial_received | received) → closed
+  GRN posts against an approved/ordered PO, spawns SerialItem rows for
+  serialised products (IN_STOCK), or upserts AccessoryStock qty for SKUs.
+  Each SerialItem creation writes a `serial_events` row (from='(new)', to='IN_STOCK').
+
+Roles:
+  - read POs / GRNs: any authenticated user (needed for dashboards)
+  - create/approve/close PO: inventory_manager + clinic_owner
+  - create GRN: inventory_manager + clinic_owner
+"""
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from auth import (
+    get_current_user, require_roles, user_can_see_branch,
+    CLINIC_WIDE_ROLES,
+)
+from database import get_db
+from models_ha import (
+    PurchaseOrder, PurchaseOrderCreate, POLine,
+    GRN, GRNCreate, GRNLine,
+)
+from utils.numbering import next_number
+from utils.serde import serialize_datetime, deserialize_datetime
+
+router = APIRouter(prefix="/api/ha")
+
+
+def _branch_scope(user: dict) -> dict:
+    if user["role"] in CLINIC_WIDE_ROLES:
+        return {"clinic_id": user["clinic_id"]}
+    return {"clinic_id": user["clinic_id"], "branch_id": {"$in": user.get("branch_ids") or []}}
+
+
+def _compute_po_totals(lines: List[POLine]) -> tuple[float, float, float]:
+    subtotal = 0.0
+    gst_amount = 0.0
+    for ln in lines:
+        line_subtotal = round(ln.qty * ln.unit_cost, 2)
+        subtotal += line_subtotal
+        gst_amount += round(line_subtotal * (ln.gst_rate or 0) / 100.0, 2)
+    return round(subtotal, 2), round(gst_amount, 2), round(subtotal + gst_amount, 2)
+
+
+# ==================== PURCHASE ORDERS ====================
+
+@router.get("/purchase-orders", response_model=List[PurchaseOrder])
+async def list_purchase_orders(
+    status: Optional[str] = None,
+    branch_id: Optional[str] = None,
+    vendor_id: Optional[str] = None,
+    limit: int = 100,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    q = _branch_scope(user)
+    if status:
+        q["status"] = status
+    if branch_id:
+        if not user_can_see_branch(user, branch_id):
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        q["branch_id"] = branch_id
+    if vendor_id:
+        q["vendor_id"] = vendor_id
+    rows = await db.purchase_orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+@router.post("/purchase-orders", response_model=PurchaseOrder)
+async def create_purchase_order(
+    payload: PurchaseOrderCreate,
+    user=Depends(require_roles("inventory_manager", "clinic_owner")),
+    db=Depends(get_db),
+):
+    if not user_can_see_branch(user, payload.branch_id):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if not payload.lines:
+        raise HTTPException(status_code=400, detail="PO must have at least one line")
+
+    vendor = await db.vendors.find_one(
+        {"vendor_id": payload.vendor_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "name": 1},
+    )
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    # Validate every product exists in this clinic
+    product_ids = list({ln.product_id for ln in payload.lines})
+    found = await db.ha_products.find(
+        {"product_id": {"$in": product_ids}, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "product_id": 1},
+    ).to_list(len(product_ids))
+    missing = set(product_ids) - {p["product_id"] for p in found}
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Unknown products: {sorted(missing)}")
+
+    subtotal, gst, total = _compute_po_totals(payload.lines)
+    po_no = await next_number(db, "po", user["clinic_id"])
+
+    po = PurchaseOrder(
+        po_no=po_no,
+        clinic_id=user["clinic_id"],
+        branch_id=payload.branch_id,
+        vendor_id=payload.vendor_id,
+        vendor_name=vendor["name"],
+        lines=payload.lines,
+        subtotal=subtotal,
+        gst_amount=gst,
+        total=total,
+        status="draft",
+        expected_date=payload.expected_date,
+        notes=payload.notes,
+        created_by_user_id=user["user_id"],
+    )
+    await db.purchase_orders.insert_one(serialize_datetime(po.model_dump()))
+    return po
+
+
+@router.get("/purchase-orders/{po_no}", response_model=PurchaseOrder)
+async def get_purchase_order(po_no: str, user=Depends(get_current_user), db=Depends(get_db)):
+    row = await db.purchase_orders.find_one(
+        {"po_no": po_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    return deserialize_datetime(row)
+
+
+@router.post("/purchase-orders/{po_no}/status")
+async def transition_po_status(
+    po_no: str, payload: dict,
+    user=Depends(require_roles("inventory_manager", "clinic_owner")),
+    db=Depends(get_db),
+):
+    """Legal: draft → approved → ordered → partial_received/received → closed; any → cancelled."""
+    to_status = payload.get("to_status")
+    allowed = {
+        "draft": {"approved", "cancelled"},
+        "approved": {"ordered", "cancelled"},
+        "ordered": {"partial_received", "received", "cancelled"},
+        "partial_received": {"received", "closed", "cancelled"},
+        "received": {"closed"},
+        "closed": set(),
+        "cancelled": set(),
+    }
+    row = await db.purchase_orders.find_one(
+        {"po_no": po_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    current = row["status"]
+    if to_status not in allowed.get(current, set()):
+        raise HTTPException(status_code=409, detail=f"Illegal PO transition {current} → {to_status}")
+    upd = {"status": to_status}
+    now = datetime.now(timezone.utc).isoformat()
+    if to_status == "approved":
+        upd["approved_at"] = now
+    if to_status == "closed":
+        upd["closed_at"] = now
+    await db.purchase_orders.update_one({"po_no": po_no}, {"$set": upd})
+    return {"po_no": po_no, "status": to_status}
+
+
+# ==================== GRN ====================
+
+@router.get("/grns", response_model=List[GRN])
+async def list_grns(
+    po_no: Optional[str] = None,
+    branch_id: Optional[str] = None,
+    limit: int = 100,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    q = _branch_scope(user)
+    if po_no:
+        q["po_no"] = po_no
+    if branch_id:
+        if not user_can_see_branch(user, branch_id):
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        q["branch_id"] = branch_id
+    rows = await db.grns.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+@router.get("/grns/{grn_no}", response_model=GRN)
+async def get_grn(grn_no: str, user=Depends(get_current_user), db=Depends(get_db)):
+    row = await db.grns.find_one(
+        {"grn_no": grn_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    return deserialize_datetime(row)
+
+
+@router.post("/grns", response_model=GRN)
+async def create_grn(
+    payload: GRNCreate,
+    user=Depends(require_roles("inventory_manager", "clinic_owner")),
+    db=Depends(get_db),
+):
+    """Receive goods against a PO.
+    For serialised products: spawns SerialItems (state=IN_STOCK, pool=saleable)
+    + writes a serial_events row for each. For non-serialised: upserts
+    AccessoryStock qty. Updates PO status to partial/received/closed based on
+    cumulative received-vs-ordered totals."""
+    po = await db.purchase_orders.find_one(
+        {"po_no": payload.po_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    if not user_can_see_branch(user, po["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if po["status"] not in {"approved", "ordered", "partial_received"}:
+        raise HTTPException(status_code=409, detail=f"Cannot receive against a {po['status']} PO")
+    if not payload.lines:
+        raise HTTPException(status_code=400, detail="GRN must have at least one line")
+
+    # Load all referenced products in one shot
+    product_ids = list({ln.product_id for ln in payload.lines})
+    products = {
+        p["product_id"]: p async for p in db.ha_products.find(
+            {"product_id": {"$in": product_ids}, "clinic_id": user["clinic_id"]},
+            {"_id": 0},
+        )
+    }
+    missing = set(product_ids) - set(products)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Unknown products on GRN: {sorted(missing)}")
+
+    # Validate serial-no coverage for serialised lines
+    for ln in payload.lines:
+        p = products[ln.product_id]
+        if p["is_serialised"]:
+            if len(ln.serial_nos) != ln.qty_received:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Line for {p['brand']} {p['model']}: qty_received={ln.qty_received} but {len(ln.serial_nos)} serial(s) supplied",
+                )
+            if len(set(ln.serial_nos)) != len(ln.serial_nos):
+                raise HTTPException(status_code=400, detail="Duplicate serial numbers on GRN line")
+            # Reject any serial already in this clinic's inventory
+            clash = await db.serial_items.find_one(
+                {"clinic_id": user["clinic_id"], "serial_no": {"$in": ln.serial_nos}},
+                {"_id": 0, "serial_no": 1},
+            )
+            if clash:
+                raise HTTPException(status_code=409, detail=f"Serial already on record: {clash['serial_no']}")
+
+    grn_no = await next_number(db, "grn", user["clinic_id"])
+    received_at = payload.received_at or datetime.now(timezone.utc).isoformat()
+
+    grn = GRN(
+        grn_no=grn_no,
+        po_no=payload.po_no,
+        clinic_id=user["clinic_id"],
+        branch_id=po["branch_id"],
+        received_at=received_at,
+        lines=payload.lines,
+        vendor_invoice_ref=payload.vendor_invoice_ref,
+        notes=payload.notes,
+        created_by_user_id=user["user_id"],
+    )
+    await db.grns.insert_one(serialize_datetime(grn.model_dump()))
+
+    # ----- Spawn inventory -----
+    now_iso = datetime.now(timezone.utc).isoformat()
+    from uuid import uuid4
+
+    serial_docs: list[dict] = []
+    serial_event_docs: list[dict] = []
+
+    for ln in payload.lines:
+        p = products[ln.product_id]
+        if p["is_serialised"]:
+            # Warranty end = received_at date + warranty_months
+            wmonths = int(p.get("warranty_months") or 0)
+            try:
+                base = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+            except Exception:
+                base = datetime.now(timezone.utc)
+            warranty_end = (base + timedelta(days=wmonths * 30)).date().isoformat()
+            for sn in ln.serial_nos:
+                serial_id = f"SI-{str(uuid4())[:10].upper()}"
+                serial_docs.append({
+                    "serial_id": serial_id,
+                    "clinic_id": user["clinic_id"],
+                    "branch_id": po["branch_id"],
+                    "product_id": ln.product_id,
+                    "serial_no": sn,
+                    "state": "IN_STOCK",
+                    "pool": "saleable",
+                    "warranty_end_date": warranty_end,
+                    "grn_no": grn_no,
+                    "current_patient_id": None,
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                })
+                serial_event_docs.append({
+                    "serial_id": serial_id,
+                    "from": "(new)",
+                    "to": "IN_STOCK",
+                    "at": now_iso,
+                    "actor_user_id": user["user_id"],
+                    "ref_doc": {"kind": "grn", "id": grn_no},
+                    "note": f"Received via {grn_no}",
+                })
+        else:
+            # Upsert accessory stock row (per product + variant + branch)
+            await db.accessory_stock.update_one(
+                {
+                    "clinic_id": user["clinic_id"],
+                    "branch_id": po["branch_id"],
+                    "product_id": ln.product_id,
+                    "variant": ln.variant,
+                },
+                {
+                    "$inc": {"qty_on_hand": int(ln.qty_received)},
+                    "$setOnInsert": {
+                        "sku_id": f"SKU-{str(uuid4())[:8].upper()}",
+                        "clinic_id": user["clinic_id"],
+                        "branch_id": po["branch_id"],
+                        "product_id": ln.product_id,
+                        "variant": ln.variant,
+                        "reorder_level": 0,
+                        "created_at": now_iso,
+                    },
+                    "$set": {"updated_at": now_iso},
+                },
+                upsert=True,
+            )
+
+    if serial_docs:
+        await db.serial_items.insert_many(serial_docs)
+    if serial_event_docs:
+        await db.serial_events.insert_many(serial_event_docs)
+
+    # ----- Update PO status -----
+    # Aggregate every GRN line across every GRN posted against this PO, compare to PO ordered.
+    received_by_key: dict[tuple, int] = {}
+    async for g in db.grns.find({"po_no": payload.po_no, "clinic_id": user["clinic_id"]}, {"_id": 0, "lines": 1}):
+        for ln in g.get("lines", []):
+            k = (ln["product_id"], ln.get("variant"))
+            received_by_key[k] = received_by_key.get(k, 0) + int(ln["qty_received"])
+    fully_received = True
+    for ln in po["lines"]:
+        k = (ln["product_id"], ln.get("variant"))
+        if received_by_key.get(k, 0) < int(ln["qty"]):
+            fully_received = False
+            break
+    new_status = "received" if fully_received else "partial_received"
+    await db.purchase_orders.update_one(
+        {"po_no": payload.po_no},
+        {"$set": {"status": new_status}},
+    )
+
+    return grn

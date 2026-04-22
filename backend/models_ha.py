@@ -83,3 +83,167 @@ SerialState = Literal[
 SerialPool = Literal[
     "saleable", "demo", "loaner", "refurbished",
 ]
+
+
+# ==================== PRODUCT MASTER ====================
+
+FormFactor = Literal["RIC", "BTE", "ITE", "ITC", "CIC", "IIC", "accessory"]
+TechTier = Literal["essential", "standard", "advanced", "premium"]
+
+
+class Product(BaseModel):
+    """Catalogue SKU. Shared across branches of a clinic.
+    `is_serialised=true` for HA units (every unit tracked); false for accessories (tracked by qty)."""
+    model_config = ConfigDict(extra="ignore")
+    product_id: str = Field(default_factory=lambda: f"PRD-{str(uuid4())[:8].upper()}")
+    clinic_id: str
+    brand: str
+    model: str
+    form_factor: FormFactor = "RIC"
+    tech_tier: Optional[TechTier] = None
+    connectivity: List[str] = Field(default_factory=list)     # e.g. ["bluetooth","rechargeable","telecoil"]
+    warranty_months: int = 24
+    mrp: float = 0.0
+    cost: float = 0.0
+    min_sell_price: float = 0.0
+    hsn: str = "9021"                                          # hearing aids default HSN
+    gst_rate: float = 18.0
+    is_serialised: bool = True
+    active: bool = True
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProductCreate(BaseModel):
+    brand: str
+    model: str
+    form_factor: FormFactor = "RIC"
+    tech_tier: Optional[TechTier] = None
+    connectivity: List[str] = Field(default_factory=list)
+    warranty_months: int = 24
+    mrp: float = 0.0
+    cost: float = 0.0
+    min_sell_price: float = 0.0
+    hsn: str = "9021"
+    gst_rate: float = 18.0
+    is_serialised: bool = True
+    notes: Optional[str] = None
+
+
+# ==================== SERIAL ITEM ====================
+
+class SerialItem(BaseModel):
+    """One physical unit. serial_no = manufacturer sticker (scanned/typed at GRN)."""
+    model_config = ConfigDict(extra="ignore")
+    serial_id: str = Field(default_factory=lambda: f"SI-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    branch_id: str
+    product_id: str
+    serial_no: str                                             # manufacturer sticker
+    state: SerialState = "IN_STOCK"
+    pool: SerialPool = "saleable"
+    warranty_end_date: Optional[str] = None                    # ISO date string (YYYY-MM-DD)
+    grn_no: Optional[str] = None
+    current_patient_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+
+
+class SerialItemUpdate(BaseModel):
+    pool: Optional[SerialPool] = None
+    notes: Optional[str] = None
+
+
+# ==================== ACCESSORY STOCK (non-serialised) ====================
+
+class AccessoryStock(BaseModel):
+    """Qty-tracked stock for non-serialised accessories (domes, wax-guards, batteries).
+    One row per (product_id, branch_id, variant). `variant` groups size/length/power variants."""
+    model_config = ConfigDict(extra="ignore")
+    sku_id: str = Field(default_factory=lambda: f"SKU-{str(uuid4())[:8].upper()}")
+    clinic_id: str
+    branch_id: str
+    product_id: str
+    variant: Optional[str] = None                              # e.g. "small", "size-8", "L-power"
+    qty_on_hand: int = 0
+    reorder_level: int = 0
+    updated_at: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AccessoryAdjust(BaseModel):
+    delta: int                                                 # positive = add, negative = consume
+    reason: str                                                # required audit note
+
+
+# ==================== PURCHASE ORDER ====================
+
+POStatus = Literal["draft", "approved", "ordered", "partial_received", "received", "closed", "cancelled"]
+
+
+class POLine(BaseModel):
+    product_id: str
+    variant: Optional[str] = None                              # for accessories
+    qty: int
+    unit_cost: float
+    gst_rate: float = 18.0
+
+
+class PurchaseOrder(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    po_no: str                                                 # PO-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    vendor_id: str
+    vendor_name: Optional[str] = None                          # denormalised for list display
+    lines: List[POLine]
+    subtotal: float = 0.0
+    gst_amount: float = 0.0
+    total: float = 0.0
+    status: POStatus = "draft"
+    expected_date: Optional[str] = None
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    approved_at: Optional[str] = None
+    closed_at: Optional[str] = None
+
+
+class PurchaseOrderCreate(BaseModel):
+    branch_id: str
+    vendor_id: str
+    lines: List[POLine]
+    expected_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ==================== GRN ====================
+
+class GRNLine(BaseModel):
+    product_id: str
+    variant: Optional[str] = None
+    qty_received: int
+    serial_nos: List[str] = Field(default_factory=list)        # required when product.is_serialised
+    unit_cost_actual: Optional[float] = None                   # override if different from PO
+
+
+class GRN(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    grn_no: str                                                # GRN-YYYY-NNNN
+    po_no: str
+    clinic_id: str
+    branch_id: str
+    received_at: str
+    lines: List[GRNLine]
+    vendor_invoice_ref: Optional[str] = None
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GRNCreate(BaseModel):
+    po_no: str
+    received_at: Optional[str] = None                          # ISO; defaults to now
+    lines: List[GRNLine]
+    vendor_invoice_ref: Optional[str] = None
+    notes: Optional[str] = None

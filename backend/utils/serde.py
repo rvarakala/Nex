@@ -19,9 +19,18 @@ def serialize_datetime(obj):
 
 def deserialize_datetime(obj):
     """Convert ISO format strings back to datetime objects.
-    Skips known string-typed date fields (e.g., 'dob') to avoid coercing them into datetimes.
+    Skips known string-typed date fields (e.g., 'dob', HA date fields) to avoid coercing them into datetimes.
     """
-    STRING_DATE_KEYS = {"dob"}
+    STRING_DATE_KEYS = {
+        # Patient DOB is a YYYY-MM-DD string
+        "dob",
+        # HA module — all these are Optional[str] on the Pydantic models
+        "warranty_end_date", "received_at", "expected_date",
+        "approved_at", "closed_at", "updated_at",
+        "start_date", "end_date",
+        # Share-link audit uses ISO strings
+        "last_accessed_at", "expires_at",
+    }
     if isinstance(obj, dict):
         return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}
     if isinstance(obj, list):

@@ -11,6 +11,7 @@ import QueueTVPage from './pages/QueueTVPage';
 import FrontDeskModule from './modules/frontdesk/FrontDeskModule';
 import BillingModule from './modules/billing/BillingModule';
 import TestProceduresModule from './modules/test/TestProceduresModule';
+import HAModule from './modules/ha/HAModule';
 
 // Entry — picks initial landing based on user role
 const LandingRedirect = () => {
@@ -40,6 +41,7 @@ function App() {
             <Route path="/billing/*" element={<ShelledRoute><BillingModule /></ShelledRoute>} />
             <Route path="/test/*" element={<ShelledRoute><TestProceduresModule /></ShelledRoute>} />
             <Route path="/reports" element={<ShelledRoute><TestProceduresModule /></ShelledRoute>} />
+            <Route path="/ha/*" element={<ShelledRoute><HAModule /></ShelledRoute>} />
 
             <Route path="/" element={<LandingRedirect />} />
             <Route path="*" element={<Navigate to="/" replace />} />

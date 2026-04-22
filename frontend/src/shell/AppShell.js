@@ -113,6 +113,14 @@ export default function AppShell({ children }) {
             label="Diagnostics"
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18M7 14l3-3 4 4 5-5"/></svg>}
           />
+          {user?.role !== 'audiologist' && (
+            <NavItem
+              to="/ha"
+              testid="nav-ha"
+              label="Hearing Aids"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a7 7 0 0 0-7 7v5a3 3 0 0 0 3 3h1v-8H7v-.5A5 5 0 0 1 17 9v.5h-2V17h1a3 3 0 0 0 3-3v-5a7 7 0 0 0-7-6Z"/></svg>}
+            />
+          )}
           <NavItem
             to="/reports"
             testid="nav-reports"
