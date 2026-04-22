@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import ProductCataloguePage from './ProductCataloguePage';
 import InventoryBoardPage from './InventoryBoardPage';
 import ProcurementPage from './ProcurementPage';
+import QuotationStudioPage from './QuotationStudioPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -27,6 +28,7 @@ export default function HAModule() {
       {/* Sub-nav for HA */}
       <div className="border-b border-slate-200 bg-slate-50 flex items-center gap-1 px-4 flex-shrink-0">
         <Tab to="/ha/inventory" label="Inventory Board" testid="ha-tab-inventory" />
+        <Tab to="/ha/quotations" label="Quotations" testid="ha-tab-quotations" />
         <Tab to="/ha/procurement" label="Procurement" testid="ha-tab-procurement" />
         <Tab to="/ha/products" label="Product Catalogue" testid="ha-tab-products" />
       </div>
@@ -35,6 +37,7 @@ export default function HAModule() {
         <Routes>
           <Route path="/" element={<Navigate to="inventory" replace />} />
           <Route path="inventory" element={<InventoryBoardPage />} />
+          <Route path="quotations/*" element={<QuotationStudioPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="products" element={<ProductCataloguePage />} />
         </Routes>

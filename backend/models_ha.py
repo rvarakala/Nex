@@ -247,3 +247,102 @@ class GRNCreate(BaseModel):
     lines: List[GRNLine]
     vendor_invoice_ref: Optional[str] = None
     notes: Optional[str] = None
+
+
+# ==================== QUOTATION ====================
+
+QuoteStatus = Literal["draft", "sent", "accepted", "rejected", "expired", "cancelled", "converted"]
+Side = Literal["left", "right", "single"]
+
+
+class QuoteLine(BaseModel):
+    product_id: str
+    side: Side = "single"
+    qty: int = 1
+    unit_price: float          # customer-facing price (per unit)
+    discount_pct: float = 0.0  # % discount on unit_price
+    gst_rate: float = 18.0
+    notes: Optional[str] = None
+
+
+class Quotation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    quote_no: str                                              # QTE-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None                         # denormalised
+    audiologist_user_id: Optional[str] = None
+    is_pair: bool = False                                      # L+R bundle
+    lines: List[QuoteLine]
+    subtotal: float = 0.0
+    discount_amount: float = 0.0                               # absolute discount total
+    gst_amount: float = 0.0
+    total: float = 0.0
+    status: QuoteStatus = "draft"
+    valid_until: Optional[str] = None                          # YYYY-MM-DD
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_at: Optional[str] = None
+    accepted_at: Optional[str] = None
+    converted_sale_no: Optional[str] = None
+
+
+class QuotationCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    audiologist_user_id: Optional[str] = None
+    is_pair: bool = False
+    lines: List[QuoteLine]
+    valid_until: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ==================== SALE ====================
+
+SaleStatus = Literal["draft", "reserved", "invoiced", "paid", "cancelled"]
+
+
+class SaleLine(BaseModel):
+    product_id: str
+    serial_id: Optional[str] = None                            # nullable for accessory lines
+    side: Side = "single"
+    qty: int = 1
+    unit_price: float
+    discount_pct: float = 0.0
+    gst_rate: float = 18.0
+
+
+class Sale(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    sale_no: str                                               # SAL-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    quote_no: Optional[str] = None                             # source quotation
+    is_pair: bool = False
+    lines: List[SaleLine]
+    subtotal: float = 0.0
+    discount_amount: float = 0.0
+    gst_amount: float = 0.0
+    total: float = 0.0
+    status: SaleStatus = "reserved"                            # default once created
+    invoice_no: Optional[str] = None                           # linked invoice
+    margin_approval_user_id: Optional[str] = None              # if any line below min_sell_price
+    margin_approval_at: Optional[str] = None
+    below_floor_lines: List[int] = Field(default_factory=list) # line indexes needing approval
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    cancelled_at: Optional[str] = None
+
+
+class SaleCreate(BaseModel):
+    """Create a Sale straight from a Quotation. Reserves all serialised lines
+    (IN_STOCK → RESERVED). Margin floor violations must be pre-approved via
+    `margin_approval_user_id` (clinic_owner / super_admin)."""
+    quote_no: str
+    serial_assignments: dict[int, str] = Field(default_factory=dict)
+    # map of quote-line-index → serial_id chosen from IN_STOCK pool
+    margin_approval_user_id: Optional[str] = None

@@ -23,6 +23,7 @@ _FORMATS: dict[str, tuple[str, int]] = {
     "trial":  ("TRIAL",  4),
     "job":    ("JOB",    4),
     "sale":   ("SAL",    4),
+    "qte":    ("QTE",    4),
 }
 
 

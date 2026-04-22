@@ -11,10 +11,12 @@ Roles:
   - create/approve/close PO: inventory_manager + clinic_owner
   - create GRN: inventory_manager + clinic_owner
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import List, Optional
 
+from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
@@ -26,6 +28,7 @@ from models_ha import (
     GRN, GRNCreate, GRNLine,
 )
 from utils.numbering import next_number
+from utils.po_states import assert_po_transition, PO_RECEIVABLE, auto_advance_on_grn
 from utils.serde import serialize_datetime, deserialize_datetime
 
 router = APIRouter(prefix="/api/ha")
@@ -139,17 +142,8 @@ async def transition_po_status(
     user=Depends(require_roles("inventory_manager", "clinic_owner")),
     db=Depends(get_db),
 ):
-    """Legal: draft → approved → ordered → partial_received/received → closed; any → cancelled."""
+    """Legal transitions driven by `utils/po_states.PO_ALLOWED`."""
     to_status = payload.get("to_status")
-    allowed = {
-        "draft": {"approved", "cancelled"},
-        "approved": {"ordered", "cancelled"},
-        "ordered": {"partial_received", "received", "cancelled"},
-        "partial_received": {"received", "closed", "cancelled"},
-        "received": {"closed"},
-        "closed": set(),
-        "cancelled": set(),
-    }
     row = await db.purchase_orders.find_one(
         {"po_no": po_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
     )
@@ -157,9 +151,7 @@ async def transition_po_status(
         raise HTTPException(status_code=404, detail="Purchase order not found")
     if not user_can_see_branch(user, row["branch_id"]):
         raise HTTPException(status_code=403, detail="Branch access denied")
-    current = row["status"]
-    if to_status not in allowed.get(current, set()):
-        raise HTTPException(status_code=409, detail=f"Illegal PO transition {current} → {to_status}")
+    assert_po_transition(row["status"], to_status)
     upd = {"status": to_status}
     now = datetime.now(timezone.utc).isoformat()
     if to_status == "approved":
@@ -221,7 +213,7 @@ async def create_grn(
         raise HTTPException(status_code=404, detail="Purchase order not found")
     if not user_can_see_branch(user, po["branch_id"]):
         raise HTTPException(status_code=403, detail="Branch access denied")
-    if po["status"] not in {"approved", "ordered", "partial_received"}:
+    if po["status"] not in PO_RECEIVABLE:
         raise HTTPException(status_code=409, detail=f"Cannot receive against a {po['status']} PO")
     if not payload.lines:
         raise HTTPException(status_code=400, detail="GRN must have at least one line")
@@ -238,7 +230,8 @@ async def create_grn(
     if missing:
         raise HTTPException(status_code=400, detail=f"Unknown products on GRN: {sorted(missing)}")
 
-    # Validate serial-no coverage for serialised lines
+    # Validate serial-no coverage for serialised lines (uniqueness enforced by
+    # DB index — we catch DuplicateKeyError on insert for the error message).
     for ln in payload.lines:
         p = products[ln.product_id]
         if p["is_serialised"]:
@@ -249,13 +242,6 @@ async def create_grn(
                 )
             if len(set(ln.serial_nos)) != len(ln.serial_nos):
                 raise HTTPException(status_code=400, detail="Duplicate serial numbers on GRN line")
-            # Reject any serial already in this clinic's inventory
-            clash = await db.serial_items.find_one(
-                {"clinic_id": user["clinic_id"], "serial_no": {"$in": ln.serial_nos}},
-                {"_id": 0, "serial_no": 1},
-            )
-            if clash:
-                raise HTTPException(status_code=409, detail=f"Serial already on record: {clash['serial_no']}")
 
     grn_no = await next_number(db, "grn", user["clinic_id"])
     received_at = payload.received_at or datetime.now(timezone.utc).isoformat()
@@ -304,13 +290,13 @@ async def create_grn(
     for ln in payload.lines:
         p = products[ln.product_id]
         if p["is_serialised"]:
-            # Warranty end = received_at date + warranty_months
+            # Exact calendar-month warranty (e.g. 24 months → same date 2 years later)
             wmonths = int(p.get("warranty_months") or 0)
             try:
                 base = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
             except Exception:
                 base = datetime.now(timezone.utc)
-            warranty_end = (base + timedelta(days=wmonths * 30)).date().isoformat()
+            warranty_end = (base + relativedelta(months=wmonths)).date().isoformat()
             for sn in ln.serial_nos:
                 serial_id = f"SI-{str(uuid4())[:10].upper()}"
                 serial_docs.append({
@@ -362,7 +348,15 @@ async def create_grn(
             )
 
     if serial_docs:
-        await db.serial_items.insert_many(serial_docs)
+        try:
+            await db.serial_items.insert_many(serial_docs)
+        except DuplicateKeyError as e:
+            # Unique index (clinic_id, serial_no) rejected at least one serial.
+            # Extract the offending value from the error detail if possible.
+            raise HTTPException(
+                status_code=409,
+                detail=f"Serial already on record in this clinic: {e.details.get('keyValue', {}).get('serial_no', '(unknown)')}",
+            )
     if serial_event_docs:
         await db.serial_events.insert_many(serial_event_docs)
 
@@ -373,13 +367,7 @@ async def create_grn(
         for ln in po["lines"]
     )
     # Walk the PO status forward through the allowed table — never skip states.
-    target = "received" if fully_received else "partial_received"
-    po_path = {
-        "approved":         ["ordered", target],          # auto-advance approved → ordered → target
-        "ordered":          [target],
-        "partial_received": [target] if target == "received" else [],
-    }
-    for step in po_path.get(po["status"], []):
+    for step in auto_advance_on_grn(po["status"], fully_received):
         await db.purchase_orders.update_one(
             {"po_no": payload.po_no, "clinic_id": user["clinic_id"]},
             {"$set": {"status": step}},

@@ -73,6 +73,33 @@ async def lifespan(_app: FastAPI):
         await db.payments.create_index("payment_id", unique=True)
         await db.payments.create_index([("clinic_id", 1), ("paid_at", -1)])
         await db.payments.create_index("invoice_id")
+        # HA module Phase 1/2 — inventory integrity
+        await db.branches.create_index("branch_id", unique=True)
+        await db.branches.create_index([("clinic_id", 1), ("is_primary", -1)])
+        await db.vendors.create_index("vendor_id", unique=True)
+        await db.vendors.create_index([("clinic_id", 1), ("name", 1)])
+        await db.ha_products.create_index("product_id", unique=True)
+        await db.ha_products.create_index([("clinic_id", 1), ("brand", 1), ("model", 1)])
+        await db.serial_items.create_index("serial_id", unique=True)
+        # Hard uniqueness — same physical sticker cannot be received twice in a clinic.
+        await db.serial_items.create_index(
+            [("clinic_id", 1), ("serial_no", 1)], unique=True, name="uniq_clinic_serial_no",
+        )
+        await db.serial_items.create_index([("clinic_id", 1), ("branch_id", 1), ("state", 1)])
+        await db.serial_events.create_index([("serial_id", 1), ("at", -1)])
+        await db.purchase_orders.create_index("po_no", unique=True)
+        await db.purchase_orders.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.grns.create_index("grn_no", unique=True)
+        await db.grns.create_index([("po_no", 1), ("received_at", -1)])
+        await db.accessory_stock.create_index("sku_id", unique=True)
+        await db.accessory_stock.create_index([("clinic_id", 1), ("branch_id", 1), ("product_id", 1), ("variant", 1)], name="uniq_accessory_variant", unique=True)
+        # HA module Phase 3 — transactions
+        await db.quotations.create_index("quote_no", unique=True)
+        await db.quotations.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.quotations.create_index("patient_id")
+        await db.ha_sales.create_index("sale_no", unique=True)
+        await db.ha_sales.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.ha_sales.create_index("patient_id")
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         _log.info("MongoDB indexes ensured")
@@ -209,6 +236,8 @@ from routers import vendors as vendors_router         # noqa: E402
 from routers import ha_products as ha_products_router       # noqa: E402
 from routers import ha_inventory as ha_inventory_router     # noqa: E402
 from routers import ha_procurement as ha_procurement_router # noqa: E402
+from routers import ha_quotations as ha_quotations_router   # noqa: E402
+from routers import ha_sales as ha_sales_router             # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -222,6 +251,8 @@ app.include_router(vendors_router.router)
 app.include_router(ha_products_router.router)
 app.include_router(ha_inventory_router.router)
 app.include_router(ha_procurement_router.router)
+app.include_router(ha_quotations_router.router)
+app.include_router(ha_sales_router.router)
 
 app.add_middleware(
     CORSMiddleware,

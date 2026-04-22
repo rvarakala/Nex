@@ -27,7 +27,8 @@ def deserialize_datetime(obj):
         # HA module — all these are Optional[str] on the Pydantic models
         "warranty_end_date", "received_at", "expected_date",
         "approved_at", "closed_at", "updated_at",
-        "start_date", "end_date",
+        "start_date", "end_date", "valid_until",
+        "sent_at", "accepted_at", "cancelled_at", "margin_approval_at",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
     }

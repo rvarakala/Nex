@@ -1,0 +1,318 @@
+"""HA Sales — Phase 3.
+
+A Sale is created from an accepted Quotation. Creation:
+  1. Validates serial-assignments: each serialised quote line must map to an
+     IN_STOCK SerialItem of the same product, in an accessible branch.
+  2. Computes per-line margin vs product.min_sell_price. If any line is below
+     the floor, requires `margin_approval_user_id` pointing at a
+     clinic_owner / super_admin — else 409 with the below-floor indexes.
+  3. Atomically moves all assigned serials IN_STOCK → RESERVED (writes audit
+     rows via transition_serial).
+  4. Flips the source quotation to 'converted' and stores sale_no there.
+
+Lifecycle:  reserved → invoiced → paid   (any → cancelled, which unreserves).
+"""
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from auth import (
+    get_current_user, require_roles, user_can_see_branch,
+    CLINIC_WIDE_ROLES,
+)
+from database import get_db
+from models_ha import (
+    Sale, SaleCreate, SaleLine,
+)
+from utils.ha_states import transition_serial
+from utils.numbering import next_number
+from utils.serde import serialize_datetime, deserialize_datetime
+
+router = APIRouter(prefix="/api/ha")
+
+
+def _branch_scope(user: dict) -> dict:
+    if user["role"] in CLINIC_WIDE_ROLES:
+        return {"clinic_id": user["clinic_id"]}
+    return {"clinic_id": user["clinic_id"], "branch_id": {"$in": user.get("branch_ids") or []}}
+
+
+@router.get("/sales", response_model=List[Sale])
+async def list_sales(
+    status: Optional[str] = None,
+    patient_id: Optional[str] = None,
+    limit: int = 100,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    q = _branch_scope(user)
+    if status:
+        q["status"] = status
+    if patient_id:
+        q["patient_id"] = patient_id
+    rows = await db.ha_sales.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+@router.get("/sales/{sale_no}", response_model=Sale)
+async def get_sale(sale_no: str, user=Depends(get_current_user), db=Depends(get_db)):
+    row = await db.ha_sales.find_one(
+        {"sale_no": sale_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    return deserialize_datetime(row)
+
+
+@router.post("/sales", response_model=Sale)
+async def create_sale_from_quote(
+    payload: SaleCreate,
+    user=Depends(require_roles("front_desk", "audiologist", "inventory_manager", "clinic_owner")),
+    db=Depends(get_db),
+):
+    """Convert an accepted Quotation into a Sale: assigns physical units,
+    reserves them, runs margin-floor guardrail, links back to the quote."""
+
+    quote = await db.quotations.find_one(
+        {"quote_no": payload.quote_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    if not user_can_see_branch(user, quote["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if quote["status"] not in {"accepted", "draft", "sent"}:
+        # Allow direct conversion from draft/sent to cover walk-in "skip the email" flow,
+        # but block converted/cancelled/rejected/expired.
+        raise HTTPException(status_code=409, detail=f"Cannot convert a {quote['status']} quotation")
+
+    # Load products (needed for is_serialised check + min_sell_price margin guard)
+    product_ids = list({ln["product_id"] for ln in quote["lines"]})
+    products = {
+        p["product_id"]: p async for p in db.ha_products.find(
+            {"product_id": {"$in": product_ids}, "clinic_id": user["clinic_id"]}, {"_id": 0},
+        )
+    }
+
+    # ----- Serial assignment validation -----
+    serial_assignments: dict[int, str] = {int(k): v for k, v in (payload.serial_assignments or {}).items()}
+    chosen_serial_ids: list[str] = []
+    serial_line_idx: dict[str, int] = {}  # serial_id → quote line index
+
+    sale_lines: list[SaleLine] = []
+    below_floor: list[int] = []
+
+    for i, ql in enumerate(quote["lines"]):
+        p = products.get(ql["product_id"])
+        if not p:
+            raise HTTPException(status_code=400, detail=f"Quote line {i}: product no longer exists")
+
+        line_serial_id: Optional[str] = None
+        if p["is_serialised"]:
+            if i not in serial_assignments:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Quote line {i} ({p['brand']} {p['model']}) is serialised — provide a serial_id in serial_assignments",
+                )
+            line_serial_id = serial_assignments[i]
+            # Double-booking check within this sale
+            if line_serial_id in chosen_serial_ids:
+                raise HTTPException(status_code=400, detail=f"Serial {line_serial_id} assigned to multiple lines")
+            chosen_serial_ids.append(line_serial_id)
+            serial_line_idx[line_serial_id] = i
+
+        # Margin check (post-discount unit price vs min_sell_price)
+        floor = float(p.get("min_sell_price") or 0)
+        net_unit = ql["unit_price"] * (1 - (ql.get("discount_pct") or 0) / 100.0)
+        if floor > 0 and net_unit < floor - 1e-6:
+            below_floor.append(i)
+
+        sale_lines.append(SaleLine(
+            product_id=ql["product_id"],
+            serial_id=line_serial_id,
+            side=ql.get("side") or "single",
+            qty=ql["qty"],
+            unit_price=ql["unit_price"],
+            discount_pct=ql.get("discount_pct") or 0.0,
+            gst_rate=ql.get("gst_rate") or 0.0,
+        ))
+
+    # ----- Margin approval gate -----
+    if below_floor and not payload.margin_approval_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "margin_approval_required",
+                "below_floor_line_indexes": below_floor,
+                "message": "One or more lines priced below min_sell_price. Provide margin_approval_user_id (clinic_owner or super_admin).",
+            },
+        )
+    if below_floor and payload.margin_approval_user_id:
+        approver = await db.users.find_one(
+            {"user_id": payload.margin_approval_user_id, "clinic_id": user["clinic_id"]},
+            {"_id": 0, "role": 1},
+        )
+        if not approver or approver["role"] not in {"super_admin", "clinic_owner"}:
+            raise HTTPException(status_code=403, detail="Margin approver must be clinic_owner or super_admin")
+
+    # ----- Load & validate assigned serial items (all must be IN_STOCK, in-clinic) -----
+    if chosen_serial_ids:
+        serial_rows = await db.serial_items.find(
+            {"serial_id": {"$in": chosen_serial_ids}, "clinic_id": user["clinic_id"]},
+            {"_id": 0},
+        ).to_list(len(chosen_serial_ids))
+        by_id = {s["serial_id"]: s for s in serial_rows}
+        missing = set(chosen_serial_ids) - set(by_id)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Unknown serials: {sorted(missing)}")
+        for sid, s in by_id.items():
+            if s["state"] != "IN_STOCK":
+                raise HTTPException(status_code=409, detail=f"Serial {s['serial_no']} is {s['state']}, cannot reserve")
+            if not user_can_see_branch(user, s["branch_id"]):
+                raise HTTPException(status_code=403, detail=f"Serial {s['serial_no']} is in another branch")
+            # serial's product must match the quote-line product
+            i = serial_line_idx[sid]
+            ql_product = quote["lines"][i]["product_id"]
+            if s["product_id"] != ql_product:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Serial {s['serial_no']} is product {s['product_id']} but quote line {i} expects {ql_product}",
+                )
+
+    # ----- All validation passed — mint sale, reserve serials, link quote -----
+    # Recompute totals from the sale lines to stay consistent with the model.
+    sub = disc = gst = 0.0
+    for ln in sale_lines:
+        gross = round(ln.qty * ln.unit_price, 2)
+        d = round(gross * (ln.discount_pct or 0) / 100.0, 2)
+        net = round(gross - d, 2)
+        g = round(net * (ln.gst_rate or 0) / 100.0, 2)
+        sub += gross; disc += d; gst += g
+    total = round(sub - disc + gst, 2)
+
+    sale_no = await next_number(db, "sale", user["clinic_id"])
+    now = datetime.now(timezone.utc).isoformat()
+
+    sale = Sale(
+        sale_no=sale_no,
+        clinic_id=user["clinic_id"],
+        branch_id=quote["branch_id"],
+        patient_id=quote["patient_id"],
+        patient_name=quote.get("patient_name"),
+        quote_no=payload.quote_no,
+        is_pair=bool(quote.get("is_pair")),
+        lines=sale_lines,
+        subtotal=round(sub, 2), discount_amount=round(disc, 2), gst_amount=round(gst, 2), total=total,
+        status="reserved",
+        below_floor_lines=below_floor,
+        margin_approval_user_id=payload.margin_approval_user_id,
+        margin_approval_at=now if below_floor else None,
+        created_by_user_id=user["user_id"],
+    )
+    await db.ha_sales.insert_one(serialize_datetime(sale.model_dump()))
+
+    # Reserve serials one by one (each writes its own audit row).
+    for sid in chosen_serial_ids:
+        await transition_serial(
+            db, sid, "RESERVED",
+            actor_user_id=user["user_id"],
+            ref_doc={"kind": "sale", "id": sale_no},
+            note=f"Reserved on sale {sale_no}",
+        )
+
+    # Link back to quote & mark converted.
+    await db.quotations.update_one(
+        {"quote_no": payload.quote_no, "clinic_id": user["clinic_id"]},
+        {"$set": {"status": "converted", "converted_sale_no": sale_no}},
+    )
+    return sale
+
+
+@router.post("/sales/{sale_no}/mark-paid")
+async def mark_sale_paid(
+    sale_no: str, payload: dict,
+    user=Depends(require_roles("front_desk", "accounts", "clinic_owner")),
+    db=Depends(get_db),
+):
+    """Once the patient has paid the linked invoice, call this to transition
+    every assigned serial RESERVED → SOLD and mark the sale 'paid'.
+    Body: {invoice_no?: str}  — invoice_no is stored for the audit trail."""
+    sale = await db.ha_sales.find_one(
+        {"sale_no": sale_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    if not user_can_see_branch(user, sale["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if sale["status"] == "paid":
+        return {"sale_no": sale_no, "status": "paid", "already": True}
+    if sale["status"] not in {"reserved", "invoiced"}:
+        raise HTTPException(status_code=409, detail=f"Cannot mark-paid a {sale['status']} sale")
+
+    serials = [ln["serial_id"] for ln in sale["lines"] if ln.get("serial_id")]
+    for sid in serials:
+        s = await db.serial_items.find_one({"serial_id": sid}, {"_id": 0, "state": 1, "serial_no": 1})
+        if not s:
+            continue
+        if s["state"] == "RESERVED":
+            await transition_serial(
+                db, sid, "SOLD",
+                actor_user_id=user["user_id"],
+                ref_doc={"kind": "sale", "id": sale_no},
+                note=f"Sold via {sale_no}",
+            )
+        elif s["state"] == "SOLD":
+            continue  # already sold (idempotent)
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Serial {s['serial_no']} is {s['state']}, expected RESERVED",
+            )
+
+    upd = {"status": "paid"}
+    if payload.get("invoice_no"):
+        upd["invoice_no"] = payload["invoice_no"]
+    await db.ha_sales.update_one({"sale_no": sale_no}, {"$set": upd})
+    return {"sale_no": sale_no, "status": "paid"}
+
+
+@router.post("/sales/{sale_no}/cancel")
+async def cancel_sale(
+    sale_no: str,
+    user=Depends(require_roles("accounts", "clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Unreserve every assigned serial RESERVED → IN_STOCK, flip sale to
+    'cancelled'. Refunds are handled via the existing billing module."""
+    sale = await db.ha_sales.find_one(
+        {"sale_no": sale_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    if not user_can_see_branch(user, sale["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if sale["status"] in {"cancelled", "paid"}:
+        raise HTTPException(status_code=409, detail=f"Cannot cancel a {sale['status']} sale")
+
+    for ln in sale["lines"]:
+        sid = ln.get("serial_id")
+        if not sid:
+            continue
+        s = await db.serial_items.find_one({"serial_id": sid}, {"_id": 0, "state": 1})
+        if s and s["state"] == "RESERVED":
+            await transition_serial(
+                db, sid, "IN_STOCK",
+                actor_user_id=user["user_id"],
+                ref_doc={"kind": "sale", "id": sale_no},
+                note=f"Unreserved — sale {sale_no} cancelled",
+            )
+
+    await db.ha_sales.update_one(
+        {"sale_no": sale_no},
+        {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    # If this sale came from a converted quote, we do NOT flip the quote back —
+    # quote.converted_sale_no still references the cancelled sale for audit.
+    return {"sale_no": sale_no, "status": "cancelled"}

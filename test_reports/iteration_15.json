@@ -1,0 +1,53 @@
+{
+  "summary": "Phase 3 HA Transactions tested end-to-end. 37/38 backend tests pass (97.4%). Quotation Studio (create/get with margin analysis, status machine, pair rule, role gate), Sales (quote→sale conversion with serial reserve, margin gate with all 3 branches of no-approval 409 / frontdesk-approver 403 / super-admin 200, serial validations, mark-paid idempotent, cancel-unreserve, converted_sale_no audit preserved), relativedelta warranty and PO state machine all work. Frontend Quotations tab, detail drawer, role hiding for audiologist all verified. ONE real backend bug found: duplicate-serial GRN returns 500 instead of 409 because insert_many raises BulkWriteError, not DuplicateKeyError.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/ha/grns (duplicate serial path)",
+        "issue": "Returns 500 instead of 409 when a serial_no collides with an existing row. ha_procurement.py:353 catches DuplicateKeyError but motor's insert_many raises pymongo.errors.BulkWriteError (code 11000 inside writeErrors). The except block misses it, so it propagates as 500.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "NewQuoteModal patient search",
+        "issue": "Typing 'raja' in ha-quote-patient-search yields 0 dropdown options even though the clinic has many Raja Gopal patients. Likely debounce/search-param mismatch between modal and /api/patients query API.",
+        "selector": "[data-testid=\"ha-quote-patient-search\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_ha_transactions.py",
+    "/app/test_reports/pytest/phase3_ha_transactions.xml"
+  ],
+  "action_items": [
+    "Fix ha_procurement.create_grn: catch pymongo.errors.BulkWriteError (or inspect e.details['writeErrors'][0]['code']==11000) in addition to DuplicateKeyError — currently surfaces as HTTP 500 instead of the intended 409 with serial_no in the message.",
+    "Investigate NewQuoteModal patient search: dropdown returns 0 hits even though the /api/patients endpoint clearly has matching records (existing quotations show 'Raja Gopal'). Likely wrong query param name or missing debounce-trigger."
+  ],
+  "critical_code_review_comments": [
+    "ha_sales.create_sale_from_quote allows converting from 'draft' or 'sent' quotations (not only 'accepted'). This is noted as a walk-in convenience in the docstring, but it means the explicit accept → convert flow can be bypassed. Consider surfacing this as a separate flag rather than silent permissiveness.",
+    "ha_sales.cancel_sale does NOT revert quote.status back from 'converted' — explicitly documented and intentional for audit, but make sure UI surfaces 'sale cancelled' on the quote so users don't think the quote is still active.",
+    "ha_quotations._validate_pair requires qty == 1 on each side; multi-pair bundles (e.g. 2 L + 2 R) would fail. Not a bug today but worth a comment.",
+    "BulkWriteError handling missing in ha_procurement.create_grn (root cause of the 500 above).",
+    "Frontend QuotationStudioPage drawer overlay (class flex-1 bg-black/40) intercepts pointer events outside it — backdrop click-to-close works, but programmatic nav-sidebar clicks while drawer open get blocked. Minor UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_ha_transactions.py (new)"
+  ],
+  "success_rate": {
+    "backend": "97.4% (37/38)",
+    "frontend": "90% (Quotations tab + detail drawer + role-gate verified; patient search dropdown issue)"
+  },
+  "test_credentials": "admin@acs.in/admin123, frontdesk@acs.in/frontdesk123, audiologist@acs.in/audio123, accounts@acs.in/accounts123 — all working. Dynamic user_id fetched via /auth/me.",
+  "seed_data_creation": "Tests create their own products/serials per-test. Left behind: several TEST_Brand products, TEST-SN-* serials, QTE-2026-* and SAL-2026-* rows. Non-destructive to the iter14 seed fixtures.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_phase3_ha_transactions.py is now the regression suite for Phase 3. After main agent fixes the BulkWriteError catch in ha_procurement.py, rerun `pytest backend/tests/test_phase3_ha_transactions.py::TestTechDebt::test_unique_serial_index_rejects_colliding_grn_409` to confirm 409 response. Patient search bug is frontend-only and verifiable in /ha/quotations → +New Quote modal.",
+  "rca of the issue": "ha_procurement.py line 352 uses db.serial_items.insert_many([...]) which, on motor/pymongo, surfaces write errors as pymongo.errors.BulkWriteError (a subclass of OperationFailure). The subsequent `except DuplicateKeyError` does NOT catch BulkWriteError — they are siblings, not a chain. Fix: `except (DuplicateKeyError, BulkWriteError) as e:` and pull offending serial via `e.details['writeErrors'][0]['keyValue']['serial_no']`. Reproduce: GRN a serial once, attempt a second GRN with the same serial_no → current code returns 500, expected 409 per Phase 3 contract."
+}
