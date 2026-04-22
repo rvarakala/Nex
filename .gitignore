@@ -73,4 +73,8 @@ credentials.json
 .credentials
 *token.json*
 *credentials.json*
+
+# Sensitive local-only docs (never commit — contain plaintext passwords)
+memory/test_credentials.md
+memory/BETA_TESTERS.md
 frontend/node_modules/.cache/default-development/24.pack
