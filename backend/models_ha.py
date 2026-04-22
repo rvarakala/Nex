@@ -447,6 +447,78 @@ class FittingUpdate(BaseModel):
 class FittingVisitCreate(BaseModel):
     kind: FittingVisitKind = "follow_up"
     notes: Optional[str] = None
+
+
+# ==================== TRIAL (Phase 4.5 — catch-up from user's plan) ====================
+
+TrialStatus = Literal["active", "extended", "converted", "returned", "lost"]
+
+
+class TrialSerial(BaseModel):
+    """One serial unit loaned out on this trial (L+R supported)."""
+    serial_id: str
+    side: Literal["left", "right", "single"] = "single"
+
+
+class Trial(BaseModel):
+    """A take-home trial of one or more HA units.
+    Moves the serial IN_STOCK → TRIAL_OUT; on convert goes → SOLD; on return → IN_STOCK; on lost → DAMAGED."""
+    model_config = ConfigDict(extra="ignore")
+    trial_no: str                                              # TRIAL-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    audiologist_user_id: Optional[str] = None
+    audiologist_name: Optional[str] = None
+    serials: List[TrialSerial] = Field(default_factory=list)
+    status: TrialStatus = "active"
+    start_date: str                                            # YYYY-MM-DD
+    return_date: str                                           # YYYY-MM-DD (expected)
+    actual_return_date: Optional[str] = None                   # YYYY-MM-DD (actual)
+    deposit_amount: float = 0.0
+    accessories_given: List[str] = Field(default_factory=list) # e.g., ["Dome M x4", "Wax-guards x2"]
+    condition_photos: List[str] = Field(default_factory=list)  # URLs / data-URLs (lightweight)
+    notes: Optional[str] = None
+    converted_sale_no: Optional[str] = None                    # if trial converted to sale
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+    closed_at: Optional[str] = None                            # set on converted/returned/lost
+
+
+class TrialCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    audiologist_user_id: Optional[str] = None
+    serials: List[TrialSerial]                                 # at least one required
+    start_date: Optional[str] = None                           # defaults to today
+    return_date: str                                           # required (YYYY-MM-DD)
+    deposit_amount: float = 0.0
+    accessories_given: List[str] = Field(default_factory=list)
+    condition_photos: List[str] = Field(default_factory=list)
+    notes: Optional[str] = None
+
+
+class TrialExtend(BaseModel):
+    return_date: str                                           # new expected return
+    notes: Optional[str] = None
+
+
+class TrialReturn(BaseModel):
+    actual_return_date: Optional[str] = None                   # defaults to today
+    notes: Optional[str] = None
+
+
+class TrialConvert(BaseModel):
+    """Trial → Sale: mints a full Sale at the supplied pricing.
+    Serials transition TRIAL_OUT → SOLD (skipping RESERVED; trial-convert is a direct sale)."""
+    unit_prices: List[float]                                   # one per serial, index-matched
+    discount_pct: float = 0.0                                  # optional uniform discount
+    gst_rate: float = 18.0
+    margin_approval_user_id: Optional[str] = None
+    notes: Optional[str] = None
+
     adjustments: List[FittingAdjustment] = Field(default_factory=list)
     wear_hours_per_day: Optional[float] = None
     comfort_score: Optional[int] = None
