@@ -15,7 +15,10 @@
 | Audiologist | `audiologist@acs.in` | `audio123` |
 | Accounts | `accounts@acs.in` | `accounts123` |
 
-All four users are scoped to `clinic-acs-demo`. The seed is idempotent — passwords are re-synced to the above values on every backend restart.
+All four users are scoped to `clinic-acs-demo` + branch `Mumbai HQ` (primary). The seed is idempotent — passwords are re-synced to the above values on every backend restart.
+
+### Expanded role enum (Phase 1 HA Foundation)
+Valid roles: `super_admin`, `clinic_owner`, `front_desk`, `audiologist`, `accounts`, `inventory_manager`, `technician`. Tests that need a `clinic_owner` / `inventory_manager` / `technician` user must insert one directly via motor (no admin-UI yet).
 
 ## Second Test Clinic (Delhi — for cross-tenant isolation tests)
 - **clinic_id**: `clinic-delhi-test`

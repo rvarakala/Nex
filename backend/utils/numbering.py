@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from pymongo import ReturnDocument
+
 # Each entry: (prefix, width). `prefix` becomes part of the printed number;
 # `width` is the zero-padded counter length. Separator is always `-`.
 # Invoice + MRD stay on their legacy `/` format and are minted elsewhere.
@@ -35,7 +37,7 @@ async def next_number(db, kind: str, clinic_id: str, year: int | None = None) ->
         {"_id": f"{kind}:{clinic_id}:{yr}"},
         {"$inc": {"seq": 1}},
         upsert=True,
-        return_document=True,
+        return_document=ReturnDocument.AFTER,
     )
     seq = (res or {}).get("seq", 1)
     return f"{prefix}-{yr}-{str(seq).zfill(width)}"

@@ -81,6 +81,17 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
   2. **Forensic clinic-mismatch log** — tampered share-tokens (right signing key + wrong clinic_id claim) now emit a structured WARNING: `share_link.clinic_mismatch session_id=... token.clinic_id=... session.clinic_id=... ip=...`. Two branches (session vs. patient clinic mismatch).
   3. **In-memory rate limiter** — new `/app/backend/utils/rate_limit.py` sliding-window limiter, zero new deps. Applied: `/api/reports/shared/{token}` at 20 req / 60s per IP, `/api/queue/public/{clinic_id}` at 120 req / 60s per IP (covers a TV polling every 5s with 6× headroom). Exceeded → 429 + `Retry-After` header. Respects `X-Forwarded-For` from ingress. Fail-open on internal errors.
   4. 27 new + 28 regression = **55/55** backend pytest green (iter 12). Baseline at `/app/backend/tests/test_iter12_security_audit.py`.
+- [Feb 2026] **HA Module — Phase 0 (Architecture Freeze) + Phase 1 (Foundation) (THIS SESSION)**:
+  1. **Phase 0 — architecture frozen** at `/app/memory/HA_MODULE_ARCHITECTURE.md`. 18 entities, 7-role permission matrix, 9-state SerialItem machine with exhaustive transition table, numbering scheme (PO/GRN/TRIAL/JOB/SAL), integration map with existing primitives, 5 code-enforced guardrails.
+  2. **Phase 1 — Foundation shipped**:
+     - New entities: `Branch`, `Vendor` (`/app/backend/models_ha.py`).
+     - New routers: `/api/branches` + `/api/vendors` (full CRUD, role-gated, branch-scoped, soft-delete, primary-branch "exactly one" invariant).
+     - User model extended: `branch_ids: List[str]` + role enum now includes `clinic_owner`, `inventory_manager`, `technician`. `branch_ids` surfaced in `/api/auth/login` and `/api/auth/me`.
+     - `auth.py` additions: `CLINIC_WIDE_ROLES`, `user_can_see_branch()`, `assert_branch_access()`.
+     - New utility: `utils/numbering.py` — `next_number(db, kind, clinic_id)` — atomic year-reset, clinic-scoped counter (uses `ReturnDocument.AFTER` for correctness).
+     - New utility: `utils/ha_states.py` — 9 states + frozen transition table + `transition_serial()` helper that writes append-only `serial_events` audit rows.
+     - Auto-seed: Mumbai HQ branch (clinic-acs-demo) + Delhi branch (clinic-delhi-test) on every boot; 6 existing users backfilled to their clinic's primary branch.
+  3. **35 new + 27 regression = 62/62 backend pytest green** (iter 13). No frontend this phase (intentional; UI starts in Phase 2 when there's an inventory board to render). Baseline at `/app/backend/tests/test_phase1_ha_foundation.py`.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra

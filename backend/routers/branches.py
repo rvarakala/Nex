@@ -72,6 +72,18 @@ async def update_branch(branch_id: str, payload: BranchCreate,
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Branch not found")
+    # Invariant: exactly one primary must remain. Reject demoting the sole primary.
+    if existing.get("is_primary") and not payload.is_primary:
+        other_primaries = await db.branches.count_documents({
+            "clinic_id": user["clinic_id"],
+            "is_primary": True,
+            "branch_id": {"$ne": branch_id},
+        })
+        if other_primaries == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot demote the only primary branch. Promote another branch first.",
+            )
     data = payload.model_dump()
     data["updated_at"] = datetime.utcnow()
     await db.branches.update_one(
