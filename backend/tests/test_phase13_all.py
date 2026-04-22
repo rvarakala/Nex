@@ -82,8 +82,8 @@ class TestAMC:
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["contract_no"].startswith("AMC-")
-        # 12 months * 30 days = 360 days  => 2026-01-01 + 360d = 2026-12-27
-        assert d["amc_expiry_date"] == "2026-12-27", d["amc_expiry_date"]
+        # 12 months (calendar-accurate, dateutil.relativedelta) => 2026-01-01 + 12mo = 2027-01-01
+        assert d["amc_expiry_date"] == "2027-01-01", d["amc_expiry_date"]
         assert d["status"] == "active"
         assert d["price_paid"] == 5500.0
         TestAMC.contract_no = d["contract_no"]

@@ -497,7 +497,14 @@ async def _seed_second_clinic():
     Safe in demo because passwords match the documented convention.
     """
     c2_id = "clinic-delhi-test"
-    if await db.clinics.find_one({"clinic_id": c2_id}):
+    existing = await db.clinics.find_one({"clinic_id": c2_id})
+    if existing:
+        # Back-fill subscription_tier if missing on an existing doc (migration safety).
+        if not existing.get("subscription_tier"):
+            await db.clinics.update_one(
+                {"clinic_id": c2_id},
+                {"$set": {"subscription_tier": "BASIC"}},
+            )
         # Still ensure passwords stay in sync for the Delhi users.
         for u in _DELHI_USERS:
             found = await db.users.find_one({"email": u["email"]})
@@ -518,6 +525,9 @@ async def _seed_second_clinic():
         "phone": "+91-11-00000000",
         "email": "clinic@delhi.test",
         "mrd_prefix": "DEL",
+        # Delhi seeded on BASIC so cross-tenant tier-gate tests are meaningful
+        # (non-super-admin Delhi users hitting /repair, /analytics, etc. → 402).
+        "subscription_tier": "BASIC",
         "created_at": datetime.utcnow(),
     }))
     logger.info(f"Seeded second test clinic: {c2_id}")

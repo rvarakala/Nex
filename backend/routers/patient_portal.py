@@ -83,6 +83,7 @@ async def _ensure_portal_module(db, clinic_id: str):
         raise HTTPException(
             status_code=402,
             detail={"error": "upgrade_required",
+                    "current_tier": tier,
                     "message": "Patient Portal is not enabled for this clinic."},
         )
 

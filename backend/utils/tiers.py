@@ -69,9 +69,11 @@ def has_module_access(tier: str, module: str) -> bool:
 async def resolve_effective_tier(clinic: dict) -> str:
     """Returns the tier *effectively* active right now — honours 30-day Premium
     trial. Does NOT mutate the DB; cron `expire_trials()` flips expired ones
-    to BASIC nightly.
+    to BASIC nightly. Tolerates a missing/None clinic dict — defaults to BASIC.
     """
     from datetime import datetime, timezone
+    if not clinic:
+        return "BASIC"
     tier = clinic.get("subscription_tier") or "BASIC"
     trial_end = clinic.get("trial_ends_at")
     if trial_end:
@@ -102,9 +104,9 @@ def require_tier(*modules: str):
             {"clinic_id": user["clinic_id"]},
             {"_id": 0, "subscription_tier": 1, "trial_ends_at": 1},
         )
-        if not clinic:
-            raise HTTPException(status_code=404, detail="Clinic not found")
-        tier = await resolve_effective_tier(clinic)
+        # If clinic doc is missing, treat as BASIC — return 402 (upgrade_required)
+        # rather than 404, which is semantically the same module-access failure.
+        tier = await resolve_effective_tier(clinic or {})
         for mod in modules:
             if not has_module_access(tier, mod):
                 raise HTTPException(

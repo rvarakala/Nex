@@ -19,6 +19,7 @@ Tier gate: STANDARD + PREMIUM (HA-commerce-adjacent).
 from __future__ import annotations
 
 from datetime import datetime, timezone, date, timedelta
+from dateutil.relativedelta import relativedelta
 from typing import List, Optional, Literal
 from uuid import uuid4
 
@@ -234,8 +235,8 @@ async def create_contract(
         start_d = date.fromisoformat(start)
     except ValueError:
         raise HTTPException(status_code=400, detail="amc_start_date must be YYYY-MM-DD")
-    # simple duration add (approx months → 30 days)
-    expiry_d = start_d + timedelta(days=30 * int(plan.get("duration_months") or 12))
+    # Calendar-accurate anniversary math (Jan 1 + 12 months → Jan 1, not Dec 27)
+    expiry_d = start_d + relativedelta(months=int(plan.get("duration_months") or 12))
 
     serial_no = None
     branch_id = None
