@@ -7,7 +7,8 @@ import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../AuthContext';
 import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Flame, ToggleLeft,
-  LogOut, Search, ShieldCheck,
+  LogOut, Search, ShieldCheck, Headphones, BarChart3, HeartPulse,
+  Megaphone, Bell, FileClock, Settings, Users,
 } from 'lucide-react';
 
 import DashboardPage from './DashboardPage';
@@ -17,22 +18,59 @@ import SubscriptionsPage from './SubscriptionsPage';
 import RevenuePage from './RevenuePage';
 import LeadsPage from './LeadsPage';
 import FeatureFlagsPage from './FeatureFlagsPage';
+import SupportDeskPage from './SupportDeskPage';
+import UsageAnalyticsPage from './UsageAnalyticsPage';
+import SystemHealthPage from './SystemHealthPage';
+import MarketingPage from './MarketingPage';
+import NotificationsPage from './NotificationsPage';
+import AuditLogPage from './AuditLogPage';
+import SettingsPage from './SettingsPage';
+import UsersRolesPage from './UsersRolesPage';
 
-const NAV = [
-  { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, testid: 'nav-admin-dashboard' },
-  { to: '/admin/tenants', label: 'Tenants / Clinics', icon: Building2, testid: 'nav-admin-tenants' },
-  { to: '/admin/subscriptions', label: 'Plans & Pricing', icon: CreditCard, testid: 'nav-admin-plans' },
-  { to: '/admin/revenue', label: 'Revenue', icon: DollarSign, testid: 'nav-admin-revenue' },
-  { to: '/admin/leads', label: 'Leads / Trials', icon: Flame, testid: 'nav-admin-leads' },
-  { to: '/admin/features', label: 'Feature Flags', icon: ToggleLeft, testid: 'nav-admin-features' },
+const NAV_GROUPS = [
+  {
+    label: 'Core',
+    items: [
+      { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, testid: 'nav-admin-dashboard' },
+      { to: '/admin/tenants', label: 'Tenants', icon: Building2, testid: 'nav-admin-tenants' },
+      { to: '/admin/subscriptions', label: 'Plans & Pricing', icon: CreditCard, testid: 'nav-admin-plans' },
+      { to: '/admin/revenue', label: 'Revenue', icon: DollarSign, testid: 'nav-admin-revenue' },
+    ],
+  },
+  {
+    label: 'Growth',
+    items: [
+      { to: '/admin/leads', label: 'Leads / Trials', icon: Flame, testid: 'nav-admin-leads' },
+      { to: '/admin/marketing', label: 'Marketing CRM', icon: Megaphone, testid: 'nav-admin-marketing' },
+      { to: '/admin/features', label: 'Feature Flags', icon: ToggleLeft, testid: 'nav-admin-features' },
+    ],
+  },
+  {
+    label: 'Ops',
+    items: [
+      { to: '/admin/support', label: 'Support Desk', icon: Headphones, testid: 'nav-admin-support' },
+      { to: '/admin/usage', label: 'Usage Analytics', icon: BarChart3, testid: 'nav-admin-usage' },
+      { to: '/admin/system', label: 'System Health', icon: HeartPulse, testid: 'nav-admin-system' },
+    ],
+  },
+  {
+    label: 'Governance',
+    items: [
+      { to: '/admin/notifications', label: 'Notifications', icon: Bell, testid: 'nav-admin-notifications' },
+      { to: '/admin/audit', label: 'Audit Logs', icon: FileClock, testid: 'nav-admin-audit' },
+      { to: '/admin/users', label: 'Users & Roles', icon: Users, testid: 'nav-admin-users' },
+      { to: '/admin/settings', label: 'Settings', icon: Settings, testid: 'nav-admin-settings' },
+    ],
+  },
 ];
 
 export default function AdminPanel() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Only founder + super_admin allowed
-  if (!user || !['founder', 'super_admin'].includes(user.role)) {
+  // Only internal-team roles allowed
+  const allowed = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
+  if (!user || !allowed.includes(user.role)) {
     return <Navigate to="/login" replace />;
   }
 
@@ -52,23 +90,28 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-auto py-3 px-2 space-y-0.5">
-          {NAV.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              data-testid={n.testid}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-md text-[13px] font-medium transition-colors ${
-                  isActive
-                    ? 'bg-indigo-600/20 text-white border-l-2 border-indigo-400'
-                    : 'text-slate-400 hover:bg-slate-900 hover:text-white'
-                }`
-              }
-            >
-              <n.icon size={16} strokeWidth={2} />
-              <span>{n.label}</span>
-            </NavLink>
+        <nav className="flex-1 overflow-auto py-3 px-2 space-y-2">
+          {NAV_GROUPS.map((g) => (
+            <div key={g.label}>
+              <div className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-bold px-3 pt-2 pb-1">{g.label}</div>
+              {g.items.map((n) => (
+                <NavLink
+                  key={n.to}
+                  to={n.to}
+                  data-testid={n.testid}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors ${
+                      isActive
+                        ? 'bg-indigo-600/20 text-white border-l-2 border-indigo-400'
+                        : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                    }`
+                  }
+                >
+                  <n.icon size={14} strokeWidth={2} />
+                  <span>{n.label}</span>
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
@@ -116,7 +159,15 @@ export default function AdminPanel() {
             <Route path="subscriptions" element={<SubscriptionsPage />} />
             <Route path="revenue" element={<RevenuePage />} />
             <Route path="leads" element={<LeadsPage />} />
+            <Route path="marketing" element={<MarketingPage />} />
             <Route path="features" element={<FeatureFlagsPage />} />
+            <Route path="support" element={<SupportDeskPage />} />
+            <Route path="usage" element={<UsageAnalyticsPage />} />
+            <Route path="system" element={<SystemHealthPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="audit" element={<AuditLogPage />} />
+            <Route path="users" element={<UsersRolesPage />} />
+            <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Routes>
         </main>

@@ -1,0 +1,53 @@
+{
+  "summary": "Phase 14B + 14C tested end-to-end. Created /app/backend/tests/test_phase14b_admin_panel.py (39 tests, 33 PASS / 6 FAIL = 84.6%). All 8 new modules in /admin/v2/* (Support Desk, Usage Analytics, System Health, Marketing CRM, Notifications, Audit, Settings, Internal Users + RBAC matrix) work end-to-end including SLA calculation (urgent=2h verified), ticket reply→first_response_at→Resolved flow, incident create/resolve, broadcast→feed delivery to clinic_owner, settings PUT founder-only (sales_manager 403 verified), internal user invite + role validation. Frontend smoke (founder login): /admin/dashboard reached, all 8 new pages (/admin/support, /usage, /system, /marketing, /notifications, /audit, /settings, /users) render with ZERO console errors, sidebar shows 4 groups (Core/Growth/Ops/Governance) with all 15 nav items, FOUNDER role badge correct. Role-based redirects: sales_manager → /admin/dashboard, frontdesk → /frontdesk — both correct.\n\nThe 6 backend failures all share ONE root cause: the LEGACY /app/backend/routers/admin_panel.py (Phase 14A) still uses `ADMIN_ROLES = ('founder', 'super_admin')` via require_roles for every endpoint. The new Phase 14C ROLE_PERMISSIONS matrix in admin_panel_b.py is NOT honored by these older routes. So sales_manager cannot read /admin/v2/leads, finance_manager cannot read /admin/v2/revenue or /admin/v2/subscriptions/plans, product_ops cannot write /admin/v2/feature-flags, read_only cannot read /admin/v2/dashboard or /admin/v2/tenants — directly contradicting the review_request RBAC promises.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/admin/v2/dashboard, /tenants, /leads, /revenue, /subscriptions/plans, /feature-flags/{cid}", "issue": "Legacy admin_panel.py routes use ADMIN_ROLES=('founder','super_admin') only; the new ROLE_PERMISSIONS matrix in admin_panel_b.py is ignored. Result: sales_manager (403 on /leads), finance_manager (403 on /revenue + /subscriptions/plans), product_ops (403 on PUT /feature-flags), read_only (403 on /dashboard + /tenants) — all break the documented RBAC contract from review_request. Fix: replace require_roles(*ADMIN_ROLES) with require_permission('<resource>:read|write') in admin_panel.py, OR have require_roles consult ROLE_PERMISSIONS as a fallback.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/admin/v2/tickets", "issue": "Pydantic validation error returns 422 (default) for invalid category before the handler's HTTPException(400) check is reached when other fields are also invalid. Cosmetic — handler does emit 400 for bad category when other fields valid."},
+      {"endpoint": "GET /api/admin/v2/system/health", "issue": "email/sms/whatsapp gateways always show status='mocked' (expected, MOCKED). Document for UI badge styling."},
+      {"endpoint": "GET /api/admin/v2/marketing/campaigns", "issue": "leads_generated joins on waitlist_signups.source via case-insensitive regex; if a campaign source contains regex metachars it would mis-match. Use $eq with $regex escape or Python pre-escape."},
+      {"endpoint": "GET /api/admin/v2/usage-analytics", "issue": "Heavy N+1 — 6 count_documents per clinic per row. With 6 tenants OK; will scale poorly past ~50 tenants. Consider $facet aggregation."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/support KPI tiles", "issues": ["AVG RESPONSE shows '0h' when there are no replies yet — should show '—' or 'N/A' to differentiate from actual zero."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase14b_admin_panel.py",
+    "/app/test_reports/pytest/phase14b_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Refactor /app/backend/routers/admin_panel.py — replace `require_roles(*ADMIN_ROLES)` on dashboard/tenants/leads/revenue/subscriptions/feature-flags routes with `require_permission('<resource>:<verb>')` using the matrix from admin_panel_b.py. This single change unblocks all 5 internal roles. Alternatively, modify auth.require_roles to fall through to ROLE_PERMISSIONS when role not in the explicit list.",
+    "Optional: when role denies, return 403 with body={'detail': 'Role X lacks permission Y'} for consistency with admin_panel_b (it currently returns 'Requires one of: (...)').",
+    "Optional: cosmetic — show '—' instead of '0h' on empty avg_response_hrs / avg_resolution_hrs."
+  ],
+  "critical_code_review_comments": [
+    "ROLE_PERMISSIONS matrix is well-designed (read/write verbs + wildcards) but only enforced on Phase 14B/C endpoints. Phase 14A endpoints (admin_panel.py) bypass it entirely — the 5 new internal roles are effectively useless on legacy modules. This is the highest-impact bug in this PR.",
+    "admin_panel_b.has_permission() correctly handles wildcards ('*', '*:read', '*:write'). Founder + super_admin bypass at top of require_permission — clean.",
+    "Tickets create/update + SLA timer (2/8/24/72h) implemented per spec. first_response_at and resolved_at correctly set conditionally. Thread append uses $push with $each — correct.",
+    "Settings PUT correctly gates founder/super_admin only with explicit role check (not require_permission) — good defensive choice.",
+    "Notifications target_count is correctly derived from clinics matching the audience filter; in-app feed query uses $or with audience='all' fallback — works for clinic_owners.",
+    "Notification audience='tier' uppercases the filter before matching subscription_tier — but if filter is None it sets q to empty-string match (bug: empty audience_filter on 'tier' will match no clinics silently rather than 400). Add validation.",
+    "Internal user invite uses bcrypt via auth.hash_password — good. Email lowercased before existence check.",
+    "Marketing CAC = budget / converted; division-by-zero guarded. Source matching is case-insensitive regex but unsafe with regex metacharacters in source strings.",
+    "Audit filtered viewer uses regex on actor/action/target — same regex injection risk; for an internal admin tool acceptable.",
+    "System health gateway statuses default to 'mocked' string when collection empty — clean MOCKED indicator; UI must display badge accordingly.",
+    "Incident resolve correctly fails 404 when already-resolved (uses {resolved_at: None} filter)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase14b_admin_panel.py (NEW — 39 tests, 33 pass, 6 fail exposing the legacy-route RBAC gap)"
+  ],
+  "success_rate": {"backend": "84.6% (33/39 phase14b tests; 6 failures all stem from one RBAC bug in legacy admin_panel.py)", "frontend": "100% (founder login, all 8 new pages render, sidebar 15 nav items, role-based redirects for sales_manager + frontdesk verified, 0 console errors)"},
+  "test_credentials": "founder@audinexa.com/founder123, admin@acs.in/admin123, sales@audinexa.com/sales123, support@audinexa.com/support123, finance@audinexa.com/finance123, ops@audinexa.com/ops123, analyst@audinexa.com/analyst123, frontdesk@acs.in/frontdesk123, support@kimshearing.in/demo123. All 5 internal-role seeds were verified present via GET /admin/v2/internal-users.",
+  "seed_data_creation": "Created 1 ticket (urgent, kims-hearing) replied + resolved; 1 ticket (training, support_agt); 1 incident (minor, resolved); 1 marketing campaign (google-ads 50000 budget); 3 notifications (broadcast all + targeted kims + feed test); 1 internal user invite + disable; 1 settings update (brand_name=TEST_BRAND_xxxx, trial_duration_days=21). All test data prefixed TEST_ where possible. The settings change persists — main agent may want to revert via PUT.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_phase14b_admin_panel.py is the new regression suite for Phase 14B+C — 39 tests, ~9s. The 6 RBAC failures are NOT bugs in admin_panel_b.py — they're in the LEGACY admin_panel.py which still hardcodes ADMIN_ROLES=('founder','super_admin'). Once main agent fixes admin_panel.py to honor ROLE_PERMISSIONS, all 6 failures should auto-pass without test changes. test_phase14_admin_panel.py (21 tests, Phase 14A) was NOT re-run this iteration but is unaffected by the new code — re-run for full regression. Frontend was smoke-tested only (page-load + console-error scan); deeper Playwright (drawer interactions, broadcast form submit, RBAC matrix table rendering) is outstanding.",
+  "rca of the issue": "RCA — 6 RBAC test failures: /app/backend/routers/admin_panel.py:51 declares `ADMIN_ROLES = ('founder', 'super_admin')` and every endpoint in that file uses `require_roles(*ADMIN_ROLES)` (lines 74, 238, 289, 339, 359, 371, 383, 439, 474, 499, 545, 570, 631, 653, 704, 730, 755). When the Phase 14C ROLE_PERMISSIONS matrix was added in admin_panel_b.py, the legacy routes were not migrated. So a sales_manager JWT hitting GET /admin/v2/leads gets 403 'Requires one of: (founder, super_admin)' before any matrix check happens. Reproduction: login as sales@audinexa.com → curl GET /api/admin/v2/leads → 403. Mitigation (one of):\n  (A) Replace require_roles in admin_panel.py with require_permission('<resource>:<verb>') from admin_panel_b — preferred.\n  (B) Make auth.require_roles consult ROLE_PERMISSIONS when the user's role isn't in the explicit list (broader change, lower risk to existing routes).\n  (C) Expand ADMIN_ROLES per endpoint (error-prone, defeats the purpose of the matrix)."
+}

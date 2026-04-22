@@ -19,8 +19,7 @@ export default function LoginPage() {
   const [err, setErr] = useState(null);
 
 const roleHome = (role) => {
-  if (role === 'founder') return '/admin/dashboard';
-  if (role === 'super_admin') return '/admin/dashboard';
+  if (['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'].includes(role)) return '/admin/dashboard';
   if (role === 'referral_partner') return '/partner';
   if (role === 'audiologist') return '/test';
   return '/frontdesk';

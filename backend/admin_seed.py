@@ -56,6 +56,38 @@ _SAMPLE_LEADS = [
      "source": "LinkedIn", "notes": "Chose competitor on price."},
 ]
 
+_SAMPLE_CAMPAIGNS = [
+    {"campaign_id": "CAM-SEED-GADS", "name": "Q1 Google Ads — Founder Launch",
+     "source": "Google Ads", "channel": "paid", "budget": 75000.0,
+     "started_at": "2026-01-01", "ended_at": "2026-03-31", "notes": "Awareness campaign."},
+    {"campaign_id": "CAM-SEED-IG", "name": "Instagram Creative Push",
+     "source": "Instagram", "channel": "paid", "budget": 35000.0,
+     "started_at": "2026-02-01", "notes": "Targeting audiologists in metros."},
+    {"campaign_id": "CAM-SEED-PART", "name": "Partner Referral Program",
+     "source": "Partner Referral", "channel": "referral", "budget": 0.0,
+     "started_at": "2026-01-15", "notes": "ENT doctor partner activation."},
+]
+
+_SAMPLE_TICKETS = [
+    {"subject": "Cannot generate GRN", "body": "GRN number skipping sequence.",
+     "category": "Bug", "priority": "high", "contact_email": "support@kimshearing.in",
+     "clinic_id": "tenant-kims-hearing", "status": "Open"},
+    {"subject": "Need WhatsApp template approval help", "body": "MSG91 template rejected.",
+     "category": "Training", "priority": "medium", "contact_email": "hello@soundcare.in",
+     "clinic_id": "tenant-soundcare-hyd", "status": "Pending"},
+    {"subject": "GST invoice formatting", "body": "State code missing.",
+     "category": "Billing", "priority": "low", "contact_email": "admin@entplus.in",
+     "clinic_id": "tenant-ent-plus", "status": "Resolved"},
+]
+
+_INTERNAL_USERS = [
+    ("sales@audinexa.com", "sales_manager", "Asha Sales", "sales123"),
+    ("support@audinexa.com", "support_agent", "Rohit Support", "support123"),
+    ("finance@audinexa.com", "finance_manager", "Priya Finance", "finance123"),
+    ("ops@audinexa.com", "product_ops", "Kiran Ops", "ops123"),
+    ("analyst@audinexa.com", "read_only", "Neha Analyst", "analyst123"),
+]
+
 
 async def seed_admin_panel_demo(db):
     """Idempotent. Safe on every boot."""
@@ -161,3 +193,65 @@ async def seed_admin_panel_demo(db):
             **lead,
             "created_at": now - timedelta(days=2 + (hash(lead["email"]) % 40)),
         }))
+
+    # ---- 5. Internal Audinexa team users (Phase 14C granular RBAC) ----
+    for email, role, name, pw in _INTERNAL_USERS:
+        found = await db.users.find_one({"email": email})
+        if found:
+            # keep pw in sync
+            if not verify_password(pw, found.get("password_hash", "")):
+                await db.users.update_one(
+                    {"email": email},
+                    {"$set": {"password_hash": hash_password(pw), "role": role,
+                              "clinic_id": PLATFORM_CLINIC_ID, "active": True}},
+                )
+            continue
+        await db.users.insert_one(serialize_datetime({
+            "user_id": f"USR-{str(uuid4())[:8].upper()}",
+            "clinic_id": PLATFORM_CLINIC_ID,
+            "email": email,
+            "name": name,
+            "role": role,
+            "active": True,
+            "two_fa_enabled": False,
+            "password_hash": hash_password(pw),
+            "branch_ids": [],
+            "created_at": now,
+        }))
+        logger.info(f"Seeded internal user: {email} ({role})")
+
+    # ---- 6. Sample marketing campaigns ----
+    for c in _SAMPLE_CAMPAIGNS:
+        if await db.marketing_campaigns.find_one({"campaign_id": c["campaign_id"]}):
+            continue
+        await db.marketing_campaigns.insert_one(serialize_datetime({
+            **c,
+            "created_at": now,
+            "created_by": "SEED",
+        }))
+
+    # ---- 7. Sample support tickets ----
+    for t in _SAMPLE_TICKETS:
+        # idempotency: skip if any ticket exists for this clinic+subject
+        if await db.support_tickets.find_one({"clinic_id": t["clinic_id"], "subject": t["subject"]}):
+            continue
+        ts = now - timedelta(days=1 + (hash(t["subject"]) % 5))
+        sla_hrs = {"low": 72, "medium": 24, "high": 8, "urgent": 2}[t["priority"]]
+        doc = {
+            "ticket_id": f"TKT-SEED-{str(uuid4())[:4].upper()}",
+            "clinic_id": t["clinic_id"],
+            "category": t["category"],
+            "priority": t["priority"],
+            "status": t["status"],
+            "subject": t["subject"],
+            "body": t["body"],
+            "contact_email": t["contact_email"],
+            "owner_user_id": None,
+            "thread": [{"at": ts.isoformat(), "author": t["contact_email"], "text": t["body"], "kind": "open"}],
+            "first_response_at": None,
+            "resolved_at": now.isoformat() if t["status"] == "Resolved" else None,
+            "created_by": "SEED",
+            "created_at": ts.isoformat(),
+            "sla_due_at": (ts + timedelta(hours=sla_hrs)).isoformat(),
+        }
+        await db.support_tickets.insert_one(doc)

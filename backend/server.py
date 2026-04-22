@@ -368,6 +368,7 @@ from routers import analytics as analytics_router             # noqa: E402
 from routers import referral_partners as referral_partners_router  # noqa: E402
 from routers import patient_portal as patient_portal_router   # noqa: E402
 from routers import admin_panel as admin_panel_router         # noqa: E402
+from routers import admin_panel_b as admin_panel_b_router     # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -398,6 +399,7 @@ app.include_router(analytics_router.router)
 app.include_router(referral_partners_router.router)
 app.include_router(patient_portal_router.router)
 app.include_router(admin_panel_router.router)
+app.include_router(admin_panel_b_router.router)
 
 app.add_middleware(
     CORSMiddleware,

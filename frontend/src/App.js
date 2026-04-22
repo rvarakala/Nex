@@ -23,10 +23,11 @@ import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
 
 // Post-login redirect by role
+const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
 const PostLoginRedirect = () => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role === 'founder') return <Navigate to="/admin/dashboard" replace />;
+  if (INTERNAL_ADMIN_ROLES.includes(user.role)) return <Navigate to="/admin/dashboard" replace />;
   if (user.role === 'referral_partner') return <Navigate to="/partner" replace />;
   if (user.role === 'audiologist') return <Navigate to="/test" replace />;
   return <Navigate to="/frontdesk" replace />;

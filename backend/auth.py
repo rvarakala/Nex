@@ -22,6 +22,8 @@ VALID_ROLES = {
     "super_admin", "clinic_owner", "front_desk", "audiologist",
     "accounts", "inventory_manager", "technician", "referral_partner",
     "founder",
+    # Phase 14C granular internal-team roles
+    "sales_manager", "support_agent", "finance_manager", "product_ops", "read_only",
 }
 # Roles that see every branch of a clinic; everyone else is branch-scoped.
 CLINIC_WIDE_ROLES = {"super_admin", "clinic_owner", "accounts", "founder"}
