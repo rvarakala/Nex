@@ -10,6 +10,21 @@ from datetime import datetime
 import base64
 from PIL import Image as PILImage
 
+def _safe_dict(d, key):
+    """Return d[key] if it is a dict, else {}. Handles the 'explicit-None' bug where .get(key, {}) returns None."""
+    if not isinstance(d, dict):
+        return {}
+    v = d.get(key)
+    return v if isinstance(v, dict) else {}
+
+
+def _safe_list(d, key):
+    if not isinstance(d, dict):
+        return []
+    v = d.get(key)
+    return v if isinstance(v, list) else []
+
+
 def create_audiogram_report(session_data, patient_data, audiogram_images=None):
     """
     Generate a professional audiological report PDF
@@ -199,8 +214,8 @@ def create_audiogram_report(session_data, patient_data, audiogram_images=None):
         elements.append(Spacer(1, 0.1*inch))
     
     # PTA Results Table
-    right_ear_data = session_data.get('right_ear_audiogram', {})
-    left_ear_data = session_data.get('left_ear_audiogram', {})
+    right_ear_data = _safe_dict(session_data, 'right_ear_audiogram')
+    left_ear_data = _safe_dict(session_data, 'left_ear_audiogram')
     
     pta_table_data = [
         ['Measurement', 'Right Ear', 'Left Ear'],
@@ -208,11 +223,11 @@ def create_audiogram_report(session_data, patient_data, audiogram_images=None):
          f"{right_ear_data.get('pta_3freq', '--')} dB" if right_ear_data.get('pta_3freq') else '--',
          f"{left_ear_data.get('pta_3freq', '--')} dB" if left_ear_data.get('pta_3freq') else '--'],
         ['AC Thresholds', 
-         f"{len(right_ear_data.get('ac_measurements', []))} frequencies tested",
-         f"{len(left_ear_data.get('ac_measurements', []))} frequencies tested"],
+         f"{len(_safe_list(right_ear_data, 'ac_measurements'))} frequencies tested",
+         f"{len(_safe_list(left_ear_data, 'ac_measurements'))} frequencies tested"],
         ['BC Thresholds',
-         f"{len(right_ear_data.get('bc_measurements', []))} frequencies tested",
-         f"{len(left_ear_data.get('bc_measurements', []))} frequencies tested"],
+         f"{len(_safe_list(right_ear_data, 'bc_measurements'))} frequencies tested",
+         f"{len(_safe_list(left_ear_data, 'bc_measurements'))} frequencies tested"],
     ]
     
     pta_table = Table(pta_table_data, colWidths=[2.5*inch, 2.25*inch, 2.25*inch])
@@ -236,8 +251,8 @@ def create_audiogram_report(session_data, patient_data, audiogram_images=None):
     speech_heading = Paragraph("SPEECH AUDIOMETRY", heading_style)
     elements.append(speech_heading)
     
-    right_speech = session_data.get('right_ear_speech', {})
-    left_speech = session_data.get('left_ear_speech', {})
+    right_speech = _safe_dict(session_data, 'right_ear_speech')
+    left_speech = _safe_dict(session_data, 'left_ear_speech')
     
     speech_table_data = [
         ['Test', 'Right Ear', 'Left Ear'],
@@ -280,9 +295,9 @@ def create_audiogram_report(session_data, patient_data, audiogram_images=None):
     right_results_heading = Paragraph("Right Ear", subheading_style)
     elements.append(right_results_heading)
     
-    right_degree = session_data.get('right_ear_degree', 'Not classified')
-    right_type = session_data.get('right_ear_type', 'Not classified')
-    right_config = session_data.get('right_ear_config', 'Not classified')
+    right_degree = session_data.get('right_ear_degree') or 'Not classified'
+    right_type = session_data.get('right_ear_type') or 'Not classified'
+    right_config = session_data.get('right_ear_config') or 'Not classified'
     
     right_results_text = f"<b>Degree:</b> {right_degree.replace('_', ' ').title()}<br/>"
     right_results_text += f"<b>Type:</b> {right_type.replace('_', ' ').title()}<br/>"
@@ -296,9 +311,9 @@ def create_audiogram_report(session_data, patient_data, audiogram_images=None):
     left_results_heading = Paragraph("Left Ear", subheading_style)
     elements.append(left_results_heading)
     
-    left_degree = session_data.get('left_ear_degree', 'Not classified')
-    left_type = session_data.get('left_ear_type', 'Not classified')
-    left_config = session_data.get('left_ear_config', 'Not classified')
+    left_degree = session_data.get('left_ear_degree') or 'Not classified'
+    left_type = session_data.get('left_ear_type') or 'Not classified'
+    left_config = session_data.get('left_ear_config') or 'Not classified'
     
     left_results_text = f"<b>Degree:</b> {left_degree.replace('_', ' ').title()}<br/>"
     left_results_text += f"<b>Type:</b> {left_type.replace('_', ' ').title()}<br/>"

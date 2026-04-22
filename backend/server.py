@@ -985,10 +985,15 @@ async def generate_session_report(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found")
     
-    # Get patient data
+    # Get patient data — if orphaned (patient deleted), use a placeholder so the PDF still renders.
     patient = await db.patients.find_one({"patient_id": session['patient_id']}, {"_id": 0})
     if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
+        patient = {
+            "patient_id": session.get('patient_id', 'UNKNOWN'),
+            "name": session.get('patient_name', 'Unknown Patient'),
+            "age": None, "gender": None, "dob": None, "phone": None,
+            "referring_physician": None,
+        }
     
     try:
         # Generate PDF
