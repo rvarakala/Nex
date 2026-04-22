@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 
 const ROLE_SHORTCUTS = [
+  { label: 'Founder', email: 'founder@audinexa.com', pw: 'founder123' },
   { label: 'Front Desk', email: 'frontdesk@acs.in', pw: 'frontdesk123' },
   { label: 'Audiologist', email: 'audiologist@acs.in', pw: 'audio123' },
   { label: 'Accounts', email: 'accounts@acs.in', pw: 'accounts123' },
@@ -17,11 +18,18 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
+const roleHome = (role) => {
+  if (role === 'founder') return '/admin/dashboard';
+  if (role === 'super_admin') return '/admin/dashboard';
+  if (role === 'referral_partner') return '/partner';
+  if (role === 'audiologist') return '/test';
+  return '/frontdesk';
+};
+
   // Redirect if already authenticated (page reload scenario)
   useEffect(() => {
     if (user) {
-      const target = user.role === 'referral_partner' ? '/partner' : user.role === 'audiologist' ? '/test' : '/frontdesk';
-      navigate(target, { replace: true });
+      navigate(roleHome(user.role), { replace: true });
     }
   }, [user, navigate]);
 
@@ -30,8 +38,7 @@ export default function LoginPage() {
     setBusy(true); setErr(null);
     try {
       const u = await login(email.trim(), password);
-      const target = u.role === 'audiologist' ? '/test' : '/frontdesk';
-      navigate(target, { replace: true });
+      navigate(roleHome(u.role), { replace: true });
     } catch (ex) {
       const d = ex?.response?.data?.detail;
       setErr(typeof d === 'string' ? d : (ex?.message || 'Login failed'));

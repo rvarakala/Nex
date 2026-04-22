@@ -1,0 +1,52 @@
+{
+  "summary": "Phase 14A AUDINEXA Super Admin Panel validated end-to-end. 20/21 backend tests PASS in /app/backend/tests/test_phase14_admin_panel.py covering dashboard KPIs, tenants CRUD + suspend/activate/impersonate/delete (founder-only), plan-override CRUD, manual invoice + mark-paid, revenue rollup, leads pipeline, feature-flags additive semantics, audit log append, role denial for super_admin (DELETE) + front_desk (all admin v2). Frontend smoke: founder login redirects to /admin/dashboard correctly, sidebar shows all 6 nav items, 8 KPI tiles + 5 charts (MRR area, plan pie, signups line, revenue bar, funnel bars) + Recent Signups + Renewals Due tables all render, user badge shows FOUNDER role. Demo seed verified — all 4 demo tenants present, restart-idempotent. 1 test failure exposes a real bug: founder is correctly bypassed in utils/tiers.require_tier but NOT in auth.require_roles, so /api/analytics/diagnosis returns 403 to founder instead of 200 — review_request explicitly demands 'founder should bypass require_tier on every router' which fails because route also uses require_roles.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/analytics/diagnosis (and any route using require_roles without 'founder' in the list)", "issue": "founder gets 403 'Requires one of: (clinic_owner, super_admin, accounts, audiologist)'. auth.py line 112 only auto-allows super_admin; founder is missing from the bypass set. This contradicts the design intent in review_request ('TIER GATE BYPASS: founder should bypass require_tier on every router'). Fix: in /app/backend/auth.py change `if user[\"role\"] not in set(roles) | {\"super_admin\"}` to `if user[\"role\"] not in set(roles) | {\"super_admin\", \"founder\"}`.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/admin/v2/subscriptions/invoices/{id}/mark-paid", "issue": "payment_ref accepted only as query param (not JSON body). UI must send `?payment_ref=xxx`. Document or accept body."},
+      {"endpoint": "GET /api/admin/v2/dashboard", "issue": "trial detection logic only counts a clinic as 'on trial' if subscription_tier == 'BASIC' AND trial_ends_at is set. Tenants whose stored tier is PREMIUM but who are inside a trial window get counted as 'active' not 'trial' — slight cosmetic skew on KPI tile."},
+      {"endpoint": "DELETE /api/admin/v2/tenants/{clinic_id}", "issue": "purges only ~25 listed collections — Phase 13 added ha_amc_plans, ha_amc_contracts, referral_partners, partner_payouts, ha_followups, ha_loaners, ha_trade_ins, ha_subscriptions, patient_otps, patient_appointment_requests, patient_feedback. Some are listed (ha_amc_*, partner_payouts, etc.) but verify the new patient_portal collections (patient_otps, patient_appointment_requests, patient_feedback, waitlist_signups for that clinic) are also wiped or explicitly excluded."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AdminPanel /admin/dashboard charts on first paint", "issues": ["Recharts repeatedly emit 'width(-1) and height(-1) of chart should be greater than 0' warnings on initial mount before parent ResponsiveContainer measures. Charts render correctly post-mount, so cosmetic. Add explicit min-height to ResponsiveContainer wrappers to silence."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase14_admin_panel.py",
+    "/app/test_reports/pytest/phase14_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Add 'founder' to the auto-bypass set in auth.require_roles (auth.py line 112) so founder can hit any role-gated API. Alternatively, make every router include 'founder' in its require_roles list (more error-prone).",
+    "Optional: extend DELETE tenant purge list to include patient_otps, patient_appointment_requests, patient_feedback, waitlist_signups (matching tenant) and any other Phase 13 collections.",
+    "Optional: accept payment_ref via JSON body (not only query) on mark-paid for cleaner UI integration.",
+    "Optional: silence recharts width/height warnings by setting a minHeight on ResponsiveContainer wrappers in DashboardPage.jsx."
+  ],
+  "critical_code_review_comments": [
+    "admin_panel.suspend_tenant / activate_tenant correctly flip BOTH clinics.status AND users.active across the tenant — verified by impersonate test surviving an activate.",
+    "admin_panel.impersonate_tenant mints a fresh JWT via create_access_token with the owner's identity AND the target clinic_id — token correctly opens /api/auth/me for that clinic. Audit log records impersonator. Good.",
+    "admin_panel.delete_tenant correctly gates on _is_founder() and blocks 'clinic-acs-demo' from accidental deletion. But list of purged collections is hard-coded and risks drift as new collections are added; consider iterating over db.list_collection_names() and filtering anything with a clinic_id field.",
+    "admin_seed.seed_admin_panel_demo is properly idempotent (find_one before insert for clinics, users, branches, leads). Re-run on every server boot is safe.",
+    "auth.require_roles only bypasses super_admin — founder is NOT included. This is the root cause of the failed founder-tier-bypass test. utils/tiers.require_tier DOES bypass founder, so the inconsistency must be reconciled.",
+    "admin_panel uses a single `_log_audit` helper consistently across every mutation — clean, append-only, captures actor + IP. Good.",
+    "admin_panel.list_tenants does an N+1 query (per-tenant users/branches/patients/tokens/owner lookup). Fine at 6 tenants but won't scale past ~500 — should batch via $lookup aggregation in a future iteration.",
+    "FeatureFlags PUT correctly upserts; effective_modules computed as base ∪ extra − disabled. Verified via test that adding 'analytics' as extra surfaces in effective_modules. Good.",
+    "TenantInvoiceCreate Pydantic model uses Literal['annual','half_yearly','quarterly'] — strict enum, good.",
+    "admin_panel.dashboard $dateFromString aggregations tolerate malformed created_at values via onError:None — defensive."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase14_admin_panel.py (NEW — 21 tests, 20 pass / 1 fail exposing founder require_roles bug)"
+  ],
+  "success_rate": {"backend": "95% (20/21 phase14 tests pass)", "frontend": "100% (founder login → /admin/dashboard, all 6 nav items + 8 KPIs + 5 charts + 2 tables render)"},
+  "test_credentials": "founder@audinexa.com/founder123 (founder role, scoped to platform clinic 'audinexa-platform'); admin@acs.in/admin123 (super_admin); support@kimshearing.in/demo123 (clinic_owner of seeded KIMS); frontdesk@acs.in/frontdesk123 (used to verify 403 denial).",
+  "seed_data_creation": "During test run: (1) seeded plan-override on STANDARD tier with user_limit=25 + sms_credits=500 + support_level=priority via PUT /subscriptions/plans/STANDARD; (2) created 1 tenant_invoice for tenant-kims-hearing (TIN-...) with notes=TEST_phase14, then marked it paid with ref TEST-REF-001; (3) updated lead rahul@prodigymedical.in stage=Active Trial with notes=TEST_phase14; (4) updated tenant-soundcare-hyd city=TestCity-XXXX; (5) added extra_module 'analytics' to tenant-soundcare-hyd feature flags; (6) DELETED tenant-ent-plus completely (all collections purged). The admin_seed will recreate tenant-ent-plus on next server restart since seed is idempotent.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_phase14_admin_panel.py is the new regression suite for Phase 14A — 21 tests, runs in ~6s. Note: test_delete_allowed_for_founder destroys tenant-ent-plus; for re-run, restart backend so admin_seed re-creates it (or the test will skip-delete a missing tenant and fail at the 200 expectation). After main agent fixes auth.require_roles to add 'founder', re-run only the last test: pytest backend/tests/test_phase14_admin_panel.py::test_founder_bypasses_tier_gates -v. Frontend was smoke-tested only on /admin/dashboard; tabs (Tenants/Plans/Revenue/Leads/Feature Flags) + TenantDetailPage + impersonate-flow UI not exercised end-to-end and could use a deeper Playwright pass.",
+  "rca of the issue": "Founder 403 on /api/analytics/diagnosis — RCA: auth.require_roles factory at /app/backend/auth.py:112 builds the allowed set as `set(roles) | {'super_admin'}` — 'founder' is intentionally excluded. The analytics router declares require_roles('clinic_owner','super_admin','accounts','audiologist') so a founder JWT (role=founder) fails this check before utils/tiers.require_tier (which DOES bypass founder) is even consulted. Reproduction: login as founder@audinexa.com → curl GET /api/analytics/diagnosis with Bearer token → 403 'Requires one of …'. Mitigation: one-line fix in auth.py: change line 112 to `if user['role'] not in set(roles) | {'super_admin', 'founder'}`."
+}

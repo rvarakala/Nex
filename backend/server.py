@@ -165,6 +165,15 @@ async def lifespan(_app: FastAPI):
         await db.patient_appointment_requests.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.patient_feedback.create_index("feedback_id", unique=True)
         await db.patient_feedback.create_index([("clinic_id", 1), ("created_at", -1)])
+        # Admin panel (Phase 14A)
+        await db.tenant_invoices.create_index("invoice_id", unique=True)
+        await db.tenant_invoices.create_index([("clinic_id", 1), ("issued_at", -1)])
+        await db.tenant_invoices.create_index([("status", 1), ("issued_at", -1)])
+        await db.tenant_feature_flags.create_index("clinic_id", unique=True)
+        await db.plan_overrides.create_index("tier", unique=True)
+        await db.admin_audit_logs.create_index([("at", -1)])
+        await db.admin_audit_logs.create_index([("actor_user_id", 1), ("at", -1)])
+        await db.admin_audit_logs.create_index("log_id", unique=True)
         _log.info("MongoDB indexes ensured")
 
         # ---- seed defaults (clinic, users, services) — idempotent ----
@@ -358,6 +367,7 @@ from routers import ha_amc as ha_amc_router                   # noqa: E402
 from routers import analytics as analytics_router             # noqa: E402
 from routers import referral_partners as referral_partners_router  # noqa: E402
 from routers import patient_portal as patient_portal_router   # noqa: E402
+from routers import admin_panel as admin_panel_router         # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -387,6 +397,7 @@ app.include_router(ha_amc_router.router)
 app.include_router(analytics_router.router)
 app.include_router(referral_partners_router.router)
 app.include_router(patient_portal_router.router)
+app.include_router(admin_panel_router.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -487,6 +498,13 @@ async def _seed_defaults():
     # Delhi branch with its own 2 users. Enables end-to-end 403 assertions on
     # patient / report / share-link cross-clinic access.
     await _seed_second_clinic()
+
+    # ---- AUDINEXA Super Admin Panel demo data (founder + 4 demo tenants + leads) ----
+    try:
+        from admin_seed import seed_admin_panel_demo
+        await seed_admin_panel_demo(db)
+    except Exception as e:
+        logger.warning(f"Admin panel seed skipped: {e}")
 
 
 async def _seed_second_clinic():

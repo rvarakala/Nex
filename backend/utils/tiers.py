@@ -98,7 +98,7 @@ def require_tier(*modules: str):
         @router.get(..., dependencies=[Depends(require_tier("repair"))])
     """
     async def _dep(user=Depends(get_current_user), db=Depends(get_db)):
-        if user["role"] == "super_admin":
+        if user["role"] in {"super_admin", "founder"}:
             return user
         clinic = await db.clinics.find_one(
             {"clinic_id": user["clinic_id"]},

@@ -16,7 +16,7 @@ import BillingModule from './modules/billing/BillingModule';
 import TestProceduresModule from './modules/test/TestProceduresModule';
 import HAModule from './modules/ha/HAModule';
 import RepairModule from './modules/repair/RepairModule';
-import AdminClinicsPage from './modules/admin/AdminClinicsPage';
+import AdminPanel from './modules/admin/panel/AdminPanel';
 import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
 import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
@@ -26,6 +26,7 @@ import PatientPortal from './modules/patient/PatientPortal';
 const PostLoginRedirect = () => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'founder') return <Navigate to="/admin/dashboard" replace />;
   if (user.role === 'referral_partner') return <Navigate to="/partner" replace />;
   if (user.role === 'audiologist') return <Navigate to="/test" replace />;
   return <Navigate to="/frontdesk" replace />;
@@ -94,8 +95,8 @@ function App() {
                 <ShelledRoute><ModuleGate module="referral-partners"><ReferralPartnersPage /></ModuleGate></ShelledRoute>
               } />
 
-              {/* SUPER-ADMIN */}
-              <Route path="/admin/clinics" element={<ShelledRoute><AdminClinicsPage /></ShelledRoute>} />
+              {/* SUPER-ADMIN PANEL (founder / super_admin only — own shell) */}
+              <Route path="/admin/*" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

@@ -72,7 +72,7 @@ export const AuthProvider = ({ children }) => {
 
   const hasRole = (...roles) => {
     if (!user) return false;
-    if (user.role === 'super_admin') return true;
+    if (user.role === 'super_admin' || user.role === 'founder') return true;
     return roles.includes(user.role);
   };
 

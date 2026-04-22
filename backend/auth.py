@@ -21,9 +21,10 @@ ACCESS_TOKEN_TTL = timedelta(hours=12)  # front-desk runs all day; 12h is pragma
 VALID_ROLES = {
     "super_admin", "clinic_owner", "front_desk", "audiologist",
     "accounts", "inventory_manager", "technician", "referral_partner",
+    "founder",
 }
 # Roles that see every branch of a clinic; everyone else is branch-scoped.
-CLINIC_WIDE_ROLES = {"super_admin", "clinic_owner", "accounts"}
+CLINIC_WIDE_ROLES = {"super_admin", "clinic_owner", "accounts", "founder"}
 
 
 def _jwt_secret() -> str:
