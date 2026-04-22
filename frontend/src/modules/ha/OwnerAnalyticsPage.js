@@ -15,6 +15,10 @@ export default function OwnerAnalyticsPage() {
   const [ret, setRet] = useState(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
+  const [drill, setDrill] = useState(null);   // { title, params }
+  const [drillRows, setDrillRows] = useState(null);
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
 
   useEffect(() => { (async () => {
     try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); } catch {/*noop*/}
@@ -26,8 +30,15 @@ export default function OwnerAnalyticsPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr('');
     try {
+      const monthsFromRange = (() => {
+        if (!start) return 12;
+        const s = new Date(start);
+        const e = end ? new Date(end) : new Date();
+        const m = Math.max(1, Math.round((e - s) / (30 * 86400000)));
+        return Math.min(m, 36);
+      })();
       const [r1, r2, r3, r4, r5] = await Promise.all([
-        axios.get(`${API}/ha/analytics/revenue`,      { params: { months: 12 } }),
+        axios.get(`${API}/ha/analytics/revenue`,      { params: { months: monthsFromRange } }),
         axios.get(`${API}/ha/analytics/audiologists`, { params: { days: 90 } }),
         axios.get(`${API}/ha/analytics/inventory`),
         axios.get(`${API}/ha/analytics/funnel`,       { params: { days: 90 } }),
@@ -39,9 +50,41 @@ export default function OwnerAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [start, end]);
 
   useEffect(() => { if (canRead) load(); else setLoading(false); }, [canRead, load]);
+
+  const openDrill = async (title, params) => {
+    setDrill({ title });
+    setDrillRows(null);
+    try {
+      const r = await axios.get(`${API}/ha/analytics/sales-drill`, { params });
+      setDrillRows(r.data.rows);
+    } catch {
+      setDrillRows([]);
+    }
+  };
+
+  const exportCsv = async (kind) => {
+    try {
+      const params = {};
+      if (kind === 'sales') {
+        if (start) params.start = start;
+        if (end) params.end = end;
+      } else if (kind === 'revenue') {
+        params.months = 12;
+      }
+      const r = await axios.get(`${API}/ha/analytics/export/${kind}.csv`, { params, responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ha_${kind}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Export failed: ' + (e?.response?.status || 'error'));
+    }
+  };
 
   if (!me) return <div className="p-6 text-slate-400 italic text-sm">Loading session…</div>;
   if (!canRead) return (
@@ -54,14 +97,28 @@ export default function OwnerAnalyticsPage() {
 
   return (
     <div className="p-5 space-y-5" data-testid="ha-analytics-page">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Owner Analytics</h1>
           <p className="text-[11px] text-slate-500 mt-0.5">Revenue, funnel, team performance, inventory health, retention — at a glance.</p>
         </div>
-        <button onClick={load} disabled={loading} className="text-[11px] text-indigo-600 font-semibold hover:underline" data-testid="ha-analytics-refresh">
-          {loading ? 'Refreshing…' : '↻ Refresh'}
-        </button>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="inline-flex items-center gap-1 text-slate-600">
+            From <input type="date" value={start} onChange={(e) => setStart(e.target.value)} data-testid="ha-analytics-start" className="border border-slate-300 rounded px-1 py-0.5 text-xs" />
+          </label>
+          <label className="inline-flex items-center gap-1 text-slate-600">
+            To <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} data-testid="ha-analytics-end" className="border border-slate-300 rounded px-1 py-0.5 text-xs" />
+          </label>
+          {(start || end) && <button onClick={() => { setStart(''); setEnd(''); }} className="text-[10px] text-slate-500 hover:underline" data-testid="ha-analytics-range-clear">Clear</button>}
+          <div className="ml-2 flex items-center gap-1 border-l border-slate-200 pl-2">
+            <button onClick={() => exportCsv('sales')} data-testid="ha-analytics-csv-sales" className="px-2 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 rounded">CSV · Sales</button>
+            <button onClick={() => exportCsv('revenue')} data-testid="ha-analytics-csv-revenue" className="px-2 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 rounded">CSV · Revenue</button>
+            <button onClick={() => exportCsv('inventory')} data-testid="ha-analytics-csv-inventory" className="px-2 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 rounded">CSV · Inventory</button>
+          </div>
+          <button onClick={load} disabled={loading} className="text-[11px] text-indigo-600 font-semibold hover:underline" data-testid="ha-analytics-refresh">
+            {loading ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded" data-testid="ha-analytics-err">{err}</div>}
@@ -77,9 +134,9 @@ export default function OwnerAnalyticsPage() {
       )}
 
       {/* ========== MONTHLY REVENUE ========== */}
-      <Card title="Monthly Revenue" subtitle="Last 12 months · paid + invoiced + reserved (cancelled excluded)" testid="ha-analytics-revenue-card">
+      <Card title="Monthly Revenue" subtitle="Last 12 months · paid + invoiced + reserved (cancelled excluded) · click bar to drill" testid="ha-analytics-revenue-card">
         {!rev ? <Skel /> : rev.monthly.length === 0 ? <Empty label="No sales in window." /> : (
-          <RevenueChart data={rev.monthly} />
+          <RevenueChart data={rev.monthly} onDrill={(m) => openDrill(`Sales in ${m.month}`, { start: `${m.month}-01`, end: nextMonth(m.month) })} />
         )}
       </Card>
 
@@ -95,7 +152,7 @@ export default function OwnerAnalyticsPage() {
                 {(() => {
                   const total = rev.brand_split.reduce((s, b) => s + b.revenue, 0) || 1;
                   return rev.brand_split.map(b => (
-                    <tr key={b.brand} className="border-t border-slate-100" data-testid={`ha-analytics-brand-${b.brand}`}>
+                    <tr key={b.brand} onClick={() => openDrill(`Sales · ${b.brand}`, { brand: b.brand })} className="border-t border-slate-100 hover:bg-indigo-50/50 cursor-pointer" data-testid={`ha-analytics-brand-${b.brand}`}>
                       <td className="py-1 font-semibold">{b.brand}</td>
                       <td className="text-right tabular-nums">{b.units}</td>
                       <td className="text-right tabular-nums font-mono">{fmtINR(b.revenue)}</td>
@@ -122,7 +179,7 @@ export default function OwnerAnalyticsPage() {
               </thead>
               <tbody>
                 {aud.rows.map(r => (
-                  <tr key={r.user_id} className="border-t border-slate-100" data-testid={`ha-analytics-aud-${r.user_id}`}>
+                  <tr key={r.user_id} onClick={() => openDrill(`Sales · ${r.name}`, { user_id: r.user_id })} className="border-t border-slate-100 hover:bg-indigo-50/50 cursor-pointer" data-testid={`ha-analytics-aud-${r.user_id}`}>
                     <td className="py-1">
                       <div className="font-semibold">{r.name}</div>
                       <div className="text-[10px] text-slate-500 uppercase tracking-wide">{r.role}</div>
@@ -192,6 +249,59 @@ export default function OwnerAnalyticsPage() {
           )}
         </Card>
       </div>
+
+      {drill && <DrillModal title={drill.title} rows={drillRows} onClose={() => { setDrill(null); setDrillRows(null); }} />}
+    </div>
+  );
+}
+
+
+function nextMonth(ymStr) {
+  // Given 'YYYY-MM' return the first day of the next month as 'YYYY-MM-DD'
+  const [y, m] = ymStr.split('-').map(Number);
+  const d = new Date(y, m, 1);   // JS month is 0-based, so m here = next month
+  return d.toISOString().slice(0, 10);
+}
+
+
+function DrillModal({ title, rows, onClose }) {
+  const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose} data-testid="ha-analytics-drill-modal">
+      <div className="bg-white rounded-lg shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-bold text-slate-800">{title}</div>
+            <div className="text-[10px] text-slate-500">{rows ? `${rows.length} sale(s)` : 'Loading…'}</div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl">✕</button>
+        </div>
+        <div className="p-4">
+          {!rows ? (
+            <div className="h-32 bg-slate-100 rounded animate-pulse" />
+          ) : rows.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 italic text-xs">No sales match.</div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                <tr><th className="text-left py-1">Sale No</th><th className="text-left">Date</th><th className="text-left">Patient</th><th className="text-right">Lines</th><th className="text-right">Total</th><th className="text-left">Status</th></tr>
+              </thead>
+              <tbody>
+                {rows.map(s => (
+                  <tr key={s.sale_no} className="border-t border-slate-100" data-testid={`ha-analytics-drill-row-${s.sale_no}`}>
+                    <td className="py-1 font-mono font-bold text-indigo-700">{s.sale_no}</td>
+                    <td className="text-slate-500 text-[10px]">{s.created_at?.slice(0, 10)}</td>
+                    <td>{s.patient_name || s.patient_id}</td>
+                    <td className="text-right tabular-nums">{s.lines?.length || 0}</td>
+                    <td className="text-right tabular-nums font-mono font-semibold">{fmt(s.total)}</td>
+                    <td><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s.status === 'paid' ? 'bg-emerald-100 text-emerald-800' : s.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-600'}`}>{s.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -252,19 +362,25 @@ const Empty = ({ label = 'No data yet.' }) => <div className="text-[11px] italic
 
 
 // ============ MINI REVENUE CHART (pure CSS bars) ============
-function RevenueChart({ data }) {
+function RevenueChart({ data, onDrill }) {
   const max = Math.max(...data.map(m => m.revenue), 1);
   return (
     <div className="flex items-end gap-2 h-32 pt-4" data-testid="ha-analytics-revenue-chart">
       {data.map(m => (
-        <div key={m.month} className="flex-1 flex flex-col items-center" title={`${m.month}: ₹${m.revenue.toLocaleString('en-IN')} · ${m.sales_count} sales`}>
+        <button
+          key={m.month}
+          onClick={() => onDrill && onDrill(m)}
+          className="flex-1 flex flex-col items-center cursor-pointer group"
+          title={`${m.month}: ₹${m.revenue.toLocaleString('en-IN')} · ${m.sales_count} sales · click to drill`}
+          data-testid={`ha-analytics-revenue-bar-${m.month}`}
+        >
           <div className="relative w-full flex items-end h-28">
-            <div className="w-full bg-indigo-500 rounded-t hover:bg-indigo-600 transition"
+            <div className="w-full bg-indigo-500 group-hover:bg-indigo-700 rounded-t transition"
                  style={{ height: `${(100 * m.revenue / max).toFixed(1)}%` }} />
           </div>
           <div className="text-[9px] text-slate-500 mt-1 font-mono">{m.month.slice(5)}</div>
           <div className="text-[9px] text-slate-700 font-semibold">{fmtINR(m.revenue).replace('₹', '')}</div>
-        </div>
+        </button>
       ))}
     </div>
   );

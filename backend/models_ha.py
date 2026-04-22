@@ -612,3 +612,65 @@ class SubscriptionDeliver(BaseModel):
     """Mark one delivery; rolls next_due_date forward by cadence_days."""
     delivered_on: Optional[str] = None                         # YYYY-MM-DD (default today)
     note: Optional[str] = None
+
+
+
+# ==================== SERVICE TICKETS (Post-P7 UI catch-up) ====================
+
+TicketKind = Literal["repair", "cleaning", "reprogramming", "warranty_claim", "other"]
+TicketStatus = Literal["open", "in_progress", "resolved", "closed", "cancelled"]
+
+
+class ServiceTicket(BaseModel):
+    """A service/repair job on a HA unit. Moves serial SOLD → SERVICE_IN on create,
+    SERVICE_IN → RETURNED on resolve (back to patient) or → DAMAGED on cancel."""
+    model_config = ConfigDict(extra="ignore")
+    ticket_no: str                                              # JOB-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    patient_mobile: Optional[str] = None
+    serial_id: Optional[str] = None                             # the unit being serviced
+    serial_no: Optional[str] = None
+    kind: TicketKind = "repair"
+    complaint: str
+    status: TicketStatus = "open"
+    technician_user_id: Optional[str] = None
+    technician_name: Optional[str] = None
+    diagnosis: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    cost_to_patient: float = 0.0
+    warranty_covered: bool = False
+    loaner_serial_id: Optional[str] = None                      # if a LOANER was issued
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    closed_at: Optional[str] = None
+
+
+class ServiceTicketCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    serial_id: Optional[str] = None
+    kind: TicketKind = "repair"
+    complaint: str
+    technician_user_id: Optional[str] = None
+    warranty_covered: bool = False
+
+
+class ServiceTicketUpdate(BaseModel):
+    status: Optional[TicketStatus] = None
+    technician_user_id: Optional[str] = None
+    diagnosis: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    cost_to_patient: Optional[float] = None
+    warranty_covered: Optional[bool] = None
+    loaner_serial_id: Optional[str] = None
+
+
+class ServiceTicketResolve(BaseModel):
+    resolution_notes: str
+    cost_to_patient: float = 0.0
+    warranty_covered: bool = False

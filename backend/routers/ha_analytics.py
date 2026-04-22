@@ -16,10 +16,14 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
+import csv
+import io
 
 from auth import require_roles, CLINIC_WIDE_ROLES, get_current_user
 from database import get_db
+from utils.serde import deserialize_datetime
 
 
 router = APIRouter(prefix="/api/ha/analytics")
@@ -412,3 +416,165 @@ async def retention(
         "loyal_repeat_patients": loyal_patients,
         "upgrade_pipeline_size": upgrade_size,
     }
+
+
+# ==================== DRILL-DOWNS ====================
+
+@router.get("/sales-drill")
+async def sales_drill(
+    start: Optional[str] = Query(None, description="YYYY-MM-DD (inclusive)"),
+    end: Optional[str] = Query(None, description="YYYY-MM-DD (exclusive)"),
+    brand: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = 500,
+    user=Depends(require_roles(*READ_ROLES)),
+    db=Depends(get_db),
+):
+    """Return the individual Sale rows behind a dashboard tile — enables
+    drill-down modals from the revenue chart / brand split / team cards."""
+    q: dict = {
+        "clinic_id": user["clinic_id"],
+        "status": {"$nin": ["cancelled", "draft"]},
+    }
+    date_filter: dict = {}
+    if start:
+        date_filter["$gte"] = f"{start}T00:00:00"
+    if end:
+        date_filter["$lt"] = f"{end}T00:00:00"
+    if date_filter:
+        q["created_at"] = date_filter
+    if user_id:
+        q["created_by_user_id"] = user_id
+
+    rows = await db.ha_sales.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+
+    if brand:
+        product_ids = [ln.get("product_id") for r in rows for ln in r.get("lines", [])]
+        prods = {}
+        async for p in db.ha_products.find(
+            {"product_id": {"$in": product_ids}, "clinic_id": user["clinic_id"]},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1},
+        ):
+            prods[p["product_id"]] = p
+        rows = [
+            r for r in rows
+            if any(prods.get(ln.get("product_id"), {}).get("brand") == brand
+                   for ln in r.get("lines", []))
+        ]
+
+    return {"count": len(rows), "rows": [deserialize_datetime(r) for r in rows]}
+
+
+# ==================== CSV EXPORT ====================
+
+def _csv_stream(rows, fieldnames, filename):
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow(r)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export/sales.csv")
+async def export_sales_csv(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    user=Depends(require_roles(*READ_ROLES)),
+    db=Depends(get_db),
+):
+    """Stream all Sale rows in window as CSV. Default: last 12 months."""
+    q: dict = {"clinic_id": user["clinic_id"], "status": {"$nin": ["cancelled", "draft"]}}
+    date_filter: dict = {}
+    if start:
+        date_filter["$gte"] = f"{start}T00:00:00"
+    if end:
+        date_filter["$lt"] = f"{end}T00:00:00"
+    if not date_filter:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+        date_filter["$gte"] = cutoff
+    q["created_at"] = date_filter
+
+    flat = []
+    async for s in db.ha_sales.find(q, {"_id": 0}).sort("created_at", -1):
+        flat.append({
+            "sale_no": s.get("sale_no"),
+            "created_at": s.get("created_at"),
+            "patient_id": s.get("patient_id"),
+            "patient_name": s.get("patient_name"),
+            "branch_id": s.get("branch_id"),
+            "status": s.get("status"),
+            "is_pair": s.get("is_pair"),
+            "subtotal": s.get("subtotal"),
+            "discount_amount": s.get("discount_amount"),
+            "gst_amount": s.get("gst_amount"),
+            "total": s.get("total"),
+            "line_count": len(s.get("lines", [])),
+            "below_floor": bool(s.get("below_floor_lines")),
+            "margin_approver": s.get("margin_approval_user_id"),
+            "created_by": s.get("created_by_user_id"),
+            "quote_no": s.get("quote_no"),
+        })
+
+    fields = ["sale_no", "created_at", "patient_id", "patient_name", "branch_id",
+              "status", "is_pair", "subtotal", "discount_amount", "gst_amount",
+              "total", "line_count", "below_floor", "margin_approver",
+              "created_by", "quote_no"]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return _csv_stream(flat, fields, f"ha_sales_{today}.csv")
+
+
+@router.get("/export/inventory.csv")
+async def export_inventory_csv(
+    user=Depends(require_roles(*READ_ROLES)),
+    db=Depends(get_db),
+):
+    """Stream every HA serial with product metadata (brand/model/tier) + current state."""
+    products = {}
+    async for p in db.ha_products.find(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "product_id": 1, "brand": 1, "model": 1, "tier": 1, "cost": 1, "mrp": 1},
+    ):
+        products[p["product_id"]] = p
+    flat = []
+    async for s in db.serial_items.find({"clinic_id": user["clinic_id"]}, {"_id": 0}).sort("state", 1):
+        p = products.get(s.get("product_id"), {})
+        flat.append({
+            "serial_no": s.get("serial_no"),
+            "product_id": s.get("product_id"),
+            "brand": p.get("brand"),
+            "model": p.get("model"),
+            "tier": p.get("tier"),
+            "state": s.get("state"),
+            "branch_id": s.get("branch_id"),
+            "current_patient_id": s.get("current_patient_id"),
+            "cost": p.get("cost"),
+            "mrp": p.get("mrp"),
+            "warranty_end_date": s.get("warranty_end_date"),
+            "created_at": s.get("created_at"),
+            "updated_at": s.get("updated_at"),
+        })
+    fields = ["serial_no", "product_id", "brand", "model", "tier", "state",
+              "branch_id", "current_patient_id", "cost", "mrp",
+              "warranty_end_date", "created_at", "updated_at"]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return _csv_stream(flat, fields, f"ha_inventory_{today}.csv")
+
+
+@router.get("/export/revenue.csv")
+async def export_revenue_csv(
+    months: int = 12,
+    user=Depends(require_roles(*READ_ROLES)),
+    db=Depends(get_db),
+):
+    """Monthly revenue series as CSV."""
+    data = await revenue(months=months, user=user, db=db)
+    fields = ["month", "revenue", "subtotal", "gst", "discount", "sales_count"]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return _csv_stream(data["monthly"], fields, f"ha_revenue_{today}.csv")
+

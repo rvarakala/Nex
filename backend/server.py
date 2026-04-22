@@ -116,6 +116,11 @@ async def lifespan(_app: FastAPI):
         await db.ha_subscriptions.create_index("subscription_id", unique=True)
         await db.ha_subscriptions.create_index([("clinic_id", 1), ("status", 1), ("next_due_date", 1)])
         await db.ha_subscriptions.create_index([("clinic_id", 1), ("patient_id", 1)])
+        # Service tickets (post-P7 UI catch-up)
+        await db.service_tickets.create_index("ticket_no", unique=True)
+        await db.service_tickets.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.service_tickets.create_index([("clinic_id", 1), ("patient_id", 1)])
+        await db.service_tickets.create_index("serial_id")
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         _log.info("MongoDB indexes ensured")
@@ -273,6 +278,7 @@ from routers import ha_fittings as ha_fittings_router       # noqa: E402
 from routers import ha_trials as ha_trials_router             # noqa: E402
 from routers import ha_crm as ha_crm_router                   # noqa: E402
 from routers import ha_analytics as ha_analytics_router       # noqa: E402
+from routers import ha_service as ha_service_router           # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -292,6 +298,7 @@ app.include_router(ha_fittings_router.router)
 app.include_router(ha_trials_router.router)
 app.include_router(ha_crm_router.router)
 app.include_router(ha_analytics_router.router)
+app.include_router(ha_service_router.router)
 
 app.add_middleware(
     CORSMiddleware,

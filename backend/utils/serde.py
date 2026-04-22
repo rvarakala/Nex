@@ -35,6 +35,8 @@ def deserialize_datetime(obj):
         "return_date", "actual_return_date",
         # HA CRM (Phase 6)
         "due_date", "next_due_date", "last_delivered_at",
+        # Service tickets
+        "resolved_at",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
     }
