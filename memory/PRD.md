@@ -61,6 +61,10 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
   2. **`utils/ist.py`** — extracted `IST`, `ist_today_ymd()`, `ist_day_start_utc(ymd?)`, `ist_next_day_start_utc(ymd?)` out of `server.py` / `closeout.py` / `billing.py` into one shared module. Added `from __future__ import annotations` for py3.9 forward-compat.
   3. **Router split** — new `/app/backend/routers/` package. Extracted close-out endpoints (6) → `routers/closeouts.py` and PDF report endpoint → `routers/reports.py`. Both use `attach_db()` pattern for DI. `server.py` dropped from 1306 → 1153 LOC. Remaining candidate extractions (noted for next session): patients, appointments, tokens/dashboard, auth.
   4. 24/24 backend + 100% frontend (iter 8). Zero regressions, zero console errors.
+- [Feb 2026] **Router finalisation + Clinic Pulse (THIS SESSION)**:
+  1. **P0 blocker fix** — `routers/patients.py`, `routers/appointments.py`, `routers/tokens.py` had been extracted in a prior session but the `app.include_router(...)` calls were never added to `server.py`, leaving `/api/patients`, `/api/appointments`, `/api/dashboard/frontdesk`, `/api/tokens`, `/api/queue/public/{clinic_id}` all returning 404. Mounted all three routers alongside existing closeouts/reports. Routes now use idiomatic `Depends(get_db)` DI throughout.
+  2. **Clinic Pulse mini-tile** — new `/app/frontend/src/modules/frontdesk/ClinicPulse.js` mounted at the top of `DashboardPage.js`. Premium dark gradient card with animated ping dot, today's collections headline, vs-7-day-rolling-avg delta, WoW pill, inline 14-day SVG mini-sparkline, and 5 live chiplets (Walk-ins / Appts / Waiting / Live / Reports) driven from the existing `/api/dashboard/frontdesk` KPI feed. Sparkline colour flips green/rose based on trend direction.
+  3. 22/22 backend pytest + 100% frontend (iter 9). Zero regressions. New regression baseline at `/app/backend/tests/test_iter9_remount.py`.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
