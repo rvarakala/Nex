@@ -293,3 +293,68 @@ async def _seed_defaults():
             logger.info(f"Seeded {inserted} default services for {clinic_id}")
     except Exception as e:
         logger.warning(f"Service seeding skipped: {e}")
+
+    # ---- Second test clinic (for cross-tenant isolation tests) ----
+    # Delhi branch with its own 2 users. Enables end-to-end 403 assertions on
+    # patient / report / share-link cross-clinic access.
+    await _seed_second_clinic()
+
+
+async def _seed_second_clinic():
+    """Idempotently seed a second clinic + 2 users for cross-tenant testing.
+
+    This is a test fixture (not a product feature). It lets test code log in as
+    a Delhi-clinic user and confirm they receive 403 on Mumbai-clinic resources.
+    Safe in demo because passwords match the documented convention.
+    """
+    c2_id = "clinic-delhi-test"
+    if await db.clinics.find_one({"clinic_id": c2_id}):
+        # Still ensure passwords stay in sync for the Delhi users.
+        for u in _DELHI_USERS:
+            found = await db.users.find_one({"email": u["email"]})
+            if found and not verify_password(u["password"], found.get("password_hash", "")):
+                await db.users.update_one(
+                    {"email": u["email"]},
+                    {"$set": {"password_hash": hash_password(u["password"]), "clinic_id": c2_id}},
+                )
+        return
+
+    await db.clinics.insert_one(serialize_datetime({
+        "clinic_id": c2_id,
+        "name": "Delhi Test Branch",
+        "city": "New Delhi",
+        "state": "Delhi",
+        "phone": "+91-11-00000000",
+        "email": "clinic@delhi.test",
+        "mrd_prefix": "DEL",
+        "created_at": datetime.utcnow(),
+    }))
+    logger.info(f"Seeded second test clinic: {c2_id}")
+
+    for u in _DELHI_USERS:
+        if await db.users.find_one({"email": u["email"]}):
+            continue
+        await db.users.insert_one(serialize_datetime({
+            "user_id": f"USR-{str(os.urandom(4).hex()).upper()}",
+            "clinic_id": c2_id,
+            "email": u["email"],
+            "name": u["name"],
+            "role": u["role"],
+            "active": True,
+            "password_hash": hash_password(u["password"]),
+            "created_at": datetime.utcnow(),
+        }))
+        logger.info(f"Seeded user: {u['email']} ({u['role']}) [clinic {c2_id}]")
+
+    try:
+        inserted = await billing_module.seed_default_services(db, c2_id)
+        if inserted:
+            logger.info(f"Seeded {inserted} default services for {c2_id}")
+    except Exception as e:
+        logger.warning(f"Delhi service seeding skipped: {e}")
+
+
+_DELHI_USERS = [
+    {"email": "admin@delhi.test",      "password": "delhiadmin123",     "name": "Delhi Admin",     "role": "super_admin"},
+    {"email": "frontdesk@delhi.test",  "password": "delhifrontdesk123", "name": "Delhi Front Desk","role": "front_desk"},
+]

@@ -1,6 +1,6 @@
 # ACS Audiology Clinic — Test Credentials
 
-## Default Clinic
+## Default Clinic (Mumbai)
 - **clinic_id**: `clinic-acs-demo`
 - **name**: ACS Audiology Clinic
 - **city**: Mumbai / Maharashtra
@@ -16,6 +16,19 @@
 | Accounts | `accounts@acs.in` | `accounts123` |
 
 All four users are scoped to `clinic-acs-demo`. The seed is idempotent — passwords are re-synced to the above values on every backend restart.
+
+## Second Test Clinic (Delhi — for cross-tenant isolation tests)
+- **clinic_id**: `clinic-delhi-test`
+- **name**: Delhi Test Branch
+- **city**: New Delhi / Delhi
+- **MRD prefix**: `DEL`
+
+| Role | Email | Password |
+|---|---|---|
+| Super Admin | `admin@delhi.test` | `delhiadmin123` |
+| Front Desk | `frontdesk@delhi.test` | `delhifrontdesk123` |
+
+Use these to verify 403 responses when a Delhi user tries to access Mumbai resources (patients, sessions, invoices, report PDFs, share-links).
 
 ## Auth Endpoints
 - `POST /api/auth/login` → returns `{access_token, user, clinic}`

@@ -155,8 +155,8 @@ def _sum_invoice(inv: Invoice):
 # --------------- SERVICE CATALOGUE ---------------
 
 @billing_router.get("/billing/services", response_model=List[Service])
-async def list_services(active_only: bool = True, search: Optional[str] = None, user=Depends(get_current_user)):
-    db = _db()
+async def list_services(active_only: bool = True, search: Optional[str] = None,
+                        user=Depends(get_current_user), db=Depends(get_db)):
     q = {"clinic_id": user["clinic_id"]}
     if active_only:
         q["active"] = True
@@ -168,20 +168,20 @@ async def list_services(active_only: bool = True, search: Optional[str] = None, 
 
 
 @billing_router.post("/billing/services", response_model=Service)
-async def create_service(payload: ServiceCreate, user=Depends(get_current_user)):
+async def create_service(payload: ServiceCreate,
+                         user=Depends(get_current_user), db=Depends(get_db)):
     if user["role"] not in {"super_admin", "accounts"}:
         raise HTTPException(status_code=403, detail="Only accounts/admin can manage services")
-    db = _db()
     obj = Service(clinic_id=user["clinic_id"], **payload.model_dump())
     await db.services.insert_one(_serialize(obj.model_dump()))
     return obj
 
 
 @billing_router.put("/billing/services/{service_id}", response_model=Service)
-async def update_service(service_id: str, payload: dict, user=Depends(get_current_user)):
+async def update_service(service_id: str, payload: dict,
+                         user=Depends(get_current_user), db=Depends(get_db)):
     if user["role"] not in {"super_admin", "accounts"}:
         raise HTTPException(status_code=403, detail="Only accounts/admin can manage services")
-    db = _db()
     existing = await db.services.find_one({"service_id": service_id, "clinic_id": user["clinic_id"]})
     if not existing:
         raise HTTPException(status_code=404, detail="Service not found")
@@ -193,10 +193,10 @@ async def update_service(service_id: str, payload: dict, user=Depends(get_curren
 
 
 @billing_router.delete("/billing/services/{service_id}")
-async def deactivate_service(service_id: str, user=Depends(get_current_user)):
+async def deactivate_service(service_id: str,
+                             user=Depends(get_current_user), db=Depends(get_db)):
     if user["role"] not in {"super_admin", "accounts"}:
         raise HTTPException(status_code=403, detail="Only accounts/admin can manage services")
-    db = _db()
     res = await db.services.update_one(
         {"service_id": service_id, "clinic_id": user["clinic_id"]},
         {"$set": {"active": False}},
@@ -209,8 +209,8 @@ async def deactivate_service(service_id: str, user=Depends(get_current_user)):
 # --------------- INVOICES ---------------
 
 @billing_router.post("/billing/invoices", response_model=Invoice)
-async def create_invoice(payload: InvoiceCreate, user=Depends(get_current_user)):
-    db = _db()
+async def create_invoice(payload: InvoiceCreate,
+                         user=Depends(get_current_user), db=Depends(get_db)):
     clinic_id = user["clinic_id"]
 
     # Validate + hydrate patient
@@ -292,8 +292,8 @@ async def list_invoices(
     search: Optional[str] = None,
     limit: int = 200,
     user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
-    db = _db()
     q: dict = {"clinic_id": user["clinic_id"]}
     if status:
         q["status"] = status
@@ -314,8 +314,8 @@ async def list_invoices(
 
 
 @billing_router.get("/billing/invoices/{invoice_id}", response_model=Invoice)
-async def get_invoice(invoice_id: str, user=Depends(get_current_user)):
-    db = _db()
+async def get_invoice(invoice_id: str,
+                      user=Depends(get_current_user), db=Depends(get_db)):
     inv = await db.invoices.find_one({"invoice_id": invoice_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -323,8 +323,8 @@ async def get_invoice(invoice_id: str, user=Depends(get_current_user)):
 
 
 @billing_router.post("/billing/invoices/{invoice_id}/payments", response_model=Invoice)
-async def add_payment(invoice_id: str, payload: PaymentCreate, user=Depends(get_current_user)):
-    db = _db()
+async def add_payment(invoice_id: str, payload: PaymentCreate,
+                      user=Depends(get_current_user), db=Depends(get_db)):
     inv_doc = await db.invoices.find_one({"invoice_id": invoice_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
     if not inv_doc:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -361,10 +361,10 @@ async def add_payment(invoice_id: str, payload: PaymentCreate, user=Depends(get_
 
 
 @billing_router.post("/billing/invoices/{invoice_id}/cancel", response_model=Invoice)
-async def cancel_invoice(invoice_id: str, payload: dict, user=Depends(get_current_user)):
+async def cancel_invoice(invoice_id: str, payload: dict,
+                         user=Depends(get_current_user), db=Depends(get_db)):
     if user["role"] not in {"super_admin", "accounts"}:
         raise HTTPException(status_code=403, detail="Only accounts/admin can cancel invoices")
-    db = _db()
     inv = await db.invoices.find_one({"invoice_id": invoice_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -386,9 +386,9 @@ async def cancel_invoice(invoice_id: str, payload: dict, user=Depends(get_curren
 # --------------- DAILY COLLECTIONS SUMMARY ---------------
 
 @billing_router.get("/billing/collections")
-async def collections_summary(date: Optional[str] = None, user=Depends(get_current_user)):
+async def collections_summary(date: Optional[str] = None,
+                              user=Depends(get_current_user), db=Depends(get_db)):
     """Daily collections broken down by payment method for the given date (YYYY-MM-DD) or today."""
-    db = _db()
     day = date or datetime.now(IST).strftime("%Y-%m-%d")
     q = {
         "clinic_id": user["clinic_id"],
@@ -413,10 +413,9 @@ async def collections_summary(date: Optional[str] = None, user=Depends(get_curre
 # --------------- REPORT HANDOVER ---------------
 
 @billing_router.get("/billing/pending-reports")
-async def pending_reports(user=Depends(get_current_user)):
+async def pending_reports(user=Depends(get_current_user), db=Depends(get_db)):
     """Completed test sessions that still need to be printed/handed over.
     A session is 'pending handover' if: finalised OR completed AND no ReportDelivery logged."""
-    db = _db()
     clinic_id = user["clinic_id"]
 
     # Collect all test_sessions for this clinic
@@ -464,9 +463,9 @@ async def pending_reports(user=Depends(get_current_user)):
 
 
 @billing_router.post("/billing/report-deliveries", response_model=ReportDelivery)
-async def record_delivery(payload: dict, user=Depends(get_current_user)):
+async def record_delivery(payload: dict,
+                          user=Depends(get_current_user), db=Depends(get_db)):
     """Body: {session_id, channel, invoice_id?, recipient?, notes?}"""
-    db = _db()
     session_id = payload.get("session_id")
     channel = payload.get("channel")
     if not session_id or channel not in {"print", "whatsapp", "email", "in_person"}:
@@ -500,28 +499,13 @@ async def list_deliveries(
     patient_id: Optional[str] = None,
     limit: int = 200,
     user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
-    db = _db()
     q: dict = {"clinic_id": user["clinic_id"]}
     if session_id: q["session_id"] = session_id
     if patient_id: q["patient_id"] = patient_id
     rows = await db.report_deliveries.find(q, {"_id": 0}).sort("delivered_at", -1).to_list(limit)
     return [_deserialize(r) for r in rows]
-
-
-# --------------- DB accessor (backed by shared database.get_db) ---------------
-
-def _db():
-    """Return the shared MongoDB handle. Kept as a thin alias over database.get_db()
-    so existing endpoint bodies (`db = _db()`) continue to work while we converge
-    on FastAPI `Depends(get_db)` DI for new code."""
-    return get_db()
-
-
-def attach_db(_database):
-    """Deprecated — kept for backward compatibility. get_db() now sources the
-    handle directly from `database.py`."""
-    return None
 
 
 # --------------- Default service catalogue seeding ---------------

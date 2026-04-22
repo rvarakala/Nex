@@ -54,46 +54,59 @@ export default function ReportHandoverPage() {
   async function shareWhatsAppWithPdf(session, recipient) {
     const digits = recipient.replace(/\D/g, '');
     const mobile = digits.length === 10 ? `91${digits}` : digits;
-    const msg = `Hi ${session.patient_name || ''}, your audiology report from ${session.test_date ? new Date(session.test_date).toLocaleDateString('en-IN') : 'your visit'} is attached. Please contact us if you have any questions.`;
+    const visitDate = session.test_date ? new Date(session.test_date).toLocaleDateString('en-IN') : 'your visit';
+    const msgBase = `Hi ${session.patient_name || ''}, your audiology report from ${visitDate} is ready.`;
 
+    // Probe once: can this browser natively share File objects via WhatsApp?
+    // (Android Chrome / iOS Safari 15+). If yes, attach the real PDF.
+    // If no (desktop Chrome/Firefox/etc.), mint a signed short-link and embed it
+    // directly in the message body — patient taps the link, gets the PDF, no
+    // manual attach step required.
     let pdfFile = null;
     try {
       const r = await axios.get(`${API}/reports/${session.session_id}/pdf`, { responseType: 'blob' });
       pdfFile = new File([r.data], `audiogram-${session.session_id}.pdf`, { type: 'application/pdf' });
     } catch {
-      // If PDF generation fails, still open wa.me with the text so front-desk can type a note.
-      window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(msg)}`, '_blank');
-      return;
+      // Silent — we'll still try the share-link path below.
     }
 
-    // Web Share API with files (Android Chrome, iOS Safari 15+). This surfaces a native share sheet
-    // that includes WhatsApp and actually attaches the PDF. Desktop browsers without Level 2 support
-    // fall through to the download+deep-link path.
-    const canShareFiles = navigator.canShare && navigator.canShare({ files: [pdfFile] });
+    const canShareFiles = pdfFile && navigator.canShare && navigator.canShare({ files: [pdfFile] });
     if (canShareFiles && navigator.share) {
       try {
         await navigator.share({
           files: [pdfFile],
-          text: msg,
+          text: `${msgBase} Please let us know if you have any questions.`,
           title: 'Audiology Report',
         });
         return;
       } catch (err) {
-        // User cancelled → that's fine, don't fall back.
         if (err?.name === 'AbortError') return;
-        // Any other error → fall through to download + deep-link.
+        // Fall through to share-link path.
       }
     }
 
-    // Fallback: trigger a download of the PDF, then open wa.me so the user can manually attach it.
-    const url = URL.createObjectURL(pdfFile);
-    const a = document.createElement('a');
-    a.href = url; a.download = pdfFile.name;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
-    const notice = `${msg}\n\n(Note: your browser does not support direct PDF sharing. The PDF has been downloaded — please attach it in the WhatsApp chat that just opened.)`;
-    window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(notice)}`, '_blank');
+    // Desktop / non-share-capable path: mint a signed share URL and embed it.
+    let shareUrl = null;
+    try {
+      const resp = await axios.post(`${API}/reports/${session.session_id}/share-link`, { ttl_hours: 168 });
+      shareUrl = `${process.env.REACT_APP_BACKEND_URL}${resp.data.path}`;
+    } catch {
+      // Share-link mint failed → last-ditch fallback: download + prompt to attach manually.
+      if (pdfFile) {
+        const url = URL.createObjectURL(pdfFile);
+        const a = document.createElement('a');
+        a.href = url; a.download = pdfFile.name;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      }
+      const notice = `${msgBase}\n\n(Please attach the downloaded PDF to this chat.)`;
+      window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(notice)}`, '_blank');
+      return;
+    }
+
+    const body = `${msgBase}\n\nView / download the report (expires in 7 days):\n${shareUrl}\n\nPlease let us know if you have any questions.`;
+    window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(body)}`, '_blank');
   }
 
   return (
