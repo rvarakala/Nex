@@ -20,11 +20,14 @@ All four users are scoped to `clinic-acs-demo` + branch `Mumbai HQ` (primary). T
 ### Expanded role enum (Phase 1 HA Foundation + Phase 13-14)
 Valid roles: `super_admin`, `clinic_owner`, `front_desk`, `audiologist`, `accounts`, `inventory_manager`, `technician`, `referral_partner`, `founder`. `super_admin` and `founder` bypass every `require_roles` + `require_tier` check.
 
-## AUDINEXA Super Admin Panel (Phase 14A — Founder Command Centre)
-- **Founder login**: `founder@audinexa.com` / `founder123` → lands on `/admin/dashboard`
-  - Scoped to virtual platform clinic `audinexa-platform`
-  - Only role allowed to DELETE tenants (audit-logged)
-- **Super Admin**: `admin@acs.in` / `admin123` — also lands on `/admin/dashboard` but cannot delete tenants
+## AUDINEXA Super Admin Panel — Internal Team (Phase 14A/B/C)
+- **Founder**: `founder@audinexa.com` / `founder123` — full access + delete-tenant
+- **Super Admin**: `admin@acs.in` / `admin123` — all admin except delete-tenant
+- **Sales Manager**: `sales@audinexa.com` / `sales123` — leads/marketing/revenue:read
+- **Support Agent**: `support@audinexa.com` / `support123` — tickets/impersonate/system:read
+- **Finance Manager**: `finance@audinexa.com` / `finance123` — revenue/invoices/subscriptions
+- **Product Ops**: `ops@audinexa.com` / `ops123` — features/usage/notifications
+- **Read Only Analyst**: `analyst@audinexa.com` / `analyst123` — all read, no write
 
 ### Seeded demo tenants (for Admin Panel screenshots)
 | Clinic | Tier | Owner email | Password |

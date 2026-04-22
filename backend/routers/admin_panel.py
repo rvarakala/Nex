@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from auth import (
-    get_current_user, require_roles, hash_password, create_access_token,
+    get_current_user, hash_password, create_access_token,
     VALID_ROLES,
 )
 from database import get_db
@@ -49,7 +49,8 @@ def _is_founder(user: dict) -> bool:
     return user.get("role") == "founder"
 
 
-ADMIN_ROLES = ("founder", "super_admin")
+# Role gating for all routes is done via utils.rbac.require_permission(...)
+# using the shared ROLE_PERMISSIONS matrix (Phase 14C).
 
 
 async def _log_audit(db, user: dict, action: str, target: str, before: dict | None = None, after: dict | None = None, request: Request | None = None):
