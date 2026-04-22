@@ -57,49 +57,53 @@ export default function ReportHandoverPage() {
     const visitDate = session.test_date ? new Date(session.test_date).toLocaleDateString('en-IN') : 'your visit';
     const msgBase = `Hi ${session.patient_name || ''}, your audiology report from ${visitDate} is ready.`;
 
-    // Probe once: can this browser natively share File objects via WhatsApp?
-    // (Android Chrome / iOS Safari 15+). If yes, attach the real PDF.
-    // If no (desktop Chrome/Firefox/etc.), mint a signed short-link and embed it
-    // directly in the message body — patient taps the link, gets the PDF, no
-    // manual attach step required.
-    let pdfFile = null;
-    try {
-      const r = await axios.get(`${API}/reports/${session.session_id}/pdf`, { responseType: 'blob' });
-      pdfFile = new File([r.data], `audiogram-${session.session_id}.pdf`, { type: 'application/pdf' });
-    } catch {
-      // Silent — we'll still try the share-link path below.
-    }
+    // Desktop browsers have no `navigator.canShare` OR it returns false for files.
+    // Skip the wasteful PDF-blob fetch there (can be ~100KB) and go straight to
+    // the share-link deep-link. Only mobile / Web-Share-Level-2-capable browsers
+    // fetch the PDF and attempt a native file share.
+    const canMaybeShareFiles = typeof navigator !== 'undefined' && !!navigator.canShare && !!navigator.share;
 
-    const canShareFiles = pdfFile && navigator.canShare && navigator.canShare({ files: [pdfFile] });
-    if (canShareFiles && navigator.share) {
+    if (canMaybeShareFiles) {
+      let pdfFile = null;
       try {
-        await navigator.share({
-          files: [pdfFile],
-          text: `${msgBase} Please let us know if you have any questions.`,
-          title: 'Audiology Report',
-        });
-        return;
-      } catch (err) {
-        if (err?.name === 'AbortError') return;
-        // Fall through to share-link path.
+        const r = await axios.get(`${API}/reports/${session.session_id}/pdf`, { responseType: 'blob' });
+        pdfFile = new File([r.data], `audiogram-${session.session_id}.pdf`, { type: 'application/pdf' });
+      } catch {
+        // Silent — fall through to share-link path below.
+      }
+      if (pdfFile && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            text: `${msgBase} Please let us know if you have any questions.`,
+            title: 'Audiology Report',
+          });
+          return;
+        } catch (err) {
+          if (err?.name === 'AbortError') return;
+          // Fall through to share-link path.
+        }
       }
     }
 
-    // Desktop / non-share-capable path: mint a signed share URL and embed it.
+    // Desktop / non-share-capable path: mint a signed share URL and embed it
+    // directly in the wa.me message body. No download, no manual-attach step.
     let shareUrl = null;
     try {
       const resp = await axios.post(`${API}/reports/${session.session_id}/share-link`, { ttl_hours: 168 });
       shareUrl = `${process.env.REACT_APP_BACKEND_URL}${resp.data.path}`;
     } catch {
-      // Share-link mint failed → last-ditch fallback: download + prompt to attach manually.
-      if (pdfFile) {
-        const url = URL.createObjectURL(pdfFile);
+      // Last-ditch fallback (kept defensive for offline/locked-down environments):
+      // trigger a download so the user can attach manually, then open wa.me.
+      try {
+        const r = await axios.get(`${API}/reports/${session.session_id}/pdf`, { responseType: 'blob' });
+        const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
         const a = document.createElement('a');
-        a.href = url; a.download = pdfFile.name;
+        a.href = url; a.download = `audiogram-${session.session_id}.pdf`;
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 3000);
-      }
+      } catch { /* swallow — front-desk still gets a wa.me tab */ }
       const notice = `${msgBase}\n\n(Please attach the downloaded PDF to this chat.)`;
       window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(notice)}`, '_blank');
       return;
