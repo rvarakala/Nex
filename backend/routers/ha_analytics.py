@@ -459,6 +459,113 @@ async def retention(
     }
 
 
+# ==================== SERVICE REVENUE & WARRANTY BURDEN ====================
+
+@router.get("/service-revenue")
+async def service_revenue(
+    days: int = 90,
+    user=Depends(require_roles(*READ_ROLES)),
+    db=Depends(get_db),
+):
+    """Revenue + warranty burden from service_tickets in window.
+
+    * paid_revenue      — sum(cost_to_patient) from tickets NOT warranty-covered
+    * warranty_burden   — count of warranty-covered tickets (implied cost)
+    * by_kind           — paid_revenue + warranty_burden + ticket_count per kind
+    * by_technician     — paid_revenue + ticket_count per technician
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    base_match = {
+        "clinic_id": user["clinic_id"],
+        "status": {"$in": ["resolved", "closed"]},
+        "resolved_at": {"$gte": cutoff},
+    }
+
+    # Top-line totals
+    totals = {"paid_revenue": 0.0, "warranty_tickets": 0, "total_tickets": 0}
+    async for row in db.service_tickets.aggregate([
+        {"$match": base_match},
+        {"$group": {
+            "_id": None,
+            "paid_revenue": {"$sum": {"$cond": [
+                {"$eq": [{"$ifNull": ["$warranty_covered", False]}, True]}, 0, "$cost_to_patient",
+            ]}},
+            "warranty_tickets": {"$sum": {"$cond": [
+                {"$eq": [{"$ifNull": ["$warranty_covered", False]}, True]}, 1, 0,
+            ]}},
+            "total_tickets": {"$sum": 1},
+        }},
+    ]):
+        totals = {
+            "paid_revenue": round(float(row.get("paid_revenue") or 0), 2),
+            "warranty_tickets": row.get("warranty_tickets", 0),
+            "total_tickets": row.get("total_tickets", 0),
+        }
+
+    # By kind
+    by_kind = []
+    async for row in db.service_tickets.aggregate([
+        {"$match": base_match},
+        {"$group": {
+            "_id": "$kind",
+            "paid_revenue": {"$sum": {"$cond": [
+                {"$eq": [{"$ifNull": ["$warranty_covered", False]}, True]}, 0, "$cost_to_patient",
+            ]}},
+            "warranty_tickets": {"$sum": {"$cond": [
+                {"$eq": [{"$ifNull": ["$warranty_covered", False]}, True]}, 1, 0,
+            ]}},
+            "ticket_count": {"$sum": 1},
+        }},
+        {"$sort": {"paid_revenue": -1}},
+    ]):
+        by_kind.append({
+            "kind": row["_id"] or "(unknown)",
+            "paid_revenue": round(float(row.get("paid_revenue") or 0), 2),
+            "warranty_tickets": row.get("warranty_tickets", 0),
+            "ticket_count": row.get("ticket_count", 0),
+        })
+
+    # By technician
+    user_rows = {}
+    async for u in db.users.find(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "user_id": 1, "name": 1, "role": 1},
+    ):
+        user_rows[u["user_id"]] = u
+    by_tech = []
+    async for row in db.service_tickets.aggregate([
+        {"$match": {**base_match, "technician_user_id": {"$ne": None}}},
+        {"$group": {
+            "_id": "$technician_user_id",
+            "paid_revenue": {"$sum": {"$cond": [
+                {"$eq": [{"$ifNull": ["$warranty_covered", False]}, True]}, 0, "$cost_to_patient",
+            ]}},
+            "warranty_tickets": {"$sum": {"$cond": [
+                {"$eq": [{"$ifNull": ["$warranty_covered", False]}, True]}, 1, 0,
+            ]}},
+            "ticket_count": {"$sum": 1},
+        }},
+        {"$sort": {"paid_revenue": -1}},
+    ]):
+        u = user_rows.get(row["_id"], {})
+        by_tech.append({
+            "user_id": row["_id"],
+            "name": u.get("name") or row["_id"],
+            "role": u.get("role") or "(unknown)",
+            "paid_revenue": round(float(row.get("paid_revenue") or 0), 2),
+            "warranty_tickets": row.get("warranty_tickets", 0),
+            "ticket_count": row.get("ticket_count", 0),
+        })
+
+    return {
+        "window_days": days,
+        "totals": totals,
+        "by_kind": by_kind,
+        "by_technician": by_tech,
+    }
+
+
+
 # ==================== DRILL-DOWNS ====================
 
 @router.get("/sales-drill")

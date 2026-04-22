@@ -33,6 +33,8 @@ def deserialize_datetime(obj):
         "first_fit_at", "completed_at", "measured_at", "at",
         # HA Trials (Phase 4.5)
         "return_date", "actual_return_date",
+        # HA Loaners
+        "issued_on", "expected_return_date",
         # HA CRM (Phase 6)
         "due_date", "next_due_date", "last_delivered_at",
         # Service tickets

@@ -670,6 +670,53 @@ class ServiceTicketUpdate(BaseModel):
     loaner_serial_id: Optional[str] = None
 
 
+# ==================== LOANER ALLOCATIONS ====================
+
+LoanerStatus = Literal["active", "returned", "converted_to_sale", "damaged"]
+
+
+class Loaner(BaseModel):
+    """A temporary loan of an IN_STOCK HA unit to a patient while their own
+    unit is in service. Moves serial IN_STOCK → LOANER → IN_STOCK on return."""
+    model_config = ConfigDict(extra="ignore")
+    loaner_id: str = Field(default_factory=lambda: f"LN-{str(uuid4())[:8].upper()}")
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    patient_mobile: Optional[str] = None
+    serial_id: str
+    serial_no: Optional[str] = None
+    service_ticket_no: Optional[str] = None                    # linked service ticket
+    status: LoanerStatus = "active"
+    issued_on: str                                             # YYYY-MM-DD
+    expected_return_date: str                                  # YYYY-MM-DD
+    actual_return_date: Optional[str] = None                   # YYYY-MM-DD
+    deposit_amount: float = 0.0
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+    closed_at: Optional[str] = None
+
+
+class LoanerCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    serial_id: str
+    expected_return_date: str
+    service_ticket_no: Optional[str] = None
+    deposit_amount: float = 0.0
+    notes: Optional[str] = None
+
+
+class LoanerReturn(BaseModel):
+    actual_return_date: Optional[str] = None
+    damaged: bool = False                                      # if True → serial → DAMAGED
+    notes: Optional[str] = None
+
+
+
 class ServiceTicketResolve(BaseModel):
     resolution_notes: str
     cost_to_patient: float = 0.0

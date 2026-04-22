@@ -13,6 +13,7 @@ export default function OwnerAnalyticsPage() {
   const [inv, setInv] = useState(null);
   const [fun, setFun] = useState(null);
   const [ret, setRet] = useState(null);
+  const [srev, setSrev] = useState(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const [drill, setDrill] = useState(null);   // { title, params }
@@ -37,14 +38,15 @@ export default function OwnerAnalyticsPage() {
         const m = Math.max(1, Math.round((e - s) / (30 * 86400000)));
         return Math.min(m, 36);
       })();
-      const [r1, r2, r3, r4, r5] = await Promise.all([
+      const [r1, r2, r3, r4, r5, r6] = await Promise.all([
         axios.get(`${API}/ha/analytics/revenue`,      { params: { months: monthsFromRange } }),
         axios.get(`${API}/ha/analytics/audiologists`, { params: { days: 90 } }),
         axios.get(`${API}/ha/analytics/inventory`),
         axios.get(`${API}/ha/analytics/funnel`,       { params: { days: 90 } }),
         axios.get(`${API}/ha/analytics/retention`),
+        axios.get(`${API}/ha/analytics/service-revenue`, { params: { days: 90 } }),
       ]);
-      setRev(r1.data); setAud(r2.data); setInv(r3.data); setFun(r4.data); setRet(r5.data);
+      setRev(r1.data); setAud(r2.data); setInv(r3.data); setFun(r4.data); setRet(r5.data); setSrev(r6.data);
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Failed to load analytics');
     } finally {
@@ -286,6 +288,9 @@ export default function OwnerAnalyticsPage() {
         })()}
       </Card>
 
+      {/* ========== SERVICE REVENUE & WARRANTY BURDEN ========== */}
+      {srev && <ServiceRevenueCard data={srev} />}
+
       {drill && <DrillModal title={drill.title} rows={drillRows} onClose={() => { setDrill(null); setDrillRows(null); }} />}
     </div>
   );
@@ -410,6 +415,66 @@ const BigMetric = ({ label, value, tone = 'slate', hint, testid }) => {
 
 const Skel = () => <div className="h-24 rounded bg-slate-100 animate-pulse" />;
 const Empty = ({ label = 'No data yet.' }) => <div className="text-[11px] italic text-slate-400 py-4 text-center">{label}</div>;
+
+
+// ============ MINI REVENUE CHART (pure CSS bars) ============
+function RevenueChart({ data, onDrill }) {
+  const max = Math.max(...data.map(m => m.revenue), 1);
+  return (
+    <div className="flex items-end gap-2 h-32 pt-4" data-testid="ha-analytics-revenue-chart">
+      {data.map(m => (
+        <button
+          key={m.month}
+          onClick={() => onDrill && onDrill(m)}
+          className="flex-1 flex flex-col items-center cursor-pointer group"
+          title={`${m.month}: ₹${m.revenue.toLocaleString('en-IN')} · ${m.sales_count} sales · click to drill`}
+          data-testid={`ha-analytics-revenue-bar-${m.month}`}
+        >
+          <div className="relative w-full flex items-end h-28">
+            <div className="w-full bg-indigo-500 group-hover:bg-indigo-700 rounded-t transition"
+                 style={{ height: `${(100 * m.revenue / max).toFixed(1)}%` }} />
+          </div>
+          <div className="text-[9px] text-slate-500 mt-1 font-mono">{m.month.slice(5)}</div>
+          <div className="text-[9px] text-slate-700 font-semibold">{fmtINR(m.revenue).replace('₹', '')}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+
+// ============ FUNNEL (horizontal bars) ============
+function FunnelView({ data }) {
+  const { stages, rates, avg_trial_to_convert_days } = data;
+  const steps = [
+    ['Consultations', stages.consultations, null],
+    ['Quotations',    stages.quotations,    rates.quote_per_consult_pct],
+    ['Trials issued', stages.trials_issued, rates.trial_per_quote_pct],
+    ['Converted',     stages.trials_converted, rates.convert_per_trial_pct],
+    ['Sales (total)', stages.sales_total,   null],
+    ['Sales paid',    stages.sales_paid,    rates.paid_per_sale_pct],
+  ];
+  const max = Math.max(...steps.map(s => s[1]), 1);
+  return (
+    <div className="space-y-1" data-testid="ha-analytics-funnel">
+      {steps.map(([label, value, rate]) => (
+        <div key={label} className="flex items-center gap-2 text-xs">
+          <div className="w-32 text-slate-700">{label}</div>
+          <div className="flex-1 h-5 bg-slate-100 rounded relative">
+            <div className="absolute inset-y-0 left-0 bg-indigo-500 rounded" style={{ width: `${(100 * value / max).toFixed(0)}%` }} />
+            <div className="absolute inset-0 flex items-center px-2 text-[10px] font-bold text-slate-800 tabular-nums">{value}</div>
+          </div>
+          <div className="w-16 text-right text-[10px] text-slate-500 font-semibold">{rate != null ? fmtPct(rate) : ''}</div>
+        </div>
+      ))}
+      <div className="pt-2 text-[10px] text-slate-500">
+        Avg trial-to-convert: <b className="text-slate-800">{avg_trial_to_convert_days != null ? `${avg_trial_to_convert_days} days` : '—'}</b>
+        {' · '}Trials returned: <b className="text-slate-800">{stages.trials_returned}</b>
+        {' · '}Trials lost: <b className="text-rose-700">{stages.trials_lost}</b>
+      </div>
+    </div>
+  );
+}
 
 
 // ============ MINI REVENUE CHART (pure CSS bars) ============
