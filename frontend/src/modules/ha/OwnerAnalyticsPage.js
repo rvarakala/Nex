@@ -171,11 +171,11 @@ export default function OwnerAnalyticsPage() {
         </Card>
 
         {/* ========== AUDIOLOGIST PERFORMANCE ========== */}
-        <Card title="Team Performance" subtitle="Last 90 days · sales · below-floor · WA follow-ups" testid="ha-analytics-team-card">
+        <Card title="Team Performance" subtitle="Last 90 days · sales · below-floor · WA response rate" testid="ha-analytics-team-card">
           {!aud ? <Skel /> : aud.rows.length === 0 ? <Empty /> : (
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase tracking-wider text-slate-500">
-                <tr><th className="text-left py-1">Name</th><th className="text-right">Sales</th><th className="text-right">Revenue</th><th className="text-right">Below-Floor</th><th className="text-right">WA sent</th></tr>
+                <tr><th className="text-left py-1">Name</th><th className="text-right">Sales</th><th className="text-right">Revenue</th><th className="text-right">Below-Floor</th><th className="text-right">WA Response</th></tr>
               </thead>
               <tbody>
                 {aud.rows.map(r => (
@@ -191,7 +191,9 @@ export default function OwnerAnalyticsPage() {
                         {fmtPct(r.below_floor_pct)}
                       </span>
                     </td>
-                    <td className="text-right tabular-nums text-indigo-700 font-semibold">{r.wa_sends}</td>
+                    <td className="text-right">
+                      <ResponseRateBar sends={r.wa_sends} done={r.wa_done} pct={r.response_rate_pct} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -250,7 +252,56 @@ export default function OwnerAnalyticsPage() {
         </Card>
       </div>
 
+      {/* ========== WA RESPONSE RATE ========== */}
+      <Card title="Response Rate per Audiologist" subtitle="Follow-ups sent → marked done · last 90 days · patient-reply proxy" testid="ha-analytics-response-card">
+        {!aud ? <Skel /> : (() => {
+          const senders = aud.rows.filter(r => r.wa_sends > 0);
+          if (senders.length === 0) return <Empty label="No follow-ups sent in window." />;
+          senders.sort((a, b) => b.wa_sends - a.wa_sends);
+          return (
+            <div className="space-y-2">
+              {senders.map(r => (
+                <div key={r.user_id} className="flex items-center gap-3" data-testid={`ha-analytics-response-${r.user_id}`}>
+                  <div className="w-36 truncate">
+                    <div className="text-xs font-semibold text-slate-800">{r.name}</div>
+                    <div className="text-[9px] text-slate-500 uppercase tracking-wide">{r.role}</div>
+                  </div>
+                  <div className="flex-1 h-4 bg-slate-100 rounded relative overflow-hidden" title={`${r.wa_done} done of ${r.wa_sends} sent`}>
+                    <div className={`absolute inset-y-0 left-0 rounded transition ${r.response_rate_pct >= 50 ? 'bg-emerald-500' : r.response_rate_pct >= 25 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                         style={{ width: `${Math.min(100, r.response_rate_pct)}%` }} />
+                    <div className="absolute inset-0 flex items-center px-2 text-[10px] font-bold text-slate-800">
+                      {fmtPct(r.response_rate_pct)}
+                    </div>
+                  </div>
+                  <div className="w-28 text-right text-[10px] text-slate-500">
+                    <span className="font-bold text-emerald-700">{r.wa_done}</span> done · <span className="font-bold text-indigo-700">{r.wa_sends}</span> sent
+                  </div>
+                </div>
+              ))}
+              <div className="pt-2 mt-2 border-t border-slate-100 text-[10px] text-slate-500 italic">
+                Bar colour: <span className="text-emerald-700 font-bold">≥50% green</span> · <span className="text-amber-700 font-bold">25-49% amber</span> · <span className="text-rose-700 font-bold">&lt;25% rose</span>. Low rates usually mean the follow-up message needs rewriting, or patients aren't replying in time.
+              </div>
+            </div>
+          );
+        })()}
+      </Card>
+
       {drill && <DrillModal title={drill.title} rows={drillRows} onClose={() => { setDrill(null); setDrillRows(null); }} />}
+    </div>
+  );
+}
+
+
+function ResponseRateBar({ sends, done, pct }) {
+  if (!sends) return <span className="text-[10px] text-slate-400">—</span>;
+  const color = pct >= 50 ? 'bg-emerald-500' : pct >= 25 ? 'bg-amber-500' : 'bg-rose-500';
+  return (
+    <div className="inline-flex items-center gap-1.5 min-w-[110px] justify-end" title={`${done} done of ${sends} sent`}>
+      <div className="w-14 h-1.5 bg-slate-200 rounded">
+        <div className={`h-1.5 rounded ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+      <span className={`text-[10px] font-bold tabular-nums ${pct >= 50 ? 'text-emerald-700' : pct >= 25 ? 'text-amber-700' : 'text-rose-700'}`}>{pct.toFixed(0)}%</span>
+      <span className="text-[9px] text-slate-400">({done}/{sends})</span>
     </div>
   );
 }

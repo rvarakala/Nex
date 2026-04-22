@@ -155,6 +155,13 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
   5. **Date-range picker** on Owner Analytics header (From/To) — recomputes the revenue window dynamically.
   6. **CSV export** — three streaming endpoints: `/ha/analytics/export/{sales,revenue,inventory}.csv`. Each auto-downloads a timestamped CSV. Role-gated (clinic_owner / super_admin / accounts only).
   7. **31/31 backend pytest green** (iter 20). Covers lifecycle, role gates, CSV content-type + headers, drill date-range filter. Combined total = **199/199** across P3–P7 + this session. Baseline at `/app/backend/tests/test_phase8_service_and_drilldown.py`.
+- [Feb 2026] **Response Rate per Audiologist tile (THIS SESSION — P6 lead-in delivered)**:
+  1. **Backend** — extended `GET /ha/analytics/audiologists` to compute `wa_sends`, `wa_done`, `response_rate_pct` per user via a single $unwind+$group over `ha_followups.sent_channels`. Surfaces actors (front-desk / technicians) who send follow-ups but don't post sales — previously invisible in team perf.
+  2. **Frontend** — two integrations on Owner Analytics:
+     - Inline `ResponseRateBar` in the Team Performance table ("WA Response" column).
+     - New standalone **"Response Rate per Audiologist"** card below the dashboard — full-width horizontal bars colored green/amber/rose at 50% / 25% thresholds, with `done/sent` legend and a coaching tip.
+  3. **2/2 backend pytest green** (iter 21) — validates field presence, done ≤ sends invariant, formula consistency, accounts-role exclusion. Baseline at `/app/backend/tests/test_phase9_response_rate.py`.
+  4. Screenshot-verified: Super Admin 100% (1/1), Front Desk 0% (0/5) — instantly surfaces coaching gaps.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra

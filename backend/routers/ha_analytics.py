@@ -180,21 +180,62 @@ async def audiologists(
             "paid_conversion_pct": round(100 * (row.get("paid_count", 0) / max(row["sales_count"], 1)), 1),
         })
 
-    # WhatsApp follow-up engagement (who's actually reaching out to patients)
-    wa_rows = {}
+    # WhatsApp follow-up engagement (who's actually reaching out to patients).
+    # Three slices per audiologist:
+    #   wa_sends    : total sends in window
+    #   wa_done     : of those sends, how many follow-ups ended up 'done' (patient engaged)
+    #   response_rate_pct = 100 * wa_done / wa_sends (patient-reply proxy)
+    wa_sends = {}
+    wa_done = {}
     async for row in db.ha_followups.aggregate([
         {"$match": {"clinic_id": user["clinic_id"]}},
         {"$unwind": "$sent_channels"},
         {"$match": {"sent_channels.sent_at": {"$gte": cutoff}}},
         {"$group": {
-            "_id": "$sent_channels.actor_user_id",
-            "sends": {"$sum": 1},
+            "_id": {
+                "actor": "$sent_channels.actor_user_id",
+                "status": "$status",
+            },
+            "n": {"$sum": 1},
         }},
     ]):
-        wa_rows[row["_id"]] = row["sends"]
+        actor = row["_id"]["actor"]
+        wa_sends[actor] = wa_sends.get(actor, 0) + row["n"]
+        if row["_id"]["status"] == "done":
+            wa_done[actor] = wa_done.get(actor, 0) + row["n"]
 
     for r in rows:
-        r["wa_sends"] = wa_rows.get(r["user_id"], 0)
+        sends = wa_sends.get(r["user_id"], 0)
+        done = wa_done.get(r["user_id"], 0)
+        r["wa_sends"] = sends
+        r["wa_done"] = done
+        r["response_rate_pct"] = round(100 * done / sends, 1) if sends else 0.0
+
+    # Also surface actors who sent follow-ups but haven't posted a Sale — they
+    # wouldn't otherwise appear in `rows`. This catches front-desk / technicians
+    # doing reach-out work.
+    existing_ids = {r["user_id"] for r in rows}
+    for actor_id, sends in wa_sends.items():
+        if actor_id in existing_ids or not actor_id:
+            continue
+        u = user_rows.get(actor_id, {})
+        if u.get("role") == "accounts":
+            continue
+        done = wa_done.get(actor_id, 0)
+        rows.append({
+            "user_id": actor_id,
+            "name": u.get("name") or actor_id,
+            "role": u.get("role") or "(unknown)",
+            "sales_count": 0,
+            "revenue": 0.0,
+            "below_floor_count": 0,
+            "paid_count": 0,
+            "below_floor_pct": 0.0,
+            "paid_conversion_pct": 0.0,
+            "wa_sends": sends,
+            "wa_done": done,
+            "response_rate_pct": round(100 * done / sends, 1) if sends else 0.0,
+        })
 
     return {"window_days": days, "rows": rows}
 
