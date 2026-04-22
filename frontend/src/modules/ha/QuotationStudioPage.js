@@ -108,11 +108,20 @@ function NewQuoteModal({ onClose, onCreated }) {
 
   useEffect(() => {
     if (!patientSearch || patientSearch.length < 2) { setPatients([]); return; }
+    let cancelled = false;
     const h = setTimeout(async () => {
-      const r = await axios.get(`${API}/patients`, { params: { search: patientSearch, limit: 10 } });
-      setPatients(r.data);
-    }, 250);
-    return () => clearTimeout(h);
+      try {
+        const r = await axios.get(`${API}/patients`, { params: { search: patientSearch, limit: 10 } });
+        if (!cancelled) setPatients(Array.isArray(r.data) ? r.data : []);
+      } catch (err) {
+        if (!cancelled) {
+          setPatients([]);
+          // eslint-disable-next-line no-console
+          console.warn('patient search failed', err?.response?.status, err?.response?.data);
+        }
+      }
+    }, 200);
+    return () => { cancelled = true; clearTimeout(h); };
   }, [patientSearch]);
 
   const productById = useMemo(() => Object.fromEntries(products.map(p => [p.product_id, p])), [products]);

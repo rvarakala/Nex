@@ -16,7 +16,7 @@ from typing import List, Optional
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
@@ -349,13 +349,25 @@ async def create_grn(
 
     if serial_docs:
         try:
-            await db.serial_items.insert_many(serial_docs)
-        except DuplicateKeyError as e:
+            await db.serial_items.insert_many(serial_docs, ordered=True)
+        except (DuplicateKeyError, BulkWriteError) as e:
             # Unique index (clinic_id, serial_no) rejected at least one serial.
-            # Extract the offending value from the error detail if possible.
+            # Motor's insert_many surfaces write errors via BulkWriteError; a
+            # single-doc path could raise DuplicateKeyError. Handle both.
+            bad_serial = "(unknown)"
+            details = getattr(e, "details", {}) or {}
+            # BulkWriteError nests the offending key under writeErrors[0]
+            write_errors = details.get("writeErrors") or []
+            if write_errors:
+                bad_serial = (
+                    write_errors[0].get("keyValue", {}).get("serial_no")
+                    or bad_serial
+                )
+            else:
+                bad_serial = details.get("keyValue", {}).get("serial_no") or bad_serial
             raise HTTPException(
                 status_code=409,
-                detail=f"Serial already on record in this clinic: {e.details.get('keyValue', {}).get('serial_no', '(unknown)')}",
+                detail=f"Serial already on record in this clinic: {bad_serial}",
             )
     if serial_event_docs:
         await db.serial_events.insert_many(serial_event_docs)
