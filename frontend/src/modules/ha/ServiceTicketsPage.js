@@ -1,15 +1,33 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import AudinexaPipelineDrawer from '../repair/AudinexaPipelineDrawer';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 const STATUS_STYLE = {
+  // Legacy
   open:        'bg-amber-100 text-amber-800',
   in_progress: 'bg-blue-100 text-blue-800',
   resolved:    'bg-emerald-100 text-emerald-800',
   closed:      'bg-slate-200 text-slate-600',
   cancelled:   'bg-rose-100 text-rose-800',
+  // AUDINEXA
+  RECEIVED:             'bg-slate-100 text-slate-800',
+  INSPECTED:            'bg-blue-100 text-blue-800',
+  AWAITING_DISPATCH:    'bg-amber-100 text-amber-800',
+  DISPATCHED:           'bg-orange-100 text-orange-800',
+  IN_TRANSIT:           'bg-orange-100 text-orange-800',
+  DELIVERED_TO_COMPANY: 'bg-indigo-100 text-indigo-800',
+  ESTIMATE_PENDING:     'bg-amber-200 text-amber-900',
+  CLIENT_APPROVED:      'bg-emerald-100 text-emerald-800',
+  CLIENT_REJECTED:      'bg-rose-100 text-rose-800',
+  REPAIR_IN_PROGRESS:   'bg-indigo-100 text-indigo-800',
+  RETURN_SHIPPED:       'bg-orange-100 text-orange-800',
+  READY_FOR_PICKUP:     'bg-emerald-100 text-emerald-800',
+  DELIVERED_TO_CLIENT:  'bg-emerald-200 text-emerald-900 font-bold',
+  CLOSED:               'bg-slate-200 text-slate-600',
+  CANCELLED:            'bg-rose-100 text-rose-800',
 };
 
 const KIND_LABEL = {
@@ -113,7 +131,7 @@ export default function ServiceTicketsPage() {
       </div>
 
       {creating && <NewTicketModal onClose={() => setCreating(false)} onCreated={(t) => { setCreating(false); load(); setOpenNo(t.ticket_no); }} />}
-      {openNo && <TicketDetailDrawer ticketNo={openNo} onClose={() => setOpenNo(null)} onChanged={load} canMutate={canMutate} />}
+      {openNo && <AudinexaPipelineDrawer ticketNo={openNo} onClose={() => setOpenNo(null)} onChanged={load} />}
     </div>
   );
 }

@@ -628,7 +628,19 @@ class SubscriptionDeliver(BaseModel):
 # ==================== SERVICE TICKETS (Post-P7 UI catch-up) ====================
 
 TicketKind = Literal["repair", "cleaning", "reprogramming", "warranty_claim", "other"]
-TicketStatus = Literal["open", "in_progress", "resolved", "closed", "cancelled"]
+# Phase 12.A — AUDINEXA 13-state pipeline (legacy 4-state values preserved
+# in the Literal for backward-compat on-read; new code writes only the
+# uppercase pipeline values).
+TicketStatus = Literal[
+    # Legacy (pre-Phase-12.A) — still accepted on reads/writes until all tickets migrate
+    "open", "in_progress", "resolved", "closed", "cancelled",
+    # AUDINEXA v2 — full 15-state pipeline (including CANCELLED + CLOSED terminals)
+    "RECEIVED", "INSPECTED", "AWAITING_DISPATCH",
+    "DISPATCHED", "IN_TRANSIT", "DELIVERED_TO_COMPANY",
+    "ESTIMATE_PENDING", "CLIENT_APPROVED", "CLIENT_REJECTED",
+    "REPAIR_IN_PROGRESS", "RETURN_SHIPPED", "READY_FOR_PICKUP",
+    "DELIVERED_TO_CLIENT", "CLOSED", "CANCELLED",
+]
 
 
 class ServiceTicket(BaseModel):
@@ -658,6 +670,115 @@ class ServiceTicket(BaseModel):
     updated_at: Optional[str] = None
     resolved_at: Optional[str] = None
     closed_at: Optional[str] = None
+    # Phase 12.A — fine-grained AUDINEXA timestamps
+    dispatched_at: Optional[str] = None
+    delivered_to_company_at: Optional[str] = None
+    estimate_received_at: Optional[str] = None
+    client_decided_at: Optional[str] = None
+    return_shipped_at: Optional[str] = None
+    ready_at: Optional[str] = None
+    delivered_to_client_at: Optional[str] = None
+    # Cross-refs to new collections (Phase 12.B)
+    outbound_shipment_id: Optional[str] = None
+    inbound_shipment_id: Optional[str] = None
+    estimate_id: Optional[str] = None
+    approval_id: Optional[str] = None
+    vendor_id: Optional[str] = None                             # company service centre
+
+
+# ==================== COURIERS · ESTIMATES · APPROVALS (Phase 12.B) ====================
+
+ShipmentDirection = Literal["OUTBOUND", "INBOUND"]
+ShipmentStatus = Literal["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED",
+                          "EXCEPTION", "CANCELLED"]
+ApprovalDecision = Literal["PENDING", "APPROVED", "REJECTED"]
+
+
+class CourierShipment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    shipment_id: str                                            # CSH-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    ticket_no: str
+    direction: ShipmentDirection
+    courier_partner: str                                        # Bluedart, DTDC, Delhivery, Custom
+    awb_number: str
+    dispatch_date: Optional[str] = None
+    eta_date: Optional[str] = None
+    from_address: Optional[str] = None
+    to_address: Optional[str] = None
+    recipient_name: Optional[str] = None
+    status: ShipmentStatus = "BOOKED"
+    exception_note: Optional[str] = None
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+    delivered_at: Optional[str] = None
+
+
+class CourierShipmentCreate(BaseModel):
+    ticket_no: str
+    direction: ShipmentDirection
+    courier_partner: str
+    awb_number: str
+    dispatch_date: Optional[str] = None
+    eta_date: Optional[str] = None
+    from_address: Optional[str] = None
+    to_address: Optional[str] = None
+    recipient_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CourierStatusPayload(BaseModel):
+    to_status: ShipmentStatus
+    exception_note: Optional[str] = None
+
+
+class ServiceEstimate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    estimate_id: str                                            # EST-YYYY-NNNN
+    clinic_id: str
+    ticket_no: str
+    vendor_id: Optional[str] = None
+    vendor_name: Optional[str] = None
+    received_on: str                                            # ISO date
+    warranty_covered: bool = False
+    amount: float = 0.0                                         # ₹0 if warranty
+    repair_notes: Optional[str] = None
+    eta_days: Optional[int] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ServiceEstimateCreate(BaseModel):
+    ticket_no: str
+    vendor_id: Optional[str] = None
+    vendor_name: Optional[str] = None
+    received_on: Optional[str] = None                           # defaults to today
+    warranty_covered: bool = False
+    amount: float = 0.0
+    repair_notes: Optional[str] = None
+    eta_days: Optional[int] = None
+
+
+class CustomerApproval(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    approval_id: str                                            # APR-YYYY-NNNN
+    clinic_id: str
+    ticket_no: str
+    estimate_id: str
+    decision: ApprovalDecision = "PENDING"
+    decided_by_user_id: Optional[str] = None                    # front-desk who logged it
+    decided_by_name: Optional[str] = None
+    decided_at: Optional[str] = None
+    notes: Optional[str] = None                                 # reason if rejected
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CustomerApprovalPayload(BaseModel):
+    decision: ApprovalDecision                                  # APPROVED|REJECTED
+    notes: Optional[str] = None
 
 
 class ServiceTicketCreate(BaseModel):

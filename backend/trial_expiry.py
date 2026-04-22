@@ -1,0 +1,40 @@
+"""Phase 12.0 — nightly trial-expiry scanner.
+
+Runs daily at 02:00 IST. For every clinic whose stored tier is PREMIUM/STANDARD
+via trial (`trial_ends_at` is now in the past), flip it down to the default
+`post_trial_tier` ("BASIC") and clear `trial_ends_at`.
+
+The frontend will detect the change on next page load via `/api/subscription/my`
+and the ModuleGate lock screens will surface immediately.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+
+log = logging.getLogger("trial_expiry")
+
+
+async def run_trial_expiry_scan(db, post_trial_tier: str = "BASIC") -> int:
+    """Returns count of clinics flipped. Idempotent — safe to run any time."""
+    now = datetime.now(timezone.utc)
+    flipped = 0
+    async for c in db.clinics.find(
+        {"trial_ends_at": {"$lte": now}},
+        {"_id": 0, "clinic_id": 1, "trial_ends_at": 1, "subscription_tier": 1},
+    ):
+        await db.clinics.update_one(
+            {"clinic_id": c["clinic_id"]},
+            {"$set": {"subscription_tier": post_trial_tier,
+                      "trial_expired_at": now,
+                      "tier_auto_downgraded_from_trial": True},
+             "$unset": {"trial_ends_at": ""}},
+        )
+        flipped += 1
+        log.info(
+            "Trial expired for %s — flipped %s → %s",
+            c["clinic_id"], c.get("subscription_tier") or "?", post_trial_tier,
+        )
+    if flipped:
+        log.info("Trial-expiry scan: %d clinic(s) downgraded", flipped)
+    return flipped

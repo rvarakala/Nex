@@ -25,6 +25,9 @@ _FORMATS: dict[str, tuple[str, int]] = {
     "sale":   ("SAL",    4),
     "qte":    ("QTE",    4),
     "tradein": ("TI",    4),
+    "courier": ("CSH",   4),
+    "estimate": ("EST",  4),
+    "approval": ("APR",  4),
 }
 
 

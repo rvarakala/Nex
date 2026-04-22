@@ -41,6 +41,12 @@ def deserialize_datetime(obj):
         "resolved_at",
         # HA Trade-ins (Phase 10.5)
         "accepted_at", "applied_at", "rejected_at",
+        # AUDINEXA Service (Phase 12.A + 12.B)
+        "dispatched_at", "delivered_to_company_at", "estimate_received_at",
+        "client_decided_at", "return_shipped_at", "ready_at",
+        "delivered_to_client_at", "decided_at", "delivered_at",
+        # AUDINEXA Couriers + Estimates (Phase 12.B)
+        "dispatch_date", "eta_date", "received_on",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
     }

@@ -133,6 +133,16 @@ async def lifespan(_app: FastAPI):
         # Waitlist (Phase 12.0 — public signup)
         await db.waitlist_signups.create_index("email", unique=True)
         await db.waitlist_signups.create_index([("created_at", -1)])
+        # AUDINEXA Couriers / Estimates / Approvals (Phase 12.B)
+        await db.ha_courier_shipments.create_index("shipment_id", unique=True)
+        await db.ha_courier_shipments.create_index([("clinic_id", 1), ("ticket_no", 1)])
+        await db.ha_courier_shipments.create_index([("clinic_id", 1), ("status", 1), ("direction", 1)])
+        await db.ha_courier_shipments.create_index([("clinic_id", 1), ("awb_number", 1), ("direction", 1)], unique=True)
+        await db.ha_service_estimates.create_index("estimate_id", unique=True)
+        await db.ha_service_estimates.create_index([("clinic_id", 1), ("ticket_no", 1)])
+        await db.ha_customer_approvals.create_index("approval_id", unique=True)
+        await db.ha_customer_approvals.create_index([("clinic_id", 1), ("ticket_no", 1)])
+        await db.ha_customer_approvals.create_index([("clinic_id", 1), ("decision", 1)])
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         _log.info("MongoDB indexes ensured")
@@ -177,6 +187,20 @@ async def lifespan(_app: FastAPI):
                 misfire_grace_time=3600,
             )
             logging.getLogger(__name__).info("APScheduler job added: daily_followup_scan_0930_ist (09:30 IST)")
+            # Trial-expiry scanner — 02:00 IST daily (Phase 12.0)
+            try:
+                from trial_expiry import run_trial_expiry_scan
+                scheduler.add_job(
+                    run_trial_expiry_scan,
+                    trigger=CronTrigger(hour=2, minute=0, timezone=IST),
+                    args=[db],
+                    id="trial_expiry_0200_ist",
+                    replace_existing=True,
+                    misfire_grace_time=3600,
+                )
+                logging.getLogger(__name__).info("APScheduler job added: trial_expiry_0200_ist (02:00 IST)")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Trial-expiry scheduler skipped: {e}")
         except Exception as e:
             logging.getLogger(__name__).warning(f"FollowUp scheduler job skipped: {e}")
     except Exception as e:
@@ -294,6 +318,8 @@ from routers import ha_service as ha_service_router           # noqa: E402
 from routers import ha_loaners as ha_loaners_router           # noqa: E402
 from routers import ha_tradeins as ha_tradeins_router         # noqa: E402
 from routers import subscription as subscription_router       # noqa: E402
+from routers import ha_service_v2 as ha_service_v2_router     # noqa: E402
+from routers import ha_repair_ops as ha_repair_ops_router     # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -317,6 +343,8 @@ app.include_router(ha_service_router.router)
 app.include_router(ha_loaners_router.router)
 app.include_router(ha_tradeins_router.router)
 app.include_router(subscription_router.router)
+app.include_router(ha_service_v2_router.router)
+app.include_router(ha_repair_ops_router.router)
 
 app.add_middleware(
     CORSMiddleware,
