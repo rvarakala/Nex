@@ -1,0 +1,44 @@
+{
+  "summary": "Iter-12 security/audit testing: share-audit $inc, forensic clinic-mismatch log, and in-memory sliding-window rate-limit on /api/reports/shared/{token} (20/60s) + /api/queue/public/{clinic_id} (120/60s). All 27 new test cases + 28/28 iter11 regression pass. Total 55 green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_security_audit.py",
+    "/app/test_reports/pytest/iter12_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "rate_limit.py is single-process-local (noted in the module docstring). If the backend ever scales to multiple Uvicorn workers, the per-IP budget becomes N× per-worker — swap for Redis. Fine for now.",
+    "_client_ip in rate_limit.py and reports.py are identical — candidate for a shared util to avoid drift.",
+    "When the preview is fronted by Cloudflare without a client-pinned X-Forwarded-For, the first XFF entry can rotate per request, which made my initial (non-XFF-pinned) rate-limit test flaky. This is a test-environment artifact — in production, the limiter will see a stable caller IP because the ingress sets XFF. Tests now pin XFF explicitly, which also validates the 'respects X-Forwarded-For from ingress' spec.",
+    "share-audit endpoint correctly projects out both `_id` and `token_hash`; verified in test assertions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_security_audit.py (new)"
+  ],
+  "success_rate": {"backend": "100% (27/27 iter12 + 28/28 iter11)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "Mumbai: admin@acs.in/admin123, accounts@acs.in/accounts123, frontdesk@acs.in/frontdesk123, audiologist@acs.in/audio123. Delhi: admin@delhi.test/delhiadmin123, frontdesk@delhi.test/delhifrontdesk123.",
+  "seed_data_creation": "Module-scoped fixtures create TEST_Iter12 Mumbai patient + session; no cleanup (harmless in demo DB).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-12 security surface verified. Rate-limit tests require X-Forwarded-For to be explicitly pinned when running through the Cloudflare-fronted preview URL; otherwise CF may rotate the first XFF entry and the per-IP bucket never fills. Each rate-limit test calls _restart_backend() to flush the in-memory buckets before firing — keep that pattern. Forensic log test greps /var/log/supervisor/backend.err.log for 'share_link.clinic_mismatch'. Rate-limiter runs BEFORE JWT decode, so forensic-log tests must run in a fresh 60s window. The share-audit response is verified to exclude both `_id` and `token_hash`.",
+  "tests_covered": [
+    "share-link minted + accessed 3× → share-audit shows access_count=3, last_accessed_at/ip set, no token_hash, no _id, correct shape, DESC sort",
+    "share-audit cross-tenant → 403",
+    "share-audit unknown session → 404",
+    "tampered JWT (Delhi clinic_id + Mumbai session_id) → 401 + structured 'share_link.clinic_mismatch' WARNING with session_id + both clinic IDs + ip=",
+    "22 rapid calls to /reports/shared/{token} → 20×200 + 2×429 with Retry-After",
+    "125 rapid calls to /queue/public/{clinic_id} → 120×200 + 5×429",
+    "Rate-limiter fail-open on odd XFF values (no crash)",
+    "Regression 200 on /patients, /appointments, /tokens, /sessions, /referring-doctors, /dashboard/frontdesk, /closeouts/*, all 13 /billing/*, /reports/{sid}/pdf, /reports/{sid}/share-link, /patient-notes",
+    "Unauthed /patients, /appointments, /dashboard/frontdesk, /billing/invoices → 401/403",
+    "Cross-tenant: Delhi→Mumbai /pdf 403, Delhi→Mumbai /share-link 403"
+  ]
+}

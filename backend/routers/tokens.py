@@ -2,12 +2,13 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import get_current_user
 from database import get_db
 from models import OPDToken
 from utils.ist import ist_day_start_utc, ist_today_ymd
+from utils.rate_limit import enforce_rate_limit
 from utils.serde import serialize_datetime, deserialize_datetime
 
 
@@ -94,8 +95,11 @@ async def update_token_status(token_id: str, payload: dict,
 # ==================== PUBLIC QUEUE TV DISPLAY ====================
 
 @router.get("/queue/public/{clinic_id}")
-async def public_queue(clinic_id: str, db=Depends(get_db)):
-    """UNAUTHENTICATED endpoint for waiting-room TV. Privacy-redacted names."""
+async def public_queue(clinic_id: str, request: Request, db=Depends(get_db)):
+    """UNAUTHENTICATED endpoint for waiting-room TV. Privacy-redacted names.
+    Rate-limited per IP (120 req / 60s — covers a TV polling every 5s with 6x headroom)."""
+    enforce_rate_limit(request, "queue_public", max_requests=120, window_seconds=60)
+
     clinic = await db.clinics.find_one({"clinic_id": clinic_id}, {"_id": 0, "name": 1, "city": 1})
     if not clinic:
         raise HTTPException(status_code=404, detail="Clinic not found")
