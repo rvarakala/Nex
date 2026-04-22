@@ -14,6 +14,8 @@ import re
 
 from utils.ist import IST  # noqa: F401
 
+from database import get_db
+
 from models import (
     Service, ServiceCreate,
     Invoice, InvoiceCreate, InvoiceLine, InvoiceLineCreate,
@@ -507,19 +509,19 @@ async def list_deliveries(
     return [_deserialize(r) for r in rows]
 
 
-# --------------- DB accessor (lazily bound by server.py) ---------------
-_DB = None
-
-
-def attach_db(database):
-    global _DB
-    _DB = database
-
+# --------------- DB accessor (backed by shared database.get_db) ---------------
 
 def _db():
-    if _DB is None:
-        raise RuntimeError("Billing DB not attached. Call billing.attach_db(db) on startup.")
-    return _DB
+    """Return the shared MongoDB handle. Kept as a thin alias over database.get_db()
+    so existing endpoint bodies (`db = _db()`) continue to work while we converge
+    on FastAPI `Depends(get_db)` DI for new code."""
+    return get_db()
+
+
+def attach_db(_database):
+    """Deprecated — kept for backward compatibility. get_db() now sources the
+    handle directly from `database.py`."""
+    return None
 
 
 # --------------- Default service catalogue seeding ---------------

@@ -1,0 +1,34 @@
+"""Shared datetime serialisation helpers used by server.py and routers.
+
+Mongo stores datetimes as ISO strings (so we can compare with `$gte: '2026-...'`).
+Pydantic models round-trip them back to `datetime` objects.
+"""
+from datetime import datetime
+
+
+def serialize_datetime(obj):
+    """Convert datetime objects to ISO format strings for MongoDB storage."""
+    if isinstance(obj, dict):
+        return {k: serialize_datetime(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [serialize_datetime(item) for item in obj]
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
+
+
+def deserialize_datetime(obj):
+    """Convert ISO format strings back to datetime objects.
+    Skips known string-typed date fields (e.g., 'dob') to avoid coercing them into datetimes.
+    """
+    STRING_DATE_KEYS = {"dob"}
+    if isinstance(obj, dict):
+        return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [deserialize_datetime(item) for item in obj]
+    if isinstance(obj, str):
+        try:
+            return datetime.fromisoformat(obj)
+        except Exception:
+            return obj
+    return obj
