@@ -346,3 +346,107 @@ class SaleCreate(BaseModel):
     serial_assignments: dict[int, str] = Field(default_factory=dict)
     # map of quote-line-index → serial_id chosen from IN_STOCK pool
     margin_approval_user_id: Optional[str] = None
+
+
+
+# ==================== FITTING (Phase 4 — Clinical) ====================
+
+FittingStatus = Literal["active", "completed", "cancelled"]
+FittingVisitKind = Literal["first_fit", "follow_up", "adjustment", "aided_test", "remote_tune"]
+
+
+class FittingSerial(BaseModel):
+    """One serialised HA unit attached to a fitting session (per ear)."""
+    serial_id: str
+    side: Literal["left", "right", "single"] = "single"
+
+
+class FittingAdjustment(BaseModel):
+    """A single parameter change captured inside a visit (ear / param / old / new)."""
+    ear: Literal["left", "right", "both"] = "both"
+    param: str                                                 # e.g. "gain_2k", "mpo", "program_1_name"
+    old: Optional[str] = None
+    new: Optional[str] = None
+
+
+class FittingVisit(BaseModel):
+    """Per-visit summary in the programming ledger. Q3=b: summary-level."""
+    visit_id: str = Field(default_factory=lambda: f"FV-{str(uuid4())[:8].upper()}")
+    kind: FittingVisitKind = "follow_up"
+    at: str                                                    # ISO timestamp
+    actor_user_id: str
+    actor_name: Optional[str] = None
+    notes: Optional[str] = None
+    adjustments: List[FittingAdjustment] = Field(default_factory=list)
+    # Audiologist-logged adaptation score at this visit (Q4=b):
+    wear_hours_per_day: Optional[float] = None                 # patient-reported at this visit
+    comfort_score: Optional[int] = None                        # 1..5
+
+
+class AidedAudiogramEar(BaseModel):
+    """Sound-field aided threshold readings per ear. Hz → dB HL."""
+    hz_500: Optional[float] = None
+    hz_1000: Optional[float] = None
+    hz_2000: Optional[float] = None
+    hz_4000: Optional[float] = None
+
+
+class AidedAudiogram(BaseModel):
+    """Embedded aided audiogram (Q1=a). Captured during fitting, not M02."""
+    measured_at: Optional[str] = None                          # ISO timestamp
+    method: Literal["sound_field", "insertion_gain"] = "sound_field"
+    right: Optional[AidedAudiogramEar] = None
+    left: Optional[AidedAudiogramEar] = None
+    binaural: Optional[AidedAudiogramEar] = None
+    notes: Optional[str] = None
+
+
+class Fitting(BaseModel):
+    """A hearing-aid fitting session. One per Sale (typically).
+    Holds the full clinical journey — first fit, follow-ups, adjustments, aided audiogram."""
+    model_config = ConfigDict(extra="ignore")
+    fitting_id: str = Field(default_factory=lambda: f"FIT-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    audiologist_user_id: str
+    audiologist_name: Optional[str] = None
+    sale_no: Optional[str] = None                              # link to HA Sale (optional)
+    quote_no: Optional[str] = None                             # link to source Quote (optional)
+    serials: List[FittingSerial] = Field(default_factory=list)
+    status: FittingStatus = "active"
+    first_fit_at: Optional[str] = None                         # ISO; set on first visit or on create
+    completed_at: Optional[str] = None
+    visits: List[FittingVisit] = Field(default_factory=list)
+    aided_audiogram: Optional[AidedAudiogram] = None
+    # REM is postponed (Q2); keep a placeholder so we can extend without migration.
+    rem: Optional[dict] = None
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+
+
+class FittingCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    audiologist_user_id: Optional[str] = None                  # defaults to caller
+    sale_no: Optional[str] = None
+    quote_no: Optional[str] = None
+    serials: List[FittingSerial] = Field(default_factory=list)
+    notes: Optional[str] = None
+
+
+class FittingUpdate(BaseModel):
+    status: Optional[FittingStatus] = None
+    completed_at: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FittingVisitCreate(BaseModel):
+    kind: FittingVisitKind = "follow_up"
+    notes: Optional[str] = None
+    adjustments: List[FittingAdjustment] = Field(default_factory=list)
+    wear_hours_per_day: Optional[float] = None
+    comfort_score: Optional[int] = None

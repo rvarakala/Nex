@@ -29,6 +29,8 @@ def deserialize_datetime(obj):
         "approved_at", "closed_at", "updated_at",
         "start_date", "end_date", "valid_until",
         "sent_at", "accepted_at", "cancelled_at", "margin_approval_at",
+        # HA Fittings (Phase 4)
+        "first_fit_at", "completed_at", "measured_at", "at",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
     }

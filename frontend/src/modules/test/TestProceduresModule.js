@@ -216,6 +216,14 @@ export default function TestProceduresModule() {
         {activeTest.token && (
           <div className="text-[10px] text-amber-800">Token #{activeTest.token.token_no}</div>
         )}
+        <button
+          onClick={() => navigate(`/ha/fittings?patient_id=${encodeURIComponent(activeTest.patient.patient_id)}&auto=1`)}
+          data-testid="test-start-fitting"
+          className="ml-3 px-2 py-0.5 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm"
+          title="Start a hearing-aid fitting for this patient"
+        >
+          Start Fitting →
+        </button>
       </div>
 
       <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />

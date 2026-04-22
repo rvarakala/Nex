@@ -100,6 +100,11 @@ async def lifespan(_app: FastAPI):
         await db.ha_sales.create_index("sale_no", unique=True)
         await db.ha_sales.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.ha_sales.create_index("patient_id")
+        # HA module Phase 4 — clinical fittings
+        await db.ha_fittings.create_index("fitting_id", unique=True)
+        await db.ha_fittings.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.ha_fittings.create_index([("clinic_id", 1), ("patient_id", 1), ("created_at", -1)])
+        await db.ha_fittings.create_index("sale_no")
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         _log.info("MongoDB indexes ensured")
@@ -238,6 +243,7 @@ from routers import ha_inventory as ha_inventory_router     # noqa: E402
 from routers import ha_procurement as ha_procurement_router # noqa: E402
 from routers import ha_quotations as ha_quotations_router   # noqa: E402
 from routers import ha_sales as ha_sales_router             # noqa: E402
+from routers import ha_fittings as ha_fittings_router       # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -253,6 +259,7 @@ app.include_router(ha_inventory_router.router)
 app.include_router(ha_procurement_router.router)
 app.include_router(ha_quotations_router.router)
 app.include_router(ha_sales_router.router)
+app.include_router(ha_fittings_router.router)
 
 app.add_middleware(
     CORSMiddleware,
