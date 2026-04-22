@@ -5,6 +5,7 @@ import { useAuth } from '../AuthContext';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
 import AppSwitcher from './AppSwitcher';
+import { useSubscription } from '../SubscriptionContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -25,6 +26,7 @@ const NavItem = ({ to, icon, label, testid }) => (
 
 export default function AppShell({ children }) {
   const { user, clinic, logout } = useAuth();
+  const { access, superAdminBypass } = useSubscription();
   const { activeTest } = useTestContext();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -114,12 +116,28 @@ export default function AppShell({ children }) {
             label="Diagnostics"
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18M7 14l3-3 4 4 5-5"/></svg>}
           />
-          {user?.role !== 'audiologist' && (
+          {user?.role !== 'audiologist' && (superAdminBypass || access['hearing-aids']) && (
             <NavItem
               to="/ha"
               testid="nav-ha"
               label="Hearing Aids"
               icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a7 7 0 0 0-7 7v5a3 3 0 0 0 3 3h1v-8H7v-.5A5 5 0 0 1 17 9v.5h-2V17h1a3 3 0 0 0 3-3v-5a7 7 0 0 0-7-6Z"/></svg>}
+            />
+          )}
+          {(superAdminBypass || access['repair']) && user?.role !== 'audiologist' && (
+            <NavItem
+              to="/repair"
+              testid="nav-repair"
+              label="Service"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>}
+            />
+          )}
+          {(superAdminBypass || access['analytics']) && user?.role !== 'audiologist' && (
+            <NavItem
+              to="/ha/analytics"
+              testid="nav-analytics"
+              label="Analytics"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>}
             />
           )}
           <NavItem
@@ -128,6 +146,14 @@ export default function AppShell({ children }) {
             label="Reports"
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>}
           />
+          {user?.role === 'super_admin' && (
+            <NavItem
+              to="/admin/clinics"
+              testid="nav-admin"
+              label="Admin"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>}
+            />
+          )}
         </div>
 
         <div className="p-1.5 border-t border-slate-800">
