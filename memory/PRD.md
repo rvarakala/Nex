@@ -92,6 +92,19 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
      - New utility: `utils/ha_states.py` — 9 states + frozen transition table + `transition_serial()` helper that writes append-only `serial_events` audit rows.
      - Auto-seed: Mumbai HQ branch (clinic-acs-demo) + Delhi branch (clinic-delhi-test) on every boot; 6 existing users backfilled to their clinic's primary branch.
   3. **35 new + 27 regression = 62/62 backend pytest green** (iter 13). No frontend this phase (intentional; UI starts in Phase 2 when there's an inventory board to render). Baseline at `/app/backend/tests/test_phase1_ha_foundation.py`.
+- [Feb 2026] **HA Module — Phase 2 (Core Inventory + First HA UI) (THIS SESSION)**:
+  1. **Backend — 3 new routers**:
+     - `routers/ha_products.py` — Product catalogue CRUD (brand/model/form_factor/tech_tier/connectivity/warranty/mrp/cost/min_sell/hsn/gst/is_serialised), role-gated (inventory_manager + clinic_owner for writes), search + filter. 5 endpoints.
+     - `routers/ha_inventory.py` — SerialItem list (filter by branch/state/pool/product/search), aggregated `by-branch-summary`, get-by-id, **serial lifecycle timeline** (`serial_events` log), pool update, **state-transition endpoint** with per-transition role policy (destructive DAMAGED/RETIRED/RETURNED require inventory_manager+). AccessoryStock list + +/- delta adjust (writes to `accessory_events`). 8 endpoints.
+     - `routers/ha_procurement.py` — PurchaseOrder CRUD + status transition table (draft→approved→ordered→partial/received→closed + cancelled), **GRN create** atomically spawns SerialItems (state=IN_STOCK, pool=saleable, warranty_end computed from received_at+warranty_months, writes (new)→IN_STOCK audit), upserts AccessoryStock qty, auto-advances PO status through the allowed table. **Pre-insert over-receipt validation** + duplicate-serial rejection + qty/serial-count mismatch rejection. 6 endpoints.
+  2. **utils/serde.py** — extended `STRING_DATE_KEYS` to preserve HA ISO-string date fields (warranty_end_date, received_at, expected_date, approved_at, closed_at, updated_at, start_date, end_date, expires_at, last_accessed_at).
+  3. **Frontend — first HA UI** (module at `/app/frontend/src/modules/ha/`):
+     - `HAModule.js` — 3-tab sub-nav router.
+     - `ProductCataloguePage.js` — table + search + filter + new/edit modal.
+     - `InventoryBoardPage.js` — 9 state KPI chips + pool filter + serial search + serial row table + **TimelineDrawer** slide-out with full lifecycle ledger and in-drawer state-transition UI.
+     - `ProcurementPage.js` — PO list + CreatePO modal (multi-line with GST calc) + PODetailDrawer with state-action buttons + **GRNModal** with per-line serial-number capture (N input fields auto-generated based on qty).
+     - New nav entry `/ha` (hidden from audiologists).
+  4. 30 new + 35 regression = **65/65 backend pytest + 100% frontend smoke green** (iter 14). Reviewer nits fixed post-test: (a) PO status walks through allowed table (no skipping 'ordered'), (b) over-receipt check moved BEFORE inventory inserts (prevents orphan serials on 409), (c) stricter per-transition role policy (front_desk/audiologist blocked from DAMAGED/RETIRED/RETURNED). Baseline at `/app/backend/tests/test_phase2_ha_core.py`.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra

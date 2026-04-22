@@ -153,11 +153,26 @@ async def transition_serial_state(
     db=Depends(get_db),
 ):
     """Explicit state transition. Body: {to_state, note?}. The state-machine
-    helper validates legality and writes the audit row."""
+    helper validates legality and writes the audit row.
+
+    Destructive / terminal transitions (DAMAGED, RETIRED, RETURNED) require
+    inventory_manager or above — front-desk/audiologist can do clinical flow
+    (RESERVED/TRIAL_OUT/SOLD/SERVICE_IN) but cannot scrap a unit."""
     to_state = payload.get("to_state")
     note = payload.get("note")
     if not to_state:
         raise HTTPException(status_code=400, detail="to_state is required")
+
+    # Stricter role gate: destructive terminals need inventory/owner rights.
+    DESTRUCTIVE = {"DAMAGED", "RETIRED", "RETURNED"}
+    if to_state in DESTRUCTIVE and user["role"] not in {
+        "super_admin", "clinic_owner", "inventory_manager", "technician",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Role {user['role']} cannot move a unit to {to_state}",
+        )
+
     existing = await db.serial_items.find_one(
         {"serial_id": serial_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
     )

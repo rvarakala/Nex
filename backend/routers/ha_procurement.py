@@ -260,6 +260,27 @@ async def create_grn(
     grn_no = await next_number(db, "grn", user["clinic_id"])
     received_at = payload.received_at or datetime.now(timezone.utc).isoformat()
 
+    # ----- Pre-compute aggregate receipt + over-receipt check -----
+    # Must happen BEFORE we insert any serial_items / update accessory stock,
+    # otherwise a 409 over-receipt leaves orphan inventory in the DB.
+    received_by_key: dict[tuple, int] = {}
+    async for g in db.grns.find({"po_no": payload.po_no, "clinic_id": user["clinic_id"]}, {"_id": 0, "lines": 1}):
+        for ln in g.get("lines", []):
+            k = (ln["product_id"], ln.get("variant"))
+            received_by_key[k] = received_by_key.get(k, 0) + int(ln["qty_received"])
+    # Add this GRN's pending lines
+    for ln in payload.lines:
+        k = (ln.product_id, ln.variant)
+        received_by_key[k] = received_by_key.get(k, 0) + int(ln.qty_received)
+    # Compare vs PO ordered
+    for ln in po["lines"]:
+        k = (ln["product_id"], ln.get("variant"))
+        if received_by_key.get(k, 0) > int(ln["qty"]):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Over-receipt: {received_by_key[k]} received vs {ln['qty']} ordered for product {ln['product_id']}",
+            )
+
     grn = GRN(
         grn_no=grn_no,
         po_no=payload.po_no,
@@ -346,22 +367,22 @@ async def create_grn(
         await db.serial_events.insert_many(serial_event_docs)
 
     # ----- Update PO status -----
-    # Aggregate every GRN line across every GRN posted against this PO, compare to PO ordered.
-    received_by_key: dict[tuple, int] = {}
-    async for g in db.grns.find({"po_no": payload.po_no, "clinic_id": user["clinic_id"]}, {"_id": 0, "lines": 1}):
-        for ln in g.get("lines", []):
-            k = (ln["product_id"], ln.get("variant"))
-            received_by_key[k] = received_by_key.get(k, 0) + int(ln["qty_received"])
-    fully_received = True
-    for ln in po["lines"]:
-        k = (ln["product_id"], ln.get("variant"))
-        if received_by_key.get(k, 0) < int(ln["qty"]):
-            fully_received = False
-            break
-    new_status = "received" if fully_received else "partial_received"
-    await db.purchase_orders.update_one(
-        {"po_no": payload.po_no},
-        {"$set": {"status": new_status}},
+    # `received_by_key` already includes this GRN's lines (computed pre-insert).
+    fully_received = all(
+        received_by_key.get((ln["product_id"], ln.get("variant")), 0) >= int(ln["qty"])
+        for ln in po["lines"]
     )
+    # Walk the PO status forward through the allowed table — never skip states.
+    target = "received" if fully_received else "partial_received"
+    po_path = {
+        "approved":         ["ordered", target],          # auto-advance approved → ordered → target
+        "ordered":          [target],
+        "partial_received": [target] if target == "received" else [],
+    }
+    for step in po_path.get(po["status"], []):
+        await db.purchase_orders.update_one(
+            {"po_no": payload.po_no, "clinic_id": user["clinic_id"]},
+            {"$set": {"status": step}},
+        )
 
     return grn
