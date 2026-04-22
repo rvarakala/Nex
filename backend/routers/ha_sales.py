@@ -190,7 +190,45 @@ async def create_sale_from_quote(
         net = round(gross - d, 2)
         g = round(net * (ln.gst_rate or 0) / 100.0, 2)
         sub += gross; disc += d; gst += g
+
+    # ----- Optional: apply a trade-in credit -----
+    trade_in_credit = 0.0
+    trade_in_doc = None
+    if payload.trade_in_id:
+        trade_in_doc = await db.ha_trade_ins.find_one(
+            {"clinic_id": user["clinic_id"], "trade_in_id": payload.trade_in_id},
+            {"_id": 0},
+        )
+        if not trade_in_doc:
+            raise HTTPException(status_code=404, detail="Trade-in not found")
+        if trade_in_doc["patient_id"] != quote["patient_id"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Trade-in belongs to a different patient than the quotation",
+            )
+        if trade_in_doc["status"] != "accepted":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Trade-in is {trade_in_doc['status']}, must be 'accepted' (old HA handed over) to apply",
+            )
+        # Already linked to a different open sale?
+        if trade_in_doc.get("linked_sale_no"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Trade-in already linked to sale {trade_in_doc['linked_sale_no']}",
+            )
+        trade_in_credit = float(trade_in_doc.get("offered_credit") or 0)
+        # Credit reduces the net bill — stack on top of line-level discounts
+        disc += trade_in_credit
+
     total = round(sub - disc + gst, 2)
+    if total < 0:
+        # Trade-in credit shouldn't exceed the sale itself; block rather than
+        # silently issue a negative invoice.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Trade-in credit ₹{trade_in_credit} exceeds sale total — reduce credit or add more lines",
+        )
 
     sale_no = await next_number(db, "sale", user["clinic_id"])
     now = datetime.now(timezone.utc).isoformat()
@@ -209,9 +247,18 @@ async def create_sale_from_quote(
         below_floor_lines=below_floor,
         margin_approval_user_id=payload.margin_approval_user_id,
         margin_approval_at=now if below_floor else None,
+        trade_in_id=payload.trade_in_id,
+        trade_in_credit=round(trade_in_credit, 2),
         created_by_user_id=user["user_id"],
     )
     await db.ha_sales.insert_one(serialize_datetime(sale.model_dump()))
+
+    # Link the trade-in doc back to the sale so it cannot be double-applied.
+    if trade_in_doc:
+        await db.ha_trade_ins.update_one(
+            {"clinic_id": user["clinic_id"], "trade_in_id": payload.trade_in_id},
+            {"$set": {"linked_sale_no": sale_no}},
+        )
 
     # Reserve serials one by one (each writes its own audit row).
     for sid in chosen_serial_ids:
@@ -275,6 +322,30 @@ async def mark_sale_paid(
     if payload.get("invoice_no"):
         upd["invoice_no"] = payload["invoice_no"]
     await db.ha_sales.update_one({"sale_no": sale_no}, {"$set": upd})
+
+    # ---- Finalise linked trade-in: old serial RETURNED → RETIRED + status=applied
+    if sale.get("trade_in_id"):
+        ti = await db.ha_trade_ins.find_one(
+            {"clinic_id": user["clinic_id"], "trade_in_id": sale["trade_in_id"]},
+            {"_id": 0, "status": 1, "old_serial_id": 1},
+        )
+        if ti and ti["status"] == "accepted":
+            try:
+                await transition_serial(
+                    db, ti["old_serial_id"], "RETIRED",
+                    actor_user_id=user["user_id"],
+                    ref_doc={"kind": "trade_in", "id": sale["trade_in_id"]},
+                    note=f"Trade-in applied via paid sale {sale_no}",
+                )
+            except HTTPException:
+                # Serial may already have moved (e.g. manual admin); don't block mark-paid
+                pass
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await db.ha_trade_ins.update_one(
+                {"clinic_id": user["clinic_id"], "trade_in_id": sale["trade_in_id"]},
+                {"$set": {"status": "applied", "applied_at": now_iso,
+                          "linked_sale_no": sale_no}},
+            )
     return {"sale_no": sale_no, "status": "paid"}
 
 
@@ -313,6 +384,14 @@ async def cancel_sale(
         {"sale_no": sale_no},
         {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()}},
     )
+    # Detach trade-in (if any) so the clinic can re-apply it to a new sale
+    # without re-appraising. Trade-in itself stays in 'accepted' state.
+    if sale.get("trade_in_id"):
+        await db.ha_trade_ins.update_one(
+            {"clinic_id": user["clinic_id"], "trade_in_id": sale["trade_in_id"],
+             "status": "accepted"},
+            {"$set": {"linked_sale_no": None}},
+        )
     # If this sale came from a converted quote, we do NOT flip the quote back —
     # quote.converted_sale_no still references the cancelled sale for audit.
     return {"sale_no": sale_no, "status": "cancelled"}

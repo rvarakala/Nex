@@ -333,6 +333,8 @@ class Sale(BaseModel):
     margin_approval_user_id: Optional[str] = None              # if any line below min_sell_price
     margin_approval_at: Optional[str] = None
     below_floor_lines: List[int] = Field(default_factory=list) # line indexes needing approval
+    trade_in_id: Optional[str] = None                          # linked trade-in (if any)
+    trade_in_credit: float = 0.0                               # credit applied from trade-in
     created_by_user_id: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     cancelled_at: Optional[str] = None
@@ -341,11 +343,19 @@ class Sale(BaseModel):
 class SaleCreate(BaseModel):
     """Create a Sale straight from a Quotation. Reserves all serialised lines
     (IN_STOCK → RESERVED). Margin floor violations must be pre-approved via
-    `margin_approval_user_id` (clinic_owner / super_admin)."""
+    `margin_approval_user_id` (clinic_owner / super_admin).
+
+    Optional `trade_in_id` auto-applies the trade-in's offered_credit as a
+    discount on this sale's totals and links the two docs. The trade-in MUST
+    be in status='accepted' (old HA already handed over) and belong to the
+    same patient. It is transitioned to 'applied' + old serial retired when
+    this sale is marked-paid.
+    """
     quote_no: str
     serial_assignments: dict[int, str] = Field(default_factory=dict)
     # map of quote-line-index → serial_id chosen from IN_STOCK pool
     margin_approval_user_id: Optional[str] = None
+    trade_in_id: Optional[str] = None
 
 
 

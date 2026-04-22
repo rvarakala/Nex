@@ -96,6 +96,22 @@ async def tradein_kpis(user=Depends(get_current_user), db=Depends(get_db)):
     return out
 
 
+@router.get("/trade-ins/available-for-patient/{patient_id}")
+async def available_tradeins(
+    patient_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Return accepted, not-yet-linked trade-ins for a patient — callers use
+    this to populate the 'Apply trade-in' dropdown when creating a new Sale."""
+    base = _branch_scope(user)
+    q = {**base, "patient_id": patient_id, "status": "accepted",
+         "$or": [{"linked_sale_no": {"$exists": False}},
+                 {"linked_sale_no": None}]}
+    rows = await db.ha_trade_ins.find(q, {"_id": 0}).sort("created_at", -1).to_list(20)
+    return [deserialize_datetime(r) for r in rows]
+
+
 @router.get("/trade-ins/{trade_in_id}", response_model=TradeIn)
 async def get_tradein(trade_in_id: str, user=Depends(get_current_user), db=Depends(get_db)):
     row = await _load(db, user["clinic_id"], trade_in_id)

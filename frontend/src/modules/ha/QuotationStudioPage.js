@@ -265,6 +265,8 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
   const [users, setUsers] = useState([]);
   const [assignments, setAssignments] = useState({});
   const [approvalUser, setApprovalUser] = useState('');
+  const [availableTradeIns, setAvailableTradeIns] = useState([]);
+  const [tradeInId, setTradeInId] = useState('');
   const [err, setErr] = useState('');
   const [converting, setConverting] = useState(false);
 
@@ -275,6 +277,11 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
     ]);
     setQ(qd.data);
     setSerials(si.data);
+    // Fetch accepted+unlinked trade-ins for this patient
+    try {
+      const r = await axios.get(`${API}/ha/trade-ins/available-for-patient/${qd.data.patient_id}`);
+      setAvailableTradeIns(r.data || []);
+    } catch { setAvailableTradeIns([]); }
   }, [quoteNo]);
 
   useEffect(() => { load(); }, [load]);
@@ -310,9 +317,11 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
       }
       const body = { quote_no: quoteNo, serial_assignments: assignments };
       if (below.length && approvalUser) body.margin_approval_user_id = approvalUser;
+      if (tradeInId) body.trade_in_id = tradeInId;
       const r = await axios.post(`${API}/ha/sales`, body);
-      alert(`Sale ${r.data.sale_no} created — serial(s) RESERVED.`);
+      alert(`Sale ${r.data.sale_no} created — serial(s) RESERVED.${r.data.trade_in_credit ? ` Trade-in credit ₹${r.data.trade_in_credit} applied.` : ''}`);
       setConverting(false);
+      setTradeInId('');
       await load();
       onChanged && onChanged();
     } catch (e) {
@@ -409,9 +418,27 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
                   </select>
                 </div>
               )}
+              {availableTradeIns.length > 0 && (
+                <div className="bg-emerald-50 border border-emerald-300 rounded p-2 text-xs text-emerald-900 mb-3" data-testid="ha-quote-tradein-picker">
+                  🔄 <b>Trade-in credit available:</b> this patient has {availableTradeIns.length} accepted trade-in{availableTradeIns.length > 1 ? 's' : ''} ready to apply.
+                  <select value={tradeInId} onChange={(e) => setTradeInId(e.target.value)} data-testid="ha-quote-tradein-select" className="ml-2 border border-emerald-400 rounded px-1 py-0.5 text-xs bg-white">
+                    <option value="">— none (skip) —</option>
+                    {availableTradeIns.map(ti => (
+                      <option key={ti.trade_in_id} value={ti.trade_in_id}>
+                        {ti.trade_in_id} · ₹{Number(ti.offered_credit).toLocaleString('en-IN')} credit · {ti.old_brand || ''} {ti.old_model || ''}
+                      </option>
+                    ))}
+                  </select>
+                  {tradeInId && (
+                    <div className="text-[10px] text-emerald-800 mt-1">
+                      Credit will be deducted from this sale's total. Old serial retires to stock-out on mark-paid.
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex gap-2">
                 <button onClick={convert} data-testid="ha-quote-convert-confirm" className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow">Create Sale &amp; Reserve Units</button>
-                <button onClick={() => { setConverting(false); setErr(''); }} className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded">Cancel</button>
+                <button onClick={() => { setConverting(false); setErr(''); setTradeInId(''); }} className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded">Cancel</button>
               </div>
             </div>
           )}
