@@ -477,61 +477,96 @@ function FunnelView({ data }) {
 }
 
 
-// ============ MINI REVENUE CHART (pure CSS bars) ============
-function RevenueChart({ data, onDrill }) {
-  const max = Math.max(...data.map(m => m.revenue), 1);
-  return (
-    <div className="flex items-end gap-2 h-32 pt-4" data-testid="ha-analytics-revenue-chart">
-      {data.map(m => (
-        <button
-          key={m.month}
-          onClick={() => onDrill && onDrill(m)}
-          className="flex-1 flex flex-col items-center cursor-pointer group"
-          title={`${m.month}: ₹${m.revenue.toLocaleString('en-IN')} · ${m.sales_count} sales · click to drill`}
-          data-testid={`ha-analytics-revenue-bar-${m.month}`}
-        >
-          <div className="relative w-full flex items-end h-28">
-            <div className="w-full bg-indigo-500 group-hover:bg-indigo-700 rounded-t transition"
-                 style={{ height: `${(100 * m.revenue / max).toFixed(1)}%` }} />
-          </div>
-          <div className="text-[9px] text-slate-500 mt-1 font-mono">{m.month.slice(5)}</div>
-          <div className="text-[9px] text-slate-700 font-semibold">{fmtINR(m.revenue).replace('₹', '')}</div>
-        </button>
-      ))}
-    </div>
-  );
-}
+// ============ SERVICE REVENUE & WARRANTY BURDEN ============
+function ServiceRevenueCard({ data }) {
+  const totals = data?.totals || { paid_revenue: 0, warranty_tickets: 0, total_tickets: 0 };
+  const byKind = data?.by_kind || [];
+  const byTech = data?.by_technician || [];
+  const windowDays = data?.window_days || 90;
+  const warrantyPct = totals.total_tickets > 0
+    ? (100 * totals.warranty_tickets / totals.total_tickets)
+    : 0;
 
-
-// ============ FUNNEL (horizontal bars) ============
-function FunnelView({ data }) {
-  const { stages, rates, avg_trial_to_convert_days } = data;
-  const steps = [
-    ['Consultations', stages.consultations, null],
-    ['Quotations',    stages.quotations,    rates.quote_per_consult_pct],
-    ['Trials issued', stages.trials_issued, rates.trial_per_quote_pct],
-    ['Converted',     stages.trials_converted, rates.convert_per_trial_pct],
-    ['Sales (total)', stages.sales_total,   null],
-    ['Sales paid',    stages.sales_paid,    rates.paid_per_sale_pct],
-  ];
-  const max = Math.max(...steps.map(s => s[1]), 1);
   return (
-    <div className="space-y-1" data-testid="ha-analytics-funnel">
-      {steps.map(([label, value, rate]) => (
-        <div key={label} className="flex items-center gap-2 text-xs">
-          <div className="w-32 text-slate-700">{label}</div>
-          <div className="flex-1 h-5 bg-slate-100 rounded relative">
-            <div className="absolute inset-y-0 left-0 bg-indigo-500 rounded" style={{ width: `${(100 * value / max).toFixed(0)}%` }} />
-            <div className="absolute inset-0 flex items-center px-2 text-[10px] font-bold text-slate-800 tabular-nums">{value}</div>
-          </div>
-          <div className="w-16 text-right text-[10px] text-slate-500 font-semibold">{rate != null ? fmtPct(rate) : ''}</div>
-        </div>
-      ))}
-      <div className="pt-2 text-[10px] text-slate-500">
-        Avg trial-to-convert: <b className="text-slate-800">{avg_trial_to_convert_days != null ? `${avg_trial_to_convert_days} days` : '—'}</b>
-        {' · '}Trials returned: <b className="text-slate-800">{stages.trials_returned}</b>
-        {' · '}Trials lost: <b className="text-rose-700">{stages.trials_lost}</b>
+    <Card
+      title="Service Revenue & Warranty Burden"
+      subtitle={`Last ${windowDays} days · resolved + closed tickets · warranty tickets are zero-revenue cost centres`}
+      testid="ha-analytics-service-revenue-card"
+    >
+      {/* Top-line KPIs */}
+      <div className="grid grid-cols-4 gap-2 mb-4">
+        <MiniKpi label="Paid Revenue" v={fmtINR(totals.paid_revenue)} color="text-emerald-700" />
+        <MiniKpi label="Total Tickets" v={totals.total_tickets} />
+        <MiniKpi label="Warranty-Covered" v={totals.warranty_tickets} color={totals.warranty_tickets > 0 ? 'text-amber-700' : ''} />
+        <MiniKpi label="Warranty Burden" v={fmtPct(warrantyPct)} color={warrantyPct > 30 ? 'text-rose-700' : warrantyPct > 15 ? 'text-amber-700' : 'text-slate-800'} />
       </div>
-    </div>
+
+      {totals.total_tickets === 0 ? (
+        <Empty label="No resolved service tickets in window." />
+      ) : (
+        <div className="grid grid-cols-2 gap-5">
+          {/* By kind */}
+          <div data-testid="ha-analytics-service-by-kind">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">By Ticket Kind</div>
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="text-left py-1">Kind</th>
+                  <th className="text-right">Tickets</th>
+                  <th className="text-right">Warranty</th>
+                  <th className="text-right">Paid ₹</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byKind.map(r => (
+                  <tr key={r.kind} className="border-t border-slate-100" data-testid={`ha-analytics-service-kind-${r.kind}`}>
+                    <td className="py-1 font-semibold capitalize">{r.kind.replace(/_/g, ' ')}</td>
+                    <td className="text-right tabular-nums">{r.ticket_count}</td>
+                    <td className="text-right tabular-nums text-amber-700 font-bold">{r.warranty_tickets}</td>
+                    <td className="text-right tabular-nums font-mono font-semibold">{fmtINR(r.paid_revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* By technician */}
+          <div data-testid="ha-analytics-service-by-tech">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">By Technician</div>
+            {byTech.length === 0 ? (
+              <div className="text-[11px] italic text-slate-400 py-4">No technician assignments yet.</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="text-left py-1">Technician</th>
+                    <th className="text-right">Tickets</th>
+                    <th className="text-right">Warranty</th>
+                    <th className="text-right">Paid ₹</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byTech.map(r => (
+                    <tr key={r.user_id} className="border-t border-slate-100" data-testid={`ha-analytics-service-tech-${r.user_id}`}>
+                      <td className="py-1">
+                        <div className="font-semibold">{r.name}</div>
+                        <div className="text-[10px] text-slate-500 uppercase tracking-wide">{r.role}</div>
+                      </td>
+                      <td className="text-right tabular-nums">{r.ticket_count}</td>
+                      <td className="text-right tabular-nums text-amber-700 font-bold">{r.warranty_tickets}</td>
+                      <td className="text-right tabular-nums font-mono font-semibold">{fmtINR(r.paid_revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="pt-3 mt-3 border-t border-slate-100 text-[10px] text-slate-500 italic">
+        Warranty burden &gt;30% often signals a product quality issue or over-promising on warranty at the point of sale. Coach technicians whose warranty share is disproportionately high.
+      </div>
+    </Card>
   );
 }
