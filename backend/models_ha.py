@@ -447,6 +447,9 @@ class FittingUpdate(BaseModel):
 class FittingVisitCreate(BaseModel):
     kind: FittingVisitKind = "follow_up"
     notes: Optional[str] = None
+    adjustments: List[FittingAdjustment] = Field(default_factory=list)
+    wear_hours_per_day: Optional[float] = None
+    comfort_score: Optional[int] = None
 
 
 # ==================== TRIAL (Phase 4.5 — catch-up from user's plan) ====================
@@ -519,6 +522,93 @@ class TrialConvert(BaseModel):
     margin_approval_user_id: Optional[str] = None
     notes: Optional[str] = None
 
-    adjustments: List[FittingAdjustment] = Field(default_factory=list)
-    wear_hours_per_day: Optional[float] = None
-    comfort_score: Optional[int] = None
+
+# ==================== FOLLOWUPS + SUBSCRIPTIONS (Phase 6 CRM) ====================
+
+FollowUpKind = Literal[
+    # Fitting cadence (user's plan: 1 week, 1 month, 3 months, annual)
+    "adaptation_1w", "review_1mo", "review_3mo", "review_annual",
+    # Trial cadence (user's plan: day 3, day 7, overdue)
+    "trial_day3", "trial_day7", "trial_overdue",
+    # Consumables (user's plan: battery, dome, wax-guard)
+    "consumable",
+    # NPS + upgrade
+    "nps", "upgrade",
+]
+
+FollowUpStatus = Literal["pending", "sent", "done", "dismissed"]
+
+
+class SentChannel(BaseModel):
+    channel: Literal["whatsapp", "sms", "email", "phone_call", "in_person"] = "whatsapp"
+    sent_at: str                                               # ISO timestamp
+    actor_user_id: Optional[str] = None
+
+
+class FollowUp(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    followup_id: str = Field(default_factory=lambda: f"FUP-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    patient_mobile: Optional[str] = None
+    kind: FollowUpKind
+    due_date: str                                              # YYYY-MM-DD
+    status: FollowUpStatus = "pending"
+    # Link to the driver doc (sale / trial / fitting / subscription)
+    ref_kind: Optional[Literal["sale", "trial", "fitting", "subscription"]] = None
+    ref_id: Optional[str] = None
+    title: str                                                 # short summary
+    message_template: Optional[str] = None                     # pre-composed WA body
+    sent_channels: List[SentChannel] = Field(default_factory=list)
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    closed_at: Optional[str] = None
+
+
+SubscriptionKind = Literal["batteries", "domes", "wax_guards", "other"]
+SubscriptionStatus = Literal["active", "paused", "cancelled"]
+
+
+class Subscription(BaseModel):
+    """Consumable subscription per patient (manual-create; audiologist or front_desk)."""
+    model_config = ConfigDict(extra="ignore")
+    subscription_id: str = Field(default_factory=lambda: f"SUB-{str(uuid4())[:10].upper()}")
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    kind: SubscriptionKind
+    item_label: str                                            # e.g. "Signia Silk Dome M"
+    cadence_days: int                                          # interval between re-orders
+    last_delivered_at: Optional[str] = None                    # YYYY-MM-DD
+    next_due_date: str                                         # YYYY-MM-DD (rolled forward on each delivery)
+    status: SubscriptionStatus = "active"
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[str] = None
+
+
+class SubscriptionCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    kind: SubscriptionKind
+    item_label: str
+    cadence_days: int
+    next_due_date: Optional[str] = None                        # defaults to today + cadence_days
+    notes: Optional[str] = None
+
+
+class SubscriptionUpdate(BaseModel):
+    status: Optional[SubscriptionStatus] = None
+    cadence_days: Optional[int] = None
+    next_due_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SubscriptionDeliver(BaseModel):
+    """Mark one delivery; rolls next_due_date forward by cadence_days."""
+    delivered_on: Optional[str] = None                         # YYYY-MM-DD (default today)
+    note: Optional[str] = None

@@ -6,6 +6,8 @@ import ProcurementPage from './ProcurementPage';
 import QuotationStudioPage from './QuotationStudioPage';
 import FittingLedgerPage from './FittingLedgerPage';
 import TrialsPage from './TrialsPage';
+import FollowupBoardPage from './FollowupBoardPage';
+import SubscriptionsPage from './SubscriptionsPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -33,8 +35,10 @@ export default function HAModule() {
         <Tab to="/ha/quotations" label="Quotations" testid="ha-tab-quotations" />
         <Tab to="/ha/trials" label="Trials" testid="ha-tab-trials" />
         <Tab to="/ha/fittings" label="Fittings" testid="ha-tab-fittings" />
+        <Tab to="/ha/followups" label="Follow-ups" testid="ha-tab-followups" />
+        <Tab to="/ha/subscriptions" label="Subscriptions" testid="ha-tab-subs" />
         <Tab to="/ha/procurement" label="Procurement" testid="ha-tab-procurement" />
-        <Tab to="/ha/products" label="Product Catalogue" testid="ha-tab-products" />
+        <Tab to="/ha/products" label="Catalogue" testid="ha-tab-products" />
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -44,6 +48,8 @@ export default function HAModule() {
           <Route path="quotations/*" element={<QuotationStudioPage />} />
           <Route path="trials" element={<TrialsPage />} />
           <Route path="fittings" element={<FittingLedgerPage />} />
+          <Route path="followups" element={<FollowupBoardPage />} />
+          <Route path="subscriptions" element={<SubscriptionsPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="products" element={<ProductCataloguePage />} />
         </Routes>

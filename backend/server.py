@@ -109,6 +109,13 @@ async def lifespan(_app: FastAPI):
         await db.ha_trials.create_index("trial_no", unique=True)
         await db.ha_trials.create_index([("clinic_id", 1), ("status", 1), ("return_date", 1)])
         await db.ha_trials.create_index([("clinic_id", 1), ("patient_id", 1), ("created_at", -1)])
+        # HA module Phase 6 — CRM
+        await db.ha_followups.create_index("followup_id", unique=True)
+        await db.ha_followups.create_index([("clinic_id", 1), ("status", 1), ("due_date", 1)])
+        await db.ha_followups.create_index([("clinic_id", 1), ("patient_id", 1), ("kind", 1), ("ref_id", 1)])
+        await db.ha_subscriptions.create_index("subscription_id", unique=True)
+        await db.ha_subscriptions.create_index([("clinic_id", 1), ("status", 1), ("next_due_date", 1)])
+        await db.ha_subscriptions.create_index([("clinic_id", 1), ("patient_id", 1)])
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
         _log.info("MongoDB indexes ensured")
@@ -136,10 +143,25 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         _log.error(f"Startup initialisation error: {e}")
 
-    # Start daily close-out scheduler (21:00 IST)
+    # Start daily close-out scheduler (21:00 IST) + follow-up scan (09:30 IST)
     scheduler = None
     try:
         scheduler = closeout_module.start_scheduler(db)
+        # Attach the CRM follow-up scan as a second job on the same scheduler.
+        try:
+            from apscheduler.triggers.cron import CronTrigger
+            from routers.ha_crm import run_daily_followup_scan
+            scheduler.add_job(
+                run_daily_followup_scan,
+                trigger=CronTrigger(hour=9, minute=30, timezone=IST),
+                args=[db],
+                id="daily_followup_scan_0930_ist",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+            logging.getLogger(__name__).info("APScheduler job added: daily_followup_scan_0930_ist (09:30 IST)")
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"FollowUp scheduler job skipped: {e}")
     except Exception as e:
         _log.warning(f"Close-out scheduler skipped: {e}")
 
@@ -249,6 +271,7 @@ from routers import ha_quotations as ha_quotations_router   # noqa: E402
 from routers import ha_sales as ha_sales_router             # noqa: E402
 from routers import ha_fittings as ha_fittings_router       # noqa: E402
 from routers import ha_trials as ha_trials_router             # noqa: E402
+from routers import ha_crm as ha_crm_router                   # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -266,6 +289,7 @@ app.include_router(ha_quotations_router.router)
 app.include_router(ha_sales_router.router)
 app.include_router(ha_fittings_router.router)
 app.include_router(ha_trials_router.router)
+app.include_router(ha_crm_router.router)
 
 app.add_middleware(
     CORSMiddleware,

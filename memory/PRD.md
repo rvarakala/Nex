@@ -122,6 +122,20 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
   3. **Roles**: create = front_desk + audiologist + clinic_owner + super_admin; mutate = audiologist + clinic_owner + super_admin.
   4. **Frontend** `/app/frontend/src/modules/ha/TrialsPage.js`: list + 5 KPI tiles (Active / Overdue / Converted / Returned / Lost) + overdue-only filter + status filter, CreateModal with debounced patient search + branch-scoped IN_STOCK serial picker (with L/R/Single side) + deposit + accessories + return date, 3-action DetailDrawer (Extend / Return / Convert-to-Sale / Lost) with overdue visual flag. Added "Trials" tab to HAModule.
   5. **26/26 backend pytest green** (iter 17). Covers role gates, serial state guard rails, extend → earlier-date 400, duplicate-serial-in-request 400, IN_STOCK-only 409, trial-to-sale length mismatch 400, lifecycle transitions, KPIs structure, and regression of all previous phases. Baseline at `/app/backend/tests/test_phase4_5_ha_trials.py`.
+- [Feb 2026] **HA Module — Phase 6 (CRM + Retention Automation) (THIS SESSION)**:
+  1. **Backend — new router** `routers/ha_crm.py` + `utils/followup_rules.py` (cadence engine + WhatsApp templates per kind). New collections: `ha_followups` (append-only task queue; compound indexes on status/due_date + (patient,kind,ref_id) for idempotency), `ha_subscriptions` (consumable cadences per patient).
+  2. **Cadence rules** (verbatim from user's 7-phase plan):
+     - **Fittings** → `1 week` (adaptation) · `1 month` (review) · `3 months` (review) · `annual` (review). Plus `NPS` ask piggybacked on the 30-day checkpoint.
+     - **Trials** → `day 3` (check-in) · `day 7` (decision) · `overdue` (auto-fires whenever today > return_date on active/extended trial).
+     - **Consumables** → fires the moment `subscription.next_due_date <= today`; one open row per subscription at a time.
+     - **Upgrades** → paid/invoiced HA sales older than 3 years.
+  3. **Scheduler**: daily APScheduler job at **09:30 IST** (`daily_followup_scan_0930_ist`) attached to the existing scheduler — runs `run_daily_followup_scan` across all clinics. Manual `POST /ha/followups/generate` endpoint lets owners force-refresh (idempotent — rerun creates 0). Inserts are guarded by `(clinic_id, patient_id, kind, ref_id)` uniqueness to prevent duplicates.
+  4. **Endpoints (12)**: Subscriptions CRUD (list / create / update / deliver), FollowUps (list with bucket filters: overdue / today / upcoming / done, kind filter, KPIs, mark-sent / done / dismiss / generate), Upgrade candidates.
+  5. **Frontend** — 2 new tabs in HAModule nav:
+     - `/ha/followups` → Follow-up Board with 5 KPI tiles + 4 bucket tabs + kind dropdown + color-coded kind badges + **1-click WhatsApp send** (opens wa.me deep-link with pre-composed template + logs `mark-sent`) + Done / ✕ dismiss actions + "↻ Run daily scan" (super_admin only).
+     - `/ha/subscriptions` → Consumable subscription manager (list + create modal with patient search + kind/item-label/cadence-days + Deliver/Pause/Resume actions).
+  6. **30/30 backend pytest green** (iter 18). Combined P3+P4+P4.5+P6 = **127/127** passing. Baseline at `/app/backend/tests/test_phase6_ha_crm.py`.
+  7. **Bug fix caught during build**: a prior `mcp_insert_text` mis-landed inside the `TrialConvert` class, merging its fields into `SubscriptionDeliver` — caused a 422 "unit_prices required" on deliver endpoint. Fixed by rewriting the affected class boundaries in `models_ha.py`. All tests now green.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
