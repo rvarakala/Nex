@@ -149,12 +149,22 @@ async def frontdesk_dashboard(user=Depends(get_current_user), db=Depends(get_db)
         {"_id": 0},
     ).to_list(500)
 
+    # Bulk-resolve patients referenced by today's tokens in ONE query
+    # (was an N+1 `find_one` per token → 100+ round-trips per dashboard refresh).
     returning_today = 0
-    for t in all_tokens_today:
-        p = await db.patients.find_one({"patient_id": t.get("patient_id"), "clinic_id": clinic_id},
-                                       {"_id": 0, "created_at": 1})
-        if p and isinstance(p.get("created_at"), str) and p["created_at"] < today_start.isoformat():
-            returning_today += 1
+    token_pids = list({t.get("patient_id") for t in all_tokens_today if t.get("patient_id")})
+    if token_pids:
+        patient_created: dict[str, str] = {}
+        async for p in db.patients.find(
+            {"patient_id": {"$in": token_pids}, "clinic_id": clinic_id},
+            {"_id": 0, "patient_id": 1, "created_at": 1},
+        ):
+            patient_created[p["patient_id"]] = p.get("created_at") or ""
+        today_iso = today_start.isoformat()
+        for t in all_tokens_today:
+            created = patient_created.get(t.get("patient_id"), "")
+            if isinstance(created, str) and created and created < today_iso:
+                returning_today += 1
 
     waiting_now = sum(1 for t in all_tokens_today if t.get("status") == "waiting")
     in_progress = sum(1 for t in all_tokens_today if t.get("status") in {"in_consultation", "in_testing"})
@@ -177,10 +187,13 @@ async def frontdesk_dashboard(user=Depends(get_current_user), db=Depends(get_db)
     except Exception:
         pass
 
-    pending_reports = await db.test_sessions.count_documents({
-        "clinic_id": clinic_id,
-        "report_status": {"$ne": "finalized"},
-    }) if "clinic_id" in (await db.test_sessions.find_one({}) or {}) else 0
+    try:
+        pending_reports = await db.test_sessions.count_documents({
+            "clinic_id": clinic_id,
+            "report_status": {"$ne": "finalized"},
+        })
+    except Exception:
+        pending_reports = 0
 
     queue = [t for t in all_tokens_today if t.get("status") in {"waiting", "in_consultation", "in_testing"}]
     queue.sort(key=lambda x: x.get("issued_at", ""))

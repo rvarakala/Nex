@@ -1,45 +1,23 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 # IST helpers — shared module (single source of truth)
 from utils.ist import IST, ist_day_start_utc, ist_today_ymd, ist_next_day_start_utc  # noqa: F401
 
-# Import our models
-from models import (
-    Patient, PatientCreate,
-    TestSession, TestSessionCreate, TestSessionUpdate,
-    AudiogramData, SpeechTest,
-    ReferringDoctor, ReferringDoctorCreate,
-    PatientNote, PatientNoteCreate,
-    Clinic, User, LoginRequest, OPDToken,
-    Appointment, AppointmentCreate,
-    WaitlistEntry, WaitlistCreate,
-    CancellationLog,
-    APPOINTMENT_SERVICES,
-    Service, ServiceCreate,
-    Invoice, InvoiceCreate, InvoiceLine, InvoiceLineCreate,
-    Payment, PaymentCreate,
-    ReportDelivery,
-    PAYMENT_METHODS, INVOICE_STATUSES,
-)
+# Models used by remaining in-file routes (auth / clinic)
+from models import LoginRequest
 from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, require_roles, VALID_ROLES,
 )
-from reminders import dispatch_reminder
 import billing as billing_module
 import closeout as closeout_module
-
-# Import PDF generator
-from pdf_generator import generate_report_pdf
+from utils.serde import serialize_datetime  # noqa: F401 — used by _seed_defaults
 
 
 ROOT_DIR = Path(__file__).parent
@@ -191,32 +169,8 @@ async def get_my_clinic(user=Depends(get_current_user)):
 
 
 # ==================== HELPER FUNCTIONS ====================
-
-def serialize_datetime(obj):
-    """Convert datetime objects to ISO format strings for MongoDB"""
-    if isinstance(obj, dict):
-        return {k: serialize_datetime(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [serialize_datetime(item) for item in obj]
-    elif isinstance(obj, datetime):
-        return obj.isoformat()
-    return obj
-
-def deserialize_datetime(obj):
-    """Convert ISO format strings back to datetime objects.
-    Skips known string-typed date fields (e.g., 'dob') to avoid coercing them into datetimes.
-    """
-    STRING_DATE_KEYS = {"dob"}
-    if isinstance(obj, dict):
-        return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [deserialize_datetime(item) for item in obj]
-    elif isinstance(obj, str):
-        try:
-            return datetime.fromisoformat(obj)
-        except:  # noqa: E722
-            return obj
-    return obj
+# serialize_datetime / deserialize_datetime now live in utils/serde.py — shared
+# with the extracted routers. Imported above for _seed_defaults to use.
 
 
 # ==================== BASIC ROUTES ====================
@@ -233,201 +187,9 @@ async def health_check():
 # ==================== EXTRACTED → routers/ ==================== (== PATIENT ROUTES)
 # ==================== EXTRACTED → routers/ ==================== (== M01.B: APPOINTMEN)
 # ==================== EXTRACTED → routers/ ==================== (== TOKEN / QUEUE)
-# ==================== REFERRING DOCTORS ====================
-
-@api_router.get("/referring-doctors", response_model=List[ReferringDoctor])
-async def list_referring_doctors(search: Optional[str] = None, limit: int = 200, user=Depends(get_current_user)):
-    query: dict = {"clinic_id": user["clinic_id"]}
-    if search:
-        import re as _re
-        safe = _re.escape(search.strip())
-        if safe:
-            rx = {"$regex": safe, "$options": "i"}
-            query["$or"] = [{"name": rx}, {"specialty": rx}, {"clinic": rx}, {"phone": rx}]
-    docs = await db.referring_doctors.find(query, {"_id": 0}).sort("name", 1).to_list(limit)
-    return [deserialize_datetime(d) for d in docs]
-
-
-@api_router.post("/referring-doctors", response_model=ReferringDoctor)
-async def create_referring_doctor(doc: ReferringDoctorCreate, user=Depends(get_current_user)):
-    obj_data = doc.model_dump()
-    obj_data["clinic_id"] = user["clinic_id"]
-    obj = ReferringDoctor(**obj_data)
-    await db.referring_doctors.insert_one(serialize_datetime(obj.model_dump()))
-    return obj
-
-
-@api_router.put("/referring-doctors/{doctor_id}", response_model=ReferringDoctor)
-async def update_referring_doctor(doctor_id: str, payload: ReferringDoctorCreate, user=Depends(get_current_user)):
-    existing = await db.referring_doctors.find_one({"doctor_id": doctor_id, "clinic_id": user["clinic_id"]})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Referring doctor not found")
-    data = payload.model_dump()
-    data["updated_at"] = datetime.utcnow()
-    await db.referring_doctors.update_one(
-        {"doctor_id": doctor_id, "clinic_id": user["clinic_id"]},
-        {"$set": serialize_datetime(data)},
-    )
-    updated = await db.referring_doctors.find_one({"doctor_id": doctor_id}, {"_id": 0})
-    return deserialize_datetime(updated)
-
-
-@api_router.delete("/referring-doctors/{doctor_id}")
-async def delete_referring_doctor(doctor_id: str, user=Depends(get_current_user)):
-    res = await db.referring_doctors.delete_one({"doctor_id": doctor_id, "clinic_id": user["clinic_id"]})
-    if res.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Referring doctor not found")
-    return {"message": "Deleted", "doctor_id": doctor_id}
-
-
-# ==================== PATIENT JOURNAL / CHART NOTES ====================
-
-@api_router.get("/patient-notes", response_model=List[PatientNote])
-async def list_patient_notes(patient_id: str, limit: int = 500, user=Depends(get_current_user)):
-    # Verify patient belongs to this clinic
-    p = await db.patients.find_one({"patient_id": patient_id, "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    notes = await db.patient_notes.find({"patient_id": patient_id}, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    return [deserialize_datetime(n) for n in notes]
-
-
-@api_router.post("/patient-notes", response_model=PatientNote)
-async def create_patient_note(note: PatientNoteCreate, user=Depends(get_current_user)):
-    p = await db.patients.find_one({"patient_id": note.patient_id, "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    obj = PatientNote(**note.model_dump())
-    await db.patient_notes.insert_one(serialize_datetime(obj.model_dump()))
-    return obj
-
-
-@api_router.delete("/patient-notes/{note_id}")
-async def delete_patient_note(note_id: str, user=Depends(get_current_user)):
-    # Note doesn't carry clinic_id directly; guard via parent patient
-    note = await db.patient_notes.find_one({"note_id": note_id}, {"_id": 0})
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
-    p = await db.patients.find_one({"patient_id": note.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    await db.patient_notes.delete_one({"note_id": note_id})
-    return {"message": "Deleted", "note_id": note_id}
-
-
-# ==================== TEST SESSION ROUTES ====================
-
-@api_router.post("/sessions", response_model=TestSession)
-async def create_test_session(session: TestSessionCreate, user=Depends(get_current_user)):
-    """Create a new test session. Tenant-scoped via authenticated user."""
-    p = await db.patients.find_one({"patient_id": session.patient_id, "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    session_obj = TestSession(**session.model_dump())
-    doc = serialize_datetime(session_obj.model_dump())
-    doc["clinic_id"] = user["clinic_id"]
-    await db.test_sessions.insert_one(doc)
-    return session_obj
-
-
-@api_router.get("/sessions", response_model=List[TestSession])
-async def get_test_sessions(patient_id: Optional[str] = None, limit: int = 100, user=Depends(get_current_user)):
-    query: dict = {"clinic_id": user["clinic_id"]}
-    if patient_id:
-        query["patient_id"] = patient_id
-    # Legacy sessions created before tenant scoping may not have clinic_id; include them if patient belongs to this clinic
-    sessions = await db.test_sessions.find(query, {"_id": 0}).sort("test_date", -1).to_list(limit)
-    if not sessions and patient_id:
-        p = await db.patients.find_one({"patient_id": patient_id, "clinic_id": user["clinic_id"]})
-        if p:
-            sessions = await db.test_sessions.find({"patient_id": patient_id}, {"_id": 0}).sort("test_date", -1).to_list(limit)
-    return [deserialize_datetime(s) for s in sessions]
-
-
-@api_router.get("/sessions/{session_id}", response_model=TestSession)
-async def get_test_session(session_id: str, user=Depends(get_current_user)):
-    s = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
-    if not s:
-        raise HTTPException(status_code=404, detail="Test session not found")
-    # Tenant check via patient
-    p = await db.patients.find_one({"patient_id": s.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    return deserialize_datetime(s)
-
-
-@api_router.put("/sessions/{session_id}", response_model=TestSession)
-async def update_test_session(session_id: str, session_update: TestSessionUpdate, user=Depends(get_current_user)):
-    s = await db.test_sessions.find_one({"session_id": session_id})
-    if not s:
-        raise HTTPException(status_code=404, detail="Test session not found")
-    p = await db.patients.find_one({"patient_id": s.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    update_data = {k: v for k, v in session_update.model_dump().items() if v is not None}
-    update_data["updated_at"] = datetime.utcnow()
-    await db.test_sessions.update_one({"session_id": session_id}, {"$set": serialize_datetime(update_data)})
-    updated = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
-    return deserialize_datetime(updated)
-
-
-@api_router.delete("/sessions/{session_id}")
-async def delete_test_session(session_id: str, user=Depends(get_current_user)):
-    s = await db.test_sessions.find_one({"session_id": session_id})
-    if not s:
-        raise HTTPException(status_code=404, detail="Test session not found")
-    p = await db.patients.find_one({"patient_id": s.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    await db.test_sessions.delete_one({"session_id": session_id})
-    return {"message": "Deleted", "session_id": session_id}
-
-
-# ==================== CALCULATION ROUTES ====================
-
-@api_router.post("/calculate/pta")
-async def calculate_pta(audiogram: AudiogramData):
-    """Calculate Pure Tone Average from audiogram data"""
-    frequencies = {m.frequency: m.threshold_db for m in audiogram.ac_measurements if m.threshold_db is not None}
-    
-    # 3-frequency PTA (500, 1000, 2000 Hz)
-    pta_3 = None
-    if all(f in frequencies for f in [500, 1000, 2000]):
-        pta_3 = round((frequencies[500] + frequencies[1000] + frequencies[2000]) / 3, 1)
-    
-    # 4-frequency PTA (500, 1000, 2000, 4000 Hz)
-    pta_4 = None
-    if all(f in frequencies for f in [500, 1000, 2000, 4000]):
-        pta_4 = round((frequencies[500] + frequencies[1000] + frequencies[2000] + frequencies[4000]) / 4, 1)
-    
-    # Classify degree
-    pta = pta_3 or pta_4
-    degree = "unknown"
-    if pta is not None:
-        if pta <= 15:
-            degree = "normal"
-        elif pta <= 25:
-            degree = "slight"
-        elif pta <= 40:
-            degree = "mild"
-        elif pta <= 55:
-            degree = "moderate"
-        elif pta <= 70:
-            degree = "moderately_severe"
-        elif pta <= 90:
-            degree = "severe"
-        else:
-            degree = "profound"
-    
-    return {
-        "pta_3freq": pta_3,
-        "pta_4freq": pta_4,
-        "degree": degree,
-        "ear": audiogram.ear
-    }
-
-
-# ==================== CLOSE-OUTS + REPORTS moved to /app/backend/routers/ ====================
+# ==================== EXTRACTED → routers/ref_docs.py ====================
+# ==================== EXTRACTED → routers/ref_docs.py ==================== (PATIENT NOTES)
+# ==================== EXTRACTED → routers/sessions.py ==================== (TEST SESSIONS + PTA)
 
 
 # Include the router in the main app
@@ -439,12 +201,16 @@ from routers import reports as reports_router         # noqa: E402
 from routers import patients as patients_router       # noqa: E402
 from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
+from routers import sessions as sessions_router       # noqa: E402
+from routers import ref_docs as ref_docs_router       # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
 app.include_router(patients_router.router)
 app.include_router(appointments_router.router)
 app.include_router(tokens_router.router)
+app.include_router(sessions_router.router)
+app.include_router(ref_docs_router.router)
 
 app.add_middleware(
     CORSMiddleware,

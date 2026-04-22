@@ -39,6 +39,18 @@ export default function ReportHandoverPage() {
     }
   };
 
+  async function copyShareLink(session) {
+    try {
+      const r = await axios.post(`${API}/reports/${session.session_id}/share-link`, { ttl_hours: 168 });
+      const fullUrl = `${process.env.REACT_APP_BACKEND_URL}${r.data.path}`;
+      await navigator.clipboard.writeText(fullUrl);
+      const expires = new Date(r.data.expires_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      alert(`Share link copied.\n\nExpires: ${expires} (7 days)\n\n${fullUrl}`);
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to create share link');
+    }
+  }
+
   async function shareWhatsAppWithPdf(session, recipient) {
     const digits = recipient.replace(/\D/g, '');
     const mobile = digits.length === 10 ? `91${digits}` : digits;
@@ -135,6 +147,9 @@ export default function ReportHandoverPage() {
                   <div className="inline-flex gap-1">
                     <button onClick={() => deliver(s, 'print')} data-testid={`pr-print-${s.session_id}`}
                       className="px-2 py-0.5 text-[10px] bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded">Print</button>
+                    <button onClick={() => copyShareLink(s)} data-testid={`pr-link-${s.session_id}`}
+                      title="Create a 7-day patient-facing link and copy it"
+                      className="px-2 py-0.5 text-[10px] bg-white border border-blue-300 text-blue-700 hover:bg-blue-50 font-semibold rounded">🔗 Link</button>
                     <button onClick={() => deliver(s, 'whatsapp')} data-testid={`pr-wa-${s.session_id}`}
                       className="px-2 py-0.5 text-[10px] bg-[#25D366] hover:bg-[#1ebe5a] text-white font-semibold rounded">WhatsApp</button>
                     <button onClick={() => deliver(s, 'email')} data-testid={`pr-email-${s.session_id}`}

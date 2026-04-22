@@ -49,22 +49,50 @@ async def _compute_trend(db, clinic_id: str, days: int, kind: str) -> dict:
     values: dict[str, float] = {d: 0.0 for d in dates}
 
     if kind == "collections":
-        async for p in db.payments.find(
-            {"clinic_id": clinic_id, "paid_at": {"$gte": start_utc.isoformat(), "$lt": end_utc.isoformat()}},
-            {"_id": 0, "paid_at": 1, "amount": 1},
-        ):
-            d = _bucket_from_utc(p.get("paid_at"))
+        # MongoDB aggregation: parse ISO-string `paid_at` → IST-bucketed date → sum amount.
+        # Avoids streaming every payment doc into Python and bucketing in-process.
+        pipeline = [
+            {"$match": {
+                "clinic_id": clinic_id,
+                "paid_at": {"$gte": start_utc.isoformat(), "$lt": end_utc.isoformat()},
+            }},
+            {"$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "timezone": "Asia/Kolkata",
+                        "date": {"$dateFromString": {"dateString": "$paid_at", "onError": None, "onNull": None}},
+                    }
+                },
+                "total": {"$sum": {"$toDouble": {"$ifNull": ["$amount", 0]}}},
+            }},
+        ]
+        async for row in db.payments.aggregate(pipeline):
+            d = row.get("_id")
             if d in values:
-                values[d] = round(values[d] + float(p.get("amount", 0.0)), 2)
+                values[d] = round(float(row.get("total", 0.0)), 2)
 
     elif kind == "walkins":
-        async for t in db.tokens.find(
-            {"clinic_id": clinic_id, "issued_at": {"$gte": start_utc.isoformat(), "$lt": end_utc.isoformat()}},
-            {"_id": 0, "issued_at": 1},
-        ):
-            d = _bucket_from_utc(t.get("issued_at"))
+        pipeline = [
+            {"$match": {
+                "clinic_id": clinic_id,
+                "issued_at": {"$gte": start_utc.isoformat(), "$lt": end_utc.isoformat()},
+            }},
+            {"$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "timezone": "Asia/Kolkata",
+                        "date": {"$dateFromString": {"dateString": "$issued_at", "onError": None, "onNull": None}},
+                    }
+                },
+                "count": {"$sum": 1},
+            }},
+        ]
+        async for row in db.tokens.aggregate(pipeline):
+            d = row.get("_id")
             if d in values:
-                values[d] += 1
+                values[d] = int(row.get("count", 0))
 
     elif kind == "no_show_rate":
         # Appointments are stored as IST-local ISO strings (no TZ suffix) — compare by string prefix.
@@ -116,8 +144,9 @@ async def _compute_trend(db, clinic_id: str, days: int, kind: str) -> dict:
     }
 
 
-def _bucket_from_utc(iso_str) -> str | None:
-    """Parse a UTC-ish ISO string and return the IST YYYY-MM-DD it belongs to."""
+def _bucket_from_utc(iso_str) -> str | None:  # noqa: F841
+    """Parse a UTC-ish ISO string and return the IST YYYY-MM-DD it belongs to.
+    Retained for ad-hoc diagnostics; the aggregation pipeline now handles bucketing server-side."""
     if not iso_str:
         return None
     try:
