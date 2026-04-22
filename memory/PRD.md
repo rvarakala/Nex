@@ -36,7 +36,12 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
 - [Feb 2026] Phase 1.5: WhatsApp Share + Ghost Overlay
 - [Feb 2026] **M01 Sprint A**: JWT/bcrypt auth, tenant scoping, Clinic/User/OPDToken models, MRD counter, duplicate detection, KPI endpoint + Front Desk shell (Login, AppShell, NewPatient, Returning, Queue, Dashboard, TokenPrint).
 - [Feb 2026] **M01 Sprint B**: Appointments CRUD + waitlist + reminder stubs. Backend: appointment/waitlist/reminder routers; frontend: AppointmentsPage (Today/Week, drag-drop), BookAppointmentModal, WaitlistPanel. 21/21 backend pass, frontend ~95%. Follow-up fixes: status filter dropdown + email reminder button added.
-- [Feb 2026] **M01 Sprint C (THIS SESSION)**: Billing engine. New `/app/backend/billing.py` (~15 endpoints) + billing models (Service, Invoice, InvoiceLine, Payment, ReportDelivery). 12 default services auto-seeded per clinic. Frontend `/app/frontend/src/modules/billing/` — BillingModule (tabbed shell), InvoicesListPage, CreateInvoicePage (patient search + service catalogue dropdown + live totals preview + optional initial payment), InvoiceDetailPage (A4 layout + PaymentDialog + thermal popup + WhatsApp share + cancel), ReportHandoverPage, ServiceCatalogPage (role-gated nav + route). Backend role gates on POST/PUT/DELETE /billing/services and POST /billing/invoices/{id}/cancel. Dashboard `collections_today` now reads real payment sum. 16/16 backend pass; frontend ~95% pass, then 2 minor fixes applied (catalog route guard, option hydration warning).
+- [Feb 2026] **M01 Sprint C**: Billing engine. New `/app/backend/billing.py` (~15 endpoints) + billing models (Service, Invoice, InvoiceLine, Payment, ReportDelivery). 12 default services auto-seeded per clinic. Frontend `/app/frontend/src/modules/billing/` — BillingModule (tabbed shell), InvoicesListPage, CreateInvoicePage (patient search + service catalogue dropdown + live totals preview + optional initial payment), InvoiceDetailPage (A4 layout + PaymentDialog + thermal popup + WhatsApp share + cancel), ReportHandoverPage, ServiceCatalogPage (role-gated nav + route). Backend role gates on POST/PUT/DELETE /billing/services and POST /billing/invoices/{id}/cancel. Dashboard `collections_today` now reads real payment sum. 16/16 backend pass; frontend ~95% pass, then 2 minor fixes applied.
+- [Feb 2026] **Front-desk speed-ups**: Invoice shortcut (`₹`) on appointment cards & queue token rows — navigates to /billing/new with patient pre-selected. WhatsApp reminder rewired to use `wa.me` deep-link (no API needed per user's choice). SMS & Email buttons removed.
+- [Feb 2026] **Power-user Enhancements (THIS SESSION)**: 
+  1. **Book Next Appointment CTA** — visible only on fully-paid invoices; jumps to Appointments page and auto-opens BookAppointmentModal with patient pre-filled and date +30 days.
+  2. **Queue TV Display** — new unauth route `/queue/:clinicId` + public endpoint `GET /api/queue/public/{clinic_id}`. Privacy-redacted names (`First L.`), 5s polling, big emerald "Now Serving" card, amber "Next in Queue" grid, clock/date header, bilingual (English + Hindi) tagline.
+  3. **Cmd+K Command Palette** — global keyboard shortcut (`⌘K` / `Ctrl+K`) opens a search palette with 8 quick actions, debounced patient + invoice search, arrow-key navigation. Single-key shortcuts `N A I R D Q /` (when not typing) jump to common routes. Topbar trigger button for discoverability. 7/7 backend + frontend validation green (iteration_5).
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
@@ -46,15 +51,16 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
 ## Backlog / Roadmap
 
 ### P1 (next)
-- [ ] Real SMS/WhatsApp/Email reminder SDK wiring (currently stubbed — needs MSG91/SendGrid/WhatsApp Business keys from user). Use `integration_playbook_expert_v2`.
-- [ ] Print-from-appointment-card: direct "Create Invoice" shortcut on appointment + token cards.
-- [ ] Keyboard shortcuts + Cmd+K command palette.
+- [ ] Real SMS/WhatsApp/Email reminder SDK wiring (user chose `wa.me` deep-link for WhatsApp; SMS + Email deferred until user provides MSG91 / SendGrid keys; backend stub + UI removed for now).
+- [ ] Attach PDF to WhatsApp share on Report Handover (currently text-only deep-link).
+- [ ] Save-state on browser refresh for in-flight Book Next flow (location.state is lost on refresh).
 
 ### P2 infrastructure
 - [ ] PostgreSQL migration (blueprint target; not blocking clinical MVP).
 - [ ] Redis for session cache + dashboard KPI materialisation.
 - [ ] AWS ap-south-1 deployment (ECS/ECR).
-- [ ] Queue TV display (`/queue/:clinicId` read-only big-screen).
+- [ ] Per-IP rate limit on `/api/queue/public/{clinic_id}`.
+- [ ] IST-aware day boundary on public queue (currently UTC-based — tokens roll over at 05:30 IST instead of midnight).
 
 ### P3
 - [ ] Hearing aid dispensing module (serial/warranty, trial fitment workflow).
