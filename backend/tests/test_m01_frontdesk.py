@@ -147,11 +147,14 @@ class TestTenantGating:
 class TestPatientCRUD:
     def test_create_patient_auto_mrd(self, fd_client):
         suffix = uuid.uuid4().hex[:6]
+        # Build a fully numeric 10-digit mobile so `check-duplicate` (which strips
+        # non-digits then takes last 10) can match on it later.
+        numeric = f"9{uuid.uuid4().int % 1000000000:09d}"
         r = fd_client.post(f"{API}/patients", json={
             "name": f"TEST_M01_Patient_{suffix}",
             "age": 40,
             "gender": "Male",
-            "mobile": f"9{suffix[:9]}",
+            "mobile": numeric,
             "chief_complaint": "Hearing loss in right ear",
             "ear_side": "Right",
             "aadhaar_last4": "1234",

@@ -184,11 +184,12 @@ class TestReportPDF:
         sessions = rs.json()
         if not sessions:
             pytest.skip("no sessions exist to test PDF")
-        # try until one returns a PDF
+        # try until one returns a PDF (PDF endpoint is auth-gated since iter10)
         last_status = None
         for s in sessions:
             sid = s["session_id"]
-            r = requests.get(f"{BASE_URL}/api/reports/{sid}/pdf", timeout=20)
+            r = requests.get(f"{BASE_URL}/api/reports/{sid}/pdf",
+                             headers=fd_headers, timeout=20)
             last_status = r.status_code
             if r.status_code == 200:
                 ct = r.headers.get("content-type", "")

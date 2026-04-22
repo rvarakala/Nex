@@ -230,15 +230,26 @@ class TestISTBucketing:
 # =========================================================
 
 class TestPDFReports:
-    SESSION_ID = "SES-CAFE0F70-A90"
+    def test_pdf_known_session(self, s, tok_frontdesk):
+        # PDF endpoint is auth-gated since iter10. Fetch a real session dynamically.
+        rs = s.get(f"{API}/sessions?limit=20", headers=H(tok_frontdesk), timeout=15)
+        assert rs.status_code == 200
+        sessions = rs.json()
+        if not sessions:
+            pytest.skip("no sessions available to test PDF")
+        last_status = None
+        for sess in sessions:
+            sid = sess["session_id"]
+            r = s.get(f"{API}/reports/{sid}/pdf", headers=H(tok_frontdesk), timeout=20)
+            last_status = r.status_code
+            if r.status_code == 200:
+                ctype = r.headers.get("content-type", "")
+                assert "application/pdf" in ctype, f"unexpected content-type: {ctype}"
+                assert r.content[:4] == b"%PDF", "response is not a PDF magic header"
+                return
+        pytest.fail(f"no session yielded a PDF (last status={last_status})")
 
-    def test_pdf_known_session(self, s):
-        r = s.get(f"{API}/reports/{self.SESSION_ID}/pdf", timeout=20)
-        assert r.status_code == 200
-        ctype = r.headers.get("content-type", "")
-        assert "application/pdf" in ctype, f"unexpected content-type: {ctype}"
-        assert r.content[:4] == b"%PDF", "response is not a PDF magic header"
-
-    def test_pdf_unknown_session_404(self, s):
-        r = s.get(f"{API}/reports/SES-NOT-EXIST-XX/pdf")
+    def test_pdf_unknown_session_404(self, s, tok_frontdesk):
+        r = s.get(f"{API}/reports/SES-NOT-EXIST-XX/pdf",
+                  headers=H(tok_frontdesk), timeout=15)
         assert r.status_code == 404
