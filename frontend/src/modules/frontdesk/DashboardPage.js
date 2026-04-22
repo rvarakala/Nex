@@ -135,6 +135,14 @@ export default function DashboardPage() {
                         className="px-2 py-0.5 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded"
                       >Complete</button>
                     )}
+                    {t.status !== 'cancelled' && (
+                      <button
+                        onClick={() => navigate('/billing/new', { state: { patient: { patient_id: t.patient_id, name: t.patient_name, mrd: t.mrd, mobile: t.patient_mobile } } })}
+                        data-testid={`queue-invoice-${t.token_id}`}
+                        title="Create invoice for this patient"
+                        className="px-2 py-0.5 text-[10px] bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 font-semibold rounded"
+                      >₹ Invoice</button>
+                    )}
                     {t.status !== 'cancelled' && t.status !== 'completed' && (
                       <button
                         onClick={() => advanceToken(t.token_id, 'cancelled')}

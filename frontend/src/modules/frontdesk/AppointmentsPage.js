@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../AuthContext';
 import BookAppointmentModal from './appointments/BookAppointmentModal';
 import WaitlistPanel from './appointments/WaitlistPanel';
 
@@ -36,6 +38,8 @@ export default function AppointmentsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalInitial, setModalInitial] = useState(null);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const navigate = useNavigate();
+  const { clinic } = useAuth();
 
   useEffect(() => {
     axios.get(`${API}/users?role=audiologist`).then((r) => setAudiologists(r.data || [])).catch(() => {});
@@ -84,21 +88,41 @@ export default function AppointmentsPage() {
   };
 
   const sendReminder = async (appt, channel) => {
+    // wa.me deep-link — user's own WhatsApp client composes the message.
+    // Backend `POST /api/reminders/send` is still called so we have an audit trail.
+    if (channel !== 'whatsapp') return;
+    const digits = (appt.patient_mobile || '').replace(/\D/g, '');
+    if (!digits) { alert('Patient has no mobile number on record.'); return; }
+    const mobile = digits.length === 10 ? `91${digits}` : digits;
+    const when = new Date(appt.start_at);
+    const dateStr = when.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    const timeStr = when.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const body =
+      `Hi ${appt.patient_name}, this is a reminder for your appointment at *${clinic?.name || 'our clinic'}*.\n\n` +
+      `🗓 ${dateStr} at ${timeStr}\n` +
+      `🩺 ${appt.service}${appt.audiologist_name ? ` with ${appt.audiologist_name}` : ''}${appt.room ? ` · ${appt.room}` : ''}\n\n` +
+      `Please reply to confirm or reschedule. See you soon!`;
+    window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(body)}`, '_blank');
+    // Fire-and-forget audit log (non-blocking).
     try {
-      const r = await axios.post(`${API}/reminders/send`, {
-        appointment_id: appt.appointment_id, patient_id: appt.patient_id, channel,
+      await axios.post(`${API}/reminders/send`, {
+        appointment_id: appt.appointment_id, patient_id: appt.patient_id, channel: 'whatsapp',
       });
-      if (r.data.status === 'stubbed_no_provider_key') {
-        alert(`${channel.toUpperCase()} reminder queued — add provider API keys to actually send.\n\nMessage:\n"${r.data.body}"`);
-      } else if (r.data.status === 'sent') {
-        alert(`${channel.toUpperCase()} reminder sent.`);
-      } else {
-        alert(`Reminder ${r.data.status}: ${r.data.provider_response || ''}`);
-      }
       load();
-    } catch (e) {
-      alert(e?.response?.data?.detail || e?.message || 'Reminder failed');
-    }
+    } catch { /* audit log is best-effort */ }
+  };
+
+  const goToInvoice = (appt) => {
+    navigate('/billing/new', {
+      state: {
+        patient: {
+          patient_id: appt.patient_id,
+          name: appt.patient_name,
+          mrd: appt.mrd,
+          mobile: appt.patient_mobile,
+        },
+      },
+    });
   };
 
   return (
@@ -166,6 +190,7 @@ export default function AppointmentsPage() {
             onStatusChange={onStatusChange}
             onCancel={onCancel}
             onSendReminder={sendReminder}
+            onInvoice={goToInvoice}
             onEdit={(a) => { setModalInitial(a); setModalOpen(true); }}
           />
         ) : (
@@ -200,7 +225,7 @@ export default function AppointmentsPage() {
 }
 
 // ===================== DAY LIST (time-sorted cards) =====================
-const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel, onSendReminder, onEdit, date }) => {
+const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel, onSendReminder, onInvoice, onEdit, date }) => {
   // Drop target = hour slot (8am-8pm)
   const hours = Array.from({ length: 13 }, (_, i) => 8 + i);
   const apptByHour = {};
@@ -240,7 +265,7 @@ const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel,
           </div>
           <div className="flex-1 p-1.5 space-y-1">
             {(apptByHour[h] || []).map((a) => (
-              <ApptCard key={a.appointment_id} a={a} onStatusChange={onStatusChange} onCancel={onCancel} onSendReminder={onSendReminder} onEdit={onEdit} onDragStart={onDragStart} />
+              <ApptCard key={a.appointment_id} a={a} onStatusChange={onStatusChange} onCancel={onCancel} onSendReminder={onSendReminder} onInvoice={onInvoice} onEdit={onEdit} onDragStart={onDragStart} />
             ))}
           </div>
         </div>
@@ -250,7 +275,7 @@ const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel,
 };
 
 // ===================== APPT CARD =====================
-const ApptCard = ({ a, onStatusChange, onCancel, onSendReminder, onEdit, onDragStart, compact = false }) => {
+const ApptCard = ({ a, onStatusChange, onCancel, onSendReminder, onInvoice, onEdit, onDragStart, compact = false }) => {
   const s = STATUS_STYLES[a.status] || STATUS_STYLES.scheduled;
   return (
     <div
@@ -288,9 +313,8 @@ const ApptCard = ({ a, onStatusChange, onCancel, onSendReminder, onEdit, onDragS
                 ))}
               </select>
             )}
-            <button onClick={() => onSendReminder(a, 'whatsapp')} data-testid={`appt-wa-${a.appointment_id}`} title="WhatsApp reminder" className="px-1 text-[9px] bg-[#25D366] hover:bg-[#1ebe5a] text-white font-bold rounded">WA</button>
-            <button onClick={() => onSendReminder(a, 'sms')} data-testid={`appt-sms-${a.appointment_id}`} title="SMS reminder" className="px-1 text-[9px] bg-slate-600 hover:bg-slate-700 text-white font-bold rounded">SMS</button>
-            <button onClick={() => onSendReminder(a, 'email')} data-testid={`appt-email-${a.appointment_id}`} title="Email reminder" className="px-1 text-[9px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded">@</button>
+            <button onClick={() => onSendReminder(a, 'whatsapp')} data-testid={`appt-wa-${a.appointment_id}`} title="WhatsApp reminder (opens wa.me)" className="px-1 text-[9px] bg-[#25D366] hover:bg-[#1ebe5a] text-white font-bold rounded">WA</button>
+            <button onClick={() => onInvoice?.(a)} data-testid={`appt-invoice-${a.appointment_id}`} title="Create invoice for this patient" className="px-1 text-[9px] bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 font-bold rounded">₹</button>
             <button onClick={() => onEdit(a)} title="Edit" className="px-1 text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded">Edit</button>
             {a.status !== 'cancelled' && (
               <button onClick={() => onCancel(a)} data-testid={`appt-cancel-${a.appointment_id}`} title="Cancel" className="px-1 text-[9px] border border-red-300 text-red-600 hover:bg-red-50 font-bold rounded">✕</button>
