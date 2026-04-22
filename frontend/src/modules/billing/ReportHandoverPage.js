@@ -20,23 +20,69 @@ export default function ReportHandoverPage() {
       ? window.prompt(`Recipient ${channel === 'whatsapp' ? 'mobile' : 'email'}:`, channel === 'whatsapp' ? (session.patient_mobile || '') : (session.patient_email || ''))
       : null;
     if ((channel === 'whatsapp' || channel === 'email') && !recipient) return;
+
+    // For WhatsApp, try to actually attach the PDF via Web Share API (mobile/modern browsers).
+    // Fall back to downloading the PDF + opening wa.me text deep-link.
+    if (channel === 'whatsapp' && recipient) {
+      await shareWhatsAppWithPdf(session, recipient);
+    }
+
     try {
       await axios.post(`${API}/billing/report-deliveries`, {
         session_id: session.session_id,
         channel,
         recipient,
       });
-      if (channel === 'whatsapp' && recipient) {
-        const digits = recipient.replace(/\D/g, '');
-        const mobile = digits.length === 10 ? `91${digits}` : digits;
-        const msg = `Your audiology report from ${session.test_date ? new Date(session.test_date).toLocaleDateString('en-IN') : 'your visit'} is ready. Please collect it from the front desk or reply to receive a PDF copy.`;
-        window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(msg)}`, '_blank');
-      }
       load();
     } catch (e) {
       alert(e?.response?.data?.detail || 'Delivery log failed');
     }
   };
+
+  async function shareWhatsAppWithPdf(session, recipient) {
+    const digits = recipient.replace(/\D/g, '');
+    const mobile = digits.length === 10 ? `91${digits}` : digits;
+    const msg = `Hi ${session.patient_name || ''}, your audiology report from ${session.test_date ? new Date(session.test_date).toLocaleDateString('en-IN') : 'your visit'} is attached. Please contact us if you have any questions.`;
+
+    let pdfFile = null;
+    try {
+      const r = await axios.get(`${API}/reports/${session.session_id}/pdf`, { responseType: 'blob' });
+      pdfFile = new File([r.data], `audiogram-${session.session_id}.pdf`, { type: 'application/pdf' });
+    } catch {
+      // If PDF generation fails, still open wa.me with the text so front-desk can type a note.
+      window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(msg)}`, '_blank');
+      return;
+    }
+
+    // Web Share API with files (Android Chrome, iOS Safari 15+). This surfaces a native share sheet
+    // that includes WhatsApp and actually attaches the PDF. Desktop browsers without Level 2 support
+    // fall through to the download+deep-link path.
+    const canShareFiles = navigator.canShare && navigator.canShare({ files: [pdfFile] });
+    if (canShareFiles && navigator.share) {
+      try {
+        await navigator.share({
+          files: [pdfFile],
+          text: msg,
+          title: 'Audiology Report',
+        });
+        return;
+      } catch (err) {
+        // User cancelled → that's fine, don't fall back.
+        if (err?.name === 'AbortError') return;
+        // Any other error → fall through to download + deep-link.
+      }
+    }
+
+    // Fallback: trigger a download of the PDF, then open wa.me so the user can manually attach it.
+    const url = URL.createObjectURL(pdfFile);
+    const a = document.createElement('a');
+    a.href = url; a.download = pdfFile.name;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    const notice = `${msg}\n\n(Note: your browser does not support direct PDF sharing. The PDF has been downloaded — please attach it in the WhatsApp chat that just opened.)`;
+    window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(notice)}`, '_blank');
+  }
 
   return (
     <div className="p-4 space-y-3" data-testid="report-handover-page">

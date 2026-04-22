@@ -9,8 +9,10 @@ GST invoice engine with:
 """
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import re
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 from models import (
     Service, ServiceCreate,
@@ -385,7 +387,7 @@ async def cancel_invoice(invoice_id: str, payload: dict, user=Depends(get_curren
 async def collections_summary(date: Optional[str] = None, user=Depends(get_current_user)):
     """Daily collections broken down by payment method for the given date (YYYY-MM-DD) or today."""
     db = _db()
-    day = date or datetime.utcnow().strftime("%Y-%m-%d")
+    day = date or datetime.now(IST).strftime("%Y-%m-%d")
     q = {
         "clinic_id": user["clinic_id"],
         "paid_at": {"$gte": f"{day}T00:00:00", "$lte": f"{day}T23:59:59"},

@@ -7,7 +7,23 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# IST = UTC+5:30 — India is the primary market; all clinic "today" boundaries are IST.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def ist_day_start_utc() -> datetime:
+    """Return the UTC naive datetime representing IST midnight of the current IST day.
+    Stored timestamps are UTC ISO strings, so we compare against this boundary."""
+    ist_now = datetime.now(IST)
+    ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ist_midnight.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def ist_today_ymd() -> str:
+    """Return today's date in IST as YYYY-MM-DD."""
+    return datetime.now(IST).strftime("%Y-%m-%d")
 
 # Import our models
 from models import (
@@ -425,7 +441,7 @@ async def cancel_appointment(appointment_id: str, payload: dict, user=Depends(ge
     start_at = existing.get("start_at", "")
     was_same_day = False
     try:
-        was_same_day = isinstance(start_at, str) and start_at[:10] == datetime.utcnow().strftime("%Y-%m-%d")
+        was_same_day = isinstance(start_at, str) and start_at[:10] == ist_today_ymd()
     except Exception:
         pass
     await db.appointments.update_one(
@@ -573,8 +589,8 @@ async def list_reminders(
 # ==================== TOKEN / QUEUE ====================
 
 async def _next_token_no(clinic_id: str) -> int:
-    """Daily-resetting token counter per clinic."""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    """Daily-resetting token counter per clinic (IST day)."""
+    today = ist_today_ymd()
     counter = await db.counters.find_one_and_update(
         {"_id": f"token:{clinic_id}:{today}"},
         {"$inc": {"seq": 1}},
@@ -621,7 +637,7 @@ async def list_tokens(
     if status:
         q["status"] = status
     if today_only:
-        start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        start = ist_day_start_utc()
         q["issued_at"] = {"$gte": start.isoformat()}
     tokens = await db.tokens.find(q, {"_id": 0}).sort("issued_at", -1).to_list(limit)
     return [deserialize_datetime(t) for t in tokens]
@@ -661,7 +677,7 @@ async def public_queue(clinic_id: str):
     if not clinic:
         raise HTTPException(status_code=404, detail="Clinic not found")
 
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = ist_day_start_utc()
     tokens = await db.tokens.find(
         {
             "clinic_id": clinic_id,
@@ -700,7 +716,7 @@ async def public_queue(clinic_id: str):
 async def frontdesk_dashboard(user=Depends(get_current_user)):
     """KPI cards + live queue for the Front Desk Dashboard."""
     clinic_id = user["clinic_id"]
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = ist_day_start_utc()
 
     # Walk-ins today = patients created today
     walkins_today = await db.patients.count_documents({
@@ -721,8 +737,8 @@ async def frontdesk_dashboard(user=Depends(get_current_user)):
     waiting_now = sum(1 for t in all_tokens_today if t.get("status") == "waiting")
     in_progress = sum(1 for t in all_tokens_today if t.get("status") in {"in_consultation", "in_testing"})
 
-    # Appointments today (M01.B)
-    day_key = today_start.strftime("%Y-%m-%d")
+    # Appointments today (M01.B) — appointment start_at is stored as local (IST) ISO string
+    day_key = ist_today_ymd()
     appointments_today = await db.appointments.count_documents({
         "clinic_id": clinic_id,
         "start_at": {"$gte": f"{day_key}T00:00:00", "$lte": f"{day_key}T23:59:59"},

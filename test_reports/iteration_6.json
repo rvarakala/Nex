@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration-6 (QR Poster + IST day boundaries + WhatsApp PDF attach) tested. Backend: 12/13 pytest pass on /app/backend/tests/test_iter6_ist_qr.py. IST helpers verified directly (ist_today_ymd matches datetime.now(IST), ist_day_start_utc returns UTC-naive 18:30 of prior day = IST 00:00). Public queue, /api/dashboard/frontdesk, /api/tokens?today_only=true and /api/billing/collections all key off ist_day_start_utc — verified by issuing a fresh token and seeing it appear in next_up of public queue at IST 02:30 (which would have been excluded under the old UTC-day cutoff). Auth gating preserved (tokens=401, dashboard=401, public queue=200). Frontend: /frontdesk/qr-poster fully working — qr-code-svg rendered, qr-url-text equals https://careful-feedback.preview.emergentagent.com/queue/clinic-acs-demo, qr-print-btn invokes window.print(), qr-preview-link opens public queue in new tab (target='_blank'), fd-tab-qr present in front-desk tab bar, Cmd+K palette includes cmdk-item-qr-poster ('📱 Waiting-Room QR Poster') and navigates correctly. @media print emulation: .no-print resolves to display:none and #qr-poster stays visibility:visible — print CSS works as designed. WhatsApp-PDF flow: code paths verified by inspection — axios.get(/api/reports/{id}/pdf, responseType:'blob'), canShare-with-files branch + download-anchor + wa.me fallback, deliver() still POSTs /api/billing/report-deliveries. Couldn't run the click-through E2E because the Report Handover queue is currently EMPTY ('All reports have been handed over. Nothing pending.').",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/reports/{session_id}/pdf", "issue": "Endpoint returns 500 'Failed to generate PDF: NoneType object has no attribute get' for EVERY existing test session (e.g., SES-CAFE0F70-A90, SES-773948D0-CF2, SES-FACFE9F9-814 ...) — pdf_generator.py crashes on real session payloads (likely missing audiogram or audiometer object). Some sessions also 404 because their patient_id no longer exists in patients collection (orphan sessions: SES-463CE679-1E4, SES-335E8BC4-79B, SES-D7A5C15D-BC7 ...). This DIRECTLY breaks iter-6's WhatsApp-PDF-attach feature even though the frontend share helper is coded correctly — every WA click will fall through to text-only wa.me. Fix needed in /app/backend/pdf_generator.py to defensively guard against None audiogram/speech_test/etc. Also consider a one-shot cleanup / cascading delete for orphan sessions.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "FastAPI lifecycle", "issue": "@app.on_event('startup'/'shutdown') is deprecated — switch to lifespan context manager."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "WhatsApp PDF share", "issue": "Frontend correctly fetches /api/reports/{id}/pdf as blob, but backend PDF generator is broken — so the canShare fallback ALWAYS triggers and PDF is never attached. End-user impact: 'your browser does not support direct PDF sharing' notice opens for every patient even on Android Chrome where canShare(files) is true. Root cause is backend, not frontend.", "affected_selectors": ["[data-testid^='pr-wa-']"]}
+    ],
+    "design_issues": [
+      {"screen": "InvoiceDetailPage / CreateInvoicePage console (carryover from iter_3)", "issues": ["Recurring React hydration warning '<span> cannot be a child of <option>' still present in service catalogue dropdown — not regressed but not fixed either."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_ist_qr.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): /app/backend/pdf_generator.py crashes with NoneType .get on every real session — guard against missing audiogram_data/speech_test/audiometer keys before calling .get(). This blocks the iter-6 WhatsApp-PDF attach feature.",
+    "OPTIONAL: Add a one-time DB script (or backfill in seed_defaults) to delete orphan test_sessions whose patient_id no longer exists, OR make /api/reports/{id}/pdf return a clearer 404 with the missing patient_id.",
+    "Migrate FastAPI on_event handlers to lifespan context manager (deprecation warning)."
+  ],
+  "critical_code_review_comments": [
+    "IST helpers are clean and correctly placed at the top of server.py. ist_day_start_utc() returns naive UTC for direct ISO-string comparison with stored issued_at — good (avoids timezone-aware/naive comparison errors that bit some endpoints in earlier iterations).",
+    "_next_token_no() now keys on `token:{clinic_id}:{IST_YMD}` — counter will correctly reset at IST midnight. Old UTC-keyed counters from prior iterations will linger in the counters collection but won't cause functional issues. Worth a one-time cleanup script.",
+    "frontdesk_dashboard.appointments_today still uses `f'{day_key}T00:00:00'` directly on stored start_at strings — this is correct since appointments are stored as IST-local-equivalent ISO strings (no Z suffix).",
+    "QRPosterPage.js uses `${window.location.origin}/queue/${clinic_id}` which correctly resolves to the public preview URL — verified text content matches expected suffix.",
+    "shareWhatsAppWithPdf has good defense-in-depth: try/catch around blob fetch falls through to text-only wa.me; canShare(files) gate ensures iOS Safari/Android Chrome native share when available; download+wa.me fallback works in headless Linux (where canShare is undefined). However, the flow currently degrades silently due to the backend 500 — consider surfacing a toast on PDF fetch failure so front-desk staff know the patient won't get the attachment.",
+    "FrontDeskModule.js — `<Tab to='/frontdesk/qr-poster' testid='fd-tab-qr' label='QR Poster' />` and `<Route path='qr-poster' element={<QRPosterPage />} />` both wired correctly.",
+    "CommandPalette.js entry { id:'qr-poster', to:'/frontdesk/qr-poster' } renders cmdk-item-qr-poster as expected.",
+    "@media print CSS correctly hides .no-print toolbar and reveals #qr-poster — verified via Playwright page.emulate_media({media:'print'})."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6_ist_qr.py (new — 13 tests covering IST helpers, public queue IST cutoff, dashboard, tokens listing, billing collections, auth gating, PDF endpoint sanity)",
+    "/app/test_reports/pytest/iter6_results.xml (new junit output)"
+  ],
+  "success_rate": {"backend": "92% (12/13) — only failure is the PRE-EXISTING /api/reports/{id}/pdf 500", "frontend": "100% on iter-6-specific flows (QR poster page, fd-tab-qr, cmdk navigation, print media emulation). WhatsApp-PDF E2E unverified due to empty Report Handover queue + broken backend PDF."},
+  "test_credentials": "frontdesk@acs.in/frontdesk123 and accounts@acs.in/accounts123 both verified working. Public clinic_id = clinic-acs-demo.",
+  "seed_data_creation": "One throwaway OPD token issued for IST cutoff verification, immediately marked completed. No persistent test pollution.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter-6 IST + QR poster features all green at backend & UI level. The blocker is /api/reports/{id}/pdf returning 500 on real sessions due to a NoneType bug inside /app/backend/pdf_generator.py — this pre-dates iter-6 but iter-6's WhatsApp-PDF feature is the first one to depend on it returning real bytes. After main agent patches pdf_generator.py, retest by: (1) creating a TestSession with audiogram_data populated, (2) GET /api/reports/{id}/pdf — expect 200 application/pdf with %PDF-prefixed bytes, (3) UI: navigate /billing/handover, click pr-wa-{id}, expect a window.open('wa.me...') call AND an anchor[download].click triggered for the PDF blob. Test file /app/backend/tests/test_iter6_ist_qr.py::TestReportPDF::test_pdf_returns_blob_for_existing_session is reusable for the regression check.",
+  "rca_of_the_issue": "PDF 500: pdf_generator.generate_report_pdf(session_id, session, patient) calls `.get(...)` on a sub-object that is None — most likely audiogram_data or speech_test missing on legacy sessions. Reproduction: curl GET /api/reports/SES-CAFE0F70-A90/pdf -> 500 {'detail': \"Failed to generate PDF: 'NoneType' object has no attribute 'get'\"}. Mitigation: in pdf_generator.py, replace `session['audiogram_data'].get(...)` style with `(session.get('audiogram_data') or {}).get(...)` for every nested access; or short-circuit with a 422 if session.report_status != 'finalized'."
+}

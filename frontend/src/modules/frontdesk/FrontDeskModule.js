@@ -5,6 +5,7 @@ import NewPatientPage from './NewPatientPage';
 import ReturningPage from './ReturningPage';
 import QueuePage from './QueuePage';
 import AppointmentsPage from './AppointmentsPage';
+import QRPosterPage from './QRPosterPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -31,6 +32,7 @@ export default function FrontDeskModule() {
         <Tab to="/frontdesk/returning" testid="fd-tab-returning" label="Returning Patient" />
         <Tab to="/frontdesk/appointments" testid="fd-tab-appointments" label="Appointments" />
         <Tab to="/frontdesk/queue" testid="fd-tab-queue" label="Queue" />
+        <Tab to="/frontdesk/qr-poster" testid="fd-tab-qr" label="QR Poster" />
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -40,6 +42,7 @@ export default function FrontDeskModule() {
           <Route path="returning" element={<ReturningPage />} />
           <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="queue" element={<QueuePage />} />
+          <Route path="qr-poster" element={<QRPosterPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
       </div>
