@@ -759,3 +759,120 @@ async def list_audit_logs(
 ):
     rows = await db.admin_audit_logs.find({}, {"_id": 0}).sort("at", -1).to_list(limit)
     return [deserialize_datetime(r) for r in rows]
+
+
+
+# ==================== BETA TESTER SEEDER (founder-only, one-time) ====================
+
+class BetaSeedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reset: bool = False  # if True, wipe all beta-* tenants/users before re-seeding (dangerous)
+
+
+@router.post("/seed/beta-testers")
+async def seed_beta_testers_endpoint(
+    payload: BetaSeedRequest,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """One-shot founder-only endpoint to seed 10 beta tester workspaces.
+
+    Idempotent — skips clinics that already exist unless `reset=true`.
+    Returns the generated credentials ONLY on first creation; for skipped
+    entries, password is masked (cannot recover — re-run with reset=true to
+    rotate).
+    """
+    if user.get("role") != "founder":
+        raise HTTPException(status_code=403, detail="Only founder can run the beta seeder")
+
+    # Delegate to the standalone module so logic stays in one place
+    from beta_seed import BETA_TESTERS, TRIAL_DAYS, _gen_password, _mrd_prefix
+    from datetime import datetime, timezone, timedelta
+    from uuid import uuid4
+    from auth import hash_password
+    from utils.serde import serialize_datetime
+
+    now = datetime.now(timezone.utc)
+    credentials: list[dict] = []
+
+    if payload.reset:
+        ids = [t["clinic_id"] for t in BETA_TESTERS]
+        emails = [t["email"] for t in BETA_TESTERS]
+        await db.clinics.delete_many({"clinic_id": {"$in": ids}})
+        await db.users.delete_many({"email": {"$in": emails}})
+        await db.branches.delete_many({"clinic_id": {"$in": ids}})
+
+    for t in BETA_TESTERS:
+        cid = t["clinic_id"]
+        existing_clinic = await db.clinics.find_one({"clinic_id": cid})
+        existing_user = await db.users.find_one({"email": t["email"]})
+
+        if existing_clinic and existing_user:
+            credentials.append({
+                "clinic": t["name"], "city": t["city"], "contact": t["contact_name"],
+                "email": t["email"], "password": "<already-seeded>", "status": "skipped",
+            })
+            continue
+
+        if not existing_clinic:
+            await db.clinics.insert_one(serialize_datetime({
+                "clinic_id": cid,
+                "name": t["name"],
+                "city": t["city"],
+                "state": t["state"],
+                "country": "India",
+                "phone": t["phone"],
+                "email": t["email"],
+                "mrd_prefix": _mrd_prefix(cid),
+                "subscription_tier": "STANDARD",
+                "trial_ends_at": now + timedelta(days=TRIAL_DAYS),
+                "signup_source": "beta-program",
+                "status": "active",
+                "created_at": now,
+            }))
+
+        branch = await db.branches.find_one({"clinic_id": cid, "is_primary": True})
+        if branch:
+            branch_id = branch["branch_id"]
+        else:
+            branch_id = f"BR-{str(uuid4())[:8].upper()}"
+            await db.branches.insert_one(serialize_datetime({
+                "branch_id": branch_id, "clinic_id": cid,
+                "name": f"{t['city']} HQ",
+                "city": t["city"], "state": t["state"],
+                "is_primary": True, "active": True, "created_at": now,
+            }))
+
+        password = _gen_password()
+        await db.users.insert_one(serialize_datetime({
+            "user_id": f"USR-{str(uuid4())[:8].upper()}",
+            "clinic_id": cid,
+            "email": t["email"],
+            "name": t["contact_name"],
+            "role": "clinic_owner",
+            "active": True,
+            "password_hash": hash_password(password),
+            "branch_ids": [branch_id],
+            "created_at": now,
+        }))
+        credentials.append({
+            "clinic": t["name"], "city": t["city"], "contact": t["contact_name"],
+            "email": t["email"], "password": password, "status": "created",
+        })
+
+    # Audit trail
+    await db.admin_audit_logs.insert_one(serialize_datetime({
+        "log_id": f"LOG-{str(uuid4())[:8].upper()}",
+        "actor_email": user["email"], "actor_role": user.get("role"),
+        "action": "beta_testers_seeded",
+        "details": {"reset": payload.reset, "created": sum(1 for c in credentials if c["status"] == "created")},
+        "at": now,
+    }))
+
+    return {
+        "success": True,
+        "trial_days": TRIAL_DAYS,
+        "tier": "STANDARD",
+        "credentials": credentials,
+        "instruction": "Distribute these credentials to your beta testers. Passwords cannot be recovered — copy them now.",
+    }
