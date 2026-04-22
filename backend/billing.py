@@ -9,10 +9,10 @@ GST invoice engine with:
 """
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 import re
 
-IST = timezone(timedelta(hours=5, minutes=30))
+from utils.ist import IST  # noqa: F401
 
 from models import (
     Service, ServiceCreate,

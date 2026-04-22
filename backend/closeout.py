@@ -21,25 +21,24 @@ A summary includes:
 No real email / SMS integration — delivery is via the Dashboard card and a wa.me
 deep-link button (user chose wa.me-only).
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import uuid4
 import logging
 
-IST = timezone(timedelta(hours=5, minutes=30))
+from utils.ist import IST, ist_today_ymd, ist_day_start_utc, ist_next_day_start_utc
+
 log = logging.getLogger("closeout")
 
 
+# Backwards-compatible shims for older tests importing `_ist_today_ymd` / `_ist_day_start_utc`.
 def _ist_today_ymd(reference: datetime | None = None) -> str:
-    """YYYY-MM-DD in IST for the given UTC reference (or now)."""
-    ref = reference or datetime.now(timezone.utc)
-    return ref.astimezone(IST).strftime("%Y-%m-%d")
+    if reference is None:
+        return ist_today_ymd()
+    return reference.astimezone(IST).strftime("%Y-%m-%d")
 
 
 def _ist_day_start_utc(ymd: str) -> datetime:
-    """UTC naive datetime for 00:00 IST of the given IST YYYY-MM-DD."""
-    y, m, d = [int(x) for x in ymd.split("-")]
-    ist_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=IST)
-    return ist_midnight.astimezone(timezone.utc).replace(tzinfo=None)
+    return ist_day_start_utc(ymd)
 
 
 async def compute_daily_summary(db, clinic_id: str, ymd: str | None = None) -> dict:
@@ -47,11 +46,9 @@ async def compute_daily_summary(db, clinic_id: str, ymd: str | None = None) -> d
 
     If ymd is None, uses today's IST date. Returns a plain dict (all JSON-serialisable).
     """
-    ymd = ymd or _ist_today_ymd()
-    start_utc = _ist_day_start_utc(ymd)
-    end_utc = _ist_day_start_utc(
-        (datetime(*[int(x) for x in ymd.split("-")]) + timedelta(days=1)).strftime("%Y-%m-%d")
-    )
+    ymd = ymd or ist_today_ymd()
+    start_utc = ist_day_start_utc(ymd)
+    end_utc = ist_next_day_start_utc(ymd)
 
     # ---- Tokens / walk-ins ----
     token_q = {"clinic_id": clinic_id, "issued_at": {"$gte": start_utc.isoformat(), "$lt": end_utc.isoformat()}}

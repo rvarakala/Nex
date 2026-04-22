@@ -9,21 +9,8 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
-# IST = UTC+5:30 — India is the primary market; all clinic "today" boundaries are IST.
-IST = timezone(timedelta(hours=5, minutes=30))
-
-
-def ist_day_start_utc() -> datetime:
-    """Return the UTC naive datetime representing IST midnight of the current IST day.
-    Stored timestamps are UTC ISO strings, so we compare against this boundary."""
-    ist_now = datetime.now(IST)
-    ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return ist_midnight.astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def ist_today_ymd() -> str:
-    """Return today's date in IST as YYYY-MM-DD."""
-    return datetime.now(IST).strftime("%Y-%m-%d")
+# IST helpers — shared module (single source of truth)
+from utils.ist import IST, ist_day_start_utc, ist_today_ymd, ist_next_day_start_utc  # noqa: F401
 
 # Import our models
 from models import (
@@ -1068,103 +1055,21 @@ async def calculate_pta(audiogram: AudiogramData):
     }
 
 
-# ==================== PDF REPORT GENERATION ====================
+# ==================== CLOSE-OUTS + REPORTS moved to /app/backend/routers/ ====================
 
-@api_router.get("/closeouts")
-async def list_closeouts(limit: int = 30, user=Depends(get_current_user)):
-    """List recent daily close-outs for the user's clinic (latest first)."""
-    rows = await db.daily_closeouts.find(
-        {"clinic_id": user["clinic_id"]},
-        {"_id": 0},
-    ).sort("date", -1).to_list(max(1, min(limit, 365)))
-    return rows
-
-
-@api_router.get("/closeouts/latest")
-async def latest_closeout(user=Depends(get_current_user)):
-    """Fetch the most recent close-out for the current clinic (today's, if available)."""
-    row = await db.daily_closeouts.find_one(
-        {"clinic_id": user["clinic_id"]},
-        {"_id": 0},
-        sort=[("date", -1)],
-    )
-    return row  # may be None
-
-
-@api_router.get("/closeouts/{date}")
-async def get_closeout_by_date(date: str, user=Depends(get_current_user)):
-    row = await db.daily_closeouts.find_one(
-        {"clinic_id": user["clinic_id"], "date": date},
-        {"_id": 0},
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="No close-out for this date")
-    return row
-
-
-@api_router.post("/closeouts/generate")
-async def manual_closeout(payload: dict, user=Depends(get_current_user)):
-    """Admin-only manual trigger. Useful to test or to re-generate mid-day.
-    Body: { date?: 'YYYY-MM-DD' }  — defaults to today's IST date.
-    """
-    if user["role"] not in {"super_admin", "accounts"}:
-        raise HTTPException(status_code=403, detail="Only super_admin / accounts can trigger close-out")
-    ymd = (payload or {}).get("date")
-    summary = await closeout_module.generate_and_store_closeout(
-        db, user["clinic_id"], ymd=ymd, generated_by=f"manual:{user['user_id']}"
-    )
-    return summary
-
-
-@api_router.put("/closeouts/{date}/read")
-async def mark_closeout_read(date: str, user=Depends(get_current_user)):
-    await db.daily_closeouts.update_one(
-        {"clinic_id": user["clinic_id"], "date": date},
-        {"$set": {"read": True}},
-    )
-    return {"ok": True}
-
-
-@api_router.get("/reports/{session_id}/pdf")
-async def generate_session_report(session_id: str):
-    """Generate PDF report for a test session"""
-    # Get session data
-    session = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
-    if not session:
-        raise HTTPException(status_code=404, detail="Test session not found")
-    
-    # Get patient data — if orphaned (patient deleted), use a placeholder so the PDF still renders.
-    patient = await db.patients.find_one({"patient_id": session['patient_id']}, {"_id": 0})
-    if not patient:
-        patient = {
-            "patient_id": session.get('patient_id', 'UNKNOWN'),
-            "name": session.get('patient_name', 'Unknown Patient'),
-            "age": None, "gender": None, "dob": None, "phone": None,
-            "referring_physician": None,
-        }
-    
-    try:
-        # Generate PDF
-        pdf_buffer = generate_report_pdf(session_id, session, patient)
-        
-        # Return as streaming response
-        headers = {
-            'Content-Disposition': f'attachment; filename="audiogram_report_{session_id}.pdf"'
-        }
-        
-        return StreamingResponse(
-            pdf_buffer,
-            media_type='application/pdf',
-            headers=headers
-        )
-    except Exception as e:
-        logging.error(f"Error generating PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
 
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(billing_module.billing_router)
 billing_module.attach_db(db)
+
+from routers import closeouts as closeouts_router  # noqa: E402
+from routers import reports as reports_router       # noqa: E402
+
+app.include_router(closeouts_router.router)
+app.include_router(reports_router.router)
+closeouts_router.attach_db(db)
+reports_router.attach_db(db)
 
 app.add_middleware(
     CORSMiddleware,

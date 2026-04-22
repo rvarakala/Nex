@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 8 — Refactor (utils/ist + routers/closeouts + routers/reports) + new Collections Sparkline E2E tested. Backend: 24/24 pytest tests pass — covers (a) regression on auth+patients+dashboard+appointments+billing+queue+tokens after extraction, (b) all 5 close-out CRUD endpoints + generate, (c) NEW /api/closeouts/trend/collections (auth-gating 401, default 30-day series, ?days=14 respect, ?days=200 clamps to 90, tenant scoping via this_week sum equality, max/avg consistency, wow_delta_pct=null when last_week=0), (d) PDF endpoint moved to routers/reports.py (200 + %PDF magic header on SES-CAFE0F70-A90, 404 on unknown). Frontend: /frontdesk/closeout renders CollectionsSparkline card ABOVE primary close-out card; SVG with viewBox=0 0 600 56, 2 path elements (area + line), 1 last-point dot circle; 'This week ₹55,500' headline visible; 3 x-axis labels (first 2026-03-24, middle 2026-04-08, last 2026-04-22); WoW badge HIDDEN (count=0 because last_week=0 → null per spec); zero console errors / pageerrors. Backend logs clean — no DeprecationWarning, no ImportError, no circular import. Lifespan starts APScheduler + ensures indexes + seeds + counter cleanup; shutdown closes mongo cleanly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_refactor.py",
+    "/app/test_reports/pytest/iter8_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "utils/ist.py uses PEP-604 union syntax `str | None` which requires Python 3.10+. Confirmed runtime is 3.11, so OK — but if the deploy target ever drops to 3.9, this breaks at import time. Consider `from __future__ import annotations` for safety.",
+    "routers/closeouts.py and routers/reports.py both implement their own attach_db pattern with module-level _DB. Functional but non-idiomatic for FastAPI. Long-term: inject DB via Depends(get_db) for testability and to avoid the runtime check in _db().",
+    "server.py is now 1153 LOC (down from 1306) — better, but still over the 700-line guideline. Patient/appointment/token/dashboard sections are the next obvious extractions.",
+    "trend/collections endpoint loops through all payments in the window in Python (line 47-62 of routers/closeouts.py) — fine for current dev volume, but at 100k+ payments per clinic this becomes O(N) on the API thread. Consider a Mongo aggregation with $bucket on a $dateFromString conversion projected to IST, or a precomputed daily rollup collection."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter8_refactor.py (new)"],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% (all 7 spark-related assertions + 0 console errors)"},
+  "test_credentials": "Used seeded creds from /app/memory/test_credentials.md (accounts@acs.in, frontdesk@acs.in).",
+  "seed_data_creation": "None — used existing demo seed (clinic-acs-demo: ₹55,500 collections from 5 payments today, 11 walk-ins, 1 appt). Seed payment at UTC 2026-04-21T19:05 buckets correctly into IST 2026-04-22 (today) — verified via this_week_total=₹55,500 in trend response.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 8 refactor + sparkline are fully green. Backend test file at /app/backend/tests/test_iter8_refactor.py is the new regression baseline (24 cases covering trend endpoint + extracted routers + IST helper unification). Frontend sparkline component renders with viewBox=600x56 SVG and uses inline gradient sparkFill defs — correctly hides the WoW badge when wow_delta_pct is null (this is per-spec, NOT a bug). Known seed: trend endpoint returns this_week=55500, last_week=0, wow_delta_pct=null, days=30, series length=30, last_date=today's IST. PDF still works at /api/reports/SES-CAFE0F70-A90/pdf.",
+  "rca of the issue": "No bugs found."
+}

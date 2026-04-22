@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../AuthContext';
+import CollectionsSparkline from './CollectionsSparkline';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -21,6 +22,7 @@ export default function CloseoutPage() {
   const { user, clinic } = useAuth();
   const [latest, setLatest] = useState(null);
   const [history, setHistory] = useState([]);
+  const [trend, setTrend] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const canGenerate = user?.role === 'super_admin' || user?.role === 'accounts';
@@ -28,12 +30,14 @@ export default function CloseoutPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [lRes, hRes] = await Promise.all([
+      const [lRes, hRes, tRes] = await Promise.all([
         axios.get(`${API}/closeouts/latest`).catch(() => ({ data: null })),
         axios.get(`${API}/closeouts`, { params: { limit: 14 } }).catch(() => ({ data: [] })),
+        axios.get(`${API}/closeouts/trend/collections`, { params: { days: 30 } }).catch(() => ({ data: null })),
       ]);
       setLatest(lRes.data);
       setHistory(hRes.data || []);
+      setTrend(tRes.data);
     } finally { setLoading(false); }
   }, []);
 
@@ -87,6 +91,9 @@ export default function CloseoutPage() {
 
   return (
     <div className="p-4 space-y-4" data-testid="closeout-page">
+      {/* 30-day sparkline trend strip */}
+      {trend && <CollectionsSparkline trend={trend} />}
+
       {/* Primary card */}
       <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-xl p-5 shadow-2xl border border-blue-700/40"
            data-testid="co-primary-card">
