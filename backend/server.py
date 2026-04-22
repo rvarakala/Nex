@@ -147,6 +147,7 @@ async def login(req: LoginRequest):
             "name": user.get("name", ""),
             "role": user["role"],
             "clinic_id": user["clinic_id"],
+            "branch_ids": user.get("branch_ids", []) or [],
         },
         "clinic": clinic,
     }
@@ -203,6 +204,8 @@ from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
 from routers import sessions as sessions_router       # noqa: E402
 from routers import ref_docs as ref_docs_router       # noqa: E402
+from routers import branches as branches_router       # noqa: E402
+from routers import vendors as vendors_router         # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -211,6 +214,8 @@ app.include_router(appointments_router.router)
 app.include_router(tokens_router.router)
 app.include_router(sessions_router.router)
 app.include_router(ref_docs_router.router)
+app.include_router(branches_router.router)
+app.include_router(vendors_router.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -294,6 +299,9 @@ async def _seed_defaults():
     except Exception as e:
         logger.warning(f"Service seeding skipped: {e}")
 
+    # Seed the primary Mumbai HQ branch + backfill existing users to it.
+    await _seed_primary_branch(clinic_id, "Mumbai HQ", "Mumbai", "Maharashtra")
+
     # ---- Second test clinic (for cross-tenant isolation tests) ----
     # Delhi branch with its own 2 users. Enables end-to-end 403 assertions on
     # patient / report / share-link cross-clinic access.
@@ -317,6 +325,8 @@ async def _seed_second_clinic():
                     {"email": u["email"]},
                     {"$set": {"password_hash": hash_password(u["password"]), "clinic_id": c2_id}},
                 )
+        # Ensure Delhi also has a primary branch + all users are scoped to it.
+        await _seed_primary_branch(c2_id, "Delhi", "New Delhi", "Delhi")
         return
 
     await db.clinics.insert_one(serialize_datetime({
@@ -352,6 +362,43 @@ async def _seed_second_clinic():
             logger.info(f"Seeded {inserted} default services for {c2_id}")
     except Exception as e:
         logger.warning(f"Delhi service seeding skipped: {e}")
+
+    # Seed Delhi primary branch + backfill Delhi users.
+    await _seed_primary_branch(c2_id, "Delhi", "New Delhi", "Delhi")
+
+
+async def _seed_primary_branch(clinic_id: str, name: str, city: str, state: str):
+    """Ensure the given clinic has at least one primary branch, and backfill
+    every user that currently has no `branch_ids` so they're scoped to it.
+
+    Idempotent: safe to call on every boot.
+    """
+    existing = await db.branches.find_one({"clinic_id": clinic_id, "is_primary": True})
+    if existing:
+        primary_branch_id = existing["branch_id"]
+    else:
+        from uuid import uuid4
+        primary_branch_id = f"BR-{str(uuid4())[:8].upper()}"
+        await db.branches.insert_one(serialize_datetime({
+            "branch_id": primary_branch_id,
+            "clinic_id": clinic_id,
+            "name": name,
+            "city": city,
+            "state": state,
+            "is_primary": True,
+            "active": True,
+            "created_at": datetime.utcnow(),
+        }))
+        logger.info(f"Seeded primary branch {primary_branch_id} ({name}) for {clinic_id}")
+
+    # Backfill branch_ids for every user in this clinic who has none.
+    res = await db.users.update_many(
+        {"clinic_id": clinic_id,
+         "$or": [{"branch_ids": {"$exists": False}}, {"branch_ids": {"$size": 0}}]},
+        {"$set": {"branch_ids": [primary_branch_id]}},
+    )
+    if res.modified_count:
+        logger.info(f"Backfilled branch_ids for {res.modified_count} users in {clinic_id}")
 
 
 _DELHI_USERS = [

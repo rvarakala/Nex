@@ -18,7 +18,12 @@ from fastapi import HTTPException, Request, status
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_TTL = timedelta(hours=12)  # front-desk runs all day; 12h is pragmatic for this sprint
 
-VALID_ROLES = {"super_admin", "front_desk", "audiologist", "accounts"}
+VALID_ROLES = {
+    "super_admin", "clinic_owner", "front_desk", "audiologist",
+    "accounts", "inventory_manager", "technician",
+}
+# Roles that see every branch of a clinic; everyone else is branch-scoped.
+CLINIC_WIDE_ROLES = {"super_admin", "clinic_owner", "accounts"}
 
 
 def _jwt_secret() -> str:
@@ -94,6 +99,7 @@ async def get_current_user(request: Request):
         "name": user.get("name", ""),
         "role": user["role"],
         "clinic_id": user["clinic_id"],
+        "branch_ids": user.get("branch_ids", []) or [],
         "active": user.get("active", True),
     }
 
@@ -106,3 +112,17 @@ def require_roles(*roles: str):
             raise HTTPException(status_code=403, detail=f"Requires one of: {roles}")
         return user
     return checker
+
+
+def user_can_see_branch(user: dict, branch_id: str) -> bool:
+    """Clinic-wide roles see every branch of their clinic; everyone else must
+    have the branch explicitly in their `branch_ids` list."""
+    if user.get("role") in CLINIC_WIDE_ROLES:
+        return True
+    return branch_id in (user.get("branch_ids") or [])
+
+
+def assert_branch_access(user: dict, branch_id: str) -> None:
+    """Raises 403 if the user cannot act on `branch_id`."""
+    if not user_can_see_branch(user, branch_id):
+        raise HTTPException(status_code=403, detail="Branch access denied")

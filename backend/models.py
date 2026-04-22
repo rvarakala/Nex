@@ -27,7 +27,13 @@ class User(BaseModel):
     clinic_id: str
     email: str
     name: str
-    role: Literal["super_admin", "front_desk", "audiologist", "accounts"]
+    role: Literal[
+        "super_admin", "clinic_owner", "front_desk", "audiologist",
+        "accounts", "inventory_manager", "technician",
+    ]
+    # Branch scope: empty list = clinic-wide (super_admin / clinic_owner / accounts).
+    # Non-empty = user can only see/modify data scoped to these branches.
+    branch_ids: List[str] = Field(default_factory=list)
     active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
