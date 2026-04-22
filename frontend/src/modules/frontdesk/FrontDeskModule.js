@@ -49,7 +49,10 @@ export default function FrontDeskModule() {
           <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="queue" element={<QueuePage />} />
           <Route path="qr-poster" element={<QRPosterPage />} />
-          {canSeeCloseout && <Route path="closeout" element={<CloseoutPage />} />}
+          <Route
+            path="closeout"
+            element={canSeeCloseout ? <CloseoutPage /> : <Navigate to="/frontdesk" replace />}
+          />
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
       </div>
