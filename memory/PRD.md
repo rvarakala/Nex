@@ -76,6 +76,11 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
   2. **Billing DI convergence** — all 13 endpoints in `/app/backend/billing.py` now use `db=Depends(get_db)`. The legacy `_db()` alias and deprecated `attach_db()` stub are DELETED. No backend module still uses the legacy pattern.
   3. **Desktop WhatsApp auto-embed** — `ReportHandoverPage.shareWhatsAppWithPdf()` on desktop browsers (no `navigator.canShare` for files) now mints a signed 7-day share URL server-side and embeds it directly in the `wa.me` message body. Zero downloads, zero manual-attach step. Mobile Web-Share-Level-2 path still attaches the real PDF file. The PDF blob is no longer fetched speculatively on desktop (perf: saves ~50-100KB per click on slow connections).
   4. 28/28 backend pytest + 100% frontend (iter 11). Baseline at `/app/backend/tests/test_iter11_cross_tenant.py`.
+- [Feb 2026] **Security & Audit Hardening (THIS SESSION)**:
+  1. **Share-link access audit** — every successful `GET /api/reports/shared/{token}` now does `$inc access_count` + `$set last_accessed_at/last_accessed_ip` on the `report_share_links` Mongo document, keyed by `sha256(token)` (the raw bearer is never persisted). New read-only endpoint `GET /api/reports/{session_id}/share-audit` (auth-gated, tenant-scoped) returns the full audit trail — with `_id` AND `token_hash` both projected out. Closes the HIPAA-style access-review gap flagged by iter 10's reviewer.
+  2. **Forensic clinic-mismatch log** — tampered share-tokens (right signing key + wrong clinic_id claim) now emit a structured WARNING: `share_link.clinic_mismatch session_id=... token.clinic_id=... session.clinic_id=... ip=...`. Two branches (session vs. patient clinic mismatch).
+  3. **In-memory rate limiter** — new `/app/backend/utils/rate_limit.py` sliding-window limiter, zero new deps. Applied: `/api/reports/shared/{token}` at 20 req / 60s per IP, `/api/queue/public/{clinic_id}` at 120 req / 60s per IP (covers a TV polling every 5s with 6× headroom). Exceeded → 429 + `Retry-After` header. Respects `X-Forwarded-For` from ingress. Fail-open on internal errors.
+  4. 27 new + 28 regression = **55/55** backend pytest green (iter 12). Baseline at `/app/backend/tests/test_iter12_security_audit.py`.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
