@@ -20,7 +20,7 @@ export default function LoginPage() {
   // Redirect if already authenticated (page reload scenario)
   useEffect(() => {
     if (user) {
-      const target = user.role === 'audiologist' ? '/test' : '/frontdesk';
+      const target = user.role === 'referral_partner' ? '/partner' : user.role === 'audiologist' ? '/test' : '/frontdesk';
       navigate(target, { replace: true });
     }
   }, [user, navigate]);

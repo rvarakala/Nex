@@ -27,8 +27,9 @@ TIER_ORDER = ["BASIC", "STANDARD", "PREMIUM"]
 # Modules each tier unlocks (additive — PREMIUM gets everything).
 TIER_MODULES: dict[str, list[str]] = {
     "BASIC":    ["frontdesk", "diagnostics"],
-    "STANDARD": ["frontdesk", "diagnostics", "hearing-aids"],
-    "PREMIUM":  ["frontdesk", "diagnostics", "hearing-aids", "repair", "analytics"],
+    "STANDARD": ["frontdesk", "diagnostics", "hearing-aids", "amc", "patient-portal"],
+    "PREMIUM":  ["frontdesk", "diagnostics", "hearing-aids", "amc", "patient-portal",
+                 "repair", "analytics", "referral-partners"],
 }
 
 

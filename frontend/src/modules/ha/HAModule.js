@@ -10,6 +10,7 @@ import FollowupBoardPage from './FollowupBoardPage';
 import SubscriptionsPage from './SubscriptionsPage';
 import OwnerAnalyticsPage from './OwnerAnalyticsPage';
 import UpgradeFunnelPage from './UpgradeFunnelPage';
+import AMCPage from './AMCPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -40,6 +41,7 @@ export default function HAModule() {
         <Tab to="/ha/upgrades" label="Upgrades" testid="ha-tab-upgrades" />
         <Tab to="/ha/followups" label="Follow-ups" testid="ha-tab-followups" />
         <Tab to="/ha/subscriptions" label="Subscriptions" testid="ha-tab-subs" />
+        <Tab to="/ha/amc" label="AMC" testid="ha-tab-amc" />
         <Tab to="/ha/procurement" label="Procurement" testid="ha-tab-procurement" />
         <Tab to="/ha/products" label="Catalogue" testid="ha-tab-products" />
         <Tab to="/ha/analytics" label="Analytics" testid="ha-tab-analytics" />
@@ -55,6 +57,7 @@ export default function HAModule() {
           <Route path="upgrades" element={<UpgradeFunnelPage />} />
           <Route path="followups" element={<FollowupBoardPage />} />
           <Route path="subscriptions" element={<SubscriptionsPage />} />
+          <Route path="amc" element={<AMCPage />} />
           <Route path="analytics" element={<OwnerAnalyticsPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="products" element={<ProductCataloguePage />} />

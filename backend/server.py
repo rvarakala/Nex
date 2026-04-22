@@ -145,6 +145,26 @@ async def lifespan(_app: FastAPI):
         await db.ha_customer_approvals.create_index([("clinic_id", 1), ("decision", 1)])
         await db.report_deliveries.create_index("delivery_id", unique=True)
         await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
+        # AMC (Phase 13.A)
+        await db.ha_amc_plans.create_index("plan_id", unique=True)
+        await db.ha_amc_plans.create_index([("clinic_id", 1), ("active", 1)])
+        await db.ha_amc_contracts.create_index("contract_no", unique=True)
+        await db.ha_amc_contracts.create_index([("clinic_id", 1), ("status", 1), ("amc_expiry_date", 1)])
+        await db.ha_amc_contracts.create_index([("clinic_id", 1), ("patient_id", 1)])
+        await db.ha_amc_contracts.create_index([("clinic_id", 1), ("serial_id", 1), ("status", 1)])
+        # Referral Partners (M12, Phase 13.C)
+        await db.referral_partners.create_index("partner_id", unique=True)
+        await db.referral_partners.create_index([("clinic_id", 1), ("referral_code", 1)], unique=True)
+        await db.referral_partners.create_index([("clinic_id", 1), ("status", 1)])
+        await db.partner_payouts.create_index("payout_id", unique=True)
+        await db.partner_payouts.create_index([("clinic_id", 1), ("partner_id", 1), ("created_at", -1)])
+        await db.patients.create_index([("clinic_id", 1), ("referral_partner_id", 1)])
+        # Patient Portal (M13, Phase 13.D)
+        await db.patient_otps.create_index([("clinic_id", 1), ("patient_id", 1)], unique=True)
+        await db.patient_appointment_requests.create_index("request_id", unique=True)
+        await db.patient_appointment_requests.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.patient_feedback.create_index("feedback_id", unique=True)
+        await db.patient_feedback.create_index([("clinic_id", 1), ("created_at", -1)])
         _log.info("MongoDB indexes ensured")
 
         # ---- seed defaults (clinic, users, services) — idempotent ----
@@ -201,6 +221,20 @@ async def lifespan(_app: FastAPI):
                 logging.getLogger(__name__).info("APScheduler job added: trial_expiry_0200_ist (02:00 IST)")
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Trial-expiry scheduler skipped: {e}")
+            # AMC expiry sweep — 02:30 IST daily (Phase 13.A)
+            try:
+                from routers.ha_amc import run_amc_expiry_sweep
+                scheduler.add_job(
+                    run_amc_expiry_sweep,
+                    trigger=CronTrigger(hour=2, minute=30, timezone=IST),
+                    args=[db],
+                    id="amc_expiry_sweep_0230_ist",
+                    replace_existing=True,
+                    misfire_grace_time=3600,
+                )
+                logging.getLogger(__name__).info("APScheduler job added: amc_expiry_sweep_0230_ist (02:30 IST)")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"AMC sweep scheduler skipped: {e}")
         except Exception as e:
             logging.getLogger(__name__).warning(f"FollowUp scheduler job skipped: {e}")
     except Exception as e:
@@ -320,6 +354,10 @@ from routers import ha_tradeins as ha_tradeins_router         # noqa: E402
 from routers import subscription as subscription_router       # noqa: E402
 from routers import ha_service_v2 as ha_service_v2_router     # noqa: E402
 from routers import ha_repair_ops as ha_repair_ops_router     # noqa: E402
+from routers import ha_amc as ha_amc_router                   # noqa: E402
+from routers import analytics as analytics_router             # noqa: E402
+from routers import referral_partners as referral_partners_router  # noqa: E402
+from routers import patient_portal as patient_portal_router   # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -345,6 +383,10 @@ app.include_router(ha_tradeins_router.router)
 app.include_router(subscription_router.router)
 app.include_router(ha_service_v2_router.router)
 app.include_router(ha_repair_ops_router.router)
+app.include_router(ha_amc_router.router)
+app.include_router(analytics_router.router)
+app.include_router(referral_partners_router.router)
+app.include_router(patient_portal_router.router)
 
 app.add_middleware(
     CORSMiddleware,

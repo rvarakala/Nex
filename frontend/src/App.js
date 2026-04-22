@@ -17,20 +17,35 @@ import TestProceduresModule from './modules/test/TestProceduresModule';
 import HAModule from './modules/ha/HAModule';
 import RepairModule from './modules/repair/RepairModule';
 import AdminClinicsPage from './modules/admin/AdminClinicsPage';
+import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
+import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
+import PartnerPortalPage from './modules/partner/PartnerPortalPage';
+import PatientPortal from './modules/patient/PatientPortal';
 
 // Post-login redirect by role
 const PostLoginRedirect = () => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'referral_partner') return <Navigate to="/partner" replace />;
   if (user.role === 'audiologist') return <Navigate to="/test" replace />;
   return <Navigate to="/frontdesk" replace />;
 };
 
-const ShelledRoute = ({ children }) => (
-  <ProtectedRoute>
-    <AppShell>{children}</AppShell>
-  </ProtectedRoute>
-);
+const ShelledRoute = ({ children }) => {
+  return (
+    <ProtectedRoute>
+      <PartnerRedirect>
+        <AppShell>{children}</AppShell>
+      </PartnerRedirect>
+    </ProtectedRoute>
+  );
+};
+
+const PartnerRedirect = ({ children }) => {
+  const { user } = useAuth();
+  if (user?.role === 'referral_partner') return <Navigate to="/partner" replace />;
+  return children;
+};
 
 function App() {
   return (
@@ -44,10 +59,15 @@ function App() {
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/queue/:clinicId" element={<QueueTVPage />} />
+              <Route path="/patient-portal" element={<PatientPortal />} />
+              <Route path="/patient-portal/:clinicId" element={<PatientPortal />} />
 
               {/* AUTHENTICATED */}
               <Route path="/app" element={<PostLoginRedirect />} />
               <Route path="/token/:tokenId" element={<ProtectedRoute><TokenPrintView /></ProtectedRoute>} />
+
+              {/* PARTNER (own shell — no AppShell) */}
+              <Route path="/partner" element={<ProtectedRoute><PartnerPortalPage /></ProtectedRoute>} />
 
               <Route path="/frontdesk/*" element={
                 <ShelledRoute><ModuleGate module="frontdesk"><FrontDeskModule /></ModuleGate></ShelledRoute>
@@ -64,6 +84,14 @@ function App() {
               } />
               <Route path="/repair/*" element={
                 <ShelledRoute><ModuleGate module="repair"><RepairModule /></ModuleGate></ShelledRoute>
+              } />
+
+              {/* Clinical Analytics + Referral Partners (PREMIUM) */}
+              <Route path="/analytics/clinical" element={
+                <ShelledRoute><ModuleGate module="analytics"><ClinicalAnalyticsPage /></ModuleGate></ShelledRoute>
+              } />
+              <Route path="/partners" element={
+                <ShelledRoute><ModuleGate module="referral-partners"><ReferralPartnersPage /></ModuleGate></ShelledRoute>
               } />
 
               {/* SUPER-ADMIN */}

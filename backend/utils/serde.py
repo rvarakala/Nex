@@ -47,6 +47,10 @@ def deserialize_datetime(obj):
         "delivered_to_client_at", "decided_at", "delivered_at",
         # AUDINEXA Couriers + Estimates (Phase 12.B)
         "dispatch_date", "eta_date", "received_on",
+        # AMC (Phase 13.A)
+        "amc_start_date", "amc_expiry_date", "last_service_at",
+        # Patient Portal / Partner Portal (Phase 13.C/D)
+        "otp_expires_at", "partner_since",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
     }

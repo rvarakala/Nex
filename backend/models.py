@@ -358,7 +358,8 @@ class Patient(BaseModel):
     # Referral + insurance
     referring_physician: Optional[str] = None           # Free-text fallback
     referring_doctor_id: Optional[str] = None           # FK into referring_doctors
-    referral_source: Optional[str] = None               # Walk-in / Doctor / Online / Camp / Family / Other
+    referral_source: Optional[str] = None               # Walk-in / Doctor / Online / Camp / Family / Partner / Other
+    referral_partner_id: Optional[str] = None           # FK into referral_partners (M12)
 
     insurance_scheme: Optional[str] = None              # Cash / CGHS / ECHS / ESIC / Ayushman / Private / Other
     insurance_card_number: Optional[str] = None
@@ -396,6 +397,7 @@ class PatientCreate(BaseModel):
     referring_physician: Optional[str] = None
     referring_doctor_id: Optional[str] = None
     referral_source: Optional[str] = None
+    referral_partner_id: Optional[str] = None
 
     insurance_scheme: Optional[str] = None
     insurance_card_number: Optional[str] = None

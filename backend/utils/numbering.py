@@ -28,6 +28,8 @@ _FORMATS: dict[str, tuple[str, int]] = {
     "courier": ("CSH",   4),
     "estimate": ("EST",  4),
     "approval": ("APR",  4),
+    "amc":      ("AMC",  4),
+    "payout":   ("PAY",  4),
 }
 
 

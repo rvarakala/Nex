@@ -140,6 +140,22 @@ export default function AppShell({ children }) {
               icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>}
             />
           )}
+          {(superAdminBypass || access['analytics']) && user?.role !== 'audiologist' && (
+            <NavItem
+              to="/analytics/clinical"
+              testid="nav-clinical-analytics"
+              label="Clinical"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/></svg>}
+            />
+          )}
+          {(superAdminBypass || access['referral-partners']) && user?.role !== 'audiologist' && (
+            <NavItem
+              to="/partners"
+              testid="nav-partners"
+              label="Partners"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><circle cx="17" cy="7" r="3"/><path d="M21 21v-1a3.5 3.5 0 0 0-3-3.5"/></svg>}
+            />
+          )}
           <NavItem
             to="/reports"
             testid="nav-reports"
