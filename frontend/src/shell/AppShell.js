@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const NavItem = ({ to, icon, label, testid }) => (
   <NavLink
@@ -24,6 +27,26 @@ export default function AppShell({ children }) {
   const { activeTest } = useTestContext();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [unreadCloseout, setUnreadCloseout] = useState(null);
+
+  const canSeeCloseout = user?.role === 'super_admin' || user?.role === 'accounts';
+
+  // Poll for unread close-out (owners/admin only). Light touch — 60s interval.
+  const fetchCloseout = useCallback(async () => {
+    if (!canSeeCloseout) { setUnreadCloseout(null); return; }
+    try {
+      const r = await axios.get(`${API}/closeouts/latest`);
+      if (r.data && r.data.read === false) setUnreadCloseout(r.data);
+      else setUnreadCloseout(null);
+    } catch { /* ignore */ }
+  }, [canSeeCloseout]);
+
+  useEffect(() => {
+    fetchCloseout();
+    if (!canSeeCloseout) return;
+    const iv = setInterval(fetchCloseout, 60000);
+    return () => clearInterval(iv);
+  }, [fetchCloseout, canSeeCloseout]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -138,6 +161,18 @@ export default function AppShell({ children }) {
               <span>Search…</span>
               <span className="ml-2 font-mono bg-white border border-slate-300 text-slate-600 rounded px-1 text-[9px]">⌘K</span>
             </button>
+            {canSeeCloseout && unreadCloseout && (
+              <button
+                onClick={() => navigate('/frontdesk/closeout')}
+                data-testid="closeout-bell"
+                title={`Close-out for ${unreadCloseout.date} is ready`}
+                className="relative flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2.5 py-1 shadow-sm transition-transform hover:scale-105"
+              >
+                <span className="text-sm">📊</span>
+                <span className="hidden lg:inline">Day Close-out Ready</span>
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
+              </button>
+            )}
             <div className="text-xs text-slate-700">
               <span className="font-semibold">{user?.name}</span>
               <span className="ml-1.5 text-[10px] text-slate-500 uppercase tracking-wider">{(user?.role || '').replace('_', ' ')}</span>

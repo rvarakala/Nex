@@ -49,6 +49,7 @@ from auth import (
 )
 from reminders import dispatch_reminder
 import billing as billing_module
+import closeout as closeout_module
 
 # Import PDF generator
 from pdf_generator import generate_report_pdf
@@ -136,9 +137,21 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         _log.error(f"Startup initialisation error: {e}")
 
+    # Start daily close-out scheduler (21:00 IST)
+    scheduler = None
+    try:
+        scheduler = closeout_module.start_scheduler(db)
+    except Exception as e:
+        _log.warning(f"Close-out scheduler skipped: {e}")
+
     yield
 
     # ---- shutdown ----
+    if scheduler:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
     client.close()
     _log.info("MongoDB client closed")
 
@@ -1056,6 +1069,61 @@ async def calculate_pta(audiogram: AudiogramData):
 
 
 # ==================== PDF REPORT GENERATION ====================
+
+@api_router.get("/closeouts")
+async def list_closeouts(limit: int = 30, user=Depends(get_current_user)):
+    """List recent daily close-outs for the user's clinic (latest first)."""
+    rows = await db.daily_closeouts.find(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0},
+    ).sort("date", -1).to_list(max(1, min(limit, 365)))
+    return rows
+
+
+@api_router.get("/closeouts/latest")
+async def latest_closeout(user=Depends(get_current_user)):
+    """Fetch the most recent close-out for the current clinic (today's, if available)."""
+    row = await db.daily_closeouts.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0},
+        sort=[("date", -1)],
+    )
+    return row  # may be None
+
+
+@api_router.get("/closeouts/{date}")
+async def get_closeout_by_date(date: str, user=Depends(get_current_user)):
+    row = await db.daily_closeouts.find_one(
+        {"clinic_id": user["clinic_id"], "date": date},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="No close-out for this date")
+    return row
+
+
+@api_router.post("/closeouts/generate")
+async def manual_closeout(payload: dict, user=Depends(get_current_user)):
+    """Admin-only manual trigger. Useful to test or to re-generate mid-day.
+    Body: { date?: 'YYYY-MM-DD' }  — defaults to today's IST date.
+    """
+    if user["role"] not in {"super_admin", "accounts"}:
+        raise HTTPException(status_code=403, detail="Only super_admin / accounts can trigger close-out")
+    ymd = (payload or {}).get("date")
+    summary = await closeout_module.generate_and_store_closeout(
+        db, user["clinic_id"], ymd=ymd, generated_by=f"manual:{user['user_id']}"
+    )
+    return summary
+
+
+@api_router.put("/closeouts/{date}/read")
+async def mark_closeout_read(date: str, user=Depends(get_current_user)):
+    await db.daily_closeouts.update_one(
+        {"clinic_id": user["clinic_id"], "date": date},
+        {"$set": {"read": True}},
+    )
+    return {"ok": True}
+
 
 @api_router.get("/reports/{session_id}/pdf")
 async def generate_session_report(session_id: str):

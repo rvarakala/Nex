@@ -20,6 +20,7 @@ const ACTIONS = [
   { id: 'dashboard',        label: 'Front Desk Dashboard',     hint: 'D',    to: '/frontdesk',                  icon: '🏠' },
   { id: 'queue',            label: 'Queue',                    hint: 'Q',    to: '/frontdesk/queue',            icon: '⏱' },
   { id: 'qr-poster',        label: 'Waiting-Room QR Poster',   hint: '',     to: '/frontdesk/qr-poster',        icon: '📱' },
+  { id: 'closeout',         label: 'Day Close-out',            hint: '',     to: '/frontdesk/closeout',         icon: '📊' },
 ];
 
 export default function CommandPalette({ open, onClose }) {

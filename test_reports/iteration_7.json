@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 7 — Daily Close-out feature E2E tested. Backend: 14/14 pytest tests pass (auth gating 401/403, idempotency, computation correctness against known seed, list/latest/by-date/read endpoints, tenant isolation via Mongo seed, APScheduler job at 21:00 IST). Frontend: CloseoutPage renders with primary dark gradient card + 3 headline metrics + 2 split cards (collections-by-method + outstanding ledger) + 14-day history. Regenerate, WhatsApp share (wa.me deep-link with formatted multi-line message + auto PUT /read), history-row WA share, Cmd+K palette entry, topbar bell (appears on unread close-out, hides after read, 60s poll), and role-gated tab visibility all verified. Lifespan logs confirm 'APScheduler started: daily_closeout_21_ist (21:00 IST)' on startup and 'MongoDB client closed' + 'Scheduler has been shut down' on reload.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/frontdesk/closeout (front_desk + audiologist)", "issues": ["Route gate is render-null, not a redirect. URL stays at /frontdesk/closeout but content area is blank. Spec says 'redirect to /frontdesk'. Functionally safe (no data leaked), but URL feels broken to user. Consider a <Navigate to='/frontdesk' /> in the route gate."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_closeout.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [
+    "Optional UX polish: replace render-null route gate in FrontDeskModule for /closeout sub-route with explicit <Navigate to='/frontdesk' replace /> when role is not super_admin/accounts (so URL flips back instead of leaving a blank screen at /frontdesk/closeout).",
+    "Optional: previously seen WriteError ('Updating the path closeout_id would create a conflict') was logged once during the dev session — looks like a stale log from before fix. Current code uses $setOnInsert correctly and idempotency works (verified — same closeout_id across regenerations). No action needed unless it reappears."
+  ],
+  "critical_code_review_comments": [
+    "closeout.py compute_daily_summary has O(N) read-cursor loops over test_sessions / report_deliveries — fine for current 548-row demo, but at 50k+ sessions per clinic this becomes a hot path. Consider an aggregation pipeline ($lookup or set-difference) and an index on test_sessions.clinic_id and report_deliveries.session_id.",
+    "server.py is 1249 lines — exceeds the 700-line guideline. Split into routers (closeouts.py, billing.py, reports.py, etc.) for maintainability.",
+    "closeout.py duplicates IST helper (also lives in server.py). Acceptable for module independence, but a shared utils/ist.py would prevent drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_closeout.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% of testable flows"},
+  "test_credentials": "Used seeded creds from /app/memory/test_credentials.md — all 4 roles (super_admin, accounts, front_desk, audiologist) verified.",
+  "seed_data_creation": "Created+deleted ephemeral 'clinic-other-test' close-out via direct Mongo for tenant-isolation test (cleaned up).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 7 closeout feature is fully green. Backend test file at /app/backend/tests/test_iter7_closeout.py covers all 14 cases including APScheduler wiring (no need to wait until 21:00 IST — test inspects job.next_run_time and trigger fields). Known seed numbers in clinic-acs-demo: 11 walk-ins, ₹55,500 collections (UPI 20k/CARD 34k/CASH 1.5k), 1 appointment, 4 pending invoices ₹1,13,000 due, 548 pending reports.",
+  "rca of the issue": "No bug RCA — feature works end-to-end. Only minor UX nit: route gate uses render-null instead of <Navigate>; URL doesn't change for role-denied users."
+}

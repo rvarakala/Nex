@@ -6,6 +6,8 @@ import ReturningPage from './ReturningPage';
 import QueuePage from './QueuePage';
 import AppointmentsPage from './AppointmentsPage';
 import QRPosterPage from './QRPosterPage';
+import CloseoutPage from './CloseoutPage';
+import { useAuth } from '../../AuthContext';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -23,6 +25,9 @@ const Tab = ({ to, label, testid }) => (
 );
 
 export default function FrontDeskModule() {
+  const { user } = useAuth();
+  const canSeeCloseout = user?.role === 'super_admin' || user?.role === 'accounts';
+
   return (
     <div className="h-full flex flex-col" data-testid="frontdesk-module">
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 flex-shrink-0">
@@ -33,6 +38,7 @@ export default function FrontDeskModule() {
         <Tab to="/frontdesk/appointments" testid="fd-tab-appointments" label="Appointments" />
         <Tab to="/frontdesk/queue" testid="fd-tab-queue" label="Queue" />
         <Tab to="/frontdesk/qr-poster" testid="fd-tab-qr" label="QR Poster" />
+        {canSeeCloseout && <Tab to="/frontdesk/closeout" testid="fd-tab-closeout" label="Day Close-out" />}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -43,6 +49,7 @@ export default function FrontDeskModule() {
           <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="queue" element={<QueuePage />} />
           <Route path="qr-poster" element={<QRPosterPage />} />
+          {canSeeCloseout && <Route path="closeout" element={<CloseoutPage />} />}
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
       </div>
