@@ -178,6 +178,10 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
   6. **Test hygiene** — fixed `test_phase1_patient_records.py` (added autouse login fixture — all 14 requests were returning 401) and `test_phase2_ha_core.py` GRN happy-path (mints its own isolated PO; no longer depends on pytest.po_for_grn state, plus fixed the closed-PO test to walk the status chain independently).
   7. **Frontend** `UpgradeFunnelPage.js` — 5-stage horizontal funnel (Candidates → Appraised → Accepted → Applied → Rejected) with KPI chips, aged-candidates table with "Appraise →" CTA, in-flight trade-ins table, AppraiseModal (condition + appraised_value + offered_credit pre-populated at 20/25% of original sale), TradeInDrawer with state-aware Accept / Reject / Apply→Retire actions. Mounted at `/ha/upgrades` in HAModule.
   8. **11 new backend pytest green** + 296/301 existing pass (5 pre-existing MONGO_URL env failures in test_phase1_ha_foundation unrelated to this session). Baseline at `/app/backend/tests/test_phase11_tradeins.py`. Frontend smoke-verified — full funnel renders with 4 seed trade-ins showing APPLIED + REJECTED states.
+- [Feb 2026] **Test Infra — session conftest (THIS SESSION)**:
+  1. Added `/app/backend/tests/conftest.py` that loads `backend/.env` + `frontend/.env` into `os.environ` at pytest collection time (with `override=False` so CI-level env still wins).
+  2. Unblocks every test that does direct motor access or reads env vars at import time — was causing 5 `KeyError: 'MONGO_URL'` failures in `test_phase1_ha_foundation.py` and 4 collection-time `AssertionError: REACT_APP_BACKEND_URL must be set` errors in `test_iter5/10/11/12*.py`.
+  3. Results: `test_phase1_ha_foundation.py` 30/35 → **35/35** · `test_iter5/10/11/12` 0/86 collectable → **86/86** pass. Net +91 tests unlocked.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
