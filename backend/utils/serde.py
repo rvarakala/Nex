@@ -39,6 +39,8 @@ def deserialize_datetime(obj):
         "due_date", "next_due_date", "last_delivered_at",
         # Service tickets
         "resolved_at",
+        # HA Trade-ins (Phase 10.5)
+        "accepted_at", "applied_at", "rejected_at",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
     }

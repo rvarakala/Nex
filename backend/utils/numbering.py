@@ -24,6 +24,7 @@ _FORMATS: dict[str, tuple[str, int]] = {
     "job":    ("JOB",    4),
     "sale":   ("SAL",    4),
     "qte":    ("QTE",    4),
+    "tradein": ("TI",    4),
 }
 
 

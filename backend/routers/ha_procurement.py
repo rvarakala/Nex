@@ -278,7 +278,9 @@ async def create_grn(
         notes=payload.notes,
         created_by_user_id=user["user_id"],
     )
-    await db.grns.insert_one(serialize_datetime(grn.model_dump()))
+    # NOTE: GRN doc is inserted AFTER duplicate-serial check succeeds (see below).
+    # Inserting it upfront would leave orphan GRN rows on 409 Duplicate-Serial,
+    # inflating the `received_by_key` totals on the NEXT GRN's over-receipt check.
 
     # ----- Spawn inventory -----
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -365,12 +367,29 @@ async def create_grn(
                 )
             else:
                 bad_serial = details.get("keyValue", {}).get("serial_no") or bad_serial
+            # Roll back any accessory stock we already incremented for this GRN
+            # so the 409 response leaves the database unchanged.
+            for ln in payload.lines:
+                p = products[ln.product_id]
+                if not p["is_serialised"]:
+                    await db.accessory_stock.update_one(
+                        {
+                            "clinic_id": user["clinic_id"],
+                            "branch_id": po["branch_id"],
+                            "product_id": ln.product_id,
+                            "variant": ln.variant,
+                        },
+                        {"$inc": {"qty_on_hand": -int(ln.qty_received)}},
+                    )
             raise HTTPException(
                 status_code=409,
                 detail=f"Serial already on record in this clinic: {bad_serial}",
             )
     if serial_event_docs:
         await db.serial_events.insert_many(serial_event_docs)
+
+    # ----- Persist the GRN document now that inventory writes succeeded -----
+    await db.grns.insert_one(serialize_datetime(grn.model_dump()))
 
     # ----- Update PO status -----
     # `received_by_key` already includes this GRN's lines (computed pre-insert).

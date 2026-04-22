@@ -721,3 +721,62 @@ class ServiceTicketResolve(BaseModel):
     resolution_notes: str
     cost_to_patient: float = 0.0
     warranty_covered: bool = False
+
+
+
+# ==================== TRADE-IN / UPGRADE ENGINE ====================
+
+TradeInStatus = Literal["appraised", "accepted", "rejected", "applied"]
+TradeInCondition = Literal["excellent", "good", "fair", "poor"]
+
+
+class TradeIn(BaseModel):
+    """Trade-in appraisal + lifecycle.
+
+    Flow:
+      appraised → accepted (old HA handed over · serial SOLD → RETURNED)
+               → applied  (new sale paid   · serial RETURNED → RETIRED)
+               → rejected (patient declines offer · serial stays SOLD)
+
+    The `offered_credit` is informational — audiologist typically applies it as
+    a manual discount_amount on the new Sale.
+    """
+    model_config = ConfigDict(extra="ignore")
+    trade_in_id: str                                           # TI-YYYY-NNNN
+    clinic_id: str
+    branch_id: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    old_serial_id: str
+    old_serial_no: Optional[str] = None
+    old_brand: Optional[str] = None
+    old_model: Optional[str] = None
+    old_sale_no: Optional[str] = None                          # original sale that sold this HA
+    age_years: Optional[float] = None                          # auto-computed at create
+    condition: TradeInCondition = "good"
+    appraised_value: float = 0.0                               # our internal estimate
+    offered_credit: float = 0.0                                # what patient sees
+    status: TradeInStatus = "appraised"
+    linked_quote_no: Optional[str] = None                      # optional — new quote to upgrade to
+    linked_sale_no: Optional[str] = None                       # set on accept/apply
+    notes: Optional[str] = None
+    created_by_user_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    accepted_at: Optional[str] = None
+    applied_at: Optional[str] = None
+    rejected_at: Optional[str] = None
+
+
+class TradeInCreate(BaseModel):
+    branch_id: str
+    patient_id: str
+    old_serial_id: str                                         # must be SOLD + currently held by patient
+    condition: TradeInCondition = "good"
+    appraised_value: float = 0.0
+    offered_credit: float = 0.0
+    linked_quote_no: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TradeInApply(BaseModel):
+    sale_no: str                                               # the NEW Sale this trade-in is applied to

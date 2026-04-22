@@ -436,8 +436,29 @@ class TestPOandGRN:
         )
         assert r.status_code == 400
 
-    def test_grn_happy_path_partial_then_full(self, admin_token, ser_product, acc_product):
-        po_no = pytest.po_for_grn
+    def test_grn_happy_path_partial_then_full(self, admin_token, ser_product, acc_product, mumbai_branch_id, mumbai_vendor_id):
+        # Create an isolated fresh PO for this test — don't reuse pytest.po_for_grn
+        # (prior tests may have left it in any state, or cross-run pollution could fail it).
+        iso_po = requests.post(
+            f"{API}/ha/purchase-orders", headers=hdr(admin_token),
+            json={
+                "branch_id": mumbai_branch_id,
+                "vendor_id": mumbai_vendor_id,
+                "lines": [
+                    {"product_id": ser_product, "qty": 2, "unit_cost": 50000, "gst_rate": 18},
+                    {"product_id": acc_product, "qty": 10, "unit_cost": 40, "gst_rate": 18},
+                ],
+                "notes": "TEST GRN happy-path isolated PO",
+            }, timeout=15,
+        )
+        assert iso_po.status_code == 200, iso_po.text
+        po_no = iso_po.json()["po_no"]
+        # Walk through approve → ordered
+        for st in ("approved", "ordered"):
+            requests.post(
+                f"{API}/ha/purchase-orders/{po_no}/status", headers=hdr(admin_token),
+                json={"to_status": st}, timeout=10,
+            )
         sn1 = f"TEST-SN-{uuid.uuid4().hex[:6].upper()}"
         sn2 = f"TEST-SN-{uuid.uuid4().hex[:6].upper()}"
         # First GRN: receive only 1 of 2 serials + 5 of 10 accessory → partial
@@ -492,12 +513,24 @@ class TestPOandGRN:
 
     def test_grn_against_closed_po_409(self, admin_token, ser_product):
         po_no = pytest.po_for_grn
-        # Move received → closed
-        c = requests.post(
-            f"{API}/ha/purchase-orders/{po_no}/status",
-            headers=hdr(admin_token), json={"to_status": "closed"}, timeout=10,
-        )
-        assert c.status_code == 200
+        # Walk PO through legal states to closed so the test is independent of
+        # whether the happy-path GRN test happened to run on the same PO.
+        # Valid chain: draft → approved → ordered → received → closed.
+        po = requests.get(f"{API}/ha/purchase-orders/{po_no}", headers=hdr(admin_token), timeout=10).json()
+        chain = {
+            "draft": ["approved", "ordered", "received", "closed"],
+            "approved": ["ordered", "received", "closed"],
+            "ordered": ["received", "closed"],
+            "partial_received": ["received", "closed"],
+            "received": ["closed"],
+            "closed": [],
+        }.get(po["status"], [])
+        for st in chain:
+            c = requests.post(
+                f"{API}/ha/purchase-orders/{po_no}/status",
+                headers=hdr(admin_token), json={"to_status": st}, timeout=10,
+            )
+            assert c.status_code == 200, f"Failed {po['status']} → {st}: {c.text}"
         # Attempt GRN against closed
         r = requests.post(
             f"{API}/ha/grns", headers=hdr(admin_token),
