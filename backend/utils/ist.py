@@ -2,6 +2,7 @@
 Single source of truth for day-boundary computations across the backend.
 Stored datetimes are UTC naive ISO strings; we compare against IST-anchored UTC boundaries.
 """
+from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 
 IST = timezone(timedelta(hours=5, minutes=30))

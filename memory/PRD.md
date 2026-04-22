@@ -50,12 +50,17 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
 - [Feb 2026] **Housekeeping**:
   1. **FastAPI lifespan migration** — replaced deprecated `@app.on_event('startup'/'shutdown')` decorators with a single `@asynccontextmanager async def lifespan(_app)` passed to `FastAPI(lifespan=lifespan)`. Cleaner startup (indexes + seeding + counter cleanup) and deterministic `"MongoDB client closed"` shutdown log. No more Starlette deprecation warnings.
   2. **Stale counter cleanup** — at every startup, lifespan deletes any `counters` docs matching `^token:.+:YYYY-MM-DD$` whose date suffix is not today's IST-YMD. Verified: planted 2 stale rows (2026-01-15, 2026-04-20) → removed on restart, only today's (2026-04-22) remains. Counters auto-regenerate on next token issue.
-- [Feb 2026] **Daily Close-out (THIS SESSION)**:
+- [Feb 2026] **Daily Close-out**:
   1. **Backend**: New `/app/backend/closeout.py` — `compute_daily_summary()`, `generate_and_store_closeout()`, `start_scheduler()`. APScheduler `AsyncIOScheduler(timezone=IST)` with `CronTrigger(hour=21, minute=0)` started in lifespan. Five REST endpoints under `/api/closeouts/*` (list / latest / get-by-date / generate / mark-read). Role-gated: only `super_admin` + `accounts` can trigger generate. Idempotent upsert on `(clinic_id, date)` so `$setOnInsert` preserves `closeout_id` across regenerations.
-  2. **Frontend**: New `/frontdesk/closeout` page (role-gated, hidden for front_desk + audiologist) with dark gradient primary card (headline metrics: collections / walk-ins / appointments), 2 split cards (collections-by-method + outstanding ledger), 14-day history table, and `📤 Share on WhatsApp` button that opens `wa.me/{91-clinic-phone}?text=…` with a pre-composed multi-line summary (clinic name / date / collections split / walk-ins / appointments / invoices / pending reports). Auto-marks read on share.
+  2. **Frontend**: New `/frontdesk/closeout` page (role-gated, hidden for front_desk + audiologist) with dark gradient primary card (headline metrics: collections / walk-ins / appointments), 2 split cards (collections-by-method + outstanding ledger), 14-day history table, and `📤 Share on WhatsApp` button that opens `wa.me/{91-clinic-phone}?text=…` with a pre-composed multi-line summary. Auto-marks read on share.
   3. **Topbar bell**: 60s-polling `closeout-bell` (only for accounts/super_admin) appears when `/api/closeouts/latest.read == false`, pulsing rose dot, vanishes after mark-read.
   4. **Discovery**: FrontDesk tab bar entry + Cmd+K palette entry ("Day Close-out" / 📊).
-  5. 14/14 backend pass + 100% frontend (iter 7). One cosmetic nit fixed post-review (render-null route gate → explicit `<Navigate>`).
+  5. 14/14 backend pass + 100% frontend (iter 7).
+- [Feb 2026] **Sparkline + Refactor (THIS SESSION)**:
+  1. **30-day Collections Sparkline** — new `GET /api/closeouts/trend/collections?days=N` endpoint (caps at 90d) with IST-bucketed series + week-on-week delta %. Frontend `CollectionsSparkline.js` renders an inline SVG with area gradient, line path, last-point dot, and a WoW-pill badge (hidden when last week is zero). Colour flips red on negative WoW. Placed above the primary close-out card for a "day done + weekly trajectory" glance.
+  2. **`utils/ist.py`** — extracted `IST`, `ist_today_ymd()`, `ist_day_start_utc(ymd?)`, `ist_next_day_start_utc(ymd?)` out of `server.py` / `closeout.py` / `billing.py` into one shared module. Added `from __future__ import annotations` for py3.9 forward-compat.
+  3. **Router split** — new `/app/backend/routers/` package. Extracted close-out endpoints (6) → `routers/closeouts.py` and PDF report endpoint → `routers/reports.py`. Both use `attach_db()` pattern for DI. `server.py` dropped from 1306 → 1153 LOC. Remaining candidate extractions (noted for next session): patients, appointments, tokens/dashboard, auth.
+  4. 24/24 backend + 100% frontend (iter 8). Zero regressions, zero console errors.
 
 ## Seed Data / Credentials
 - Clinic: `clinic-acs-demo` · "ACS Audiology Clinic" · Mumbai, Maharashtra
