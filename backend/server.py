@@ -62,8 +62,88 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """FastAPI lifespan: replaces deprecated on_event('startup'/'shutdown') handlers.
+    Startup: creates MongoDB indexes, seeds default clinic/users/services, cleans stale UTC-keyed token counters.
+    Shutdown: closes MongoDB client connection.
+    """
+    _log = logging.getLogger(__name__)
+    try:
+        # ---- indexes ----
+        await db.patients.create_index("patient_id", unique=True)
+        await db.patients.create_index("mobile")
+        await db.patients.create_index("updated_at")
+        await db.referring_doctors.create_index("doctor_id", unique=True)
+        await db.referring_doctors.create_index("name")
+        await db.patient_notes.create_index("patient_id")
+        await db.patient_notes.create_index("created_at")
+        await db.test_sessions.create_index("session_id", unique=True)
+        await db.test_sessions.create_index([("patient_id", 1), ("test_date", -1)])
+        # M01 indexes
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index([("clinic_id", 1), ("role", 1)])
+        await db.clinics.create_index("clinic_id", unique=True)
+        await db.tokens.create_index([("clinic_id", 1), ("issued_at", -1)])
+        await db.tokens.create_index("token_id", unique=True)
+        await db.patients.create_index([("clinic_id", 1), ("updated_at", -1)])
+        await db.patients.create_index("mrd")
+        # M01.B appointment indexes
+        await db.appointments.create_index("appointment_id", unique=True)
+        await db.appointments.create_index([("clinic_id", 1), ("start_at", 1)])
+        await db.appointments.create_index([("clinic_id", 1), ("audiologist_id", 1), ("start_at", 1)])
+        await db.waitlist.create_index("entry_id", unique=True)
+        await db.waitlist.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.reminder_logs.create_index([("clinic_id", 1), ("sent_at", -1)])
+        await db.cancellation_logs.create_index([("clinic_id", 1), ("cancelled_at", -1)])
+        # M01.C billing indexes
+        await db.services.create_index("service_id", unique=True)
+        await db.services.create_index([("clinic_id", 1), ("active", 1), ("name", 1)])
+        await db.invoices.create_index("invoice_id", unique=True)
+        await db.invoices.create_index([("clinic_id", 1), ("invoice_date", -1)])
+        await db.invoices.create_index([("clinic_id", 1), ("patient_id", 1)])
+        await db.invoices.create_index("invoice_no")
+        await db.payments.create_index("payment_id", unique=True)
+        await db.payments.create_index([("clinic_id", 1), ("paid_at", -1)])
+        await db.payments.create_index("invoice_id")
+        await db.report_deliveries.create_index("delivery_id", unique=True)
+        await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
+        _log.info("MongoDB indexes ensured")
+
+        # ---- seed defaults (clinic, users, services) — idempotent ----
+        await _seed_defaults()
+
+        # ---- one-time cleanup of stale UTC-keyed token counters ----
+        # After the IST migration, old `token:{clinic}:{YYYY-MM-DD}` counter docs keyed on UTC date
+        # (e.g., yesterday's UTC date when we crossed IST midnight) are functionally obsolete.
+        # Drop anything that isn't today's IST-YMD. Counters auto-regenerate on next issuance.
+        try:
+            today_ymd = ist_today_ymd()
+            cleanup = await db.counters.delete_many({
+                "$and": [
+                    {"_id": {"$regex": r"^token:.+:\d{4}-\d{2}-\d{2}$"}},
+                    {"_id": {"$not": {"$regex": f":{today_ymd}$"}}},
+                ]
+            })
+            if cleanup.deleted_count:
+                _log.info(f"Counter cleanup: removed {cleanup.deleted_count} stale token counter docs")
+        except Exception as e:
+            _log.warning(f"Counter cleanup skipped: {e}")
+
+    except Exception as e:
+        _log.error(f"Startup initialisation error: {e}")
+
+    yield
+
+    # ---- shutdown ----
+    client.close()
+    _log.info("MongoDB client closed")
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Expose db to dependency (used by auth.get_current_user)
 app.state.db = db
@@ -1033,56 +1113,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-@app.on_event("startup")
-async def on_startup():
-    """Create MongoDB indexes for frequently-queried fields."""
-    try:
-        await db.patients.create_index("patient_id", unique=True)
-        await db.patients.create_index("mobile")
-        await db.patients.create_index("updated_at")
-        await db.referring_doctors.create_index("doctor_id", unique=True)
-        await db.referring_doctors.create_index("name")
-        await db.patient_notes.create_index("patient_id")
-        await db.patient_notes.create_index("created_at")
-        await db.test_sessions.create_index("session_id", unique=True)
-        await db.test_sessions.create_index([("patient_id", 1), ("test_date", -1)])
-        # M01 indexes
-        await db.users.create_index("email", unique=True)
-        await db.users.create_index([("clinic_id", 1), ("role", 1)])
-        await db.clinics.create_index("clinic_id", unique=True)
-        await db.tokens.create_index([("clinic_id", 1), ("issued_at", -1)])
-        await db.tokens.create_index("token_id", unique=True)
-        await db.patients.create_index([("clinic_id", 1), ("updated_at", -1)])
-        await db.patients.create_index("mrd")
-        # M01.B appointment indexes
-        await db.appointments.create_index("appointment_id", unique=True)
-        await db.appointments.create_index([("clinic_id", 1), ("start_at", 1)])
-        await db.appointments.create_index([("clinic_id", 1), ("audiologist_id", 1), ("start_at", 1)])
-        await db.waitlist.create_index([("clinic_id", 1), ("status", 1), ("created_at", 1)])
-        await db.reminder_logs.create_index([("clinic_id", 1), ("sent_at", -1)])
-        await db.cancellation_logs.create_index([("clinic_id", 1), ("cancelled_at", -1)])
-        # M01.C billing indexes
-        await db.services.create_index("service_id", unique=True)
-        await db.services.create_index([("clinic_id", 1), ("active", 1), ("name", 1)])
-        await db.invoices.create_index("invoice_id", unique=True)
-        await db.invoices.create_index([("clinic_id", 1), ("invoice_date", -1)])
-        await db.invoices.create_index([("clinic_id", 1), ("patient_id", 1)])
-        await db.invoices.create_index("invoice_no")
-        await db.payments.create_index("payment_id", unique=True)
-        await db.payments.create_index([("clinic_id", 1), ("paid_at", -1)])
-        await db.payments.create_index("invoice_id")
-        await db.report_deliveries.create_index("delivery_id", unique=True)
-        await db.report_deliveries.create_index([("clinic_id", 1), ("session_id", 1)])
-        logger.info("MongoDB indexes ensured")
-    except Exception as e:
-        logging.warning(f"Index creation skipped: {e}")
-
-    # Seed default clinic + users
-    try:
-        await _seed_defaults()
-    except Exception as e:
-        logging.warning(f"Seeding skipped: {e}")
-
 
 async def _seed_defaults():
     """Idempotently creates the default clinic + 4 demo users (super_admin, front_desk, audiologist, accounts).
@@ -1149,8 +1179,3 @@ async def _seed_defaults():
             logger.info(f"Seeded {inserted} default services for {clinic_id}")
     except Exception as e:
         logger.warning(f"Service seeding skipped: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
