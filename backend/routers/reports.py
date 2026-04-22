@@ -1,5 +1,6 @@
 """PDF report generation + short-lived signed share-link endpoints."""
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -17,10 +18,13 @@ async def _load_session_and_patient(db, session_id: str) -> tuple[dict, dict]:
         raise HTTPException(status_code=404, detail="Test session not found")
     patient = await db.patients.find_one({"patient_id": session.get("patient_id")}, {"_id": 0})
     if not patient:
-        # Orphaned-patient fallback so the PDF still renders
+        # Orphaned-patient fallback so the PDF still renders. Inherit session's clinic
+        # so the tenant guard downstream still applies (avoids an "UNKNOWN" patient
+        # bypassing clinic-mismatch checks).
         patient = {
             "patient_id": session.get("patient_id", "UNKNOWN"),
             "name": session.get("patient_name", "Unknown Patient"),
+            "clinic_id": session.get("clinic_id"),
             "age": None, "gender": None, "dob": None, "phone": None,
             "referring_physician": None,
         }
@@ -98,7 +102,7 @@ async def create_report_share_link(session_id: str, request: Request,
         "session_id": session_id,
         "clinic_id": user["clinic_id"],
         "created_by_user_id": user["user_id"],
-        "created_at": expires_at.isoformat(),  # note: we only log creation+expiry for simplicity
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": expires_at.isoformat(),
         "ttl_hours": ttl_hours,
     })
