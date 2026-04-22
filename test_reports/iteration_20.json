@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 14B+14C RBAC fix VERIFIED. The hardcoded ADMIN_ROLES=('founder','super_admin') tuple usage in /app/backend/routers/admin_panel.py has been fully replaced with require_permission('<resource>:<verb>') imported from the new shared module /app/backend/utils/rbac.py. All 17 legacy admin_panel.py endpoints now honor the ROLE_PERMISSIONS matrix. Wrote a new focused regression suite /app/backend/tests/test_iter20_rbac_matrix.py (45 parameterised tests covering the exact 7-role × 17-endpoint matrix from review_request). Result: 45/45 PASS (100%). Also re-ran the original suites test_phase14_admin_panel.py + test_phase14b_admin_panel.py (60 tests): 59 PASS / 1 FAIL — the sole failure (test_demo_tenants_seeded) is PRE-EXISTING seed-data drift unrelated to this RBAC PR (it expects demo tenant 'tenant-ent-plus' but only finds 'clinic-harmony-hearing-clinic-271f44' and others). All 6 formerly-red RBAC tests from iteration_19 now pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/v2/tenants", "issue": "Seed data drift — demo tenant id 'tenant-ent-plus' referenced by test_phase14_admin_panel.py::test_demo_tenants_seeded is missing from the DB. Observed tenants instead include 'clinic-harmony-hearing-clinic-271f44', 'clinic-smoke-clinic-8352-44470b', etc. NOT caused by this PR; was already present in iteration_19. Either re-seed the demo tenant or update the test assertion."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_rbac_matrix.py",
+    "/app/backend/tests/test_phase14_admin_panel.py",
+    "/app/backend/tests/test_phase14b_admin_panel.py",
+    "/app/test_reports/pytest/iter20_rbac_matrix.xml",
+    "/app/test_reports/pytest/iter20_phase14_all.xml"
+  ],
+  "action_items": [
+    "Optional/low-prio: reseed 'tenant-ent-plus' OR update test_phase14_admin_panel.py::test_demo_tenants_seeded to match current seed fixture (unrelated to RBAC fix; was already failing in iter_19)."
+  ],
+  "critical_code_review_comments": [
+    "utils/rbac.py is clean: single source of truth for ROLE_PERMISSIONS matrix, exports both has_permission() and require_permission() dependency. Founder + super_admin still bypass at top of require_permission — preserved behavior.",
+    "admin_panel.py now imports require_permission from utils.rbac and applies correct resource:verb action to each of the 17 routes (dashboard:read, tenants:read/write/impersonate, subscriptions:read/write, invoices:write, revenue:read, leads:read/write, features:read/write, audit:read). Verb mapping matches matrix intent.",
+    "DELETE /tenants/{id} correctly still uses explicit `_is_founder(user)` check (not require_permission) — super_admin's '*:write' wildcard would otherwise grant delete. This is the correct defensive pattern and matches review_request's 'super_admin bypasses everything except DELETE tenant' baseline.",
+    "Legacy ADMIN_ROLES constant still lives at admin_panel.py:52 but is now unused by routes (only referenced via the import list from auth). Suggest removing the constant + the `require_roles` import to avoid future regressions where a developer uses it again by habit.",
+    "admin_panel_b.py no longer duplicates ROLE_PERMISSIONS — it imports from utils.rbac — good. No drift risk between the two files.",
+    "has_permission() correctly handles '*', '*:read', '*:write' wildcards; verb extraction uses action.split(':')[-1] which is fine for all current actions (no nested colons)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_rbac_matrix.py (NEW — 45 parameterised tests, 100% pass)"
+  ],
+  "success_rate": {"backend": "100% (45/45 iter20 RBAC matrix tests + 33/33 phase14b RBAC-relevant tests). Combined phase14+14b: 59/60 (98.3%) — sole fail is unrelated seed-data drift.", "frontend": "not tested (review_request: backend only)"},
+  "test_credentials": "founder@audinexa.com/founder123, admin@acs.in/admin123, sales@audinexa.com/sales123, support@audinexa.com/support123, finance@audinexa.com/finance123, ops@audinexa.com/ops123, analyst@audinexa.com/analyst123, frontdesk@acs.in/frontdesk123, support@kimshearing.in/demo123.",
+  "seed_data_creation": "Created as a side-effect of tests: 1 invoice (finance_manager STANDARD/annual kims), 1 invoice (super_admin STANDARD/annual kims), feature-flag updates to kims (extra_modules=['analytics']) by founder and product_ops, 1 ticket from support_agent (TEST_support_agt), 1 notification broadcast test, 1 campaign TEST_phase14b. All test data clearly prefixed/identifiable.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The RBAC matrix fix (iteration_19 → iteration_20) is fully verified green. Future RBAC regressions should extend /app/backend/tests/test_iter20_rbac_matrix.py — it's a compact parameterised suite (~11s runtime) that exercises all 7 roles × representative endpoints. If admin_panel_b.py adds new endpoints, extend the matrix to include them. The unrelated seed-data drift (missing 'tenant-ent-plus') is tracked in iter_20 minor issues.",
+  "rca of the issue": "Fix landed correctly: /app/backend/routers/admin_panel.py lines 75,239,290,340,360,372,384,440,475,500,546,571,632,654,705,731,756 — all 17 route dependencies now read `Depends(require_permission('<resource>:<verb>'))` imported from utils.rbac (line 40). DELETE tenant intentionally retains `_is_founder(user)` (line 411) to block super_admin. Verified via live curl through REACT_APP_BACKEND_URL that: (a) sales_manager gets 200 on /tenants and 403 on invoice-write, (b) support_agent gets 200 on /dashboard + impersonate and 403 on /revenue, (c) finance_manager gets 200 on /revenue + invoice-write + /plans and 403 on feature-flag PUT, (d) product_ops gets 200 on feature-flag PUT + /usage-analytics and 403 on /revenue, (e) read_only gets 200 on all 10 read endpoints and 403 on all 4 write variants + DELETE /tenants, (f) founder bypasses, super_admin bypasses except DELETE /tenants, (g) frontdesk and clinic_owner get 403 on every /admin/v2 endpoint. No regressions observed in the 60-test phase14 combined suite."
+}

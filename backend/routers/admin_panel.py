@@ -37,6 +37,7 @@ from utils.tiers import (
     TIER_ORDER, TIER_MODULES, get_tier_prices,
     resolve_effective_tier, has_module_access,
 )
+from utils.rbac import require_permission
 
 
 router = APIRouter(prefix="/api/admin/v2")
@@ -71,7 +72,7 @@ async def _log_audit(db, user: dict, action: str, target: str, before: dict | No
 
 @router.get("/dashboard")
 async def dashboard(
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("dashboard:read")),
     db=Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
@@ -235,7 +236,7 @@ async def list_tenants(
     country: Optional[str] = None,
     q: Optional[str] = None,
     limit: int = 500,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("tenants:read")),
     db=Depends(get_db),
 ):
     query: dict = {}
@@ -286,7 +287,7 @@ async def list_tenants(
 @router.get("/tenants/{clinic_id}")
 async def tenant_detail(
     clinic_id: str,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("tenants:read")),
     db=Depends(get_db),
 ):
     c = await db.clinics.find_one({"clinic_id": clinic_id}, {"_id": 0})
@@ -336,7 +337,7 @@ async def update_tenant(
     clinic_id: str,
     payload: TenantUpdate,
     request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("tenants:write")),
     db=Depends(get_db),
 ):
     existing = await db.clinics.find_one({"clinic_id": clinic_id}, {"_id": 0})
@@ -356,7 +357,7 @@ async def update_tenant(
 @router.post("/tenants/{clinic_id}/suspend")
 async def suspend_tenant(
     clinic_id: str, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("tenants:write")),
     db=Depends(get_db),
 ):
     await db.clinics.update_one({"clinic_id": clinic_id}, {"$set": {"status": "suspended", "suspended_at": datetime.now(timezone.utc).isoformat()}})
@@ -368,7 +369,7 @@ async def suspend_tenant(
 @router.post("/tenants/{clinic_id}/activate")
 async def activate_tenant(
     clinic_id: str, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("tenants:write")),
     db=Depends(get_db),
 ):
     await db.clinics.update_one({"clinic_id": clinic_id}, {"$set": {"status": "active"}, "$unset": {"suspended_at": ""}})
@@ -380,7 +381,7 @@ async def activate_tenant(
 @router.post("/tenants/{clinic_id}/impersonate")
 async def impersonate_tenant(
     clinic_id: str, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("tenants:impersonate")),
     db=Depends(get_db),
 ):
     """Mint a short-lived JWT as the tenant's clinic_owner for support / debugging.
@@ -436,7 +437,7 @@ async def delete_tenant(
 # exposes the plan catalogue + lets admins issue manual invoices for a tenant.
 
 @router.get("/subscriptions/plans")
-async def get_plan_catalogue(user=Depends(require_roles(*ADMIN_ROLES)), db=Depends(get_db)):
+async def get_plan_catalogue(user=Depends(require_permission("subscriptions:read")), db=Depends(get_db)):
     """Returns the currently-active 3-tier plan matrix + any plan overrides stored in DB."""
     prices = get_tier_prices()
     overrides = await db.plan_overrides.find({}, {"_id": 0}).to_list(20)
@@ -471,7 +472,7 @@ class PlanOverride(BaseModel):
 @router.put("/subscriptions/plans/{tier}")
 async def update_plan_override(
     tier: str, payload: PlanOverride, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("subscriptions:write")),
     db=Depends(get_db),
 ):
     if tier not in TIER_ORDER:
@@ -496,7 +497,7 @@ class TenantInvoiceCreate(BaseModel):
 @router.post("/subscriptions/invoices")
 async def issue_tenant_invoice(
     payload: TenantInvoiceCreate, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("invoices:write")),
     db=Depends(get_db),
 ):
     if payload.tier not in TIER_ORDER:
@@ -542,7 +543,7 @@ async def mark_tenant_invoice_paid(
     invoice_id: str, request: Request,
     payload: Optional[InvoicePaidPayload] = None,
     payment_ref: Optional[str] = None,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("invoices:write")),
     db=Depends(get_db),
 ):
     ref = (payload.payment_ref if payload else None) or payment_ref
@@ -567,7 +568,7 @@ async def mark_tenant_invoice_paid(
 
 @router.get("/revenue")
 async def platform_revenue(
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("revenue:read")),
     db=Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
@@ -628,7 +629,7 @@ class LeadUpdate(BaseModel):
 @router.get("/leads")
 async def list_leads(
     stage: Optional[str] = None,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("leads:read")),
     db=Depends(get_db),
 ):
     q: dict = {}
@@ -650,7 +651,7 @@ async def list_leads(
 @router.patch("/leads/{email}")
 async def update_lead(
     email: str, payload: LeadUpdate, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("leads:write")),
     db=Depends(get_db),
 ):
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -701,7 +702,7 @@ class FlagsUpdate(BaseModel):
 @router.get("/feature-flags/{clinic_id}")
 async def get_feature_flags(
     clinic_id: str,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("features:read")),
     db=Depends(get_db),
 ):
     c = await db.clinics.find_one({"clinic_id": clinic_id}, {"_id": 0, "subscription_tier": 1, "trial_ends_at": 1})
@@ -727,7 +728,7 @@ async def get_feature_flags(
 @router.put("/feature-flags/{clinic_id}")
 async def update_feature_flags(
     clinic_id: str, payload: FlagsUpdate, request: Request,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("features:write")),
     db=Depends(get_db),
 ):
     c = await db.clinics.find_one({"clinic_id": clinic_id}, {"_id": 0})
@@ -752,7 +753,7 @@ async def update_feature_flags(
 @router.get("/audit-logs")
 async def list_audit_logs(
     limit: int = 200,
-    user=Depends(require_roles(*ADMIN_ROLES)),
+    user=Depends(require_permission("audit:read")),
     db=Depends(get_db),
 ):
     rows = await db.admin_audit_logs.find({}, {"_id": 0}).sort("at", -1).to_list(limit)

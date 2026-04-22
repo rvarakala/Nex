@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from auth import get_current_user
 from database import get_db
 from utils.serde import serialize_datetime, deserialize_datetime
+from utils.rbac import ROLE_PERMISSIONS, has_permission, require_permission
 
 from routers.admin_panel import _log_audit  # reuse audit helper
 
@@ -38,68 +39,7 @@ router = APIRouter(prefix="/api/admin/v2")
 
 
 # ==================== RBAC (Phase 14C) ====================
-# Fine-grained permission matrix for 7 internal-team roles. Each role is
-# mapped to a list of allowed ACTION codes. "*" means all actions.
-
-ROLE_PERMISSIONS: dict[str, list[str]] = {
-    "founder":            ["*"],                   # includes delete-tenant
-    "super_admin":        ["*:read", "*:write"],   # everything except delete-tenant (enforced elsewhere)
-    "sales_manager":      [
-        "dashboard:read", "tenants:read", "leads:read", "leads:write",
-        "marketing:read", "marketing:write", "revenue:read", "audit:read",
-    ],
-    "support_agent":      [
-        "dashboard:read", "tenants:read", "tenants:impersonate",
-        "tickets:read", "tickets:write", "notifications:read",
-        "audit:read", "system:read",
-    ],
-    "finance_manager":    [
-        "dashboard:read", "tenants:read", "revenue:read", "revenue:write",
-        "subscriptions:read", "subscriptions:write", "invoices:read",
-        "invoices:write", "audit:read",
-    ],
-    "product_ops":        [
-        "dashboard:read", "tenants:read", "features:read", "features:write",
-        "usage:read", "system:read", "audit:read", "notifications:read",
-        "notifications:write",
-    ],
-    "read_only":          [
-        "dashboard:read", "tenants:read", "leads:read", "revenue:read",
-        "tickets:read", "usage:read", "system:read", "audit:read",
-    ],
-}
-
-# Legacy roles already used elsewhere get explicit mapping so the deny logic
-# never breaks clinic users from hitting legitimate non-admin APIs.
-for legacy in ("clinic_owner", "front_desk", "audiologist", "accounts",
-               "inventory_manager", "technician", "referral_partner"):
-    ROLE_PERMISSIONS.setdefault(legacy, [])
-
-
-def has_permission(user_role: str, action: str) -> bool:
-    allowed = ROLE_PERMISSIONS.get(user_role, [])
-    if "*" in allowed:
-        return True
-    # "*:read" / "*:write" grants that verb on anything
-    verb = action.split(":")[-1]
-    if f"*:{verb}" in allowed:
-        return True
-    return action in allowed
-
-
-def require_permission(action: str):
-    """Dependency — verifies caller has ACTION under ROLE_PERMISSIONS."""
-    async def _dep(user=Depends(get_current_user)):
-        if user["role"] == "founder" or user["role"] == "super_admin":
-            # super_admin bypass EXCEPT for founder-only actions (caller enforces)
-            return user
-        if not has_permission(user["role"], action):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Role '{user['role']}' lacks permission '{action}'",
-            )
-        return user
-    return _dep
+# Permission matrix lives in utils/rbac.py (shared with admin_panel.py).
 
 
 @router.get("/rbac/matrix")
