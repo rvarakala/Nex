@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import io
+import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -86,6 +87,120 @@ async def join_waitlist(payload: WaitlistCreate, db=Depends(get_db)):
     )
     return {"ok": True, "email": doc["email"],
             "message": "You're on the waitlist. We'll email you at launch."}
+
+
+# ==================== PUBLIC CLINIC SIGNUP ====================
+
+class ClinicSignup(BaseModel):
+    """Public self-signup payload. Creates a clinic + owner user in one call.
+    New clinic auto-gets BASIC tier + 30-day Premium trial.
+    """
+    model_config = ConfigDict(extra="ignore")
+    # Clinic fields
+    clinic_name: str = Field(min_length=2, max_length=120)
+    city: Optional[str] = None
+    state: Optional[str] = None
+    phone: Optional[str] = None
+    # Owner/admin user fields
+    owner_name: str = Field(min_length=2, max_length=80)
+    owner_email: EmailStr
+    owner_password: str = Field(min_length=8, max_length=128,
+                                  description="min 8 chars")
+    # Light bot protection — honeypot field that UI leaves empty
+    company_url: Optional[str] = None
+
+
+@router.post("/public/clinic-signup", status_code=201)
+async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
+    """Creates a fresh clinic + clinic_owner user. Auto-login JWT returned.
+
+    The new clinic starts on BASIC with `trial_ends_at = now + 30 days`
+    (which resolves to PREMIUM via `resolve_effective_tier()` for the trial
+    window). A primary branch is auto-created so the first staff member has
+    somewhere to log patients.
+    """
+    # Honeypot — real users leave this empty
+    if payload.company_url:
+        raise HTTPException(status_code=400, detail="Invalid request")
+
+    # Uniqueness check on email across the whole users table
+    email = payload.owner_email.lower().strip()
+    existing_u = await db.users.find_one({"email": email}, {"_id": 0, "user_id": 1})
+    if existing_u:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists. Try signing in instead.",
+        )
+
+    # ----- Import locally to avoid circular at module load -----
+    from auth import hash_password, create_access_token
+    from utils.serde import serialize_datetime
+
+    # Generate stable IDs (lower-cased slug + short uuid for idempotence)
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "-", payload.clinic_name.lower()).strip("-")[:40] or "clinic"
+    clinic_id = f"clinic-{slug}-{uuid.uuid4().hex[:6]}"
+    user_id = f"USR-{uuid.uuid4().hex[:8].upper()}"
+    branch_id = f"BR-{uuid.uuid4().hex[:8].upper()}"
+
+    now = datetime.now(timezone.utc)
+    trial_end = now + timedelta(days=30)
+
+    # ----- Create clinic -----
+    await db.clinics.insert_one(serialize_datetime({
+        "clinic_id": clinic_id,
+        "name": payload.clinic_name.strip(),
+        "city": payload.city or "",
+        "state": payload.state or "",
+        "phone": payload.phone or "",
+        "email": email,
+        "mrd_prefix": slug.upper()[:3] or "CLN",
+        "subscription_tier": "BASIC",          # post-trial default
+        "trial_ends_at": trial_end,            # 30-day Premium trial
+        "signup_source": "public",
+        "created_at": now,
+    }))
+
+    # ----- Create owner user -----
+    await db.users.insert_one(serialize_datetime({
+        "user_id": user_id,
+        "clinic_id": clinic_id,
+        "email": email,
+        "name": payload.owner_name.strip(),
+        "role": "clinic_owner",
+        "active": True,
+        "password_hash": hash_password(payload.owner_password),
+        "branch_ids": [branch_id],
+        "created_at": now,
+    }))
+
+    # ----- Create primary branch -----
+    await db.branches.insert_one(serialize_datetime({
+        "branch_id": branch_id,
+        "clinic_id": clinic_id,
+        "name": payload.clinic_name.strip(),
+        "city": payload.city or "",
+        "is_primary": True,
+        "active": True,
+        "created_at": now,
+    }))
+
+    # ----- Issue access token so the user is auto-logged-in -----
+    token = create_access_token(user_id, email, "clinic_owner", clinic_id)
+
+    return {
+        "ok": True,
+        "clinic_id": clinic_id,
+        "user_id": user_id,
+        "branch_id": branch_id,
+        "access_token": token,
+        "token_type": "bearer",
+        "trial_ends_at": trial_end.isoformat(),
+        "trial_days": 30,
+        "effective_tier": "PREMIUM",   # during trial
+        "stored_tier": "BASIC",
+        "message": f"Welcome, {payload.owner_name.split()[0]}! Your 30-day Premium trial is active.",
+    }
 
 
 # ==================== AUTHENTICATED ====================

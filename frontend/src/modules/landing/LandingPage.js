@@ -66,12 +66,16 @@ export default function LandingPage() {
           <span className="text-white font-semibold"> Multi-branch, multi-role, GST-ready.</span>
         </p>
         <div className="flex items-center gap-4">
-          <a href="#waitlist" data-testid="landing-hero-cta"
+          <a href="/signup" data-testid="landing-hero-cta"
              className="px-6 py-3 bg-white text-slate-950 font-bold rounded hover:bg-orange-100 transition">
-            Join the waitlist →
+            Start free trial →
           </a>
-          <div className="text-sm text-slate-500">
-            30-day free Premium trial at launch · No card required
+          <a href="#waitlist" data-testid="landing-waitlist-cta"
+             className="px-6 py-3 border border-slate-700 hover:border-white text-slate-200 font-bold rounded transition">
+            Join waitlist
+          </a>
+          <div className="text-sm text-slate-500 hidden sm:block">
+            30-day free Premium trial · No card required
           </div>
         </div>
       </section>
@@ -146,10 +150,10 @@ export default function LandingPage() {
                     </>
                   )}
                 </ul>
-                <a href="#waitlist"
+                <a href="/signup"
                    data-testid={`pricing-${t.code}-cta`}
                    className={`block text-center py-2.5 rounded font-bold text-sm ${featured ? 'bg-white text-slate-950 hover:bg-orange-100' : 'border border-slate-700 hover:border-white'}`}>
-                  Join waitlist
+                  Start free trial
                 </a>
               </div>
             );

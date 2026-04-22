@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
 import LandingPage from './modules/landing/LandingPage';
+import SignupPage from './modules/landing/SignupPage';
 import FrontDeskModule from './modules/frontdesk/FrontDeskModule';
 import BillingModule from './modules/billing/BillingModule';
 import TestProceduresModule from './modules/test/TestProceduresModule';
@@ -40,6 +41,7 @@ function App() {
             <Routes>
               {/* PUBLIC */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/signup" element={<SignupPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/queue/:clinicId" element={<QueueTVPage />} />
 

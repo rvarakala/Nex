@@ -45,6 +45,24 @@ export const AuthProvider = ({ children }) => {
     return r.data.user;
   };
 
+  // Seeds an externally-issued JWT (e.g., from /public/clinic-signup) and
+  // hydrates the user/clinic from /auth/me so downstream components see a
+  // fully-authenticated session.
+  const loginWithToken = async (token) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    try {
+      const r = await axios.get(`${API}/auth/me`);
+      setUser(r.data.user);
+      setClinic(r.data.clinic);
+      return r.data.user;
+    } catch (e) {
+      localStorage.removeItem(TOKEN_KEY);
+      setUser(null);
+      setClinic(null);
+      throw e;
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem('acs.activeTest');  // Prevent ghost-context leak between users on shared terminal
@@ -59,7 +77,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, clinic, loading, login, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, clinic, loading, login, loginWithToken, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
