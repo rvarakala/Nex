@@ -88,3 +88,18 @@ async def deactivate_vendor(vendor_id: str,
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Vendor not found")
     return {"message": "Deactivated", "vendor_id": vendor_id}
+
+
+@router.post("/vendors/{vendor_id}/reactivate", response_model=Vendor)
+async def reactivate_vendor(vendor_id: str,
+                            user=Depends(require_roles("clinic_owner", "inventory_manager")),
+                            db=Depends(get_db)):
+    """Restore a soft-deleted vendor so it reappears in PO dropdowns."""
+    res = await db.vendors.update_one(
+        {"vendor_id": vendor_id, "clinic_id": user["clinic_id"]},
+        {"$set": {"active": True, "updated_at": datetime.utcnow().isoformat()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    row = await db.vendors.find_one({"vendor_id": vendor_id}, {"_id": 0})
+    return deserialize_datetime(row)

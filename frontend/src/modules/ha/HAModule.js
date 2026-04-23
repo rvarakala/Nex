@@ -4,6 +4,7 @@ import ProductCataloguePage from './ProductCataloguePage';
 import InventoryBoardPage from './InventoryBoardPage';
 import DemoStockPage from './DemoStockPage';
 import ProcurementPage from './ProcurementPage';
+import VendorsPage from './VendorsPage';
 import QuotationStudioPage from './QuotationStudioPage';
 import FittingLedgerPage from './FittingLedgerPage';
 import TrialsPage from './TrialsPage';
@@ -45,6 +46,7 @@ export default function HAModule() {
         <Tab to="/ha/subscriptions" label="Subscriptions" testid="ha-tab-subs" />
         <Tab to="/ha/amc" label="AMC" testid="ha-tab-amc" />
         <Tab to="/ha/procurement" label="Procurement" testid="ha-tab-procurement" />
+        <Tab to="/ha/vendors" label="Vendors" testid="ha-tab-vendors" />
         <Tab to="/ha/products" label="Catalogue" testid="ha-tab-products" />
         <Tab to="/ha/analytics" label="Analytics" testid="ha-tab-analytics" />
       </div>
@@ -63,6 +65,7 @@ export default function HAModule() {
           <Route path="amc" element={<AMCPage />} />
           <Route path="analytics" element={<OwnerAnalyticsPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
+          <Route path="vendors" element={<VendorsPage />} />
           <Route path="products" element={<ProductCataloguePage />} />
         </Routes>
       </div>
