@@ -21,6 +21,8 @@ import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
 import { usePageViewTracker } from './hooks/usePageViewTracker';
+import { useDocumentTitle } from './hooks/useDocumentTitle';
+import TopProgressBar from './components/TopProgressBar';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -66,8 +68,12 @@ function App() {
 function AppRoutes() {
   // Track page views on every route change (authenticated users only)
   usePageViewTracker();
+  // Update browser tab title
+  useDocumentTitle();
   return (
-    <Routes>
+    <>
+      <TopProgressBar />
+      <Routes>
               {/* PUBLIC */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/signup" element={<SignupPage />} />
@@ -113,6 +119,7 @@ function AppRoutes() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+    </>
   );
 }
 

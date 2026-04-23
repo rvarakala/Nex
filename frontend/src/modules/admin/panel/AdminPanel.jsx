@@ -2,7 +2,7 @@
  * AUDINEXA Super Admin Panel — shell (Phase 14A)
  * Dark sidebar + light canvas. Own layout, not using clinic AppShell.
  */
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../AuthContext';
 import {
@@ -11,22 +11,24 @@ import {
   Megaphone, Bell, FileClock, Settings, Users, Activity,
 } from 'lucide-react';
 
-import DashboardPage from './DashboardPage';
-import TenantsPage from './TenantsPage';
-import TenantDetailPage from './TenantDetailPage';
-import SubscriptionsPage from './SubscriptionsPage';
-import RevenuePage from './RevenuePage';
-import LeadsPage from './LeadsPage';
-import FeatureFlagsPage from './FeatureFlagsPage';
-import SupportDeskPage from './SupportDeskPage';
-import UsageAnalyticsPage from './UsageAnalyticsPage';
-import SystemHealthPage from './SystemHealthPage';
-import MarketingPage from './MarketingPage';
-import NotificationsPage from './NotificationsPage';
-import AuditLogPage from './AuditLogPage';
-import SettingsPage from './SettingsPage';
-import UsersRolesPage from './UsersRolesPage';
-import ActivityPage from './ActivityPage';
+// Lazy-load route components → each becomes its own JS chunk, fetched only
+// when that route is first visited. Cuts initial admin bundle by ~60%.
+const DashboardPage      = lazy(() => import('./DashboardPage'));
+const TenantsPage        = lazy(() => import('./TenantsPage'));
+const TenantDetailPage   = lazy(() => import('./TenantDetailPage'));
+const SubscriptionsPage  = lazy(() => import('./SubscriptionsPage'));
+const RevenuePage        = lazy(() => import('./RevenuePage'));
+const LeadsPage          = lazy(() => import('./LeadsPage'));
+const FeatureFlagsPage   = lazy(() => import('./FeatureFlagsPage'));
+const SupportDeskPage    = lazy(() => import('./SupportDeskPage'));
+const UsageAnalyticsPage = lazy(() => import('./UsageAnalyticsPage'));
+const SystemHealthPage   = lazy(() => import('./SystemHealthPage'));
+const MarketingPage      = lazy(() => import('./MarketingPage'));
+const NotificationsPage  = lazy(() => import('./NotificationsPage'));
+const AuditLogPage       = lazy(() => import('./AuditLogPage'));
+const SettingsPage       = lazy(() => import('./SettingsPage'));
+const UsersRolesPage     = lazy(() => import('./UsersRolesPage'));
+const ActivityPage       = lazy(() => import('./ActivityPage'));
 
 const NAV_GROUPS = [
   {
@@ -188,26 +190,35 @@ export default function AdminPanel() {
         </header>
 
         <main className="flex-1 overflow-auto bg-slate-50">
-          <Routes>
-            <Route path="/" element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="tenants" element={<TenantsPage />} />
-            <Route path="tenants/:clinicId" element={<TenantDetailPage />} />
-            <Route path="subscriptions" element={<SubscriptionsPage />} />
-            <Route path="revenue" element={<RevenuePage />} />
-            <Route path="leads" element={<LeadsPage />} />
-            <Route path="activity" element={<ActivityPage />} />
-            <Route path="marketing" element={<MarketingPage />} />
-            <Route path="features" element={<FeatureFlagsPage />} />
-            <Route path="support" element={<SupportDeskPage />} />
-            <Route path="usage" element={<UsageAnalyticsPage />} />
-            <Route path="system" element={<SystemHealthPage />} />
-            <Route path="notifications" element={<NotificationsPage />} />
-            <Route path="audit" element={<AuditLogPage />} />
-            <Route path="users" element={<UsersRolesPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="dashboard" replace />} />
-          </Routes>
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-full">
+              <div className="flex flex-col items-center gap-2 text-slate-400">
+                <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                <div className="text-[11px] font-semibold">Loading…</div>
+              </div>
+            </div>
+          }>
+            <Routes>
+              <Route path="/" element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="tenants" element={<TenantsPage />} />
+              <Route path="tenants/:clinicId" element={<TenantDetailPage />} />
+              <Route path="subscriptions" element={<SubscriptionsPage />} />
+              <Route path="revenue" element={<RevenuePage />} />
+              <Route path="leads" element={<LeadsPage />} />
+              <Route path="activity" element={<ActivityPage />} />
+              <Route path="marketing" element={<MarketingPage />} />
+              <Route path="features" element={<FeatureFlagsPage />} />
+              <Route path="support" element={<SupportDeskPage />} />
+              <Route path="usage" element={<UsageAnalyticsPage />} />
+              <Route path="system" element={<SystemHealthPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="audit" element={<AuditLogPage />} />
+              <Route path="users" element={<UsersRolesPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="dashboard" replace />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </div>

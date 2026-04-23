@@ -2,12 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { API, fmtINR, fmtDate, StatusPill } from './billingUtils';
+import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
 
 export default function InvoicesListPage() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: '', from_date: '', to_date: '', search: '' });
   const [collections, setCollections] = useState(null);
+  const [page, setPage] = useState(1);
+  const pagedInvoices = usePaginationSlice(invoices, page, DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [filter, invoices.length]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,7 +105,7 @@ export default function InvoicesListPage() {
             {!loading && invoices.length === 0 && (
               <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400 italic">No invoices yet. Click "+ New Invoice" to create one.</td></tr>
             )}
-            {invoices.map((inv) => (
+            {pagedInvoices.map((inv) => (
               <tr key={inv.invoice_id} data-testid={`inv-row-${inv.invoice_id}`}
                   className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-3 py-2 font-mono text-slate-700">
@@ -122,6 +126,7 @@ export default function InvoicesListPage() {
             ))}
           </tbody>
         </table>
+        <Pagination page={page} setPage={setPage} total={invoices.length} testidPrefix="invoices-pagination" />
       </div>
     </div>
   );

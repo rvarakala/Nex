@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import {
+  LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
+  BarChart3, HeartPulse, Handshake, FileText, ChevronLeft, LogOut,
+  Menu, Search as SearchIcon, Settings,
+} from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
@@ -8,44 +13,73 @@ import AppSwitcher from './AppSwitcher';
 import { useSubscription } from '../SubscriptionContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const COLLAPSED_KEY = 'acs.sidebar.collapsed';
 
-const NavItem = ({ to, icon, label, testid, onNavigate }) => (
+// ================= Nav item =================
+const NavItem = ({ to, Icon, label, testid, collapsed, onNavigate, badge }) => (
   <NavLink
     to={to}
     data-testid={testid}
     onClick={onNavigate}
+    end={false}
     className={({ isActive }) =>
-      `flex flex-col items-center justify-center gap-0.5 py-3 px-2 rounded-lg transition-colors ${
-        isActive ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+      `group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${
+        isActive
+          ? 'bg-white/10 text-white shadow-inner'
+          : 'text-slate-400 hover:bg-white/5 hover:text-white'
       }`
     }
+    title={collapsed ? label : undefined}
   >
-    <div className="w-5 h-5">{icon}</div>
-    <span className="text-[9px] font-semibold uppercase tracking-wider">{label}</span>
+    <Icon size={17} strokeWidth={2} className="flex-shrink-0" />
+    {!collapsed && <span className="truncate flex-1">{label}</span>}
+    {!collapsed && badge && (
+      <span className="px-1.5 py-0.5 text-[9px] font-bold bg-orange-500 text-white rounded-full">{badge}</span>
+    )}
   </NavLink>
 );
 
+// ================= Tier badge =================
+const TierBadge = ({ tier }) => {
+  const colors = {
+    BASIC:    'bg-sky-500/15 text-sky-300 ring-sky-500/30',
+    STANDARD: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
+    PREMIUM:  'bg-gradient-to-r from-orange-500/25 to-fuchsia-500/25 text-orange-200 ring-orange-500/40',
+  };
+  const cls = colors[tier] || colors.BASIC;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[9px] uppercase tracking-[0.2em] font-bold px-2 py-0.5 rounded ring-1 ${cls}`}>
+      {tier || 'TRIAL'}
+    </span>
+  );
+};
+
+// ================= Shell =================
 export default function AppShell({ children }) {
   const { user, clinic, logout } = useAuth();
-  const { access, superAdminBypass } = useSubscription();
+  const { access, superAdminBypass, tier } = useSubscription();
   const { activeTest } = useTestContext();
   const navigate = useNavigate();
+
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [unreadCloseout, setUnreadCloseout] = useState(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
+  const [unreadCloseout, setUnreadCloseout] = useState(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
+  }, [collapsed]);
 
   const canSeeCloseout = user?.role === 'super_admin' || user?.role === 'accounts';
-
-  // Poll for unread close-out (owners/admin only). Light touch — 60s interval.
   const fetchCloseout = useCallback(async () => {
     if (!canSeeCloseout) { setUnreadCloseout(null); return; }
     try {
       const r = await axios.get(`${API}/closeouts/latest`);
-      if (r.data && r.data.read === false) setUnreadCloseout(r.data);
-      else setUnreadCloseout(null);
+      setUnreadCloseout(r.data?.read === false ? r.data : null);
     } catch { /* ignore */ }
   }, [canSeeCloseout]);
-
   useEffect(() => {
     fetchCloseout();
     if (!canSeeCloseout) return;
@@ -53,144 +87,158 @@ export default function AppShell({ children }) {
     return () => clearInterval(iv);
   }, [fetchCloseout, canSeeCloseout]);
 
-  // Close mobile nav on route change (via NavItem onClick)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
-  // Global keyboard shortcuts
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) ||
-                      document.activeElement?.isContentEditable;
+      const inField = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)
+        || document.activeElement?.isContentEditable;
       const meta = e.metaKey || e.ctrlKey;
-
-      if (meta && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-        return;
-      }
+      if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((o) => !o); return; }
+      if (meta && e.key.toLowerCase() === 'b') { e.preventDefault(); setCollapsed((c) => !c); return; }
       if (inField) return;
-      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (!meta && !e.altKey) {
         const k = e.key.toLowerCase();
-        if (k === 'n') { e.preventDefault(); navigate('/frontdesk/new'); }
-        else if (k === 'a') { e.preventDefault(); navigate('/frontdesk/appointments'); }
-        else if (k === 'i') { e.preventDefault(); navigate('/billing/new'); }
-        else if (k === 'r') { e.preventDefault(); navigate('/frontdesk/returning'); }
-        else if (k === 'd') { e.preventDefault(); navigate('/frontdesk'); }
-        else if (k === 'q') { e.preventDefault(); navigate('/frontdesk/queue'); }
-        else if (k === '/') { e.preventDefault(); setPaletteOpen(true); }
+        const map = { n: '/frontdesk/new', a: '/frontdesk/appointments', i: '/billing/new', r: '/frontdesk/returning', d: '/frontdesk', q: '/frontdesk/queue' };
+        if (map[k]) { e.preventDefault(); navigate(map[k]); }
+        if (k === '/') { e.preventDefault(); setPaletteOpen(true); }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [navigate]);
 
+  // ================= Nav structure =================
+  const sections = [
+    {
+      label: 'Clinic',
+      items: [
+        { to: '/frontdesk', Icon: Users, label: 'Front Desk', testid: 'nav-frontdesk' },
+        (user?.role !== 'audiologist') && { to: '/billing', Icon: Receipt, label: 'Billing', testid: 'nav-billing' },
+        { to: '/test', Icon: Stethoscope, label: 'Diagnostics', testid: 'nav-test' },
+      ].filter(Boolean),
+    },
+    {
+      label: 'Commerce',
+      items: [
+        (user?.role !== 'audiologist') && (superAdminBypass || access['hearing-aids']) &&
+          { to: '/ha', Icon: Headphones, label: 'Hearing Aids', testid: 'nav-ha' },
+        (user?.role !== 'audiologist') && (superAdminBypass || access['repair']) &&
+          { to: '/repair', Icon: Wrench, label: 'Service & Repair', testid: 'nav-repair' },
+      ].filter(Boolean),
+    },
+    {
+      label: 'Insights',
+      items: [
+        (user?.role !== 'audiologist') && (superAdminBypass || access['analytics']) &&
+          { to: '/ha/analytics', Icon: BarChart3, label: 'Owner Analytics', testid: 'nav-analytics' },
+        (user?.role !== 'audiologist') && (superAdminBypass || access['analytics']) &&
+          { to: '/analytics/clinical', Icon: HeartPulse, label: 'Clinical Analytics', testid: 'nav-clinical-analytics' },
+        (user?.role !== 'audiologist') && (superAdminBypass || access['referral-partners']) &&
+          { to: '/partners', Icon: Handshake, label: 'Referral Partners', testid: 'nav-partners' },
+        { to: '/reports', Icon: FileText, label: 'Reports', testid: 'nav-reports' },
+      ].filter(Boolean),
+    },
+    user?.role === 'super_admin' && {
+      label: 'Admin',
+      items: [
+        { to: '/admin/clinics', Icon: Settings, label: 'Clinics Admin', testid: 'nav-admin' },
+      ],
+    },
+  ].filter(Boolean);
+
+  const sideWidth = collapsed ? 'w-[64px]' : 'w-[220px]';
+
   const navInner = (
     <>
-      <div className="px-2 py-3 border-b border-slate-800 flex items-center justify-center">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12 A9 9 0 0 1 21 12 V17 A3 3 0 0 1 18 20 H17 V13 H21" />
-            <path d="M3 12 V17 A3 3 0 0 0 6 20 H7 V13 H3" />
-          </svg>
+      {/* Brand */}
+      <div className={`px-3 py-4 border-b border-white/10 flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-rose-600 flex items-center justify-center font-black text-white text-sm flex-shrink-0 shadow-lg shadow-orange-500/30">
+          A
         </div>
-      </div>
-
-      <div className="flex-1 overflow-auto p-1.5 space-y-1">
-        <NavItem
-          to="/frontdesk"
-          testid="nav-frontdesk"
-          label="Front Desk"
-          onNavigate={closeMobileNav}
-          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h18M3 6h18M3 18h12"/></svg>}
-        />
-        {user?.role !== 'audiologist' && (
-          <NavItem
-            to="/billing"
-            testid="nav-billing"
-            label="Billing"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>}
-          />
-        )}
-        <NavItem
-          to="/test"
-          testid="nav-test"
-          label="Diagnostics"
-          onNavigate={closeMobileNav}
-          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18M7 14l3-3 4 4 5-5"/></svg>}
-        />
-        {user?.role !== 'audiologist' && (superAdminBypass || access['hearing-aids']) && (
-          <NavItem
-            to="/ha"
-            testid="nav-ha"
-            label="Hearing Aids"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a7 7 0 0 0-7 7v5a3 3 0 0 0 3 3h1v-8H7v-.5A5 5 0 0 1 17 9v.5h-2V17h1a3 3 0 0 0 3-3v-5a7 7 0 0 0-7-6Z"/></svg>}
-          />
-        )}
-        {(superAdminBypass || access['repair']) && user?.role !== 'audiologist' && (
-          <NavItem
-            to="/repair"
-            testid="nav-repair"
-            label="Service"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>}
-          />
-        )}
-        {(superAdminBypass || access['analytics']) && user?.role !== 'audiologist' && (
-          <NavItem
-            to="/ha/analytics"
-            testid="nav-analytics"
-            label="Analytics"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>}
-          />
-        )}
-        {(superAdminBypass || access['analytics']) && user?.role !== 'audiologist' && (
-          <NavItem
-            to="/analytics/clinical"
-            testid="nav-clinical-analytics"
-            label="Clinical"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/></svg>}
-          />
-        )}
-        {(superAdminBypass || access['referral-partners']) && user?.role !== 'audiologist' && (
-          <NavItem
-            to="/partners"
-            testid="nav-partners"
-            label="Partners"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><circle cx="17" cy="7" r="3"/><path d="M21 21v-1a3.5 3.5 0 0 0-3-3.5"/></svg>}
-          />
-        )}
-        <NavItem
-          to="/reports"
-          testid="nav-reports"
-          label="Reports"
-          onNavigate={closeMobileNav}
-          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>}
-        />
-        {user?.role === 'super_admin' && (
-          <NavItem
-            to="/admin/clinics"
-            testid="nav-admin"
-            label="Admin"
-            onNavigate={closeMobileNav}
-            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>}
-          />
+        {!collapsed && (
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-black tracking-tight text-white leading-none">AUDINEXA</div>
+            <div className="text-[9px] uppercase tracking-widest text-orange-300 mt-0.5">Clinic OS</div>
+          </div>
         )}
       </div>
 
-      <div className="p-1.5 border-t border-slate-800">
+      {/* Clinic card */}
+      <div className={`px-3 py-3 border-b border-white/10 ${collapsed ? 'flex justify-center' : ''}`}>
+        {collapsed ? (
+          <div
+            title={`${clinic?.name || ''}\n${tier || ''}`}
+            className="w-8 h-8 rounded-lg bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-[11px] font-bold text-white"
+          >
+            {(clinic?.name || 'C').charAt(0).toUpperCase()}
+          </div>
+        ) : (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Clinic</div>
+            <div className="text-[13px] font-bold text-white truncate leading-tight">{clinic?.name || '—'}</div>
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[10px] text-slate-400 truncate">{clinic?.city || ''}</span>
+              <TierBadge tier={tier} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Nav sections */}
+      <div className="flex-1 overflow-auto py-3 px-2 space-y-4">
+        {sections.map((s) => (
+          <div key={s.label}>
+            {!collapsed && (
+              <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500 font-bold px-3 mb-1">{s.label}</div>
+            )}
+            <div className="space-y-0.5">
+              {s.items.map((item) => (
+                <NavItem key={item.to} {...item} collapsed={collapsed} onNavigate={closeMobileNav} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer: user + logout */}
+      <div className="border-t border-white/10 p-2 space-y-1">
+        {!collapsed ? (
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-sky-500 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+              {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-semibold text-white truncate">{user?.name || user?.email}</div>
+              <div className="text-[9px] uppercase tracking-wider text-slate-400">{(user?.role || '').replace('_', ' ')}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-center py-1.5" title={user?.name || user?.email}>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-sky-500 flex items-center justify-center text-white font-bold text-xs">
+              {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
+            </div>
+          </div>
+        )}
         <button
           onClick={() => { closeMobileNav(); logout(); navigate('/login'); }}
           data-testid="nav-logout"
-          title={`Sign out — ${user?.email}`}
-          className="w-full flex flex-col items-center justify-center gap-0.5 py-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+          className={`w-full flex items-center gap-3 px-3 py-2 text-[12px] font-semibold text-slate-400 hover:text-rose-300 hover:bg-white/5 rounded-lg transition-colors ${collapsed ? 'justify-center' : ''}`}
+          title={collapsed ? 'Sign out' : undefined}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span className="text-[9px] font-semibold">Sign Out</span>
+          <LogOut size={15} />
+          {!collapsed && <span>Sign out</span>}
+        </button>
+        {/* Desktop collapse toggle */}
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          data-testid="nav-collapse"
+          className={`hidden md:flex w-full items-center gap-3 px-3 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-300 hover:bg-white/5 rounded-lg transition-colors ${collapsed ? 'justify-center' : ''}`}
+          title={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+        >
+          <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+          {!collapsed && <span>Collapse</span>}
         </button>
       </div>
     </>
@@ -198,15 +246,15 @@ export default function AppShell({ children }) {
 
   return (
     <div className="h-screen w-screen flex bg-slate-100 overflow-hidden">
-      {/* Desktop/Tablet nav — fixed left sidebar, hidden on mobile */}
+      {/* Desktop / tablet sidebar */}
       <nav
-        className="hidden md:flex w-[84px] bg-slate-900 border-r border-slate-800 flex-col flex-shrink-0"
+        className={`hidden md:flex ${sideWidth} bg-slate-950 text-slate-200 flex-col flex-shrink-0 border-r border-slate-800 transition-[width] duration-200`}
         data-testid="app-nav"
       >
         {navInner}
       </nav>
 
-      {/* Mobile nav drawer — slides in from left */}
+      {/* Mobile drawer */}
       {mobileNavOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           <button
@@ -216,7 +264,7 @@ export default function AppShell({ children }) {
             data-testid="mobile-nav-backdrop"
           />
           <nav
-            className="relative w-[84px] bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 shadow-2xl animate-in slide-in-from-left"
+            className="relative w-[220px] bg-slate-950 text-slate-200 flex flex-col flex-shrink-0 shadow-2xl"
             data-testid="app-nav-mobile"
           >
             {navInner}
@@ -224,41 +272,34 @@ export default function AppShell({ children }) {
         </div>
       )}
 
-      {/* Right content area */}
+      {/* Content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-11 bg-white border-b border-slate-200 flex items-center justify-between px-2 sm:px-4 flex-shrink-0 gap-2" data-testid="app-topbar">
+        <header className="h-12 bg-white border-b border-slate-200 flex items-center justify-between px-2 sm:px-4 flex-shrink-0 gap-2" data-testid="app-topbar">
           <div className="flex items-center gap-2 min-w-0">
-            {/* Hamburger — mobile only */}
             <button
               onClick={() => setMobileNavOpen(true)}
               data-testid="mobile-nav-toggle"
               className="md:hidden p-1.5 -ml-1 text-slate-600 hover:bg-slate-100 rounded-md"
               aria-label="Open navigation"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-              </svg>
+              <Menu size={18} />
             </button>
-            <span className="text-sm font-bold text-slate-800 truncate">{clinic?.name || 'ACS Clinic'}</span>
-            {clinic?.city && <span className="hidden sm:inline text-[11px] text-slate-500">· {clinic.city}</span>}
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {activeTest?.patient && (
               <div className="hidden lg:block text-[11px] bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-amber-800" data-testid="active-test-badge">
                 Active test: <b>{activeTest.patient.name}</b> · {activeTest.patient.mrd || activeTest.patient.patient_id}
               </div>
             )}
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             <button
               onClick={() => setPaletteOpen(true)}
               data-testid="cmdk-trigger"
               title="Command palette (Cmd/Ctrl+K)"
-              className="hidden md:flex items-center gap-2 text-[11px] text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-2 py-1 transition-colors"
+              className="hidden md:flex items-center gap-2 text-[11px] text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-2.5 py-1 transition-colors"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
+              <SearchIcon size={12} />
               <span>Search…</span>
               <span className="ml-2 font-mono bg-white border border-slate-300 text-slate-600 rounded px-1 text-[9px]">⌘K</span>
             </button>
@@ -274,15 +315,11 @@ export default function AppShell({ children }) {
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
               </button>
             )}
-            <div className="hidden sm:block text-xs text-slate-700 truncate max-w-[160px]">
-              <span className="font-semibold">{user?.name}</span>
-              <span className="ml-1.5 text-[10px] text-slate-500 uppercase tracking-wider">{(user?.role || '').replace('_', ' ')}</span>
-            </div>
             <AppSwitcher />
           </div>
         </header>
 
-        {/* Module content — scrollable on mobile */}
+        {/* Content */}
         <main className="flex-1 overflow-auto bg-slate-50" data-testid="app-main">
           {children}
         </main>

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { PageHeader, Card, Pill, tierTone, fmtDate, fmtInt, Empty } from './shared';
 import { MoreVertical, UserCog, PauseCircle, PlayCircle, Trash2, Eye } from 'lucide-react';
 import { useAuth } from '../../../AuthContext';
+import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -13,8 +14,13 @@ export default function TenantsPage() {
   const [tierFilter, setTierFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [busy, setBusy] = useState('');
+  const [page, setPage] = useState(1);
   const navigate = useNavigate();
   const { user, loginWithToken } = useAuth();
+
+  const paged = usePaginationSlice(tenants, page, DEFAULT_PAGE_SIZE);
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [q, tierFilter, statusFilter, tenants.length]);
 
   const load = async () => {
     const params = new URLSearchParams();
@@ -88,7 +94,7 @@ export default function TenantsPage() {
               </tr>
             </thead>
             <tbody>
-              {tenants.map((t) => (
+              {paged.map((t) => (
                 <tr key={t.clinic_id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`tenant-row-${t.clinic_id}`}>
                   <td className="px-4 py-2">
                     <button onClick={() => navigate(`/admin/tenants/${t.clinic_id}`)} className="font-semibold text-indigo-700 hover:underline text-left">{t.name || t.clinic_id}</button>
@@ -134,6 +140,7 @@ export default function TenantsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} setPage={setPage} total={tenants.length} testidPrefix="tenants-pagination" />
       </Card>
     </div>
   );

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { PageHeader, Card, Pill, fmtDateTime, Empty } from './shared';
+import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function AuditLogPage() {
   const [d, setD] = useState(null);
   const [actor, setActor] = useState(''); const [action, setAction] = useState(''); const [target, setTarget] = useState('');
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     const p = new URLSearchParams();
@@ -15,9 +17,13 @@ export default function AuditLogPage() {
     if (target) p.set('target', target);
     const r = await axios.get(`${API}/admin/v2/audit?${p}`);
     setD(r.data);
+    setPage(1);
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [actor, action, target]);
+
+  const rows = d?.rows || [];
+  const pagedRows = usePaginationSlice(rows, page, DEFAULT_PAGE_SIZE);
 
   if (!d) return <div className="p-6 text-slate-500">Loading audit trail…</div>;
 
@@ -77,7 +83,7 @@ export default function AuditLogPage() {
             </tr>
           </thead>
           <tbody>
-            {d.rows.map((r) => (
+            {pagedRows.map((r) => (
               <tr key={r.log_id} className="border-t border-slate-100">
                 <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{fmtDateTime(r.at)}</td>
                 <td className="px-4 py-2 text-xs">{r.actor_email}<div className="text-[10px] text-slate-500">{r.actor_role}</div></td>
@@ -89,6 +95,7 @@ export default function AuditLogPage() {
             {d.rows.length === 0 && <tr><td colSpan={5}><Empty>No events match.</Empty></td></tr>}
           </tbody>
         </table>
+        <Pagination page={page} setPage={setPage} total={d.rows.length} testidPrefix="audit-pagination" />
       </Card>
     </div>
   );
