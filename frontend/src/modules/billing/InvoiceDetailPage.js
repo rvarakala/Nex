@@ -50,6 +50,10 @@ export default function InvoiceDetailPage() {
   if (loading) return <div className="p-8 text-center text-sm text-slate-400 italic">Loading invoice…</div>;
   if (!inv) return <div className="p-8 text-center text-sm text-rose-500">Invoice not found.</div>;
 
+  // Hide Discount column entirely when no line has a discount.
+  const hasDiscount = (inv.lines || []).some((l) => Number(l.discount_amount) > 0);
+  const colSpanBase = hasDiscount ? 8 : 7;
+
   return (
     <div className="p-3 md:p-4 space-y-3" data-testid={`invoice-detail-${inv.invoice_id}`}>
       {/* Non-print toolbar */}
@@ -143,7 +147,7 @@ export default function InvoiceDetailPage() {
               <th className="px-2 py-1.5 text-left font-semibold">HSN/SAC</th>
               <th className="px-2 py-1.5 text-right font-semibold">Qty</th>
               <th className="px-2 py-1.5 text-right font-semibold">Rate</th>
-              <th className="px-2 py-1.5 text-right font-semibold">Discount</th>
+              {hasDiscount && <th className="px-2 py-1.5 text-right font-semibold">Discount</th>}
               <th className="px-2 py-1.5 text-right font-semibold">Taxable</th>
               <th className="px-2 py-1.5 text-right font-semibold">GST</th>
               <th className="px-2 py-1.5 text-right font-semibold">Total</th>
@@ -157,7 +161,20 @@ export default function InvoiceDetailPage() {
                 <td className="px-2 py-1 font-mono text-slate-500">{l.hsn_sac || '—'}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{l.quantity}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{fmtINR(l.unit_price)}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{l.discount_amount > 0 ? fmtINR(l.discount_amount) : '—'}</td>
+                {hasDiscount && (
+                  <td className="px-2 py-1 text-right tabular-nums" data-testid={`inv-line-discount-${l.line_id}`}>
+                    {Number(l.discount_amount) > 0 ? (
+                      l.discount_type === 'percent' && Number(l.discount_value) > 0 ? (
+                        <>
+                          <div>{(+l.discount_value).toFixed(Number(l.discount_value) % 1 ? 2 : 0)}%</div>
+                          <div className="text-[9px] text-slate-500">({fmtINR(l.discount_amount)})</div>
+                        </>
+                      ) : (
+                        fmtINR(l.discount_amount)
+                      )
+                    ) : '—'}
+                  </td>
+                )}
                 <td className="px-2 py-1 text-right tabular-nums">{fmtINR(l.taxable_value)}</td>
                 <td className="px-2 py-1 text-right tabular-nums text-slate-600">
                   {l.is_taxable ? (
@@ -174,13 +191,13 @@ export default function InvoiceDetailPage() {
             ))}
           </tbody>
           <tfoot className="border-t-2 border-slate-400 bg-slate-50">
-            <tr><Td colSpan={8} className="text-right">Subtotal (taxable value)</Td><Td right>{fmtINR(inv.subtotal)}</Td></tr>
-            {inv.cgst_total > 0 && <tr><Td colSpan={8} className="text-right">CGST</Td><Td right>{fmtINR(inv.cgst_total)}</Td></tr>}
-            {inv.sgst_total > 0 && <tr><Td colSpan={8} className="text-right">SGST</Td><Td right>{fmtINR(inv.sgst_total)}</Td></tr>}
-            {inv.igst_total > 0 && <tr><Td colSpan={8} className="text-right">IGST</Td><Td right>{fmtINR(inv.igst_total)}</Td></tr>}
-            {inv.round_off !== 0 && <tr><Td colSpan={8} className="text-right">Round off</Td><Td right>{fmtINR(inv.round_off)}</Td></tr>}
+            <tr><Td colSpan={colSpanBase} className="text-right">Subtotal (taxable value)</Td><Td right>{fmtINR(inv.subtotal)}</Td></tr>
+            {inv.cgst_total > 0 && <tr><Td colSpan={colSpanBase} className="text-right">CGST</Td><Td right>{fmtINR(inv.cgst_total)}</Td></tr>}
+            {inv.sgst_total > 0 && <tr><Td colSpan={colSpanBase} className="text-right">SGST</Td><Td right>{fmtINR(inv.sgst_total)}</Td></tr>}
+            {inv.igst_total > 0 && <tr><Td colSpan={colSpanBase} className="text-right">IGST</Td><Td right>{fmtINR(inv.igst_total)}</Td></tr>}
+            {inv.round_off !== 0 && <tr><Td colSpan={colSpanBase} className="text-right">Round off</Td><Td right>{fmtINR(inv.round_off)}</Td></tr>}
             <tr className="bg-slate-100 border-t border-slate-300">
-              <Td colSpan={8} className="text-right font-bold text-sm text-slate-800">GRAND TOTAL</Td>
+              <Td colSpan={colSpanBase} className="text-right font-bold text-sm text-slate-800">GRAND TOTAL</Td>
               <Td right className="font-bold text-sm">{fmtINR(inv.rounded_total)}</Td>
             </tr>
           </tfoot>
@@ -345,7 +362,10 @@ function printThermal(inv, clinic) {
   for (const l of inv.lines) {
     line(`<div class="row small"><span>${l.description}${l.quantity !== 1 ? ` × ${l.quantity}` : ''}</span><span>${inr(l.line_total)}</span></div>`);
     if (l.discount_amount > 0) {
-      line(`<div class="row tiny" style="color:#666"><span>&nbsp;&nbsp;Discount</span><span>−${inr(l.discount_amount)}</span></div>`);
+      const label = l.discount_type === 'percent' && l.discount_value > 0
+        ? `&nbsp;&nbsp;Discount (${l.discount_value}%)`
+        : `&nbsp;&nbsp;Discount`;
+      line(`<div class="row tiny" style="color:#666"><span>${label}</span><span>−${inr(l.discount_amount)}</span></div>`);
     }
   }
   hr();

@@ -151,6 +151,36 @@ class TestInvoices:
         # Halves should be roughly equal
         assert abs(inv["cgst_total"] - inv["sgst_total"]) < 0.1
 
+    def test_percent_discount_computes_and_persists(self, front_tok, patient_intra):
+        """Percent discount: discount_value=10% on HA-BTE (₹35,000) → flat ₹3,500 discount."""
+        ha = self._ha_bte_id(front_tok)
+        body = {"patient_id": patient_intra["patient_id"],
+                "lines": [{"service_id": ha, "quantity": 1,
+                           "discount_type": "percent", "discount_value": 10}]}
+        r = requests.post(f"{API}/billing/invoices", headers=H(front_tok), json=body, timeout=15)
+        assert r.status_code == 200, r.text
+        inv = r.json()
+        line = inv["lines"][0]
+        # 10% of ₹35,000 gross = ₹3,500 flat
+        assert abs(line["discount_amount"] - 3500.0) < 0.5
+        assert line["discount_type"] == "percent"
+        assert abs(line["discount_value"] - 10.0) < 0.01
+        # Grand total: 35000 - 3500 = 31500 (GST inclusive so no extra)
+        assert abs(inv["rounded_total"] - 31500.0) < 1.0
+
+    def test_flat_discount_via_discount_value(self, front_tok, patient_intra):
+        """discount_type=flat with discount_value populated (new flow) still works."""
+        ha = self._ha_bte_id(front_tok)
+        body = {"patient_id": patient_intra["patient_id"],
+                "lines": [{"service_id": ha, "quantity": 1,
+                           "discount_type": "flat", "discount_value": 1500}]}
+        r = requests.post(f"{API}/billing/invoices", headers=H(front_tok), json=body, timeout=15)
+        assert r.status_code == 200, r.text
+        inv = r.json()
+        line = inv["lines"][0]
+        assert abs(line["discount_amount"] - 1500.0) < 0.5
+        assert line["discount_type"] == "flat"
+
     def test_invoice_with_initial_payment_status_partial(self, front_tok, patient_intra):
         ha = self._ha_bte_id(front_tok)
         consult = self._consult_id(front_tok)

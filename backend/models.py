@@ -211,7 +211,9 @@ class InvoiceLine(BaseModel):
     hsn_sac: Optional[str] = None
     quantity: float = 1.0
     unit_price: float                                            # Pre-discount, pre-tax unit amount
-    discount_amount: float = 0.0                                 # Flat amount off this line
+    discount_amount: float = 0.0                                 # Flat amount off this line (computed)
+    discount_type: Literal["flat", "percent"] = "flat"           # How user entered discount
+    discount_value: float = 0.0                                  # Raw user-entered value (₹ for flat, % for percent)
     is_taxable: bool = False
     gst_rate: float = 0.0                                        # % e.g. 18
     taxable_value: float = 0.0                                   # = qty*unit_price - discount (stored)
@@ -290,7 +292,9 @@ class InvoiceLineCreate(BaseModel):
     description: Optional[str] = None                            # Override service name if needed
     quantity: float = 1.0
     unit_price: Optional[float] = None                           # Override service price
-    discount_amount: float = 0.0
+    discount_amount: float = 0.0                                 # Legacy/computed flat amount (may be ignored if discount_type=percent)
+    discount_type: Literal["flat", "percent"] = "flat"
+    discount_value: float = 0.0                                  # Raw user-entered value (₹ for flat, % for percent)
     is_taxable: Optional[bool] = None                            # Override
     gst_rate: Optional[float] = None
     hsn_sac: Optional[str] = None

@@ -81,9 +81,21 @@ def _compute_line(line_in: InvoiceLineCreate, service: Optional[dict]) -> Invoic
     gst_inclusive = bool(service.get("gst_inclusive", True) if service else True)
 
     qty = float(line_in.quantity or 1.0)
-    disc = float(line_in.discount_amount or 0.0)
 
     gross = qty * unit_price
+
+    # Resolve discount amount. Support two entry modes:
+    #   - discount_type="flat"    → discount_value is ₹ (fallback: legacy discount_amount)
+    #   - discount_type="percent" → discount_value is % of gross; we compute the ₹ equivalent.
+    discount_type = getattr(line_in, "discount_type", "flat") or "flat"
+    discount_value = float(getattr(line_in, "discount_value", 0.0) or 0.0)
+    if discount_type == "percent":
+        pct = max(0.0, min(100.0, discount_value))
+        disc = round(gross * pct / 100.0, 2)
+    else:
+        # Flat mode — prefer discount_value when provided, else fall back to legacy discount_amount.
+        disc = float(discount_value if discount_value else (line_in.discount_amount or 0.0))
+    disc = max(0.0, min(gross, round(disc, 2)))
     # If price is GST inclusive, back-calculate taxable value: tx = gross / (1 + rate/100)
     if is_taxable and gst_rate > 0 and gst_inclusive:
         # Apply discount to gross first, then strip GST
@@ -105,6 +117,8 @@ def _compute_line(line_in: InvoiceLineCreate, service: Optional[dict]) -> Invoic
         quantity=qty,
         unit_price=unit_price,
         discount_amount=disc,
+        discount_type=discount_type,
+        discount_value=round(discount_value, 2),
         is_taxable=is_taxable,
         gst_rate=gst_rate,
         taxable_value=taxable,

@@ -4,15 +4,25 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { API, fmtINR, PAYMENT_METHODS } from './billingUtils';
 
 // Compute totals client-side (mirrors backend logic) for live preview.
+function resolveDiscount(line, gross) {
+  const type = line.discount_type || 'flat';
+  const raw = Number(line.discount_value || 0);
+  if (type === 'percent') {
+    const pct = Math.max(0, Math.min(100, raw));
+    return Math.round(gross * pct) / 100 > 0 ? +(gross * pct / 100).toFixed(2) : 0;
+  }
+  return Math.max(0, Math.min(gross, +Number(raw || 0).toFixed(2)));
+}
+
 function computeLinePreview(line, service) {
   const qty = Number(line.quantity || 1);
   const unit = line.unit_price != null ? Number(line.unit_price) : Number(service?.price || 0);
-  const disc = Number(line.discount_amount || 0);
   const isTaxable = line.is_taxable != null ? line.is_taxable : !!service?.is_taxable;
   const gstRate = line.gst_rate != null ? Number(line.gst_rate) : Number(service?.gst_rate || 0);
   const gstInclusive = service?.gst_inclusive !== false;
 
   const gross = qty * unit;
+  const disc = resolveDiscount(line, gross);
   let taxable, tax;
   if (isTaxable && gstRate > 0 && gstInclusive) {
     const netGross = Math.max(0, gross - disc);
@@ -25,7 +35,7 @@ function computeLinePreview(line, service) {
     taxable = Math.max(0, gross - disc);
     tax = 0;
   }
-  return { taxable, tax, total: +(taxable + tax).toFixed(2), gstRate };
+  return { taxable, tax, total: +(taxable + tax).toFixed(2), gstRate, discountAmount: disc };
 }
 
 export default function CreateInvoicePage() {
@@ -73,7 +83,8 @@ export default function CreateInvoicePage() {
       description: svc.name,
       quantity: 1,
       unit_price: svc.price,
-      discount_amount: 0,
+      discount_type: 'flat',
+      discount_value: 0,
       is_taxable: svc.is_taxable,
       gst_rate: svc.gst_rate,
     }]);
@@ -86,7 +97,8 @@ export default function CreateInvoicePage() {
       description: '',
       quantity: 1,
       unit_price: 0,
-      discount_amount: 0,
+      discount_type: 'flat',
+      discount_value: 0,
       is_taxable: false,
       gst_rate: 0,
     }]);
@@ -102,10 +114,10 @@ export default function CreateInvoicePage() {
     let subtotal = 0, tax = 0, discount = 0;
     for (const ln of lines) {
       const svc = ln.service_id ? svcMap[ln.service_id] : null;
-      const { taxable, tax: t } = computeLinePreview(ln, svc);
+      const { taxable, tax: t, discountAmount } = computeLinePreview(ln, svc);
       subtotal += taxable;
       tax += t;
-      discount += Number(ln.discount_amount || 0);
+      discount += discountAmount;
     }
     const grand = +(subtotal + tax).toFixed(2);
     const rounded = Math.round(grand);
@@ -133,7 +145,8 @@ export default function CreateInvoicePage() {
           description: l.service_id ? null : l.description,
           quantity: Number(l.quantity) || 1,
           unit_price: Number(l.unit_price),
-          discount_amount: Number(l.discount_amount) || 0,
+          discount_type: l.discount_type || 'flat',
+          discount_value: Number(l.discount_value) || 0,
           is_taxable: l.is_taxable,
           gst_rate: Number(l.gst_rate) || 0,
         })),
@@ -259,7 +272,7 @@ export default function CreateInvoicePage() {
                 <th className="px-2 py-1.5 font-semibold">HSN</th>
                 <th className="px-2 py-1.5 font-semibold w-12">Qty</th>
                 <th className="px-2 py-1.5 font-semibold w-24 text-right">Unit</th>
-                <th className="px-2 py-1.5 font-semibold w-24 text-right">Discount</th>
+                <th className="px-2 py-1.5 font-semibold w-36 text-right">Discount</th>
                 <th className="px-2 py-1.5 font-semibold w-16 text-right">GST%</th>
                 <th className="px-2 py-1.5 font-semibold w-28 text-right">Total</th>
                 <th className="px-2 py-1.5 w-6"></th>
@@ -294,9 +307,30 @@ export default function CreateInvoicePage() {
                         className="w-full px-1 py-1 text-xs border border-slate-200 rounded text-right tabular-nums" />
                     </td>
                     <td className="px-2 py-1">
-                      <input type="number" value={l.discount_amount} step="1" min="0"
-                        onChange={(e) => updateLine(l.key, { discount_amount: e.target.value })}
-                        className="w-full px-1 py-1 text-xs border border-slate-200 rounded text-right tabular-nums" />
+                      <div className="flex items-center gap-1">
+                        <input type="number" value={l.discount_value} step="1" min="0"
+                          max={l.discount_type === 'percent' ? 100 : undefined}
+                          onChange={(e) => updateLine(l.key, { discount_value: e.target.value })}
+                          data-testid={`ci-discount-value-${l.key}`}
+                          className="w-full px-1 py-1 text-xs border border-slate-200 rounded text-right tabular-nums" />
+                        <button
+                          type="button"
+                          onClick={() => updateLine(l.key, { discount_type: l.discount_type === 'percent' ? 'flat' : 'percent' })}
+                          data-testid={`ci-discount-toggle-${l.key}`}
+                          title={l.discount_type === 'percent' ? 'Switch to ₹ flat' : 'Switch to %'}
+                          className={`text-[10px] font-bold px-1.5 py-1 rounded border leading-none transition-colors ${
+                            l.discount_type === 'percent'
+                              ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                              : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                          }`}>
+                          {l.discount_type === 'percent' ? '%' : '₹'}
+                        </button>
+                      </div>
+                      {l.discount_type === 'percent' && Number(l.discount_value) > 0 && (
+                        <div className="text-[9px] text-right text-slate-500 tabular-nums mt-0.5">
+                          = {fmtINR(p.discountAmount)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-1 text-right text-slate-500">{l.is_taxable ? `${l.gst_rate}%` : 'Exempt'}</td>
                     <td className="px-2 py-1 text-right font-semibold tabular-nums">{fmtINR(p.total)}</td>
