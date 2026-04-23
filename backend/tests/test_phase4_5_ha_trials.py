@@ -67,13 +67,26 @@ def some_patient(admin_token):
 
 
 def _fresh_serial(admin_token):
-    """Find an IN_STOCK serial (or skip if none)."""
-    r = requests.get(f"{API}/ha/serial-items?state=IN_STOCK&limit=5",
+    """Find an IN_STOCK serial AND promote it to the demo pool.
+
+    After the Iter22 trial-source gate, trials using non-demo units require an
+    explicit source note. To keep these regression tests focused on the
+    transition lifecycle (and not on the notes-gate), we ensure the picked
+    serial lives in the demo pool.
+    """
+    r = requests.get(f"{API}/ha/serial-items?state=IN_STOCK&limit=20",
                      headers=hdr(admin_token), timeout=15)
     rows = r.json()
     if not rows:
         pytest.skip("no IN_STOCK serials available for trial test")
-    return rows[0]["serial_id"]
+    # Prefer a row already in demo pool; else flip the first one.
+    demo = next((x for x in rows if (x.get("pool") or "saleable") == "demo"), None)
+    if demo:
+        return demo["serial_id"]
+    sid = rows[0]["serial_id"]
+    requests.post(f"{API}/ha/serial-items/{sid}/mark-demo",
+                  headers=hdr(admin_token), json={}, timeout=15)
+    return sid
 
 
 def _iso(d): return d.isoformat()

@@ -383,3 +383,38 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/backend/tests/test_iter21_report_extras.py` — NEW (8 tests: GridFS re-upload replaces blob, template fallback, cross-tenant 403, patient history isolation, legacy WhatsApp delivery). 100% pass.
 - Regression: `test_m01_frontdesk.py` + `test_m01b_appointments.py` + `test_m01c_billing.py` all 64/64 pass (token dedupe did not break flow).
 - Full suite: **710/712 pass** (2 pre-existing failures in unrelated test files — `test_billing_catalog_invariant.py` test-clinic seeding + `test_phase14b_admin_panel.py` known legacy).
+
+---
+
+## [Apr 2026] Iteration 22 — HA Catalogue inline serials, Demo Stock, Trial source gate, Quotation "Both" + Modal backdrop fix
+
+**User-reported issues (5 fixes approved + shipped):**
+
+1. **Catalogue "New Product" popup has no inline serial-number fields** — added a "Serial Numbers" section inside the ProductForm that only appears when `is_serialised=true`. Each row is `{serial_no, branch_id, pool, warranty_end_date, grn_no}`. Save now atomically persists the product and bulk-creates serial_items.
+   - NEW endpoint `POST /api/ha/products/{product_id}/serials` (bulk add, tenant+branch scoped, role-gated to inventory_manager/clinic_owner, 409 on clinic-wide duplicate `serial_no`).
+   - NEW endpoint `GET /api/ha/products/{product_id}/serials` (existing units on file — shown above the add-rows UI so the user can see what's already in stock).
+
+2. **Popup disappears while entering data** — root cause: overly loose backdrop `onClick={onClose}` fired when a native `<select>` dropdown or date picker's option-click bubbled to the backdrop.
+   - NEW shared `/app/frontend/src/components/ModalShell.js` with strict mousedown-guard (close only when BOTH mousedown and mouseup target === backdrop).
+   - All 9 HA module modals batch-patched with the inline equivalent `onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}`.
+
+3. **Quotation Side dropdown needs "Both" option** — added 4th value alongside single/left/right. Backend `Side` type alias extended to include `"both"`.
+
+4. **New Demo Stock tab** — dedicated page between Inventory Board and Quotations.
+   - NEW endpoint `POST /api/ha/serial-items/{id}/mark-demo` — move a saleable unit into the demo pool (role-gated, idempotent, 409 if state ≠ IN_STOCK/RESERVED).
+   - NEW endpoint `POST /api/ha/serial-items/{id}/unmark-demo` — retire a demo unit back to saleable.
+   - NEW endpoint `GET /api/ha/demo-stock` — hydrated list with product + current patient maps.
+   - NEW page `/app/frontend/src/modules/ha/DemoStockPage.js` with utilization stats, filters (All / Available / On Trial), promote modal.
+   - NEW tab `/ha/demo-stock` wired into `HAModule.js`.
+
+5. **Trials must default to demo pool; external units require a source note** — updated `POST /api/ha/trials` to validate non-demo picks: if any serial's `pool ≠ demo`, the body MUST include non-empty `notes`, else 400 with a helpful detail. `Trial.source` field persists `"demo"` or `"external"`. Frontend Trials modal defaults to Demo Stock source with a toggle to "External unit" that makes notes required and shows an amber warning chip.
+
+**Testing status (Iteration 22):**
+- NEW `/app/backend/tests/test_iter22_ha_serials_demo.py` — 15 tests (inline add, demo lifecycle, trial source gate, tenant isolation, Quotation `both`). 100% pass.
+- `/app/backend/tests/test_phase4_5_ha_trials.py` `_fresh_serial` fixture updated to promote the picked unit to demo pool so the 9 pre-existing trial lifecycle/convert/extend tests pass under the new gate. **41/41 combined pass in 19.87s.**
+- Full suite status: regression clean; NO new failures introduced this iteration.
+- Frontend smoke: Demo Stock tab, Catalogue inline serials, Trial modal toggle, Quotation side='both' all verified via screenshots + Playwright by the testing agent.
+
+**Files touched:**
+- `/app/backend/routers/ha_products.py` (+105 LoC), `ha_inventory.py` (+120 LoC), `ha_trials.py` (+23 LoC guard + `source` field), `models_ha.py` (Side + Trial.source).
+- `/app/frontend/src/components/ModalShell.js` (NEW), `modules/ha/ProductCataloguePage.js` (rewritten with inline serials), `modules/ha/DemoStockPage.js` (NEW), `modules/ha/TrialsPage.js` (demo-first UX), `modules/ha/QuotationStudioPage.js` (both option), `modules/ha/HAModule.js` (new tab), plus batch backdrop patch across 9 HA modals.
