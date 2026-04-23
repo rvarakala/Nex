@@ -761,6 +761,99 @@ async def list_audit_logs(
     return [deserialize_datetime(r) for r in rows]
 
 
+# ==================== ACTIVITY TRACKING (Phase 14D) ====================
+
+@router.get("/activity/logins")
+async def list_recent_logins(
+    limit: int = 50,
+    clinic_id: Optional[str] = None,
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Latest login events across all tenants (or filtered by clinic_id)."""
+    q: dict = {}
+    if clinic_id:
+        q["clinic_id"] = clinic_id
+    rows = await db.login_events.find(q, {"_id": 0}).sort("at", -1).to_list(min(limit, 500))
+    return [deserialize_datetime(r) for r in rows]
+
+
+@router.get("/activity/funnel")
+async def get_activation_funnel(
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Activation funnel: how many clinics at each stage?
+
+    Stages (each clinic counts in exactly one — their highest reached):
+      registered → first_login → first_patient → first_diagnostic
+      → first_invoice → active (logged in <7d ago AND has invoice)
+    """
+    from utils.activity import activation_funnel
+    return await activation_funnel(db)
+
+
+@router.get("/activity/funnel/by-tenant")
+async def funnel_by_tenant(
+    limit: int = 100,
+    stage: Optional[str] = None,
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Per-tenant activation stage + last login details. Optionally filter by stage."""
+    from utils.activity import per_tenant_funnel
+    rows = await per_tenant_funnel(db, limit=limit)
+    if stage:
+        rows = [r for r in rows if r["stage"] == stage]
+    return [deserialize_datetime(r) for r in rows]
+
+
+@router.get("/activity/inactive")
+async def list_inactive_tenants(
+    days: int = 7,
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Clinics with no successful login in the last N days.
+
+    Used to surface at-risk / silent trial clinics for proactive outreach.
+    """
+    from datetime import datetime, timezone, timedelta
+    # Naive UTC (Mongo stores naive UTC); compare naive→naive to avoid TypeError
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    clinics = await db.clinics.find(
+        {}, {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "subscription_tier": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(2000)
+
+    out = []
+    for c in clinics:
+        last = await db.login_events.find_one(
+            {"clinic_id": c["clinic_id"]}, sort=[("at", -1)]
+        )
+        last_at = last["at"] if last else None
+        # MongoDB capped collections return naive datetimes — normalize to naive UTC for comparison
+        if last_at is not None and last_at.tzinfo is not None:
+            last_at = last_at.replace(tzinfo=None)
+        # Never logged in, or last login before cutoff
+        if last_at is None or last_at < cutoff:
+            out.append({
+                "clinic_id": c["clinic_id"],
+                "name": c.get("name"),
+                "city": c.get("city"),
+                "tier": c.get("subscription_tier"),
+                "created_at": c.get("created_at"),
+                "last_login_at": last_at,
+                "days_since_login": None if last_at is None
+                    else (now_naive - last_at).days,
+            })
+    # Sort: never-logged-in first, then by most days inactive
+    out.sort(key=lambda r: (r["days_since_login"] is not None, -(r["days_since_login"] or 99999)))
+    return [deserialize_datetime(r) for r in out]
+
+
+
 
 # ==================== BETA TESTER SEEDER (founder-only, one-time) ====================
 

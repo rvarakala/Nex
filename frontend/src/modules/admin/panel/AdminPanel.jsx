@@ -8,7 +8,7 @@ import { useAuth } from '../../../AuthContext';
 import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Flame, ToggleLeft,
   LogOut, Search, ShieldCheck, Headphones, BarChart3, HeartPulse,
-  Megaphone, Bell, FileClock, Settings, Users,
+  Megaphone, Bell, FileClock, Settings, Users, Activity,
 } from 'lucide-react';
 
 import DashboardPage from './DashboardPage';
@@ -26,6 +26,7 @@ import NotificationsPage from './NotificationsPage';
 import AuditLogPage from './AuditLogPage';
 import SettingsPage from './SettingsPage';
 import UsersRolesPage from './UsersRolesPage';
+import ActivityPage from './ActivityPage';
 
 const NAV_GROUPS = [
   {
@@ -41,6 +42,7 @@ const NAV_GROUPS = [
     label: 'Growth',
     items: [
       { to: '/admin/leads', label: 'Leads / Trials', icon: Flame, testid: 'nav-admin-leads' },
+      { to: '/admin/activity', label: 'Live Activity', icon: Activity, testid: 'nav-admin-activity' },
       { to: '/admin/marketing', label: 'Marketing CRM', icon: Megaphone, testid: 'nav-admin-marketing' },
       { to: '/admin/features', label: 'Feature Flags', icon: ToggleLeft, testid: 'nav-admin-features' },
     ],
@@ -194,6 +196,7 @@ export default function AdminPanel() {
             <Route path="subscriptions" element={<SubscriptionsPage />} />
             <Route path="revenue" element={<RevenuePage />} />
             <Route path="leads" element={<LeadsPage />} />
+            <Route path="activity" element={<ActivityPage />} />
             <Route path="marketing" element={<MarketingPage />} />
             <Route path="features" element={<FeatureFlagsPage />} />
             <Route path="support" element={<SupportDeskPage />} />

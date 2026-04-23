@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -133,6 +133,14 @@ async def lifespan(_app: FastAPI):
         # Waitlist (Phase 12.0 — public signup)
         await db.waitlist_signups.create_index("email", unique=True)
         await db.waitlist_signups.create_index([("created_at", -1)])
+        # Login events — capped audit (Phase 14D Activity Tracking)
+        from utils.activity import ensure_login_events_collection
+        await ensure_login_events_collection(db)
+        try:
+            await db.login_events.create_index([("clinic_id", 1), ("at", -1)])
+            await db.login_events.create_index([("at", -1)])
+        except Exception as e:
+            logger.debug(f"login_events index skip: {e}")
         # AUDINEXA Couriers / Estimates / Approvals (Phase 12.B)
         await db.ha_courier_shipments.create_index("shipment_id", unique=True)
         await db.ha_courier_shipments.create_index([("clinic_id", 1), ("ticket_no", 1)])
@@ -273,13 +281,16 @@ api_router = APIRouter(prefix="/api")
 # ==================== M01: AUTH ROUTES ====================
 
 @api_router.post("/auth/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     email = req.email.strip().lower()
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not user.get("active", True) or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(user["user_id"], user["email"], user["role"], user["clinic_id"])
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0})
+    # Fire-and-forget login audit (never blocks or fails the login)
+    from utils.activity import record_login
+    await record_login(db, user, clinic, request)
     return {
         "access_token": token,
         "token_type": "bearer",
