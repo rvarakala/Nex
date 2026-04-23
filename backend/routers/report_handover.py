@@ -62,6 +62,32 @@ TAB_TO_STATUSES: Dict[str, List[str]] = {
 }
 
 
+async def _find_invoice_for_session(db, clinic_id: str, session_id: str, patient_id: str) -> Optional[Dict[str, Any]]:
+    """Find the invoice that should gate this session's handover.
+
+    Priority:
+      1. Invoice explicitly linked via `session_id` (most accurate).
+      2. Patient's most recent non-cancelled invoice (handles the common case
+         where reception creates an invoice via '+ New Invoice' without
+         passing a session_id — the invoice still represents the patient's
+         current bill).
+    """
+    inv = await db.invoices.find_one(
+        {"clinic_id": clinic_id, "session_id": session_id,
+         "status": {"$nin": ["cancelled"]}},
+        {"_id": 0},
+        sort=[("invoice_date", -1)],
+    )
+    if inv:
+        return inv
+    return await db.invoices.find_one(
+        {"clinic_id": clinic_id, "patient_id": patient_id,
+         "status": {"$nin": ["cancelled"]}},
+        {"_id": 0},
+        sort=[("invoice_date", -1)],
+    )
+
+
 def _invoice_paid(inv: Optional[Dict[str, Any]]) -> bool:
     if not inv:
         return False
@@ -129,16 +155,10 @@ async def handover(session_id: str, payload: HandoverRequest,
     """Reception marks the report as handed over. Requires invoice paid unless bypassed."""
     s = await _get_session_tenant_scoped(db, session_id, user["clinic_id"])
 
-    # Find the invoice that covers this specific session. We deliberately DON'T
-    # fall back to a patient-wide lookup — an old paid invoice must not unlock
-    # handover of a new, unpaid session. If the session has no linked invoice
-    # at all (e.g. comped / insurance-covered), accounts must explicitly bypass.
-    inv = await db.invoices.find_one(
-        {"clinic_id": user["clinic_id"], "session_id": session_id,
-         "status": {"$nin": ["cancelled"]}},
-        {"_id": 0},
-        sort=[("invoice_date", -1)],
-    )
+    # Find the invoice that covers this session — prefers a session-linked one,
+    # falls back to the patient's most recent invoice so reception-created
+    # invoices (which don't always carry session_id) still gate handover.
+    inv = await _find_invoice_for_session(db, user["clinic_id"], session_id, s.get("patient_id"))
 
     privileged = user.get("role") in ("super_admin", "founder", "accounts")
     if not payload.bypass_bill_check and not _invoice_paid(inv):
@@ -220,16 +240,38 @@ async def list_reports(
         ):
             pmap[p["patient_id"]] = p
 
+    # Per-session invoice lookup: prefer explicit session_id link, else most-recent
+    # invoice for the same patient (handles invoices created via '+ New Invoice'
+    # which don't always carry session_id).
     session_ids = [s["session_id"] for s in sessions]
+    patient_ids_for_inv = [s.get("patient_id") for s in sessions if s.get("patient_id")]
     inv_by_session: Dict[str, Dict[str, Any]] = {}
+    inv_by_patient: Dict[str, Dict[str, Any]] = {}
+
     if session_ids:
+        # Explicit session-linked invoices (highest priority).
         async for inv in db.invoices.find(
             {"clinic_id": user["clinic_id"], "session_id": {"$in": session_ids},
              "status": {"$ne": "cancelled"}},
             {"_id": 0, "invoice_id": 1, "invoice_no": 1, "session_id": 1,
-             "due_total": 1, "grand_total": 1, "status": 1},
+             "patient_id": 1, "due_total": 1, "grand_total": 1, "status": 1,
+             "invoice_date": 1},
         ):
             inv_by_session.setdefault(inv["session_id"], inv)
+
+    if patient_ids_for_inv:
+        # Most-recent invoice per patient (used as fallback).
+        async for inv in db.invoices.find(
+            {"clinic_id": user["clinic_id"],
+             "patient_id": {"$in": patient_ids_for_inv},
+             "status": {"$ne": "cancelled"}},
+            {"_id": 0, "invoice_id": 1, "invoice_no": 1, "session_id": 1,
+             "patient_id": 1, "due_total": 1, "grand_total": 1, "status": 1,
+             "invoice_date": 1},
+            sort=[("invoice_date", -1)],
+        ):
+            # setdefault → keep the first (=latest) one per patient
+            inv_by_patient.setdefault(inv["patient_id"], inv)
 
     rows: List[Dict[str, Any]] = []
     search_q = (search or "").strip().lower()
@@ -242,7 +284,7 @@ async def list_reports(
                 and search_q not in mrd.lower()
                 and search_q not in mobile.lower()):
             continue
-        inv = inv_by_session.get(s["session_id"])
+        inv = inv_by_session.get(s["session_id"]) or inv_by_patient.get(s.get("patient_id"))
         rows.append(deserialize_datetime({
             "session_id": s["session_id"],
             "patient_id": s.get("patient_id"),

@@ -233,10 +233,13 @@ export default function TestProceduresModule() {
       });
       await axios.post(`${API}/sessions/${activeTest.sessionId}/complete-test`);
       setSessionMeta((m) => ({ ...m, report_status: 'test_completed' }));
+      // Clear the global "Active test" badge IMMEDIATELY — the session has
+      // left the audiologist's desk and belongs to the Reports queue now.
+      clearActiveTest();
       setCompletedToast(true);
       setTimeout(() => setCompletedToast(false), 2500);
-      // After 1.5s, send the audiologist back to Front Desk. They can still Print from Reports.
-      setTimeout(() => { clearActiveTest(); navigate('/reports'); }, 1500);
+      // After 1.2s (long enough to read the toast), send user to the Reports page.
+      setTimeout(() => { navigate('/reports'); }, 1200);
     } catch (err) {
       console.error('Complete test failed', err);
       alert(err?.response?.data?.detail || 'Could not mark test completed. Please try again.');

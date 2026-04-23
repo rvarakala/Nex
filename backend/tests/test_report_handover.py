@@ -187,23 +187,54 @@ class TestLifecycleTransitions:
         assert r2.json()["report_status"] == "printed"
 
     def test_handover_blocked_without_paid_bill(self, tokens, ctx):
-        apt = _create_appointment(tokens, ctx, visit_type="walkin",
-                                  recommended_tests=["pta"])
-        ses = _create_session(tokens, ctx, appointment_id=apt["appointment_id"])
+        """Creates a fresh patient with no invoices, then confirms handover is blocked.
+
+        We use a brand-new patient so there's zero chance a historical paid invoice
+        accidentally satisfies the gate via the patient-fallback lookup.
+        """
+        # Create a fresh patient via the admin API
+        fresh = requests.post(
+            f"{API}/patients",
+            headers=H(tokens["fd"]),
+            json={"name": f"Gate Test {random.randint(10000, 99999)}",
+                  "age": 30, "gender": "Male", "mobile": "9999999999"},
+            timeout=15,
+        )
+        assert fresh.status_code == 200, fresh.text
+        fresh_id = fresh.json()["patient_id"]
+
+        ses = requests.post(
+            f"{API}/sessions",
+            headers=H(tokens["aud"]),
+            json={"patient_id": fresh_id},
+            timeout=15,
+        ).json()
         requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
                       headers=H(tokens["aud"]), timeout=15)
         r = requests.post(f"{API}/sessions/{ses['session_id']}/handover",
                           headers=H(tokens["fd"]), json={"channel": "in_person"},
                           timeout=15)
-        assert r.status_code == 409
+        assert r.status_code == 409, r.text
         body = r.json()["detail"]
         assert "invoice" in body["message"].lower()
         assert body["can_bypass"] is False
 
-    def test_handover_fd_cannot_bypass(self, tokens, ctx):
-        apt = _create_appointment(tokens, ctx, visit_type="walkin",
-                                  recommended_tests=["pta"])
-        ses = _create_session(tokens, ctx, appointment_id=apt["appointment_id"])
+    def test_handover_fd_cannot_bypass(self, tokens):
+        """Creates a fresh patient so the gate actually fires, then confirms
+        front_desk cannot bypass even when they try."""
+        fresh = requests.post(
+            f"{API}/patients",
+            headers=H(tokens["fd"]),
+            json={"name": f"Bypass Gate Test {random.randint(10000, 99999)}",
+                  "age": 28, "gender": "Female", "mobile": "9888888888"},
+            timeout=15,
+        ).json()
+        ses = requests.post(
+            f"{API}/sessions",
+            headers=H(tokens["aud"]),
+            json={"patient_id": fresh["patient_id"]},
+            timeout=15,
+        ).json()
         requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
                       headers=H(tokens["aud"]), timeout=15)
         r = requests.post(f"{API}/sessions/{ses['session_id']}/handover",
@@ -231,6 +262,71 @@ class TestLifecycleTransitions:
             headers=H(tokens["fd"]), timeout=15,
         ).json()
         assert ses["session_id"] in [x["session_id"] for x in done["items"]]
+
+    def test_patient_invoice_fallback_unlocks_handover(self, tokens):
+        """The real-world bug the user reported:
+        Reception creates an invoice via '+ New Invoice' (NOT from session).
+        The invoice carries no session_id, but it IS for the same patient and
+        fully paid. Handover should succeed via the patient-fallback lookup.
+        """
+        # Fresh patient
+        pat = requests.post(
+            f"{API}/patients", headers=H(tokens["fd"]),
+            json={"name": f"Fallback {random.randint(10000, 99999)}",
+                  "age": 35, "gender": "Male", "mobile": "9777777777"},
+            timeout=15,
+        ).json()
+
+        # Fetch any billing service
+        svcs = requests.get(f"{API}/billing/services",
+                            headers=H(tokens["fd"]), timeout=15).json()
+        svc = next((s for s in svcs if s.get("active", True)), None)
+        assert svc, "need a catalogue service"
+
+        # Diagnostic session for the patient
+        ses = requests.post(
+            f"{API}/sessions", headers=H(tokens["aud"]),
+            json={"patient_id": pat["patient_id"]},
+            timeout=15,
+        ).json()
+        requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
+                      headers=H(tokens["aud"]), timeout=15)
+
+        # Reception books a separate invoice — does NOT pass session_id
+        inv = requests.post(
+            f"{API}/billing/invoices", headers=H(tokens["fd"]),
+            json={"patient_id": pat["patient_id"],
+                  "lines": [{"service_id": svc["service_id"], "quantity": 1}]},
+            timeout=15,
+        ).json()
+        assert inv.get("invoice_id"), inv
+        # Pay the invoice
+        requests.post(
+            f"{API}/billing/invoices/{inv['invoice_id']}/payments",
+            headers=H(tokens["fd"]),
+            json={"amount": inv["rounded_total"], "method": "cash"},
+            timeout=15,
+        )
+
+        # Now check the reports page — should show the invoice + bill_paid=True
+        ready = requests.get(
+            f"{API}/reports?status=pending&per_page=50",
+            headers=H(tokens["fd"]), timeout=15,
+        ).json()
+        row = next(x for x in ready["items"] if x["session_id"] == ses["session_id"])
+        assert row["bill_paid"] is True, f"expected bill_paid=True, got row={row}"
+        assert row["invoice"] is not None
+        assert row["invoice"]["invoice_id"] == inv["invoice_id"]
+
+        # Handover should succeed without bypass
+        r = requests.post(
+            f"{API}/sessions/{ses['session_id']}/handover",
+            headers=H(tokens["fd"]),
+            json={"channel": "in_person"},
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["report_status"] == "completed"
 
 
 class TestPendingCountBadge:

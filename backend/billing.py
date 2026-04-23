@@ -254,6 +254,21 @@ async def create_invoice(payload: InvoiceCreate,
     inter_state = bool(clinic_state and pat_state and clinic_state != pat_state)
     _apply_tax_split(resolved_lines, inter_state)
 
+    # Auto-link to the patient's most recent not-yet-handed-over session if the
+    # caller didn't explicitly provide a session_id. This makes handover gating
+    # work even when reception creates invoices via "+ New Invoice" (a flow
+    # that doesn't carry session context).
+    resolved_session_id = payload.session_id
+    if not resolved_session_id:
+        sess = await db.test_sessions.find_one(
+            {"clinic_id": clinic_id, "patient_id": patient["patient_id"],
+             "report_status": {"$in": ["draft", "test_completed", "printed"]}},
+            {"_id": 0, "session_id": 1},
+            sort=[("created_at", -1)],
+        )
+        if sess:
+            resolved_session_id = sess["session_id"]
+
     invoice_no = await _next_invoice_no(db, clinic_id)
     inv = Invoice(
         clinic_id=clinic_id,
@@ -265,7 +280,7 @@ async def create_invoice(payload: InvoiceCreate,
         patient_address=_format_patient_address(patient),
         patient_gstin=payload.patient_gstin,
         appointment_id=payload.appointment_id,
-        session_id=payload.session_id,
+        session_id=resolved_session_id,
         lines=resolved_lines,
         notes=payload.notes,
         created_by_user_id=user["user_id"],
