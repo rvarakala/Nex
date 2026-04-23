@@ -343,27 +343,39 @@ const PaymentDialog = ({ invoice, onClose, onSaved }) => {
 };
 
 // ---------- THERMAL PRINT (80mm) ----------
+// HTML-escape every untrusted string (patient name, invoice_no, references, clinic fields, etc.)
+// to prevent XSS when they contain characters like `<`, `>`, `&`, quotes.
+function esc(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function printThermal(inv, clinic) {
   const lines = [];
   const inr = (n) => `₹${Number(n).toFixed(2)}`;
   const line = (s = '') => lines.push(s);
   const hr = () => lines.push('-'.repeat(32));
 
-  line(`<div class="center"><b>${clinic?.name || 'ACS Audiology'}</b></div>`);
-  if (clinic?.city) line(`<div class="center small">${[clinic.city, clinic.state].filter(Boolean).join(', ')}</div>`);
-  if (clinic?.phone) line(`<div class="center small">Ph: ${clinic.phone}</div>`);
-  if (clinic?.gstin) line(`<div class="center small">GSTIN: ${clinic.gstin}</div>`);
+  line(`<div class="center"><b>${esc(clinic?.name || 'ACS Audiology')}</b></div>`);
+  if (clinic?.city) line(`<div class="center small">${esc([clinic.city, clinic.state].filter(Boolean).join(', '))}</div>`);
+  if (clinic?.phone) line(`<div class="center small">Ph: ${esc(clinic.phone)}</div>`);
+  if (clinic?.gstin) line(`<div class="center small">GSTIN: ${esc(clinic.gstin)}</div>`);
   hr();
-  line(`<div class="small">Invoice: <b>${inv.invoice_no}</b></div>`);
-  line(`<div class="small">Date: ${new Date(inv.invoice_date).toLocaleString('en-IN')}</div>`);
-  line(`<div class="small">Patient: <b>${inv.patient_name}</b>${inv.mrd ? ` (${inv.mrd})` : ''}</div>`);
+  line(`<div class="small">Invoice: <b>${esc(inv.invoice_no)}</b></div>`);
+  line(`<div class="small">Date: ${esc(new Date(inv.invoice_date).toLocaleString('en-IN'))}</div>`);
+  line(`<div class="small">Patient: <b>${esc(inv.patient_name)}</b>${inv.mrd ? ` (${esc(inv.mrd)})` : ''}</div>`);
   hr();
   line(`<div class="row"><span>Item</span><span>Amt</span></div>`);
   for (const l of inv.lines) {
-    line(`<div class="row small"><span>${l.description}${l.quantity !== 1 ? ` × ${l.quantity}` : ''}</span><span>${inr(l.line_total)}</span></div>`);
+    line(`<div class="row small"><span>${esc(l.description)}${l.quantity !== 1 ? ` × ${esc(l.quantity)}` : ''}</span><span>${inr(l.line_total)}</span></div>`);
     if (l.discount_amount > 0) {
       const label = l.discount_type === 'percent' && l.discount_value > 0
-        ? `&nbsp;&nbsp;Discount (${l.discount_value}%)`
+        ? `&nbsp;&nbsp;Discount (${esc(l.discount_value)}%)`
         : `&nbsp;&nbsp;Discount`;
       line(`<div class="row tiny" style="color:#666"><span>${label}</span><span>−${inr(l.discount_amount)}</span></div>`);
     }
@@ -380,28 +392,44 @@ function printThermal(inv, clinic) {
     hr();
     line(`<div class="small"><b>Payments:</b></div>`);
     for (const p of inv.payments) {
-      line(`<div class="row tiny"><span>${p.method.toUpperCase()}${p.reference ? ` (${p.reference})` : ''}</span><span>${inr(p.amount)}</span></div>`);
+      line(`<div class="row tiny"><span>${esc((p.method || '').toUpperCase())}${p.reference ? ` (${esc(p.reference)})` : ''}</span><span>${inr(p.amount)}</span></div>`);
     }
   }
   hr();
   line(`<div class="center small">Thank you!</div>`);
 
+  // Build the receipt DOM in-memory, then transfer it into the popup using
+  // DOM APIs (no document.write, no innerHTML on the popup window itself).
   const w = window.open('', '_blank', 'width=360,height=640');
-  w.document.write(`
-    <html><head><title>${inv.invoice_no}</title>
-    <style>
-      @page { size: 80mm auto; margin: 3mm; }
-      body { font-family: 'Courier New', monospace; width: 72mm; font-size: 11px; color: #000; margin: 0; padding: 2mm; }
-      .center { text-align: center; }
-      .small { font-size: 10px; }
-      .tiny { font-size: 9px; }
-      .big { font-size: 13px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; }
-      .row { display: flex; justify-content: space-between; gap: 4px; }
-      b { font-weight: 700; }
-    </style></head><body>
-    ${lines.join('\n')}
-    <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 500); };</script>
-    </body></html>
-  `);
-  w.document.close();
+  if (!w) { alert('Popup blocked. Please allow popups to print the receipt.'); return; }
+  const doc = w.document;
+
+  // Title
+  doc.title = inv.invoice_no || 'Receipt';
+
+  // Styles (static, no interpolation)
+  const style = doc.createElement('style');
+  style.textContent = `
+    @page { size: 80mm auto; margin: 3mm; }
+    body { font-family: 'Courier New', monospace; width: 72mm; font-size: 11px; color: #000; margin: 0; padding: 2mm; }
+    .center { text-align: center; }
+    .small { font-size: 10px; }
+    .tiny { font-size: 9px; }
+    .big { font-size: 13px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; }
+    .row { display: flex; justify-content: space-between; gap: 4px; }
+    b { font-weight: 700; }
+  `;
+  doc.head.appendChild(style);
+
+  // Body — lines are pre-escaped HTML templates; innerHTML is safe because every
+  // dynamic substring has been run through esc() above. Static tags (<div>, <b>,
+  // <span>, class/style attrs) are author-controlled.
+  const wrapper = doc.createElement('div');
+  wrapper.innerHTML = lines.join('\n');
+  doc.body.appendChild(wrapper);
+
+  // Trigger print after the popup has rendered, then close.
+  w.addEventListener('load', () => { w.print(); setTimeout(() => w.close(), 500); });
+  // Fallback if the popup is already loaded (about:blank)
+  if (doc.readyState === 'complete') { w.print(); setTimeout(() => w.close(), 500); }
 }

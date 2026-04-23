@@ -1019,7 +1019,6 @@ async def seed_beta_testers_endpoint(
     from beta_seed import BETA_TESTERS, TRIAL_DAYS, _gen_password, _mrd_prefix
     from datetime import datetime, timezone, timedelta
     from uuid import uuid4
-    from auth import hash_password
     from utils.serde import serialize_datetime
 
     now = datetime.now(timezone.utc)

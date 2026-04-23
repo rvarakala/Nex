@@ -370,7 +370,7 @@ function LedgerTab({ fit, canWrite, onAppend, busy }) {
   const [comfort, setComfort] = useState('');
   const [adjs, setAdjs] = useState([]);
 
-  const add = () => setAdjs(prev => [...prev, { ear: 'both', param: '', old: '', new: '' }]);
+  const add = () => setAdjs(prev => [...prev, { _key: Math.random().toString(36).slice(2), ear: 'both', param: '', old: '', new: '' }]);
   const upd = (i, k, v) => setAdjs(prev => prev.map((a,idx) => idx === i ? { ...a, [k]: v } : a));
   const del = (i) => setAdjs(prev => prev.filter((_,idx) => idx !== i));
 
@@ -399,7 +399,7 @@ function LedgerTab({ fit, canWrite, onAppend, busy }) {
 
           <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Programming adjustments ({adjs.length})</div>
           {adjs.map((a, i) => (
-            <div key={i} className="grid grid-cols-[80px_1fr_1fr_1fr_20px] gap-1 mb-1">
+            <div key={a._key || `adj-${i}`} className="grid grid-cols-[80px_1fr_1fr_1fr_20px] gap-1 mb-1">
               <select value={a.ear} onChange={(e) => upd(i, 'ear', e.target.value)} className="border border-slate-300 rounded px-1 py-0.5 text-[11px]">
                 <option value="left">Left</option>
                 <option value="right">Right</option>
@@ -442,7 +442,7 @@ function LedgerTab({ fit, canWrite, onAppend, busy }) {
               {v.adjustments?.length > 0 && (
                 <ul className="text-[10px] text-slate-500 mt-1 ml-1">
                   {v.adjustments.map((a, i) => (
-                    <li key={i}>· <span className="uppercase">[{a.ear}]</span> <b>{a.param}</b>: {a.old || '—'} → <b className="text-indigo-700">{a.new}</b></li>
+                    <li key={`${v.visit_id}-adj-${i}`}>· <span className="uppercase">[{a.ear}]</span> <b>{a.param}</b>: {a.old || '—'} → <b className="text-indigo-700">{a.new}</b></li>
                   ))}
                 </ul>
               )}

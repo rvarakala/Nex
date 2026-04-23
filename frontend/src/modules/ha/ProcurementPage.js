@@ -87,7 +87,7 @@ function CreatePOModal({ onClose, onCreated }) {
   const [branch, setBranch] = useState('');
   const [vendor, setVendor] = useState('');
   const [expected, setExpected] = useState('');
-  const [lines, setLines] = useState([{ product_id: '', qty: 1, unit_cost: 0, gst_rate: 18 }]);
+  const [lines, setLines] = useState([{ _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_cost: 0, gst_rate: 18 }]);
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -161,7 +161,7 @@ function CreatePOModal({ onClose, onCreated }) {
             </thead>
             <tbody>
               {lines.map((l, i) => (
-                <tr key={i} className="border-t border-slate-100">
+                <tr key={l._key || `PO-${i}`} className="border-t border-slate-100">
                   <td className="px-2 py-1">
                     <select value={l.product_id} onChange={(e) => {
                       const copy = [...lines];
@@ -188,7 +188,7 @@ function CreatePOModal({ onClose, onCreated }) {
         </div>
 
         <div className="flex items-center justify-between mt-3">
-          <button onClick={() => setLines([...lines, { product_id: '', qty: 1, unit_cost: 0, gst_rate: 18 }])} data-testid="ha-po-add-line" className="text-xs text-indigo-600 font-semibold hover:underline">+ Add line</button>
+          <button onClick={() => setLines([...lines, { _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_cost: 0, gst_rate: 18 }])} data-testid="ha-po-add-line" className="text-xs text-indigo-600 font-semibold hover:underline">+ Add line</button>
           <div className="text-sm"><span className="text-slate-500 mr-2">Total (incl GST):</span><span className="font-bold tabular-nums">{fmtINR(total)}</span></div>
         </div>
 
@@ -266,7 +266,7 @@ function PODetailDrawer({ poNo, onClose, onChanged }) {
                 {po.lines.map((ln, i) => {
                   const p = products[ln.product_id];
                   return (
-                    <tr key={i} className="border-t border-slate-200">
+                    <tr key={`${ln.product_id || 'p'}-${i}`} className="border-t border-slate-200">
                       <td className="py-1">{p ? `${p.brand} ${p.model}` : ln.product_id}</td>
                       <td className="py-1 text-right tabular-nums">{ln.qty}</td>
                       <td className="py-1 text-right tabular-nums">{fmtINR(ln.unit_cost)}</td>
@@ -363,7 +363,7 @@ function GRNModal({ po, products, onClose, onSaved }) {
 
         <div className="space-y-4">
           {lines.map((ln, i) => (
-            <div key={i} className="border border-slate-200 rounded-md p-3" data-testid={`ha-grn-line-${i}`}>
+            <div key={`${ln.product_id || 'grn'}-${i}`} className="border border-slate-200 rounded-md p-3" data-testid={`ha-grn-line-${i}`}>
               <div className="flex items-center justify-between mb-2">
                 <div><span className="font-semibold">{ln.label}</span>{ln.is_serialised && <span className="text-[10px] ml-2 bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold">SERIALISED</span>}</div>
                 <div className="text-xs">Qty received: <input type="number" min={0} value={ln.qty_received} onChange={(e) => {
@@ -378,7 +378,7 @@ function GRNModal({ po, products, onClose, onSaved }) {
                 <div className="grid grid-cols-2 gap-2">
                   {ln.serial_nos.map((sn, j) => (
                     <input
-                      key={j}
+                      key={`${ln.product_id || 'p'}-${i}-${j}`}
                       value={sn}
                       onChange={(e) => {
                         const copy = [...lines];

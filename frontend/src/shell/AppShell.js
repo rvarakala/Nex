@@ -78,7 +78,10 @@ export default function AppShell({ children }) {
     try {
       const r = await axios.get(`${API}/closeouts/latest`);
       setUnreadCloseout(r.data?.read === false ? r.data : null);
-    } catch { /* ignore */ }
+    } catch (err) {
+      // Closeout fetch is a background poll — log but don't block the UI.
+      if (err?.response?.status !== 404) console.warn('[AppShell] closeout fetch failed:', err?.message);
+    }
   }, [canSeeCloseout]);
   useEffect(() => {
     fetchCloseout();

@@ -22,7 +22,8 @@ export default function UpgradeFunnelPage() {
   const [yearsMin, setYearsMin] = useState(3);
 
   useEffect(() => { (async () => {
-    try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); } catch {/*noop*/}
+    try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); }
+    catch (e) { console.warn('[UpgradeFunnel] /auth/me failed:', e?.message); }
   })(); }, []);
 
   const canWrite = useMemo(

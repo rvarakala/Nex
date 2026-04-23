@@ -19,7 +19,8 @@ export default function SubscriptionsPage() {
   const [me, setMe] = useState(null);
 
   useEffect(() => { (async () => {
-    try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); } catch {/*noop*/}
+    try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); }
+    catch (e) { console.warn('[SubscriptionsPage] /auth/me failed:', e?.message); }
   })(); }, []);
 
   const canWrite = useMemo(() => !!me && ['front_desk','audiologist','clinic_owner','super_admin'].includes(me.role), [me]);

@@ -105,7 +105,6 @@ async def list_tickets(
     for t in rows:
         if t.get("status") in open_statuses:
             try:
-                created = datetime.fromisoformat(t["created_at"].replace("Z", "+00:00"))
                 sla_due = t.get("sla_due_at")
                 if sla_due and datetime.fromisoformat(sla_due.replace("Z", "+00:00")) < now:
                     sla_breaches += 1
@@ -127,7 +126,8 @@ async def list_tickets(
                 pass
         priority_counts[t.get("priority", "medium")] = priority_counts.get(t.get("priority", "medium"), 0) + 1
 
-    avg = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
+    def avg(xs):
+        return round(sum(xs) / len(xs), 1) if xs else None
 
     return {
         "count": len(rows),
@@ -749,7 +749,7 @@ async def update_internal_user(
         updates["active"] = active
     if role is not None:
         if role not in ROLE_PERMISSIONS:
-            raise HTTPException(400, detail=f"Unknown role")
+            raise HTTPException(400, detail=f"Unknown role: {role}")
         updates["role"] = role
     if not updates:
         raise HTTPException(400, detail="Nothing to update")

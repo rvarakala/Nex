@@ -134,7 +134,6 @@ async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
 
     # ----- Import locally to avoid circular at module load -----
     from auth import hash_password, create_access_token
-    from utils.serde import serialize_datetime
 
     # Generate stable IDs (lower-cased slug + short uuid for idempotence)
     import re

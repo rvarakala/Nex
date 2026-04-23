@@ -516,8 +516,10 @@ async def list_deliveries(
     db=Depends(get_db),
 ):
     q: dict = {"clinic_id": user["clinic_id"]}
-    if session_id: q["session_id"] = session_id
-    if patient_id: q["patient_id"] = patient_id
+    if session_id:
+        q["session_id"] = session_id
+    if patient_id:
+        q["patient_id"] = patient_id
     rows = await db.report_deliveries.find(q, {"_id": 0}).sort("delivered_at", -1).to_list(limit)
     return [_deserialize(r) for r in rows]
 

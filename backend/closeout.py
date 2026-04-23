@@ -170,7 +170,7 @@ async def run_daily_closeout_for_all_clinics(db):
         log.error(f"Close-out scheduler loop error: {e}")
 
 
-def start_scheduler(db) -> "AsyncIOScheduler":
+def start_scheduler(db):
     """Create and start an APScheduler AsyncIOScheduler that fires at 21:00 IST daily.
     Returns the scheduler so the caller can shut it down."""
     from apscheduler.schedulers.asyncio import AsyncIOScheduler

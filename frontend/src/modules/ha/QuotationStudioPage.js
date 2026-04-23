@@ -91,7 +91,7 @@ function NewQuoteModal({ onClose, onCreated }) {
   const [patient, setPatient] = useState('');
   const [branch, setBranch] = useState('');
   const [isPair, setIsPair] = useState(false);
-  const [lines, setLines] = useState([{ product_id: '', side: 'single', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 }]);
+  const [lines, setLines] = useState([{ _key: Math.random().toString(36).slice(2), product_id: '', side: 'single', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 }]);
   const [patientSearch, setPatientSearch] = useState('');
   const [err, setErr] = useState('');
 
@@ -213,7 +213,7 @@ function NewQuoteModal({ onClose, onCreated }) {
                 const p = productById[l.product_id];
                 const under = belowFloor(l);
                 return (
-                  <tr key={i} className={`border-t border-slate-100 ${under ? 'bg-rose-50' : ''}`}>
+                  <tr key={l._key || `L${i}`} className={`border-t border-slate-100 ${under ? 'bg-rose-50' : ''}`}>
                     <td className="px-2 py-1">
                       <select value={l.product_id} onChange={(e) => {
                         const copy = [...lines]; copy[i] = { ...copy[i], product_id: e.target.value };
@@ -246,7 +246,7 @@ function NewQuoteModal({ onClose, onCreated }) {
         </div>
 
         <div className="flex items-center justify-between mt-3">
-          <button onClick={() => setLines([...lines, { product_id: '', side: 'single', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 }])} data-testid="ha-quote-add-line" className="text-xs text-indigo-600 font-semibold hover:underline">+ Add line</button>
+          <button onClick={() => setLines([...lines, { _key: Math.random().toString(36).slice(2), product_id: '', side: 'single', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 }])} data-testid="ha-quote-add-line" className="text-xs text-indigo-600 font-semibold hover:underline">+ Add line</button>
           <div className="text-sm"><span className="text-slate-500 mr-2">Total (incl GST):</span><span className="font-bold text-lg tabular-nums">{fmtINR(total)}</span></div>
         </div>
 
@@ -365,7 +365,7 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
                   const under = below.includes(i);
                   const eligible = serials.filter(s => s.product_id === l.product_id);
                   return (
-                    <tr key={i} className={`border-t border-slate-200 ${under ? 'bg-rose-50' : ''}`} data-testid={`ha-quote-detail-line-${i}`}>
+                    <tr key={`${l.product_id || 'p'}-${l.side || 's'}-${i}`} className={`border-t border-slate-200 ${under ? 'bg-rose-50' : ''}`} data-testid={`ha-quote-detail-line-${i}`}>
                       <td className="py-1 text-xs">{i + 1}</td>
                       <td className="py-1">{p ? `${p.brand} ${p.model}` : l.product_id}{under && <span className="ml-1 text-[10px] text-rose-700">⚠ below floor</span>}</td>
                       <td className="py-1 text-xs uppercase">{l.side}</td>

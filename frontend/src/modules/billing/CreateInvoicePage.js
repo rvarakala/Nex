@@ -74,6 +74,16 @@ export default function CreateInvoicePage() {
 
   const svcMap = useMemo(() => Object.fromEntries(services.map((s) => [s.service_id, s])), [services]);
 
+  // Pre-group services by category once per services change (avoids re-computing
+  // `.filter(...)` five times on every render of the <select>).
+  const SVC_CATEGORIES = ['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'];
+  const svcGroups = useMemo(() => {
+    const known = SVC_CATEGORIES.map((cat) => ({ cat, items: services.filter((s) => s.category === cat) }))
+      .filter(({ items }) => items.length > 0);
+    const other = services.filter((s) => !SVC_CATEGORIES.includes(s.category));
+    return { known, other };
+  }, [services]);
+
   const addLine = (service_id) => {
     const svc = svcMap[service_id];
     if (!svc) return;
@@ -237,26 +247,20 @@ export default function CreateInvoicePage() {
               className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
             >
               <option value="">— Pick a service from catalogue —</option>
-              {['Consultation', 'Audiology', 'Hearing Aid', 'Accessory']
-                .map((cat) => ({ cat, items: services.filter((s) => s.category === cat) }))
-                .filter(({ items }) => items.length > 0)
-                .map(({ cat, items }) => (
-                  <optgroup key={cat} label={cat}>
-                    {items.map((s) => {
-                      const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
-                      return <option key={s.service_id} value={s.service_id}>{label}</option>;
-                    })}
-                  </optgroup>
-                ))}
-              {/* Catch-all for services with no category / unknown category */}
-              {services.filter((s) => !['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'].includes(s.category)).length > 0 && (
+              {svcGroups.known.map(({ cat, items }) => (
+                <optgroup key={cat} label={cat}>
+                  {items.map((s) => {
+                    const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
+                    return <option key={s.service_id} value={s.service_id}>{label}</option>;
+                  })}
+                </optgroup>
+              ))}
+              {svcGroups.other.length > 0 && (
                 <optgroup label="Other">
-                  {services
-                    .filter((s) => !['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'].includes(s.category))
-                    .map((s) => {
-                      const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
-                      return <option key={s.service_id} value={s.service_id}>{label}</option>;
-                    })}
+                  {svcGroups.other.map((s) => {
+                    const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
+                    return <option key={s.service_id} value={s.service_id}>{label}</option>;
+                  })}
                 </optgroup>
               )}
             </select>

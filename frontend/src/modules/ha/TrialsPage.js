@@ -37,7 +37,7 @@ export default function TrialsPage() {
     try {
       const r = await axios.get(`${API}/auth/me`);
       setMe(r.data?.user || null);
-    } catch {/*noop*/}
+    } catch (e) { console.warn('[TrialsPage] /auth/me failed:', e?.message); }
   })(); }, []);
 
   const canCreate = useMemo(() => !!me && ['front_desk','audiologist','clinic_owner','super_admin'].includes(me.role), [me]);
