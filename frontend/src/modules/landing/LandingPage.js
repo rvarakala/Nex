@@ -15,6 +15,7 @@ import {
   CheckCircle2, Sparkles, Clock3, Users, Calendar, Headphones,
   Stethoscope, Wrench, LineChart, Package, HandCoins, ShieldCheck,
   Receipt, Handshake, HeartPulse, ArrowRight, Lock, Activity,
+  Database, Download, KeyRound, ClipboardCheck, Fingerprint, Server,
 } from 'lucide-react';
 import { AudiogramIllustration, TympanogramIllustration } from './DiagnosticIllustrations';
 
@@ -116,6 +117,7 @@ const Header = () => (
       <nav className="flex items-center gap-3 sm:gap-5 text-sm">
         <a href="#modules" className="hidden sm:inline text-slate-400 hover:text-white transition-colors">Modules</a>
         <a href="#diagnostics" className="hidden md:inline text-slate-400 hover:text-white transition-colors">Diagnostics</a>
+        <a href="#your-data" className="hidden md:inline text-slate-400 hover:text-white transition-colors">Your data</a>
         <a href="#waitlist" className="hidden sm:inline text-slate-400 hover:text-white transition-colors">Waitlist</a>
         <a
           href="/login"
@@ -398,6 +400,195 @@ const DiagnosticsSection = () => (
   </section>
 );
 
+// ==================== YOUR DATA (TRUST / SECURITY) ====================
+const DATA_PILLARS = [
+  {
+    icon: Database,
+    tag: 'Tenant isolation',
+    title: 'Your records. Your clinic. Nobody else.',
+    body: 'Every database query is scoped by clinic_id from your JWT — at the query layer, not a middleware afterthought. A Delhi clinic cannot see a Mumbai patient, period.',
+    proof: '180+ isolation tests · enforced on every deploy',
+  },
+  {
+    icon: Download,
+    tag: 'Portable by default',
+    title: 'Export everything. Any day. Free.',
+    body: 'One click pulls your entire clinic as a ZIP — patients, audiograms, invoices, reports, audit log. CSV + JSON formats. No "talk to sales", no exit fees, no lock-in.',
+    proof: 'CSV · JSON · PDF bundle · self-serve',
+  },
+  {
+    icon: KeyRound,
+    tag: 'Encrypted, end to end',
+    title: 'Passwords nobody can ever see.',
+    body: 'bcrypt (cost 12) on every password. TLS 1.3 in transit. Short-lived JWT tokens with a token_version — one revoke and every live session on every device dies instantly.',
+    proof: 'bcrypt · TLS 1.3 · instant force-logout',
+  },
+  {
+    icon: ClipboardCheck,
+    tag: 'India-ready compliance',
+    title: 'GST-compliant. DPDP-ready. Audit-proof.',
+    body: 'Per-clinic-year invoice numbering (INV/2026/000001), CGST/SGST split by patient state, HSN/SAC codes, IST-aware timestamps, and an immutable admin audit log.',
+    proof: 'GST India · DPDP Act · IST day boundaries',
+  },
+];
+
+const DataSection = () => (
+  <section id="your-data" className="relative max-w-6xl mx-auto px-6 py-28 scroll-mt-20" data-testid="your-data-section">
+    {/* ambient emerald glow — deliberately different from hero's orange/rose */}
+    <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
+      <div className="absolute top-20 right-0 w-[500px] h-[500px] bg-emerald-500/10 blur-[140px] rounded-full" />
+      <div className="absolute bottom-0 left-0 w-[380px] h-[380px] bg-teal-500/5 blur-[120px] rounded-full" />
+    </div>
+
+    {/* Section heading */}
+    <div className="mb-14 max-w-3xl">
+      <div className="inline-flex items-center gap-2 mb-5 px-3 py-1 text-[11px] font-bold tracking-wider uppercase bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded-full">
+        <ShieldCheck size={11} />
+        <span>Your data · Your rules</span>
+      </div>
+      <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-[1.05] mb-5">
+        We host it.{' '}
+        <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-300 bg-clip-text text-transparent">
+          You own it.
+        </span>
+      </h2>
+      <p className="text-slate-400 text-lg leading-relaxed">
+        Every patient record, every audiogram, every invoice —{' '}
+        <span className="text-white font-semibold">encrypted, isolated per clinic, and exportable any day.</span>{' '}
+        We built the plumbing so you can sleep at night.
+      </p>
+    </div>
+
+    {/* Bento layout: 4 pillars + vault card */}
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      {/* 2x2 pillar grid */}
+      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {DATA_PILLARS.map((p) => {
+          const Icon = p.icon;
+          return (
+            <div
+              key={p.tag}
+              data-testid={`data-pillar-${p.tag.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+              className="group relative rounded-2xl border border-slate-800 bg-slate-900/60 p-5 hover:border-emerald-500/40 hover:-translate-y-0.5 transition-all overflow-hidden"
+            >
+              <div className="absolute -top-16 -right-16 w-40 h-40 bg-emerald-500/5 blur-3xl rounded-full group-hover:bg-emerald-500/15 transition-colors" />
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <Icon size={17} className="text-emerald-300" />
+                  </div>
+                  <div className="text-[10px] uppercase font-black tracking-[0.14em] text-emerald-400/80">
+                    {p.tag}
+                  </div>
+                </div>
+                <h3 className="text-[17px] font-bold text-white mb-2 leading-snug">{p.title}</h3>
+                <p className="text-[13px] text-slate-400 leading-relaxed mb-4">{p.body}</p>
+                <div className="font-mono text-[10px] text-emerald-300/80 tracking-tight border-t border-slate-800/80 pt-2.5">
+                  {p.proof}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Vault / architecture card */}
+      <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/90 to-slate-950 p-6 flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-[10px] uppercase tracking-[0.14em] font-black text-slate-500">Under the hood</div>
+          <Server size={13} className="text-slate-600" />
+        </div>
+
+        {/* Faux architecture / code snippet */}
+        <div className="flex-1 space-y-3 font-mono text-[11px]">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
+            <div className="text-slate-500 text-[10px] mb-1">// Every query, every time</div>
+            <div className="text-slate-300">
+              <span className="text-rose-400">db</span>.<span className="text-sky-300">patients</span>.find({'{'}
+            </div>
+            <div className="pl-5 text-amber-200">
+              clinic_id: <span className="text-emerald-300">user.clinic_id</span>
+            </div>
+            <div className="text-slate-300">{'})'}</div>
+          </div>
+
+          <div className="flex items-center justify-center py-0.5">
+            <div className="w-px h-3 bg-slate-800" />
+          </div>
+          <div className="flex items-center justify-center -my-2">
+            <div className="w-6 h-6 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
+              <Lock size={11} className="text-emerald-400" />
+            </div>
+          </div>
+          <div className="flex items-center justify-center py-0.5">
+            <div className="w-px h-3 bg-slate-800" />
+          </div>
+
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.04] p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-emerald-300 font-bold text-[11px] tracking-wide">Your clinic vault</div>
+              <Activity size={11} className="text-emerald-400 animate-pulse" />
+            </div>
+            <div className="grid grid-cols-2 gap-y-1 gap-x-3 text-[10px] text-slate-400">
+              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Patients</div>
+              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Sessions</div>
+              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Invoices</div>
+              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Reports</div>
+              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Hearing aids</div>
+              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Audit log</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-[10px] text-slate-500 justify-center pt-1 font-sans">
+            <Fingerprint size={11} className="text-emerald-400" />
+            <span>700+ automated tests on every deploy</span>
+          </div>
+        </div>
+
+        <a
+          href="#waitlist"
+          data-testid="your-data-cta"
+          className="mt-5 inline-flex items-center justify-between gap-2 rounded-lg border border-slate-700 hover:border-emerald-400 hover:bg-emerald-500/5 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:text-white transition-colors"
+        >
+          <span>Get a clinic of your own →</span>
+          <ArrowRight size={14} />
+        </a>
+      </div>
+    </div>
+
+    {/* "What we'll never do" strip */}
+    <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="text-[10px] uppercase tracking-[0.14em] font-black text-rose-400/80">What we'll never do</div>
+        <div className="flex-1 h-px bg-gradient-to-r from-rose-500/30 to-transparent" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-[13px] text-slate-300">
+        <div className="flex items-start gap-3">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px]">✕</span>
+          <div>
+            <div className="font-semibold text-white mb-0.5">Sell or train on your data</div>
+            <div className="text-slate-500 text-[12px]">No AI models, no analytics resales — ever.</div>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px]">✕</span>
+          <div>
+            <div className="font-semibold text-white mb-0.5">Mix your data with other clinics</div>
+            <div className="text-slate-500 text-[12px]">Zero cross-tenant aggregates. Your numbers are yours.</div>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px]">✕</span>
+          <div>
+            <div className="font-semibold text-white mb-0.5">Lock you in</div>
+            <div className="text-slate-500 text-[12px]">Export everything and leave any day. Free.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+);
+
 // ==================== WAITLIST FORM (stateful) ====================
 const WaitlistForm = () => {
   const [email, setEmail] = useState('');
@@ -511,6 +702,7 @@ export default function LandingPage() {
       <Hero />
       <ModuleGrid />
       <DiagnosticsSection />
+      <DataSection />
       <WaitlistForm />
       <Footer />
     </div>
