@@ -9,7 +9,7 @@
  *   5. Waitlist
  *   6. Footer
  */
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   CheckCircle2, Sparkles, Clock3, Users, Calendar, Headphones,
@@ -19,7 +19,6 @@ import {
 import { AudiogramIllustration, TympanogramIllustration } from './DiagnosticIllustrations';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 // ==================== MODULE CATALOGUE ====================
 // Status: 'live' | 'beta' | 'soon'
@@ -117,7 +116,6 @@ const Header = () => (
       <nav className="flex items-center gap-3 sm:gap-5 text-sm">
         <a href="#modules" className="hidden sm:inline text-slate-400 hover:text-white transition-colors">Modules</a>
         <a href="#diagnostics" className="hidden md:inline text-slate-400 hover:text-white transition-colors">Diagnostics</a>
-        <a href="#pricing" className="text-slate-400 hover:text-white transition-colors">Pricing</a>
         <a href="#waitlist" className="hidden sm:inline text-slate-400 hover:text-white transition-colors">Waitlist</a>
         <a
           href="/login"
@@ -362,117 +360,12 @@ const DiagnosticsSection = () => (
   </section>
 );
 
-// ==================== PRICING ====================
-const PricingSection = ({ tiers }) => {
-  // Mapping of module keys (from API) to user-friendly labels in the tier features list
-  const modLabel = useMemo(() => ({
-    frontdesk: 'Front Desk · Patient registration',
-    diagnostics: 'Diagnostics (Pre-Test · Pure Tone · Impedance)',
-    'hearing-aids': 'Hearing Aid commerce · Inventory · Trials · Trade-ins',
-    amc: 'AMC plans & renewals',
-    'patient-portal': 'Patient Portal',
-    repair: 'Service & Repair (13-state pipeline)',
-    analytics: 'Owner Analytics · Multi-branch',
-    'referral-partners': 'Referral Partner Portal',
-  }), []);
-
-  const tierBadge = {
-    BASIC: { label: 'Solo practice', color: 'text-sky-300' },
-    STANDARD: { label: 'Growing clinic', color: 'text-emerald-300' },
-    PREMIUM: { label: 'Multi-branch HQ', color: 'text-orange-300' },
-  };
-
-  return (
-    <section id="pricing" className="max-w-6xl mx-auto px-6 py-24 scroll-mt-20">
-      <div className="mb-10">
-        <div className="text-[11px] uppercase tracking-widest text-orange-400 font-bold mb-1">Pricing</div>
-        <h2 className="text-4xl sm:text-5xl font-black mb-3 text-white">Pick your clinic size.</h2>
-        <p className="text-slate-400 text-lg">Annual gives you up to 18% off quarterly. Upgrade or downgrade anytime.</p>
-      </div>
-
-      <div className="grid md:grid-cols-3 gap-5">
-        {tiers.length === 0 && (
-          <>
-            <div className="h-[420px] bg-slate-900 animate-pulse rounded-xl" />
-            <div className="h-[420px] bg-slate-900 animate-pulse rounded-xl" />
-            <div className="h-[420px] bg-slate-900 animate-pulse rounded-xl" />
-          </>
-        )}
-        {tiers.map((t, i) => {
-          const featured = t.code === 'PREMIUM';
-          const badge = tierBadge[t.code] || {};
-          return (
-            <div
-              key={t.code}
-              data-testid={`pricing-tier-${t.code}`}
-              className={`rounded-xl p-6 border transition-all ${
-                featured
-                  ? 'border-orange-500/60 bg-gradient-to-br from-orange-500/10 to-rose-500/5 ring-1 ring-orange-500/30'
-                  : 'border-slate-800 bg-slate-900 hover:border-slate-700'
-              }`}
-            >
-              {featured && (
-                <div className="inline-block text-[10px] uppercase tracking-widest text-orange-400 font-bold mb-2">★ Most Popular</div>
-              )}
-              <div className="flex items-end justify-between">
-                <div className="text-sm font-bold text-slate-400 uppercase tracking-wider">{t.name}</div>
-                <div className={`text-[10px] uppercase tracking-wider font-semibold ${badge.color}`}>
-                  {badge.label}
-                </div>
-              </div>
-              <div className="mt-4 mb-1">
-                <span className="text-5xl font-black text-white">{fmtINR(t.prices.annual)}</span>
-                <span className="text-slate-500 text-sm"> /year</span>
-              </div>
-              <div className="text-xs text-slate-500 mb-5">
-                or {fmtINR(t.prices.quarterly)}/quarter · {fmtINR(t.prices.half_yearly)}/6mo
-              </div>
-              <ul className="space-y-2 text-sm text-slate-300 mb-6">
-                {t.modules.map((m) => (
-                  <li key={m} className="flex items-start gap-2">
-                    <CheckCircle2 size={14} className="text-orange-400 mt-0.5 flex-shrink-0" />
-                    <span>{modLabel[m] || m}</span>
-                  </li>
-                ))}
-                {i < tiers.length - 1 &&
-                  (tiers[i + 1]?.modules || [])
-                    .filter((m) => !t.modules.includes(m))
-                    .map((m) => (
-                      <li key={`m-${m}`} className="flex items-start gap-2 text-slate-600 line-through">
-                        <span className="mt-0.5">—</span>
-                        <span>{modLabel[m] || m}</span>
-                      </li>
-                    ))}
-              </ul>
-              <a
-                href="/signup"
-                data-testid={`pricing-${t.code}-cta`}
-                className={`block text-center py-2.5 rounded-lg font-bold text-sm transition-colors ${
-                  featured
-                    ? 'bg-white text-slate-950 hover:bg-orange-100'
-                    : 'border border-slate-700 hover:border-white text-white'
-                }`}
-              >
-                Start free trial
-              </a>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="text-center text-xs text-slate-500 mt-6">
-        All clinics get a <b className="text-white">30-day Premium trial</b> at launch. Cancel any time — no contracts.
-      </div>
-    </section>
-  );
-};
-
 // ==================== WAITLIST FORM (stateful) ====================
 const WaitlistForm = () => {
   const [email, setEmail] = useState('');
   const [clinicName, setClinicName] = useState('');
   const [city, setCity] = useState('');
-  const [tierInterest, setTierInterest] = useState('PREMIUM');
+  const [tierInterest, setTierInterest] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -539,9 +432,10 @@ const WaitlistForm = () => {
               data-testid="waitlist-tier"
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:border-orange-500 outline-none text-white"
             >
-              <option value="BASIC">Basic — Front desk + core diagnostics</option>
-              <option value="STANDARD">Standard — + Hearing aid commerce</option>
-              <option value="PREMIUM">Premium — Full suite (everything)</option>
+              <option value="">Clinic size (optional)</option>
+              <option value="SOLO">Solo practice (1 audiologist)</option>
+              <option value="SMALL">Small clinic (2–5 staff)</option>
+              <option value="MULTI">Multi-branch / hospital group</option>
             </select>
             {err && <div className="bg-rose-500/10 text-rose-300 text-xs p-2 rounded">{err}</div>}
             <button
@@ -573,24 +467,12 @@ const Footer = () => (
 
 // ==================== PAGE ====================
 export default function LandingPage() {
-  const [tiers, setTiers] = useState([]);
-
-  useEffect(() => {
-    let mounted = true;
-    axios
-      .get(`${API}/subscription/tiers`)
-      .then((r) => { if (mounted) setTiers(r.data.tiers || []); })
-      .catch(() => {});
-    return () => { mounted = false; };
-  }, []);
-
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans" data-testid="landing-page">
       <Header />
       <Hero />
       <ModuleGrid />
       <DiagnosticsSection />
-      <PricingSection tiers={tiers} />
       <WaitlistForm />
       <Footer />
     </div>
