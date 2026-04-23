@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PageHeader, Card, Pill, tierTone, fmtINR, fmtInt, fmtDate, fmtDateTime, Empty } from './shared';
-import { ArrowLeft, UserCog, PauseCircle, PlayCircle } from 'lucide-react';
+import { ArrowLeft, UserCog, PauseCircle, PlayCircle, Download } from 'lucide-react';
 import { useAuth } from '../../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -37,6 +37,30 @@ export default function TenantDetailPage() {
     load();
   };
 
+  const [exporting, setExporting] = useState(false);
+  const exportTenantData = async () => {
+    if (!window.confirm(`Export all data for ${d?.tenant?.name || clinicId}? This will be logged in the tenant's audit trail.`)) return;
+    setExporting(true);
+    try {
+      const r = await axios.get(`${API}/export/full`, {
+        params: { clinic_id: clinicId },
+        responseType: 'blob',
+      });
+      const cd = r.headers['content-disposition'] || '';
+      const m = cd.match(/filename="?([^"]+)"?/);
+      const filename = m ? m[1] : `audinexa-${clinicId}-${Date.now()}.zip`;
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (err) return <div className="p-6 text-rose-700">{err}</div>;
   if (!d) return <div className="p-6 text-slate-500">Loading tenant…</div>;
 
@@ -58,6 +82,15 @@ export default function TenantDetailPage() {
             {tenant.status === 'suspended' ? <><PlayCircle size={13} /> Activate</> : <><PauseCircle size={13} /> Suspend</>}
           </button>
           <button onClick={() => setShowInvoice(true)} className="px-3 py-1.5 text-xs font-semibold text-indigo-700 border border-indigo-200 hover:bg-indigo-50 rounded-md" data-testid="tenant-new-invoice">+ Invoice</button>
+          <button
+            onClick={exportTenantData}
+            disabled={exporting}
+            data-testid="tenant-detail-export"
+            title="Download this clinic's complete dataset as ZIP (CSVs + metadata)"
+            className="px-3 py-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-50 disabled:opacity-60 rounded-md flex items-center gap-1"
+          >
+            <Download size={13} /> {exporting ? 'Exporting…' : 'Export Data'}
+          </button>
         </PageHeader>
       </div>
 

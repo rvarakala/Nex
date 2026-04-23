@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
   BarChart3, HeartPulse, Handshake, FileText, ChevronLeft, LogOut,
-  Menu, Search as SearchIcon, Settings,
+  Menu, Search as SearchIcon, Settings, Database,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { useTestContext } from '../TestContext';
@@ -147,6 +147,14 @@ export default function AppShell({ children }) {
       label: 'Admin',
       items: [
         { to: '/admin/clinics', Icon: Settings, label: 'Clinics Admin', testid: 'nav-admin' },
+        { to: '/data-export', Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
+      ],
+    },
+    // Separate "Data" section for non-super-admin roles that can still export
+    user?.role !== 'super_admin' && ['clinic_owner', 'accounts', 'founder'].includes(user?.role) && {
+      label: 'Data',
+      items: [
+        { to: '/data-export', Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
       ],
     },
   ].filter(Boolean);

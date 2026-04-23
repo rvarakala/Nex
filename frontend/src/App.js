@@ -20,6 +20,7 @@ import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
 import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
+import DataExportPage from './modules/data/DataExportPage';
 import { usePageViewTracker } from './hooks/usePageViewTracker';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import TopProgressBar from './components/TopProgressBar';
@@ -112,6 +113,11 @@ function AppRoutes() {
               } />
               <Route path="/partners" element={
                 <ShelledRoute><ModuleGate module="referral-partners"><ReferralPartnersPage /></ModuleGate></ShelledRoute>
+              } />
+
+              {/* CLINIC DATA EXPORT — role-gated inside the page */}
+              <Route path="/data-export" element={
+                <ShelledRoute><DataExportPage /></ShelledRoute>
               } />
 
               {/* SUPER-ADMIN PANEL (founder / super_admin only — own shell) */}
