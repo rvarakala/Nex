@@ -89,6 +89,7 @@ function CreatePOModal({ onClose, onCreated }) {
   const [expected, setExpected] = useState('');
   const [lines, setLines] = useState([{ _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_cost: 0, gst_rate: 18 }]);
   const [err, setErr] = useState('');
+  const [showVendorForm, setShowVendorForm] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -137,10 +138,19 @@ function CreatePOModal({ onClose, onCreated }) {
             </select>
           </Field>
           <Field label="Vendor *">
-            <select value={vendor} onChange={(e) => setVendor(e.target.value)} data-testid="ha-po-vendor" className="w-full border border-slate-300 rounded px-2 py-1 text-sm">
-              {vendors.length === 0 && <option value="">— no vendors — create one first —</option>}
-              {vendors.map(v => <option key={v.vendor_id} value={v.vendor_id}>{v.name}</option>)}
-            </select>
+            <div className="flex gap-1">
+              <select value={vendor} onChange={(e) => setVendor(e.target.value)} data-testid="ha-po-vendor" className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm">
+                {vendors.length === 0 && <option value="">— no vendors —</option>}
+                {vendors.map(v => <option key={v.vendor_id} value={v.vendor_id}>{v.name}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowVendorForm(true)}
+                data-testid="ha-po-vendor-new"
+                title="Quick-add a new vendor"
+                className="px-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded shadow-sm"
+              >+</button>
+            </div>
           </Field>
           <Field label="Expected Date">
             <input type="date" value={expected} onChange={(e) => setExpected(e.target.value)} className="w-full border border-slate-300 rounded px-2 py-1 text-sm" />
@@ -195,6 +205,95 @@ function CreatePOModal({ onClose, onCreated }) {
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded">Cancel</button>
           <button onClick={submit} data-testid="ha-po-save" className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded">Create PO</button>
+        </div>
+      </div>
+      {showVendorForm && (
+        <QuickAddVendor
+          onClose={() => setShowVendorForm(false)}
+          onCreated={(newVendor) => {
+            setVendors((vs) => [...vs, newVendor].sort((a, b) => a.name.localeCompare(b.name)));
+            setVendor(newVendor.vendor_id);
+            setShowVendorForm(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuickAddVendor({ onClose, onCreated }) {
+  const [f, setF] = useState({
+    name: '', contact_person: '', phone: '', email: '',
+    gstin: '', state: '', address: '', payment_terms_days: 30,
+  });
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!f.name.trim()) { setErr('Vendor name is required'); return; }
+    setErr(''); setSaving(true);
+    try {
+      const r = await axios.post(`${API}/vendors`, f);
+      onCreated(r.data);
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === 'string' ? d : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      data-testid="ha-vendor-quickadd-modal"
+    >
+      <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-bold mb-3">Add New Vendor</h3>
+        {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-2">{err}</div>}
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <Field label="Vendor Name *">
+            <input
+              autoFocus
+              value={f.name}
+              onChange={(e) => setF({ ...f, name: e.target.value })}
+              data-testid="ha-vendor-name"
+              placeholder="e.g. Phonak India Pvt Ltd"
+              className="w-full border border-slate-300 rounded px-2 py-1"
+            />
+          </Field>
+          <Field label="Contact Person">
+            <input value={f.contact_person} onChange={(e) => setF({ ...f, contact_person: e.target.value })} data-testid="ha-vendor-contact" className="w-full border border-slate-300 rounded px-2 py-1" />
+          </Field>
+          <Field label="Phone">
+            <input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} data-testid="ha-vendor-phone" placeholder="+91…" className="w-full border border-slate-300 rounded px-2 py-1" />
+          </Field>
+          <Field label="Email">
+            <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} data-testid="ha-vendor-email" className="w-full border border-slate-300 rounded px-2 py-1" />
+          </Field>
+          <Field label="GSTIN">
+            <input value={f.gstin} onChange={(e) => setF({ ...f, gstin: e.target.value.toUpperCase() })} data-testid="ha-vendor-gstin" placeholder="15-char GSTIN" className="w-full border border-slate-300 rounded px-2 py-1 font-mono" />
+          </Field>
+          <Field label="State">
+            <input value={f.state} onChange={(e) => setF({ ...f, state: e.target.value })} data-testid="ha-vendor-state" placeholder="Maharashtra" className="w-full border border-slate-300 rounded px-2 py-1" />
+          </Field>
+          <Field label="Payment Terms (days)">
+            <input type="number" value={f.payment_terms_days} onChange={(e) => setF({ ...f, payment_terms_days: Number(e.target.value) })} data-testid="ha-vendor-terms" className="w-full border border-slate-300 rounded px-2 py-1" />
+          </Field>
+          <label className="block col-span-2">
+            <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-0.5 font-semibold">Address</span>
+            <textarea value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} data-testid="ha-vendor-address" rows={2} className="w-full border border-slate-300 rounded px-2 py-1" />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-200">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded">Cancel</button>
+          <button
+            onClick={save}
+            disabled={saving}
+            data-testid="ha-vendor-save"
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded shadow-sm"
+          >{saving ? 'Saving…' : 'Save Vendor'}</button>
         </div>
       </div>
     </div>
