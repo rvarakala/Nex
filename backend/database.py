@@ -9,17 +9,18 @@ Usage in any router:
 """
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 # Ensure .env is loaded before we read MONGO_URL (server.py also calls load_dotenv,
 # but `database.py` may be imported from routers that run first).
 load_dotenv(Path(__file__).parent / '.env')
 
-client = AsyncIOMotorClient(os.environ['MONGO_URL'])
-db = client[os.environ['DB_NAME']]
+client: AsyncIOMotorClient = AsyncIOMotorClient(os.environ['MONGO_URL'])
+db: AsyncIOMotorDatabase = client[os.environ['DB_NAME']]
 
 
-def get_db():
+def get_db() -> AsyncIOMotorDatabase:
     """FastAPI dependency that returns the active Motor database handle."""
     return db

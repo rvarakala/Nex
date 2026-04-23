@@ -13,19 +13,21 @@ are seeded.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone, timedelta
+from typing import Any
 from uuid import uuid4
+
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from auth import hash_password, verify_password
 from utils.serde import serialize_datetime
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
-PLATFORM_CLINIC_ID = "audinexa-platform"
+PLATFORM_CLINIC_ID: str = "audinexa-platform"
 
-_DEMO_TENANTS = [
+_DEMO_TENANTS: list[dict[str, Any]] = [
     {"clinic_id": "tenant-kims-hearing", "name": "KIMS Hearing Center", "city": "Hyderabad", "state": "Telangana",
      "phone": "+91-40-4000-1001", "email": "support@kimshearing.in", "mrd_prefix": "KIM",
      "subscription_tier": "PREMIUM", "signup_source": "seed-demo"},
@@ -41,7 +43,7 @@ _DEMO_TENANTS = [
 ]
 
 
-_SAMPLE_LEADS = [
+_SAMPLE_LEADS: list[dict[str, Any]] = [
     {"email": "rahul@prodigymedical.in", "clinic_name": "Prodigy Medical", "city": "Mumbai",
      "contact_name": "Dr. Rahul Sharma", "mobile": "+919812345001", "stage": "Demo Scheduled",
      "source": "Instagram", "notes": "Requested demo for multi-branch setup."},
@@ -56,7 +58,7 @@ _SAMPLE_LEADS = [
      "source": "LinkedIn", "notes": "Chose competitor on price."},
 ]
 
-_SAMPLE_CAMPAIGNS = [
+_SAMPLE_CAMPAIGNS: list[dict[str, Any]] = [
     {"campaign_id": "CAM-SEED-GADS", "name": "Q1 Google Ads — Founder Launch",
      "source": "Google Ads", "channel": "paid", "budget": 75000.0,
      "started_at": "2026-01-01", "ended_at": "2026-03-31", "notes": "Awareness campaign."},
@@ -68,7 +70,7 @@ _SAMPLE_CAMPAIGNS = [
      "started_at": "2026-01-15", "notes": "ENT doctor partner activation."},
 ]
 
-_SAMPLE_TICKETS = [
+_SAMPLE_TICKETS: list[dict[str, Any]] = [
     {"subject": "Cannot generate GRN", "body": "GRN number skipping sequence.",
      "category": "Bug", "priority": "high", "contact_email": "support@kimshearing.in",
      "clinic_id": "tenant-kims-hearing", "status": "Open"},
@@ -80,7 +82,7 @@ _SAMPLE_TICKETS = [
      "clinic_id": "tenant-ent-plus", "status": "Resolved"},
 ]
 
-_INTERNAL_USERS = [
+_INTERNAL_USERS: list[tuple[str, str, str, str]] = [
     ("sales@audinexa.com", "sales_manager", "Asha Sales", "sales123"),
     ("support@audinexa.com", "support_agent", "Rohit Support", "support123"),
     ("finance@audinexa.com", "finance_manager", "Priya Finance", "finance123"),
@@ -89,9 +91,9 @@ _INTERNAL_USERS = [
 ]
 
 
-async def seed_admin_panel_demo(db):
+async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
     """Idempotent. Safe on every boot."""
-    now = datetime.now(timezone.utc)
+    now: datetime = datetime.now(timezone.utc)
 
     # ---- 1. Platform clinic (for founder user) ----
     if not await db.clinics.find_one({"clinic_id": PLATFORM_CLINIC_ID}):
