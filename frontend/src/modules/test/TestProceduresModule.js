@@ -218,12 +218,12 @@ export default function TestProceduresModule() {
     if (ear === 'right') setRightEarData(data); else setLeftEarData(data);
   };
 
-  // ==================== REPORT HANDOVER ====================
-  const handleCompleteTest = useCallback(async () => {
+  // ==================== GENERATE & PRINT REPORT ====================
+  const handleGenerateReport = useCallback(async () => {
     if (!activeTest?.sessionId) return;
     setCompletingTest(true);
     try {
-      // Make sure everything is persisted before we flip the status
+      // 1. Autosave everything first — no data loss if the PDF fetch or popup fails.
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
       await axios.put(`${API}/sessions/${activeTest.sessionId}`, {
         pre_test_data: preTestData, impedance_data: impedanceData, speech_data: speechData,
@@ -231,24 +231,38 @@ export default function TestProceduresModule() {
         abr_data: abrData, pediatric_data: pediatricData, tinnitus_data: tinnitusData,
         right_ear_audiogram: rightEarData, left_ear_audiogram: leftEarData,
       });
-      await axios.post(`${API}/sessions/${activeTest.sessionId}/complete-test`);
-      setSessionMeta((m) => ({ ...m, report_status: 'test_completed' }));
-      // Clear the global "Active test" badge IMMEDIATELY — the session has
-      // left the audiologist's desk and belongs to the Reports queue now.
-      clearActiveTest();
+      // 2. Flip session status to `report_ready` (reports-tab + sidebar badge pick up instantly).
+      await axios.post(`${API}/sessions/${activeTest.sessionId}/generate-report`);
+      setSessionMeta((m) => ({ ...m, report_status: 'report_ready' }));
+      // 3. Fetch PDF as authenticated blob and open in a new tab for review + browser print.
+      try {
+        const r = await axios.get(`${API}/reports/${activeTest.sessionId}/pdf`, { responseType: 'blob' });
+        const url = URL.createObjectURL(r.data);
+        const w = window.open(url, '_blank');
+        if (!w) {
+          // Popup blocked → force download so the audiologist still gets the file.
+          const a = document.createElement('a');
+          a.href = url; a.download = `report-${activeTest.sessionId}.pdf`;
+          document.body.appendChild(a); a.click(); a.remove();
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (pdfErr) {
+        console.error('PDF fetch failed', pdfErr);
+        alert('Report generated but the PDF could not be opened. You can still print it from the Reports section.');
+      }
       setCompletedToast(true);
-      setTimeout(() => setCompletedToast(false), 2500);
-      // After 1.2s (long enough to read the toast), send user to the Reports page.
-      setTimeout(() => { navigate('/reports'); }, 1200);
+      setTimeout(() => setCompletedToast(false), 3500);
+      // Keep audiologist on this page — they may want to review, re-print, or edit.
+      // The session moves to Reports automatically via the status flip.
     } catch (err) {
-      console.error('Complete test failed', err);
-      alert(err?.response?.data?.detail || 'Could not mark test completed. Please try again.');
+      console.error('Generate report failed', err);
+      alert(err?.response?.data?.detail || 'Could not generate the report. Please try again.');
     } finally {
       setCompletingTest(false);
     }
   }, [activeTest?.sessionId, preTestData, impedanceData, speechData, specialTestsData,
       oaeData, soundfieldData, abrData, pediatricData, tinnitusData,
-      rightEarData, leftEarData, clearActiveTest, navigate]);
+      rightEarData, leftEarData]);
 
   // ==================== EMPTY STATE: no active test ====================
   if (!activeTest?.patient || !activeTest?.sessionId) {
@@ -301,17 +315,23 @@ export default function TestProceduresModule() {
             Start Fitting →
           </button>
           <button
-            onClick={handleCompleteTest}
-            disabled={completingTest || sessionMeta.report_status !== 'draft'}
-            data-testid="test-complete-btn"
-            title={sessionMeta.report_status === 'draft'
-              ? 'Mark the diagnostic session as complete — moves to Pending Reports'
-              : 'Test already marked complete'}
+            onClick={handleGenerateReport}
+            disabled={completingTest || sessionMeta.report_status === 'completed'}
+            data-testid="test-generate-report-btn"
+            title={sessionMeta.report_status === 'completed'
+              ? 'Consultation already finished'
+              : sessionMeta.report_status === 'report_ready'
+              ? 'Report already generated — click to re-generate and re-open the PDF'
+              : 'Save the session, generate the PDF, and open it for printing'}
             className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow-sm"
           >
-            {sessionMeta.report_status === 'draft'
-              ? (completingTest ? 'Saving…' : '✓ Test Completed')
-              : '✓ Completed'}
+            {completingTest
+              ? 'Generating…'
+              : sessionMeta.report_status === 'report_ready'
+              ? '↻ Re-generate Report'
+              : sessionMeta.report_status === 'completed'
+              ? '✓ Completed'
+              : '🖨 Generate & Print Report'}
           </button>
         </div>
       </div>
@@ -371,8 +391,8 @@ export default function TestProceduresModule() {
 
       {completedToast && (
         <div data-testid="complete-toast"
-             className="absolute top-4 right-4 z-50 bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-lg animate-pulse">
-          ✓ Session moved to Pending Reports
+             className="absolute top-4 right-4 z-50 bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-lg">
+          ✓ Report generated — opened in new tab. Session moved to Reports.
         </div>
       )}
 

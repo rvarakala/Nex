@@ -55,6 +55,84 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
   const toggleRecTest = (k) => setRecommendedTests((prev) =>
     prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
 
+  // ---- Catalog services (for the inline invoice auto-draft) ----
+  const [catalog, setCatalog] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/billing/services`);
+        setCatalog(r.data || []);
+      } catch { /* noop */ }
+    })();
+  }, []);
+
+  // Map front-desk test chips → canonical catalog service names (fuzzy match).
+  // The chip "pta" may hit a service named "Pure Tone Audiometry", "PTA",
+  // "Pure Tone Audiometry (PTA)" etc — we prefer exact code, then substring.
+  const matchService = useCallback((chipKey) => {
+    if (!catalog.length) return null;
+    const name = (FRONTDESK_TEST_OPTIONS.find((o) => o.key === chipKey) || {}).label || chipKey;
+    const n = name.toLowerCase();
+    const k = chipKey.toLowerCase();
+    return (
+      catalog.find((s) => (s.name || '').toLowerCase() === n) ||
+      catalog.find((s) => (s.code || '').toLowerCase() === k) ||
+      catalog.find((s) => (s.name || '').toLowerCase().includes(n)) ||
+      catalog.find((s) => (s.name || '').toLowerCase().includes(k)) ||
+      null
+    );
+  }, [catalog]);
+
+  // ---- Inline invoice draft (auto-filled from ticked tests, FD-editable) ----
+  const [raiseInvoice, setRaiseInvoice] = useState(existing?.visit_type !== 'consultation');
+  const [invoiceLines, setInvoiceLines] = useState([]);
+
+  // Auto-sync invoice lines to ticked tests (consultation → no invoice).
+  useEffect(() => {
+    if (isEdit) return;
+    if (visitType === 'consultation') { setInvoiceLines([]); return; }
+    if (!catalog.length) return;
+    setInvoiceLines((prev) => {
+      // Preserve user edits on already-present lines; add missing; drop unticked.
+      const kept = prev.filter((l) => recommendedTests.includes(l._chip));
+      const existingChips = new Set(kept.map((l) => l._chip));
+      const additions = recommendedTests
+        .filter((k) => !existingChips.has(k))
+        .map((k) => {
+          const svc = matchService(k);
+          if (!svc) return null;
+          return {
+            _key: Math.random().toString(36).slice(2),
+            _chip: k,
+            service_id: svc.service_id,
+            name: svc.name,
+            unit_price: svc.price,
+            quantity: 1,
+            discount_type: 'flat',
+            discount_value: 0,
+          };
+        })
+        .filter(Boolean);
+      return [...kept, ...additions];
+    });
+  }, [recommendedTests, visitType, catalog, matchService, isEdit]);
+
+  const updateInvoiceLine = (key, patch) =>
+    setInvoiceLines((prev) => prev.map((l) => l._key === key ? { ...l, ...patch } : l));
+  const removeInvoiceLine = (key) =>
+    setInvoiceLines((prev) => prev.filter((l) => l._key !== key));
+
+  // Live preview total (simple: qty × price − discount). Matches the backend
+  // closely enough for FD to "see what they're charging".
+  const invoiceTotal = invoiceLines.reduce((sum, l) => {
+    const gross = Number(l.quantity || 1) * Number(l.unit_price || 0);
+    const discVal = Number(l.discount_value || 0);
+    const disc = l.discount_type === 'percent'
+      ? Math.min(gross, gross * Math.max(0, Math.min(100, discVal)) / 100)
+      : Math.max(0, Math.min(gross, discVal));
+    return sum + Math.max(0, gross - disc);
+  }, 0);
+
   // Patient search debounce
   useEffect(() => {
     if (selectedPatient && patientQuery === selectedPatient.name) return;
@@ -96,16 +174,28 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
           referred_by: visitType === 'referral' ? (referredBy || null) : null,
         });
       } else {
-        await axios.post(`${API}/appointments`, {
+        // Atomic create — appointment + (optionally) a pre-filled draft invoice.
+        // The invoice lines are auto-drafted from the ticked tests (see `invoiceLines`
+        // below) but FD can edit them inline before clicking Save & Send.
+        const payload = {
           patient_id: selectedPatient.patient_id, audiologist_id: audiologistId,
           service, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
           visit_type: visitType,
           recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
           referred_by: visitType === 'referral' ? (referredBy || null) : null,
-        });
+          raise_invoice: raiseInvoice && invoiceLines.length > 0,
+          invoice_lines: invoiceLines.map((l) => ({
+            service_id: l.service_id,
+            quantity: Number(l.quantity) || 1,
+            unit_price: l.unit_price !== '' && l.unit_price != null ? Number(l.unit_price) : null,
+            discount_type: l.discount_type || 'flat',
+            discount_value: Number(l.discount_value) || 0,
+          })),
+        };
+        await axios.post(`${API}/appointments/with-invoice`, payload);
         if (existing?._waitlist_entry_id) {
-          try { await axios.put(`${API}/waitlist/${existing._waitlist_entry_id}/status`, { status: 'scheduled' }); } catch {}
+          try { await axios.put(`${API}/waitlist/${existing._waitlist_entry_id}/status`, { status: 'scheduled' }); } catch { /* noop */ }
         }
       }
       onSaved?.();
@@ -300,6 +390,110 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
               </div>
             )}
           </div>
+
+          {/* ==================== INLINE INVOICE DRAFT ==================== */}
+          {!isEdit && visitType !== 'consultation' && (
+            <div className="pt-1.5 border-t border-dashed border-slate-200" data-testid="bk-invoice-block">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Invoice — raised on save</span>
+                <div className="flex-1 h-px bg-slate-200" />
+                <label className="flex items-center gap-1 text-[10px] text-slate-600 cursor-pointer" title="Uncheck to book the appointment without raising an invoice (rare — follow-up visits, warranty)">
+                  <input
+                    type="checkbox"
+                    checked={raiseInvoice}
+                    onChange={(e) => setRaiseInvoice(e.target.checked)}
+                    data-testid="bk-raise-invoice-toggle"
+                    className="w-3 h-3"
+                  />
+                  Raise invoice
+                </label>
+              </div>
+
+              {raiseInvoice && invoiceLines.length === 0 && (
+                <div className="px-2 py-1.5 text-[11px] text-slate-500 italic bg-slate-50 border border-slate-200 rounded" data-testid="bk-invoice-empty">
+                  Tick tests above to populate the invoice draft.
+                </div>
+              )}
+
+              {raiseInvoice && invoiceLines.length > 0 && (
+                <div className="border border-slate-200 rounded overflow-hidden" data-testid="bk-invoice-lines">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50 text-[9px] uppercase text-slate-500 tracking-wider">
+                      <tr>
+                        <th className="text-left px-2 py-1">Service</th>
+                        <th className="text-right px-1 py-1 w-10">Qty</th>
+                        <th className="text-right px-1 py-1 w-16">Price</th>
+                        <th className="text-right px-1 py-1 w-24">Discount</th>
+                        <th className="text-right px-2 py-1 w-20">Amount</th>
+                        <th className="w-5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceLines.map((l) => {
+                        const gross = Number(l.quantity || 1) * Number(l.unit_price || 0);
+                        const dv = Number(l.discount_value || 0);
+                        const disc = l.discount_type === 'percent'
+                          ? Math.min(gross, gross * Math.max(0, Math.min(100, dv)) / 100)
+                          : Math.max(0, Math.min(gross, dv));
+                        const amount = Math.max(0, gross - disc);
+                        return (
+                          <tr key={l._key} className="border-t border-slate-100" data-testid={`bk-inv-line-${l._chip}`}>
+                            <td className="px-2 py-1 truncate max-w-[140px]" title={l.name}>{l.name}</td>
+                            <td className="px-1 py-1">
+                              <input
+                                type="number" min="1" step="1" value={l.quantity}
+                                onChange={(e) => updateInvoiceLine(l._key, { quantity: e.target.value })}
+                                className="w-full text-right text-[11px] border border-slate-200 rounded px-1 py-0.5 tabular-nums"
+                              />
+                            </td>
+                            <td className="px-1 py-1">
+                              <input
+                                type="number" min="0" step="0.01" value={l.unit_price}
+                                onChange={(e) => updateInvoiceLine(l._key, { unit_price: e.target.value })}
+                                className="w-full text-right text-[11px] border border-slate-200 rounded px-1 py-0.5 tabular-nums"
+                              />
+                            </td>
+                            <td className="px-1 py-1">
+                              <div className="flex items-center gap-0.5">
+                                <input
+                                  type="number" min="0" value={l.discount_value}
+                                  max={l.discount_type === 'percent' ? 100 : undefined}
+                                  onChange={(e) => updateInvoiceLine(l._key, { discount_value: e.target.value })}
+                                  className="w-full text-right text-[11px] border border-slate-200 rounded px-1 py-0.5 tabular-nums"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateInvoiceLine(l._key, {
+                                    discount_type: l.discount_type === 'percent' ? 'flat' : 'percent',
+                                  })}
+                                  className={`text-[9px] font-bold px-1 py-0.5 rounded border leading-none ${
+                                    l.discount_type === 'percent'
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-slate-100 text-slate-700 border-slate-300'
+                                  }`}
+                                >{l.discount_type === 'percent' ? '%' : '₹'}</button>
+                              </div>
+                            </td>
+                            <td className="px-2 py-1 text-right font-semibold tabular-nums">₹{amount.toFixed(0)}</td>
+                            <td className="px-1 py-1 text-center">
+                              <button type="button" onClick={() => removeInvoiceLine(l._key)} className="text-slate-400 hover:text-rose-600 text-xs" title="Remove">×</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-emerald-50 border-t border-emerald-200">
+                      <tr>
+                        <td colSpan="4" className="px-2 py-1 text-right text-[10px] uppercase font-bold text-emerald-900 tracking-wider">Draft total</td>
+                        <td className="px-2 py-1 text-right font-bold text-emerald-900 tabular-nums" data-testid="bk-invoice-total">₹{invoiceTotal.toFixed(0)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {err && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1" data-testid="bk-error">{err}</div>}
         </div>

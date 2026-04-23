@@ -836,9 +836,14 @@ class TestSession(BaseModel):
     referred_by: Optional[str] = None                            # ENT / GP name when visit_type=referral
     appointment_id: Optional[str] = None                         # Link back for handover tracking
 
-    # Report-handover lifecycle — separate from `status` (which is audiologist's working state).
-    # draft → test_completed → printed → handed_over → completed
-    report_status: Literal["draft", "test_completed", "printed", "handed_over", "completed"] = "draft"
+    # Report-handover lifecycle — simplified per ops manager review (Feb 2026).
+    # draft → report_ready (audiologist "Generate & Print Report") → completed (FD "Consultation Finished")
+    # Legacy states (test_completed, printed, handed_over) are migrated on boot — see server.py lifespan.
+    report_status: Literal["draft", "report_ready", "completed"] = "draft"
+    # Timestamps kept with same field names for backwards-compat. Semantics:
+    #   test_completed_at / test_completed_by_user_id  → stamped when report generated
+    #   printed_at                                     → also stamped at generate time (PDF IS the print)
+    #   handed_over_at / handed_over_by_user_id        → stamped on Consultation Finished
     test_completed_at: Optional[datetime] = None
     test_completed_by_user_id: Optional[str] = None
     printed_at: Optional[datetime] = None

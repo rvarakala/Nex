@@ -14,15 +14,15 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText, Printer, Handshake, Search, Clock, UserRound,
+  FileText, Printer, Handshake, Search, UserRound,
   CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
+import PatientDrawer from '../../components/PatientDrawer';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const TABS = [
-  { key: 'pending',   label: 'Pending',             icon: Clock,         testid: 'reports-tab-pending' },
   { key: 'ready',     label: 'Ready for Handover',  icon: FileText,      testid: 'reports-tab-ready' },
   { key: 'completed', label: 'Completed',           icon: CheckCircle2,  testid: 'reports-tab-completed' },
 ];
@@ -47,7 +47,7 @@ const fmt = (iso) => {
 export default function ReportsModule() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('pending');
+  const [tab, setTab] = useState('ready');
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -56,6 +56,7 @@ export default function ReportsModule() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState('');
+  const [drawerPatientId, setDrawerPatientId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -113,11 +114,11 @@ export default function ReportsModule() {
     if (!canHandover) return;
     const canBypass = ['super_admin', 'accounts', 'founder'].includes(user?.role);
     if (!row.bill_paid && !canBypass) {
-      alert('Cannot hand over: the invoice is not fully paid yet.');
+      alert('Cannot finish consultation — the invoice is not fully paid yet.\n\nCollect payment at billing first, then click Consultation Finished again.');
       return;
     }
     const bypass = !row.bill_paid && canBypass
-      ? window.confirm('The invoice is not yet paid. As an accounts role, do you want to override and hand over anyway?')
+      ? window.confirm('The invoice is NOT fully paid. As an accounts role, you may override and close the consultation anyway. Proceed?')
       : false;
     setBusyId(row.session_id);
     try {
@@ -215,6 +216,7 @@ export default function ReportsModule() {
                 canHandover={canHandover}
                 busy={busyId === row.session_id}
                 onOpen={() => openPatientReport(row)}
+                onOpenPatient={() => setDrawerPatientId(row.patient_id)}
                 onHandover={() => markHandedOver(row)}
               />
             ))}
@@ -239,11 +241,16 @@ export default function ReportsModule() {
           </div>
         )}
       </div>
+
+      <PatientDrawer
+        patientId={drawerPatientId}
+        onClose={() => setDrawerPatientId(null)}
+      />
     </div>
   );
 }
 
-function ReportRow({ row, tab, canHandover, busy, onOpen, onHandover }) {
+function ReportRow({ row, tab, canHandover, busy, onOpen, onOpenPatient, onHandover }) {
   const visit = VISIT_TYPE_STYLE[row.visit_type] || VISIT_TYPE_STYLE.walkin;
   const billPill = row.invoice ? (
     row.bill_paid
@@ -264,7 +271,7 @@ function ReportRow({ row, tab, canHandover, busy, onOpen, onHandover }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={onOpen} className="font-bold text-sm text-slate-900 hover:text-emerald-700 truncate" data-testid={`report-open-${row.session_id}`}>
+          <button onClick={onOpenPatient} className="font-bold text-sm text-slate-900 hover:text-emerald-700 truncate" data-testid={`report-open-${row.session_id}`} title="Open patient history">
             {row.patient_name || 'Unknown'}
           </button>
           <span className="text-[10px] font-mono text-slate-500">{row.mrd || row.patient_id}</span>
@@ -306,17 +313,17 @@ function ReportRow({ row, tab, canHandover, busy, onOpen, onHandover }) {
           <Printer size={12} /> Print
         </button>
 
-        {tab !== 'completed' && (
+          {tab !== 'completed' && (
           <button
             onClick={onHandover}
             disabled={!canHandover || busy}
             data-testid={`report-handover-${row.session_id}`}
-            title={canHandover ? 'Mark as handed over to the patient' : 'Handover requires front desk / accounts role'}
+            title={canHandover ? 'Consultation finished — patient is leaving' : 'Requires front desk / accounts role'}
             className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 rounded"
           >
-            <Handshake size={12} /> {busy ? '…' : 'Handed Over'}
+            <Handshake size={12} /> {busy ? '…' : 'Consultation Finished'}
           </button>
-        )}
+          )}
 
         {tab === 'completed' && (
           <span className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded">

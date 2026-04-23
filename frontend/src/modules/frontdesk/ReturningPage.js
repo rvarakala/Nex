@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
+import PatientDrawer from '../../components/PatientDrawer';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -21,6 +22,7 @@ export default function ReturningPage() {
   const pagedResults = usePaginationSlice(results, page, DEFAULT_PAGE_SIZE);
   useEffect(() => { setPage(1); }, [query, results.length]);
   const debounceRef = useRef(null);
+  const [historyPatientId, setHistoryPatientId] = useState(null);
 
   // Debounced search
   useEffect(() => {
@@ -106,23 +108,36 @@ export default function ReturningPage() {
             </div>
           )}
           {pagedResults.map((p) => (
-            <button
+            <div
               key={p.patient_id}
-              type="button"
-              onClick={() => setSelected(p)}
               data-testid={`ret-result-${p.patient_id}`}
-              className={`w-full text-left px-3 py-2 border-b border-slate-100 hover:bg-blue-50 transition-colors ${
-                selected?.patient_id === p.patient_id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''
+              className={`w-full flex items-center border-b border-slate-100 transition-colors ${
+                selected?.patient_id === p.patient_id ? 'bg-blue-50 border-l-2 border-l-blue-600' : 'hover:bg-blue-50'
               }`}
             >
-              <div className="font-semibold text-[12px] text-slate-800">{p.name}</div>
-              <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                <span>{p.mrd || p.patient_id}</span>
-                <span>·</span>
-                <span>{p.age}{(p.gender || '')[0]}</span>
-                {p.mobile && <><span>·</span><span>{p.mobile}</span></>}
-              </div>
-            </button>
+              <button
+                type="button"
+                onClick={() => setSelected(p)}
+                className="flex-1 text-left px-3 py-2"
+              >
+                <div className="font-semibold text-[12px] text-slate-800">{p.name}</div>
+                <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                  <span>{p.mrd || p.patient_id}</span>
+                  <span>·</span>
+                  <span>{p.age}{(p.gender || '')[0]}</span>
+                  {p.mobile && <><span>·</span><span>{p.mobile}</span></>}
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setHistoryPatientId(p.patient_id); }}
+                data-testid={`ret-history-${p.patient_id}`}
+                title="View past sessions / invoices"
+                className="mx-2 px-2 py-1 text-[10px] font-semibold text-indigo-700 border border-indigo-200 bg-white hover:bg-indigo-50 rounded"
+              >
+                History
+              </button>
+            </div>
           ))}
         </div>
         {results.length > DEFAULT_PAGE_SIZE && (
@@ -212,6 +227,11 @@ export default function ReturningPage() {
           </div>
         )}
       </div>
+
+      <PatientDrawer
+        patientId={historyPatientId}
+        onClose={() => setHistoryPatientId(null)}
+      />
     </div>
   );
 }

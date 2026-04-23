@@ -152,39 +152,48 @@ class TestSessionInheritsFromAppointment:
 
 
 class TestLifecycleTransitions:
-    def test_complete_test_then_pending_list(self, tokens, ctx):
+    def test_generate_report_then_ready_list(self, tokens, ctx):
         apt = _create_appointment(tokens, ctx, visit_type="referral",
                                   recommended_tests=["pta", "impedance"],
                                   referred_by="Dr. L")
         ses = _create_session(tokens, ctx, appointment_id=apt["appointment_id"])
-        r = requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
+        r = requests.post(f"{API}/sessions/{ses['session_id']}/generate-report",
                           headers=H(tokens["aud"]), timeout=15)
         assert r.status_code == 200
-        assert r.json()["report_status"] == "test_completed"
+        assert r.json()["report_status"] == "report_ready"
 
-        pend = requests.get(f"{API}/reports?status=pending&per_page=50",
+        pend = requests.get(f"{API}/reports?status=ready&per_page=50",
                             headers=H(tokens["fd"]), timeout=15).json()
         ids = [x["session_id"] for x in pend["items"]]
         assert ses["session_id"] in ids
         row = next(x for x in pend["items"] if x["session_id"] == ses["session_id"])
-        assert row["report_status"] == "test_completed"
+        assert row["report_status"] == "report_ready"
         assert set(row["recommended_tests"]) == {"pta", "impedance"}
         assert row["referred_by"] == "Dr. L"
 
-    def test_mark_printed_idempotent(self, tokens, ctx):
+    def test_legacy_alias_complete_test_still_works(self, tokens, ctx):
+        """`/complete-test` is kept as an alias so in-flight UIs keep working."""
         apt = _create_appointment(tokens, ctx, visit_type="walkin",
                                   recommended_tests=["pta"])
         ses = _create_session(tokens, ctx, appointment_id=apt["appointment_id"])
-        # Skip complete-test — mark-printed from draft should implicitly stamp completed_at
-        r = requests.post(f"{API}/sessions/{ses['session_id']}/mark-printed",
+        r = requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
                           headers=H(tokens["aud"]), timeout=15)
         assert r.status_code == 200
-        assert r.json()["report_status"] == "printed"
+        assert r.json()["report_status"] == "report_ready"
+
+    def test_legacy_mark_printed_still_works(self, tokens, ctx):
+        apt = _create_appointment(tokens, ctx, visit_type="walkin",
+                                  recommended_tests=["pta"])
+        ses = _create_session(tokens, ctx, appointment_id=apt["appointment_id"])
+        r1 = requests.post(f"{API}/sessions/{ses['session_id']}/mark-printed",
+                           headers=H(tokens["aud"]), timeout=15)
+        assert r1.status_code == 200
+        assert r1.json()["report_status"] == "report_ready"
         # Idempotent
         r2 = requests.post(f"{API}/sessions/{ses['session_id']}/mark-printed",
                            headers=H(tokens["aud"]), timeout=15)
         assert r2.status_code == 200
-        assert r2.json()["report_status"] == "printed"
+        assert r2.json()["report_status"] == "report_ready"
 
     def test_handover_blocked_without_paid_bill(self, tokens, ctx):
         """Creates a fresh patient with no invoices, then confirms handover is blocked.
@@ -209,7 +218,7 @@ class TestLifecycleTransitions:
             json={"patient_id": fresh_id},
             timeout=15,
         ).json()
-        requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
+        requests.post(f"{API}/sessions/{ses['session_id']}/generate-report",
                       headers=H(tokens["aud"]), timeout=15)
         r = requests.post(f"{API}/sessions/{ses['session_id']}/handover",
                           headers=H(tokens["fd"]), json={"channel": "in_person"},
@@ -235,7 +244,7 @@ class TestLifecycleTransitions:
             json={"patient_id": fresh["patient_id"]},
             timeout=15,
         ).json()
-        requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
+        requests.post(f"{API}/sessions/{ses['session_id']}/generate-report",
                       headers=H(tokens["aud"]), timeout=15)
         r = requests.post(f"{API}/sessions/{ses['session_id']}/handover",
                           headers=H(tokens["fd"]),
@@ -247,7 +256,7 @@ class TestLifecycleTransitions:
         apt = _create_appointment(tokens, ctx, visit_type="walkin",
                                   recommended_tests=["pta"])
         ses = _create_session(tokens, ctx, appointment_id=apt["appointment_id"])
-        requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
+        requests.post(f"{API}/sessions/{ses['session_id']}/generate-report",
                       headers=H(tokens["aud"]), timeout=15)
         r = requests.post(f"{API}/sessions/{ses['session_id']}/handover",
                           headers=H(tokens["accounts"]),
@@ -289,7 +298,7 @@ class TestLifecycleTransitions:
             json={"patient_id": pat["patient_id"]},
             timeout=15,
         ).json()
-        requests.post(f"{API}/sessions/{ses['session_id']}/complete-test",
+        requests.post(f"{API}/sessions/{ses['session_id']}/generate-report",
                       headers=H(tokens["aud"]), timeout=15)
 
         # Reception books a separate invoice — does NOT pass session_id
@@ -310,7 +319,7 @@ class TestLifecycleTransitions:
 
         # Now check the reports page — should show the invoice + bill_paid=True
         ready = requests.get(
-            f"{API}/reports?status=pending&per_page=50",
+            f"{API}/reports?status=ready&per_page=50",
             headers=H(tokens["fd"]), timeout=15,
         ).json()
         row = next(x for x in ready["items"] if x["session_id"] == ses["session_id"])
@@ -350,3 +359,75 @@ class TestSearch:
         )
         assert r.status_code == 200
         assert r.json()["total"] == 0
+
+
+class TestPatientHistory:
+    def test_history_returns_sessions_invoices(self, tokens, ctx):
+        r = requests.get(f"{API}/patients/{ctx['patient_id']}/history",
+                         headers=H(tokens["fd"]), timeout=15)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["patient"]["patient_id"] == ctx["patient_id"]
+        assert isinstance(d["sessions"], list)
+        assert isinstance(d["invoices"], list)
+        assert "counts" in d
+        assert d["counts"]["sessions"] >= 0
+
+    def test_history_denies_other_tenant(self, tokens):
+        r = requests.get(f"{API}/patients/NONEXISTENT-PATIENT/history",
+                         headers=H(tokens["fd"]), timeout=15)
+        assert r.status_code == 404
+
+
+class TestAppointmentWithInvoice:
+    def _call_with_retry(self, body, tokens, max_tries=15):
+        last = None
+        for _ in range(max_tries):
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            body["start_at"] = f"{today}T{_random_slot()}"
+            r = requests.post(
+                f"{API}/appointments/with-invoice",
+                headers=H(tokens["fd"]), json=body, timeout=20,
+            )
+            if r.status_code == 200:
+                return r
+            last = r
+        raise AssertionError(f"conflict after retries: {last.text if last else 'n/a'}")
+
+    def test_atomic_apt_plus_invoice(self, tokens, ctx):
+        svcs = requests.get(f"{API}/billing/services",
+                            headers=H(tokens["fd"]), timeout=15).json()
+        svc = next((s for s in svcs if s.get("active", True)), None)
+        assert svc
+        r = self._call_with_retry({
+            "patient_id": ctx["patient_id"],
+            "audiologist_id": ctx["audiologist_id"],
+            "service": "PTA",
+            "start_at": "placeholder",
+            "duration_minutes": 1,
+            "visit_type": "referral",
+            "recommended_tests": ["pta"],
+            "referred_by": "Dr. Atomic",
+            "raise_invoice": True,
+            "invoice_lines": [{"service_id": svc["service_id"], "quantity": 1}],
+        }, tokens)
+        d = r.json()
+        assert d["appointment"]["appointment_id"].startswith("APT-")
+        assert d["invoice"] is not None
+        assert "invoice_id" in d["invoice"]
+        assert d["invoice"]["appointment_id"] == d["appointment"]["appointment_id"]
+
+    def test_appointment_only_no_invoice(self, tokens, ctx):
+        r = self._call_with_retry({
+            "patient_id": ctx["patient_id"],
+            "audiologist_id": ctx["audiologist_id"],
+            "service": "Consultation",
+            "start_at": "placeholder",
+            "duration_minutes": 1,
+            "visit_type": "consultation",
+            "recommended_tests": [],
+            "raise_invoice": False,
+            "invoice_lines": [],
+        }, tokens)
+        assert r.json()["appointment"]["appointment_id"].startswith("APT-")
+        assert r.json()["invoice"] is None
