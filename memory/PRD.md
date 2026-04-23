@@ -335,8 +335,8 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
 
 ### P1 (next)
 - [ ] Real SMS/WhatsApp/Email reminder SDK wiring (user chose `wa.me` deep-link for WhatsApp; SMS + Email deferred until user provides MSG91 / SendGrid keys; backend stub + UI removed for now).
-- [ ] Attach PDF to WhatsApp share on Report Handover (currently text-only deep-link).
 - [ ] Save-state on browser refresh for in-flight Book Next flow (location.state is lost on refresh).
+- [ ] Replace mocked Stripe/Razorpay + SendGrid/Twilio with real integrations (awaiting user greenlight).
 
 ### P2 infrastructure
 - [ ] PostgreSQL migration (blueprint target; not blocking clinical MVP).
@@ -344,6 +344,9 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
 - [ ] AWS ap-south-1 deployment (ECS/ECR).
 - [ ] Per-IP rate limit on `/api/queue/public/{clinic_id}`.
 - [ ] IST-aware day boundary on public queue (currently UTC-based — tokens roll over at 05:30 IST instead of midnight).
+- [ ] Offline-first PWA mode (data sovereignty Layer 2).
+- [ ] M07 Cochlear Implants module (10 UCs).
+- [ ] M08 Rehabilitation module (10 UCs).
 
 ### P3
 - [ ] Hearing aid dispensing module (serial/warranty, trial fitment workflow).
@@ -351,6 +354,32 @@ sectionRegistry-based Builder, 14 toggleable sections, A4 print CSS, audiogram s
 - [ ] Clinic admin UI (multi-clinic rollout).
 - [ ] ICD-10 coding (CGHS/ESIC contracts).
 - [ ] Audit log viewer UI.
+- [ ] httpOnly-cookie auth migration + AudiogramCanvas split (deferred — live beta risk).
 
 ### Explicitly Out of Scope
 NOAH real-time sync, fax, US-style insurance/claims.
+
+---
+
+## [Apr 2026] Iteration 21 — Report lifecycle v2 + queue dedupe
+
+**User-reported issues (3 fixes approved + shipped):**
+
+1. **Jasmita appeared twice in queue** — two tokens (`Registration` + `PTA`) for the same patient on the same day.
+   **Fix:** `POST /api/tokens` now dedupes: if the patient already has an active (`waiting`/`in_testing`/`in_consultation`) token today, it *updates* that token's service instead of creating a second one. One patient = one queue entry per visit.
+
+2. **Saved report PDF was a server template** (placeholder audiogram, no data), not the rich Diagnostics PDF the audiologist actually printed.
+   **Fix:** Client-side DOM capture:
+   - Added `/app/frontend/src/components/reports/captureAndUpload.js` (html2canvas + jsPDF → multi-page A4 PDF blob).
+   - New endpoint `POST /api/sessions/{id}/report-pdf` (multipart → GridFS `session_reports` bucket, 15 MB cap, `%PDF-` magic-byte check, idempotent on re-upload).
+   - `GET /api/reports/{id}/pdf` now prefers the uploaded blob; falls back to the template generator only when no upload exists.
+   - "Save & Print Report" in Diagnostics now switches to the Reports tab, captures `#report-preview`, uploads, then opens the stored PDF for printing — what's printed = what's saved = what patients receive, forever after.
+
+3. **Handover feature scrapped.**
+   **Fix:** Removed `POST /api/sessions/{id}/handover`, `ReportHandoverPage.js`, `/billing/handover` route, Command Palette entry, "Consultation Finished" button, "Ready for Handover" tab. Lifecycle simplified to **`draft` → `completed`**. Reports module is now a single "Completed Reports" archive. `/api/billing/pending-reports` kept as an empty-stub for back-compat; `/api/reports/pending-count` always returns `0`.
+
+**Testing status (Iteration 21):**
+- `/app/backend/tests/test_report_handover.py` — rewritten, 12 new tests, 100% pass.
+- `/app/backend/tests/test_iter21_report_extras.py` — NEW (8 tests: GridFS re-upload replaces blob, template fallback, cross-tenant 403, patient history isolation, legacy WhatsApp delivery). 100% pass.
+- Regression: `test_m01_frontdesk.py` + `test_m01b_appointments.py` + `test_m01c_billing.py` all 64/64 pass (token dedupe did not break flow).
+- Full suite: **710/712 pass** (2 pre-existing failures in unrelated test files — `test_billing_catalog_invariant.py` test-clinic seeding + `test_phase14b_admin_panel.py` known legacy).
