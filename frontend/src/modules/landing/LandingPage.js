@@ -263,23 +263,61 @@ const ModuleGrid = () => {
 };
 
 // ==================== DIAGNOSTICS DEEP-DIVE ====================
+const DIAGNOSTICS_HERO_IMG = 'https://customer-assets.emergentagent.com/job_careful-feedback/artifacts/b4drvqcg_Slp.webp';
+
 const DiagnosticsSection = () => (
   <section
     id="diagnostics"
     className="relative scroll-mt-20 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border-y border-slate-900"
   >
     <div className="max-w-6xl mx-auto px-6 py-24">
-      <div className="mb-12 text-center">
-        <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 text-[11px] font-bold tracking-wider uppercase bg-orange-500/10 text-orange-300 border border-orange-500/30 rounded-full">
-          <Stethoscope size={11} /> Flagship Module
+      {/* Split hero: real photo (left) + intro text (right) */}
+      <div className="grid lg:grid-cols-2 gap-10 items-center mb-16">
+        <div className="relative rounded-3xl overflow-hidden border border-slate-800 shadow-2xl shadow-black/50 group">
+          <img
+            src={DIAGNOSTICS_HERO_IMG}
+            alt="Audiology workstation — headphones, otoscope and paper audiogram"
+            className="w-full h-auto aspect-square object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+            loading="lazy"
+            data-testid="diagnostics-hero-image"
+          />
+          {/* soft gradient overlay for depth */}
+          <div className="absolute inset-0 bg-gradient-to-tr from-slate-950/70 via-transparent to-transparent pointer-events-none" />
+          {/* floating caption badge */}
+          <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 px-3 py-2 bg-slate-950/80 backdrop-blur-md rounded-lg border border-slate-800">
+            <Stethoscope size={14} className="text-orange-300 flex-shrink-0" />
+            <span className="text-[11px] text-slate-300 leading-tight">
+              Built for how audiologists <em className="text-white not-italic font-semibold">actually</em> work — paper audiograms, real headsets, real patients.
+            </span>
+          </div>
         </div>
-        <h2 className="text-4xl sm:text-5xl font-black text-white mb-4">
-          The most complete <span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent">diagnostic suite</span> in India.
-        </h2>
-        <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-          Built with audiologists, for audiologists. Paper audiograms, PDF reports, NOAH interop —
-          and a pediatric-to-geriatric protocol library that covers everything.
-        </p>
+
+        <div>
+          <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 text-[11px] font-bold tracking-wider uppercase bg-orange-500/10 text-orange-300 border border-orange-500/30 rounded-full">
+            <Stethoscope size={11} /> Flagship Module
+          </div>
+          <h2 className="text-4xl sm:text-5xl font-black text-white mb-4 leading-tight">
+            The most complete <span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent">diagnostic suite</span> in India.
+          </h2>
+          <p className="text-slate-400 text-lg leading-relaxed mb-6">
+            Built with audiologists, for audiologists. Paper audiograms, PDF reports, NOAH interop —
+            and a pediatric-to-geriatric protocol library that covers everything.
+          </p>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+              <div className="text-2xl font-black text-white">10</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Protocols</div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+              <div className="text-2xl font-black text-white">3</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Probe freqs</div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+              <div className="text-2xl font-black text-white">16k</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">EHF Hz</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Illustration row */}
