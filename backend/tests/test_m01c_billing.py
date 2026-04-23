@@ -310,6 +310,9 @@ class TestHandover:
             assert "_id" not in row
 
     def test_log_delivery_and_disappear_from_pending(self, front_tok, patient_intra):
+        """Post-Feb-2026-v2 the handover flow was scrapped. `pending-reports`
+        is a deprecated stub that always returns []. Logging a ReportDelivery
+        remains supported (used by WhatsApp/email quick actions elsewhere)."""
         # Create a test session for the test patient
         s = requests.post(f"{API}/sessions", headers=H(front_tok), json={
             "patient_id": patient_intra["patient_id"],
@@ -321,20 +324,18 @@ class TestHandover:
         u = requests.put(f"{API}/sessions/{sid}", headers=H(front_tok), json={"status": "completed"}, timeout=15)
         assert u.status_code == 200
 
+        # Deprecated endpoint — always returns empty list now.
         pend1 = requests.get(f"{API}/billing/pending-reports", headers=H(front_tok), timeout=15).json()
-        assert any(p["session_id"] == sid for p in pend1)
+        assert pend1 == []
 
-        # Log delivery
+        # Delivery logging still works (WhatsApp/email quick actions in the app).
         d = requests.post(f"{API}/billing/report-deliveries", headers=H(front_tok), json={
             "session_id": sid, "channel": "whatsapp", "recipient": "9000000301"
         }, timeout=15)
         assert d.status_code == 200, d.text
         assert d.json()["channel"] == "whatsapp"
 
-        pend2 = requests.get(f"{API}/billing/pending-reports", headers=H(front_tok), timeout=15).json()
-        assert not any(p["session_id"] == sid for p in pend2)
-
-        # Filter list
+        # Filter list — the delivery we just created should be there.
         lst = requests.get(f"{API}/billing/report-deliveries?session_id={sid}",
                            headers=H(front_tok), timeout=15)
         assert lst.status_code == 200 and len(lst.json()) >= 1

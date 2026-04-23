@@ -16,7 +16,6 @@ const ACTIONS = [
   { id: 'book-appointment', label: 'Book Appointment',         hint: 'A',    to: '/frontdesk/appointments',     icon: '📅', onOpen: true },
   { id: 'new-invoice',      label: 'New Invoice',              hint: 'I',    to: '/billing/new',                icon: '₹'  },
   { id: 'invoices',         label: 'View Invoices',            hint: '',     to: '/billing',                    icon: '📄' },
-  { id: 'handover',         label: 'Report Handover',          hint: '',     to: '/billing/handover',           icon: '📦' },
   { id: 'dashboard',        label: 'Front Desk Dashboard',     hint: 'D',    to: '/frontdesk',                  icon: '🏠' },
   { id: 'queue',            label: 'Queue',                    hint: 'Q',    to: '/frontdesk/queue',            icon: '⏱' },
   { id: 'qr-poster',        label: 'Waiting-Room QR Poster',   hint: '',     to: '/frontdesk/qr-poster',        icon: '📱' },

@@ -161,7 +161,7 @@ export default function CloseoutPage() {
                 <span className="tabular-nums font-bold text-amber-300">{fmtINR(latest.pending_due_amount)}</span>
               </div>
               <div className="flex justify-between border-t border-blue-800/60 pt-1 mt-1">
-                <span className="text-rose-300">Reports pending handover</span>
+                <span className="text-rose-300">Reports not yet printed</span>
                 <span className="tabular-nums font-bold text-rose-300">{latest.pending_reports}</span>
               </div>
             </div>

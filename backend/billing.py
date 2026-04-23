@@ -442,60 +442,16 @@ async def collections_summary(date: Optional[str] = None,
 # --------------- REPORT HANDOVER ---------------
 
 @billing_router.get("/billing/pending-reports")
-async def pending_reports(user=Depends(get_current_user), db=Depends(get_db)):
-    """Completed test sessions that still need to be printed/handed over.
-    A session is 'pending handover' if: finalised OR completed AND no ReportDelivery logged."""
-    clinic_id = user["clinic_id"]
+async def pending_reports(user=Depends(get_current_user), db=Depends(get_db)):  # noqa: ARG001
+    """DEPRECATED (Feb 2026 v2) — the handover feature has been scrapped.
 
-    # Collect all test_sessions for this clinic
-    sessions = await db.test_sessions.find(
-        {"clinic_id": clinic_id},
-        {"_id": 0},
-    ).sort("test_date", -1).to_list(500)
-
-    # Which session_ids have an existing delivery?
-    delivered_ids = set()
-    delivered_cursor = db.report_deliveries.find({"clinic_id": clinic_id}, {"_id": 0, "session_id": 1})
-    async for d in delivered_cursor:
-        if d.get("session_id"):
-            delivered_ids.add(d["session_id"])
-
-    pending = []
-    for s in sessions:
-        if s.get("session_id") in delivered_ids:
-            continue
-        # Prefer the new report-lifecycle field, but when it's still 'draft'
-        # (= audiologist hasn't clicked "Test Completed" yet), fall back to the
-        # legacy `status` field so sessions PUT-ed to completed continue to surface.
-        rstatus = s.get("report_status")
-        status = rstatus if (rstatus and rstatus != "draft") else s.get("status")
-        # Include sessions with ready/finalized reports; also include fresh ones if no status filter matches
-        if status in {"finalized", "ready", "completed", "test_completed", "printed"} or not status:
-            # Skip terminal states (already handed over via the new flow)
-            if rstatus in ("handed_over", "completed") and rstatus != status:
-                pass  # noop — we include it in 'status' check above
-            pending.append({
-                "session_id": s.get("session_id"),
-                "patient_id": s.get("patient_id"),
-                "test_date": s.get("test_date"),
-                "test_types": s.get("test_types") or [],
-                "report_status": status,
-            })
-
-    # Hydrate patient name/mrd
-    pids = list({p["patient_id"] for p in pending if p.get("patient_id")})
-    patients = {}
-    if pids:
-        async for p in db.patients.find({"clinic_id": clinic_id, "patient_id": {"$in": pids}}, {"_id": 0, "patient_id": 1, "name": 1, "mrd": 1, "mobile": 1, "phone": 1, "email": 1}):
-            patients[p["patient_id"]] = p
-    for row in pending:
-        pat = patients.get(row["patient_id"]) or {}
-        row["patient_name"] = pat.get("name")
-        row["mrd"] = pat.get("mrd")
-        row["patient_mobile"] = pat.get("mobile") or pat.get("phone")
-        row["patient_email"] = pat.get("email")
-
-    return _deserialize(pending[:200])
+    Kept as an empty stub so any in-flight UI / mobile client that still polls
+    this endpoint degrades gracefully to an empty list instead of 404-ing.
+    Audiology reports now flip directly `draft` → `completed` when the
+    audiologist clicks "Save & Print Report", and the Reports module shows
+    one list of completed sessions.
+    """
+    return []
 
 
 @billing_router.post("/billing/report-deliveries", response_model=ReportDelivery)

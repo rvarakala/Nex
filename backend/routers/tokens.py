@@ -29,13 +29,53 @@ async def _next_token_no(db, clinic_id: str) -> int:
 
 @router.post("/tokens")
 async def issue_token(payload: dict, user=Depends(get_current_user), db=Depends(get_db)):
-    """Issue an OPD token for a patient. Body: {patient_id, service?, priority?}."""
+    """Issue an OPD token for a patient. Body: {patient_id, service?, priority?}.
+
+    Dedupe: if this patient already has an *active* (waiting / in_testing /
+    in_consultation) token issued today, we UPDATE that token's service and
+    return it — one patient = one queue entry per visit. This prevents the
+    "Registration" + "PTA" dual-entry bug when reception registers a patient
+    and then starts diagnostics (each click used to issue a fresh token).
+    """
     pid = payload.get("patient_id")
     if not pid:
         raise HTTPException(status_code=400, detail="patient_id required")
     p = await db.patients.find_one({"patient_id": pid, "clinic_id": user["clinic_id"]}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Dedupe: look for an active token issued today for the same patient.
+    today_start = ist_day_start_utc().isoformat()
+    existing = await db.tokens.find_one(
+        {
+            "clinic_id": user["clinic_id"],
+            "patient_id": pid,
+            "issued_at": {"$gte": today_start},
+            "status": {"$in": ["waiting", "in_testing", "in_consultation"]},
+        },
+        {"_id": 0},
+        sort=[("issued_at", -1)],
+    )
+    if existing:
+        new_service = payload.get("service")
+        new_priority = payload.get("priority")
+        new_notes = payload.get("notes")
+        update: dict = {}
+        # Only overwrite the service if the caller passed a *more specific* one
+        # (e.g. "Registration" → "PTA"). Ignore empty/none updates.
+        if new_service and new_service != existing.get("service"):
+            update["service"] = new_service
+        if new_priority and new_priority != existing.get("priority"):
+            update["priority"] = new_priority
+        if new_notes is not None and new_notes != existing.get("notes"):
+            update["notes"] = new_notes
+        if update:
+            await db.tokens.update_one(
+                {"token_id": existing["token_id"]}, {"$set": update}
+            )
+            existing.update(update)
+        return deserialize_datetime(existing)
+
     token_no = await _next_token_no(db, user["clinic_id"])
     obj = OPDToken(
         clinic_id=user["clinic_id"],

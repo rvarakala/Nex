@@ -267,7 +267,7 @@ async def lifespan(_app: FastAPI):
     try:
         from routers.report_handover import migrate_legacy_report_statuses
         res = await migrate_legacy_report_statuses(db)
-        if res["merged_into_report_ready"] or res["merged_into_completed"]:
+        if res.get("merged_into_completed"):
             _log.info(f"report_status migration: {res}")
     except Exception as e:
         _log.warning(f"report_status migration skipped: {e}")

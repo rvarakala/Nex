@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { captureAndUploadPdf } from './reports/captureAndUpload';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -140,12 +141,19 @@ const ReportsPanel = ({
     buildResultEntries,
   };
 
-  const handlePrint = () => {
-    // Fire the handover status flip in the background — don't block the print dialog.
-    if (sessionId) {
-      axios.post(`${API}/sessions/${sessionId}/mark-printed`).catch((e) => {
-        console.warn('mark-printed failed:', e?.message);
+  const handlePrint = async () => {
+    // 1. Capture the live preview DOM → render to a multi-page A4 PDF.
+    // 2. Upload that PDF blob to the backend so the Reports archive stores
+    //    the *exact* file the audiologist just printed (not a server-side
+    //    placeholder template). Runs in the background — never blocks print.
+    const el = document.getElementById('report-preview');
+    if (el && sessionId) {
+      captureAndUploadPdf(el, sessionId).catch((e) => {
+        console.warn('Report PDF upload failed — falling back to template PDF for this session:', e?.message);
       });
+    } else if (sessionId) {
+      // Fallback: the DOM isn't mounted (unlikely) — just flip status.
+      axios.post(`${API}/sessions/${sessionId}/mark-printed`).catch(() => { });
     }
     window.print();
   };

@@ -17,6 +17,7 @@ import SoundFieldPanel from '../../components/SoundFieldPanel';
 import ABRPanel from '../../components/ABRPanel';
 import PediatricPanel from '../../components/PediatricPanel';
 import TinnitusPanel from '../../components/TinnitusPanel';
+import { captureAndUploadPdf } from '../../components/reports/captureAndUpload';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -84,7 +85,7 @@ export default function TestProceduresModule() {
   const [showGhost, setShowGhost] = useState(true);
   const [prevSession, setPrevSession] = useState(null);
 
-  // Report-handover state + front-desk intake triage
+  // Report state + front-desk intake triage
   const [sessionMeta, setSessionMeta] = useState({
     report_status: 'draft',
     visit_type: 'walkin',
@@ -223,7 +224,7 @@ export default function TestProceduresModule() {
     if (!activeTest?.sessionId) return;
     setCompletingTest(true);
     try {
-      // 1. Autosave everything first — no data loss if the PDF fetch or popup fails.
+      // 1. Autosave everything first — no data loss if the PDF capture fails.
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
       await axios.put(`${API}/sessions/${activeTest.sessionId}`, {
         pre_test_data: preTestData, impedance_data: impedanceData, speech_data: speechData,
@@ -231,16 +232,35 @@ export default function TestProceduresModule() {
         abr_data: abrData, pediatric_data: pediatricData, tinnitus_data: tinnitusData,
         right_ear_audiogram: rightEarData, left_ear_audiogram: leftEarData,
       });
-      // 2. Flip session status to `report_ready` (reports-tab + sidebar badge pick up instantly).
-      await axios.post(`${API}/sessions/${activeTest.sessionId}/generate-report`);
-      setSessionMeta((m) => ({ ...m, report_status: 'report_ready' }));
-      // 3. Fetch PDF as authenticated blob and open in a new tab for review + browser print.
+
+      // 2. Make sure the Reports preview is mounted — switch tabs + give the
+      //    DOM time to finish rendering the audiogram plots.
+      setActiveTab('reports');
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 500)));
+
+      // 3. Capture the exact preview DOM → upload to backend (GridFS).
+      //    This endpoint also flips the session to `completed`.
+      const el = document.getElementById('report-preview');
+      if (el) {
+        try {
+          await captureAndUploadPdf(el, activeTest.sessionId);
+          setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
+        } catch (uploadErr) {
+          console.warn('PDF capture/upload failed, falling back to server template:', uploadErr);
+          await axios.post(`${API}/sessions/${activeTest.sessionId}/mark-printed`).catch(() => { });
+          setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
+        }
+      } else {
+        await axios.post(`${API}/sessions/${activeTest.sessionId}/generate-report`);
+        setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
+      }
+
+      // 4. Fetch the now-stored PDF and open it in a new tab for printing.
       try {
         const r = await axios.get(`${API}/reports/${activeTest.sessionId}/pdf`, { responseType: 'blob' });
         const url = URL.createObjectURL(r.data);
         const w = window.open(url, '_blank');
         if (!w) {
-          // Popup blocked → force download so the audiologist still gets the file.
           const a = document.createElement('a');
           a.href = url; a.download = `report-${activeTest.sessionId}.pdf`;
           document.body.appendChild(a); a.click(); a.remove();
@@ -248,12 +268,10 @@ export default function TestProceduresModule() {
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       } catch (pdfErr) {
         console.error('PDF fetch failed', pdfErr);
-        alert('Report generated but the PDF could not be opened. You can still print it from the Reports section.');
+        alert('Report saved but the PDF could not be opened. You can still print it from the Reports section.');
       }
       setCompletedToast(true);
       setTimeout(() => setCompletedToast(false), 3500);
-      // Keep audiologist on this page — they may want to review, re-print, or edit.
-      // The session moves to Reports automatically via the status flip.
     } catch (err) {
       console.error('Generate report failed', err);
       alert(err?.response?.data?.detail || 'Could not generate the report. Please try again.');
@@ -316,22 +334,18 @@ export default function TestProceduresModule() {
           </button>
           <button
             onClick={handleGenerateReport}
-            disabled={completingTest || sessionMeta.report_status === 'completed'}
+            disabled={completingTest}
             data-testid="test-generate-report-btn"
             title={sessionMeta.report_status === 'completed'
-              ? 'Consultation already finished'
-              : sessionMeta.report_status === 'report_ready'
-              ? 'Report already generated — click to re-generate and re-open the PDF'
-              : 'Save the session, generate the PDF, and open it for printing'}
+              ? 'Re-capture the current preview and re-open the saved PDF'
+              : 'Save the session, store the printed PDF, and open it for printing'}
             className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow-sm"
           >
             {completingTest
-              ? 'Generating…'
-              : sessionMeta.report_status === 'report_ready'
-              ? '↻ Re-generate Report'
+              ? 'Saving…'
               : sessionMeta.report_status === 'completed'
-              ? '✓ Completed'
-              : '🖨 Generate & Print Report'}
+              ? '↻ Re-print Report'
+              : '🖨 Save & Print Report'}
           </button>
         </div>
       </div>

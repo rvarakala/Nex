@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 21 — simplified report lifecycle (handover scrapped) fully verified. All 12 tests in test_report_handover.py PASS (token dedupe, legacy aliases→completed, handover 404, PDF upload+round-trip, PDF non-PDF 415, PDF empty 400, /reports listing, pending-count=0, billing/pending-reports=[], appointment+invoice atomic). Added a new focused suite /app/backend/tests/test_iter21_report_extras.py (8 tests) covering the scenarios missing from the main suite: PDF re-upload GridFS replacement, PDF fallback template when no blob exists, cross-tenant 403 on upload/fetch, cross-tenant /reports listing isolation, patient history shape+cross-tenant, legacy billing WhatsApp delivery. 8/8 PASS. Also re-ran test_m01_frontdesk.py + test_m01b_appointments.py + test_m01c_billing.py as regression (64/64 PASS) to confirm the tokens.py dedupe change did not break existing front-desk / billing flows. Total: 20/20 relevant tests pass + 64/64 regression tests pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_report_handover.py",
+    "/app/backend/tests/test_iter21_report_extras.py",
+    "/app/test_reports/pytest/iter21_report_handover.xml",
+    "/app/test_reports/pytest/iter21_extras.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/report_handover.py:124-191 upload_report_pdf: correct GridFS idempotent re-upload (deletes old_id before uploading new), correct 400/413/415 status codes, correct tenant scoping via _get_session_tenant_scoped, correctly sets report_status='completed' + test_completed_at on first upload. Good.",
+    "routers/reports.py:77-90 _stream_pdf: correctly prefers uploaded GridFS blob over template generator; falls back cleanly to generate_report_pdf if no upload present — verified with test_pdf_fallback_template_when_no_upload.",
+    "routers/tokens.py dedupe: correctly returns existing active token with upgraded service when same patient books again same day; after status=completed a new token is created — verified with test_token_dedupe_skipped_once_completed. No race seen in quick-succession POSTs (sequential happy path).",
+    "Cross-tenant isolation is tight: Delhi admin gets 403/404 on Mumbai session PDF upload + fetch, and never sees Mumbai session in GET /api/reports?status=completed.",
+    "Legacy endpoints /mark-printed, /complete-test, /generate-report all land on report_status='completed' with no intermediate 'report_ready' state — verified.",
+    "POST /api/sessions/{id}/handover correctly returns 404 now — feature truly removed.",
+    "Minor suggestion (non-blocking): backend/routers/report_handover.py should eventually drop the deprecated /reports/pending-count stub and /billing/pending-reports stub once the frontend no longer polls them; they currently return hard-coded {pending:0} and [] respectively, which is fine for back-compat but wasted round-trips."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_report_extras.py (NEW — 8 regression tests, 100% pass)"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 report-lifecycle tests + 64/64 m01 regression tests)",
+    "frontend": "not tested (review_request: backend only)"
+  },
+  "test_credentials": "admin@acs.in/admin123, audiologist@acs.in/audio123, frontdesk@acs.in/frontdesk123, accounts@acs.in/accounts123, admin@delhi.test/delhiadmin123, frontdesk@delhi.test/delhifrontdesk123",
+  "seed_data_creation": "Created as a side-effect of running the test suites: ~3 Mumbai test patients (HandoverV2 / Iter21Mum prefixes), ~8 test_sessions tied to those patients, 6 GridFS blobs in session_reports bucket (older ones correctly overwritten on re-upload — verified via fs_id_a != fs_id_b assertion), 2 test appointments with draft invoices. All patient/session data uses clear test prefixes (HandoverV2, Iter21Mum, Fallback/Test Audiologist names) so it's identifiable for cleanup later.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The simplified draft→completed report lifecycle is fully verified. For any future changes in this area: (1) test_report_handover.py covers the core 12 scenarios from the review request, (2) test_iter21_report_extras.py covers the 8 edge cases (GridFS idempotency, template fallback, Delhi↔Mumbai cross-tenant 403, patient history shape, legacy WhatsApp billing delivery). Together they run in ~9s and exercise real HTTP through REACT_APP_BACKEND_URL. Frontend capture (html2canvas + jsPDF in /app/frontend/src/components/reports/captureAndUpload.js) is explicitly out-of-scope per the review request and will be manually verified by the main agent.",
+  "rca of the issue": "NO bugs found in this iteration — the three user-reported issues (1) patient Jasmita appearing twice in front-desk queue, (2) saved PDF was server-template instead of the printed rich PDF, (3) handover feature — are all correctly fixed by the current code. Verified by: (1) test_token_dedupe_same_patient_same_day confirms 2 POSTs → 1 token with upgraded service, exactly 1 row in GET /tokens; (2) test_pdf_reupload_replaces_previous_blob + test_upload_pdf_and_retrieve confirm the exact PDF bytes uploaded via multipart are the exact bytes served by GET /reports/{id}/pdf — the rich client-rendered DOM capture will thus be preserved forever; (3) test_handover_endpoint_is_gone confirms /sessions/{id}/handover now returns 404, and both legacy aliases /mark-printed + /complete-test correctly land on report_status='completed' with no intermediate 'report_ready' state."
+}

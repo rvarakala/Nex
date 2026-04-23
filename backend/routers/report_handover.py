@@ -1,32 +1,30 @@
-"""Report handover lifecycle (simplified per Feb 2026 ops review).
+"""Report lifecycle (simplified, Feb 2026 v2 — handover feature scrapped).
 
-New lifecycle (3 states):
+New simplified lifecycle (2 states):
     draft
-      │  audiologist clicks "Generate & Print Report"
-      │  (autosaves session → flips report_status → opens PDF in new tab)
+      │  audiologist clicks "Save & Print Report"
+      │  (client captures #report-preview DOM → uploads PDF → calls /generate-report)
       ▼
-    report_ready              ← appears in Reports → Ready for Handover
-      │  front desk clicks "Consultation Finished"  (gated: bill must be paid,
-      │  super_admin / accounts / founder may bypass)
-      ▼
-    completed                 ← appears in Reports → Completed
+    completed                 ← appears in Reports list
 
 Endpoints
-    POST /api/sessions/{id}/generate-report   — audiologist one-shot
-    POST /api/sessions/{id}/handover          — FD "Consultation Finished"
-    POST /api/sessions/{id}/mark-printed      — kept as ALIAS for backwards-compat
-    POST /api/sessions/{id}/complete-test     — kept as ALIAS for backwards-compat
-    GET  /api/reports                         — list (tabs: ready | completed | all)
-    GET  /api/reports/pending-count           — sidebar badge
+    POST /api/sessions/{id}/generate-report   — flips status to `completed`
+    POST /api/sessions/{id}/report-pdf        — upload captured PDF (multipart)
+    POST /api/sessions/{id}/mark-printed      — ALIAS, kept for backwards-compat
+    POST /api/sessions/{id}/complete-test     — ALIAS, kept for backwards-compat
+    GET  /api/reports                         — list completed reports
+    GET  /api/reports/pending-count           — 0 (handover deprecated)
     GET  /api/patients/{id}/history           — universal patient drawer data
+    POST /api/appointments/with-invoice       — atomic appointment + draft invoice
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel
 
 from auth import get_current_user
@@ -34,7 +32,9 @@ from database import get_db
 from utils.serde import deserialize_datetime, serialize_datetime
 
 
-router = APIRouter(prefix="/api", tags=["report-handover"])
+router = APIRouter(prefix="/api", tags=["reports"])
+
+_MAX_PDF_BYTES = 15 * 1024 * 1024  # 15 MB cap — well above a 4-page audiogram PDF
 
 
 # ---------- helpers --------------------------------------------------------
@@ -51,34 +51,6 @@ async def _get_session_tenant_scoped(db, session_id: str, clinic_id: str) -> Dic
     return s
 
 
-# Tab → statuses. "pending" is kept as an alias for "ready" to avoid breaking old clients.
-TAB_TO_STATUSES: Dict[str, List[str]] = {
-    "pending":    ["report_ready"],
-    "ready":      ["report_ready"],
-    "completed":  ["completed"],
-    "all":        ["report_ready", "completed"],
-}
-
-
-async def _find_invoice_for_session(db, clinic_id: str, session_id: str,
-                                    patient_id: str) -> Optional[Dict[str, Any]]:
-    """Prefer session-linked invoice; fall back to the patient's most recent."""
-    inv = await db.invoices.find_one(
-        {"clinic_id": clinic_id, "session_id": session_id,
-         "status": {"$nin": ["cancelled"]}},
-        {"_id": 0},
-        sort=[("invoice_date", -1)],
-    )
-    if inv:
-        return inv
-    return await db.invoices.find_one(
-        {"clinic_id": clinic_id, "patient_id": patient_id,
-         "status": {"$nin": ["cancelled"]}},
-        {"_id": 0},
-        sort=[("invoice_date", -1)],
-    )
-
-
 def _invoice_paid(inv: Optional[Dict[str, Any]]) -> bool:
     if not inv:
         return False
@@ -87,25 +59,31 @@ def _invoice_paid(inv: Optional[Dict[str, Any]]) -> bool:
     return (inv.get("status") or "").lower() in ("paid", "refunded")
 
 
+# Tab → statuses. Only `completed` now; legacy aliases preserved for old clients.
+TAB_TO_STATUSES: Dict[str, List[str]] = {
+    "completed":  ["completed"],
+    "all":        ["completed"],
+    "ready":      ["completed"],   # legacy alias
+    "pending":    ["completed"],   # legacy alias
+}
+
+
 # ---------- lifecycle actions ---------------------------------------------
-class HandoverRequest(BaseModel):
-    channel: Literal["print", "whatsapp", "email", "in_person"] = "in_person"
-    recipient: Optional[str] = None
-    notes: Optional[str] = None
-    bypass_bill_check: bool = False
-
-
-async def _flip_to_report_ready(db, session_id: str, user: Dict[str, Any]) -> Dict[str, Any]:
-    """Core state transition used by generate-report AND the legacy aliases."""
+async def _flip_to_completed(db, session_id: str, user: Dict[str, Any]) -> Dict[str, Any]:
+    """Core state transition — all "print/generate/mark-printed" calls land here."""
     s = await _get_session_tenant_scoped(db, session_id, user["clinic_id"])
     cur = s.get("report_status") or "draft"
-    # Idempotent: never regress a completed session
     if cur == "completed":
+        # Bump printed_at so re-prints show as fresh activity, but stay idempotent.
+        await db.test_sessions.update_one(
+            {"session_id": session_id},
+            {"$set": serialize_datetime({"printed_at": datetime.now(timezone.utc)})},
+        )
         return {"ok": True, "session_id": session_id, "report_status": "completed",
-                "note": "already consultation-finished"}
+                "note": "already completed"}
     now = datetime.now(timezone.utc)
     update = {
-        "report_status": "report_ready",
+        "report_status": "completed",
         "test_completed_at": s.get("test_completed_at") or now,
         "test_completed_by_user_id": s.get("test_completed_by_user_id") or user["user_id"],
         "printed_at": now,
@@ -115,101 +93,108 @@ async def _flip_to_report_ready(db, session_id: str, user: Dict[str, Any]) -> Di
     await db.test_sessions.update_one(
         {"session_id": session_id}, {"$set": serialize_datetime(update)}
     )
-    return {"ok": True, "session_id": session_id, "report_status": "report_ready"}
+    return {"ok": True, "session_id": session_id, "report_status": "completed"}
 
 
 @router.post("/sessions/{session_id}/generate-report")
 async def generate_report(session_id: str,
                           user=Depends(get_current_user), db=Depends(get_db)):
-    """One-shot audiologist action.
+    """One-shot audiologist action — flips the session to `completed`.
 
-    Autosave is handled client-side before this is called (the PUT on the session).
-    This endpoint simply advances the status to `report_ready`. The PDF is then
-    downloaded by the client via `GET /api/reports/{id}/pdf` and opened for the
-    audiologist to review + print in the browser.
+    The autosave PUT is client-side; the captured PDF is uploaded via
+    `POST /api/sessions/{id}/report-pdf` immediately before (or after) this call.
     """
-    return await _flip_to_report_ready(db, session_id, user)
+    return await _flip_to_completed(db, session_id, user)
 
 
-# ---------- legacy aliases (kept for 1 release to avoid breaking in-flight UIs) -
+# ---------- legacy aliases (kept for 1 release) -
 @router.post("/sessions/{session_id}/complete-test")
 async def complete_test_alias(session_id: str,
                               user=Depends(get_current_user), db=Depends(get_db)):
-    return await _flip_to_report_ready(db, session_id, user)
+    return await _flip_to_completed(db, session_id, user)
 
 
 @router.post("/sessions/{session_id}/mark-printed")
 async def mark_printed_alias(session_id: str,
                              user=Depends(get_current_user), db=Depends(get_db)):
-    return await _flip_to_report_ready(db, session_id, user)
+    return await _flip_to_completed(db, session_id, user)
 
 
-@router.post("/sessions/{session_id}/handover")
-async def handover(session_id: str, payload: HandoverRequest,
-                   user=Depends(get_current_user), db=Depends(get_db)):
-    """Front desk marks the consultation finished. Requires the patient's invoice
-    to be fully paid; super_admin/accounts/founder may bypass (for comped visits,
-    insurance claims, staff discounts)."""
+# ---------- captured-PDF upload (NEW) -------------------------------------
+@router.post("/sessions/{session_id}/report-pdf")
+async def upload_report_pdf(session_id: str,
+                            file: UploadFile = File(...),
+                            user=Depends(get_current_user), db=Depends(get_db)):
+    """Accept the client-rendered PDF (exactly what the audiologist just printed)
+    and archive it in GridFS. Subsequent re-opens serve this blob — so "what was
+    printed" == "what is saved" == "what patients receive" forever after.
+
+    Idempotent on re-upload: the previous GridFS blob is deleted.
+    """
     s = await _get_session_tenant_scoped(db, session_id, user["clinic_id"])
-    inv = await _find_invoice_for_session(db, user["clinic_id"], session_id, s.get("patient_id"))
 
-    privileged = user.get("role") in ("super_admin", "founder", "accounts")
-    if not payload.bypass_bill_check and not _invoice_paid(inv):
-        due = float((inv or {}).get("due_total") or 0)
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": f"Cannot close consultation — ₹{due:.0f} due on the invoice." if due
-                            else "Cannot close consultation — invoice not raised or not paid.",
-                "invoice_id": (inv or {}).get("invoice_id"),
-                "due_total": (inv or {}).get("due_total"),
-                "can_bypass": privileged,
-            },
-        )
-    if payload.bypass_bill_check and not privileged:
-        raise HTTPException(status_code=403,
-                            detail="Only accounts/super_admin may bypass the bill check.")
+    # Size cap (avoid DoS via a giant upload). Read into memory — PDFs are small.
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > _MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF too large (max 15 MB)")
+
+    # Light magic-byte check (PDFs start with %PDF-).
+    if not raw.startswith(b"%PDF"):
+        raise HTTPException(status_code=415, detail="Only PDF files are accepted")
+
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name="session_reports")
+
+    # Remove any previously-stored blob for this session (idempotent).
+    old_id = s.get("report_pdf_fs_id")
+    if old_id:
+        try:
+            await bucket.delete(ObjectId(old_id))
+        except Exception:
+            pass  # missing/orphan — harmless
+
+    fs_id = await bucket.upload_from_stream(
+        filename=f"{session_id}.pdf",
+        source=raw,
+        metadata={
+            "clinic_id": user["clinic_id"],
+            "session_id": session_id,
+            "patient_id": s.get("patient_id"),
+            "uploaded_by_user_id": user["user_id"],
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "size_bytes": len(raw),
+        },
+    )
 
     now = datetime.now(timezone.utc)
-    delivery = {
-        "delivery_id": f"DEL-{str(uuid4())[:8].upper()}",
-        "clinic_id": user["clinic_id"],
-        "session_id": session_id,
-        "patient_id": s.get("patient_id"),
-        "invoice_id": (inv or {}).get("invoice_id"),
-        "channel": payload.channel,
-        "delivered_at": now,
-        "delivered_by_user_id": user["user_id"],
-        "recipient": payload.recipient,
-        "notes": payload.notes,
-    }
-    await db.report_deliveries.insert_one(serialize_datetime(delivery))
-
-    update = {
-        "report_status": "completed",
-        "handed_over_at": now,
-        "handed_over_by_user_id": user["user_id"],
-        "updated_at": now,
-    }
-    if not s.get("printed_at"):
-        update["printed_at"] = now
-    if not s.get("test_completed_at"):
-        update["test_completed_at"] = now
     await db.test_sessions.update_one(
-        {"session_id": session_id}, {"$set": serialize_datetime(update)}
+        {"session_id": session_id},
+        {"$set": serialize_datetime({
+            "report_pdf_fs_id": str(fs_id),
+            "report_pdf_uploaded_at": now,
+            "report_pdf_size_bytes": len(raw),
+            "report_status": "completed",
+            "test_completed_at": s.get("test_completed_at") or now,
+            "test_completed_by_user_id": s.get("test_completed_by_user_id") or user["user_id"],
+            "printed_at": now,
+            "status": "completed",
+            "updated_at": now,
+        })},
     )
     return {
         "ok": True,
         "session_id": session_id,
+        "report_pdf_fs_id": str(fs_id),
+        "size_bytes": len(raw),
         "report_status": "completed",
-        "delivery_id": delivery["delivery_id"],
     }
 
 
 # ---------- listings + badge ----------------------------------------------
 @router.get("/reports")
 async def list_reports(
-    status: Literal["pending", "ready", "completed", "all"] = "ready",
+    status: Literal["pending", "ready", "completed", "all"] = "completed",
     search: Optional[str] = None,
     page: int = 1,
     per_page: int = 25,
@@ -218,7 +203,7 @@ async def list_reports(
     page = max(1, page)
     per_page = max(1, min(100, per_page))
 
-    statuses = TAB_TO_STATUSES.get(status, TAB_TO_STATUSES["ready"])
+    statuses = TAB_TO_STATUSES.get(status, TAB_TO_STATUSES["completed"])
     q: Dict[str, Any] = {"clinic_id": user["clinic_id"],
                          "report_status": {"$in": statuses}}
 
@@ -288,7 +273,8 @@ async def list_reports(
             "report_status": s.get("report_status") or "draft",
             "test_completed_at": s.get("test_completed_at"),
             "printed_at": s.get("printed_at"),
-            "handed_over_at": s.get("handed_over_at"),
+            "report_pdf_uploaded_at": s.get("report_pdf_uploaded_at"),
+            "has_uploaded_pdf": bool(s.get("report_pdf_fs_id")),
             "invoice": inv,
             "bill_paid": _invoice_paid(inv),
         }))
@@ -306,25 +292,16 @@ async def list_reports(
 
 
 @router.get("/reports/pending-count")
-async def pending_count(user=Depends(get_current_user), db=Depends(get_db)):
-    """Badge count — sessions ready for handover (not yet consultation-finished)."""
-    q = {"clinic_id": user["clinic_id"], "report_status": "report_ready"}
-    n = await db.test_sessions.count_documents(q)
-    return {"pending": n}
+async def pending_count(user=Depends(get_current_user), db=Depends(get_db)):  # noqa: ARG001
+    """Legacy sidebar badge — always 0 since the handover step was scrapped."""
+    return {"pending": 0}
 
 
 # ---------- patient history (universal drawer) ----------------------------
 @router.get("/patients/{patient_id}/history")
 async def patient_history(patient_id: str,
                           user=Depends(get_current_user), db=Depends(get_db)):
-    """One-shot history payload used by the universal patient drawer.
-
-    Returns (all tenant-scoped):
-        patient    — core demographics
-        sessions   — last 10, newest first (for audiogram thumbnails)
-        invoices   — last 10, newest first
-        ha_sales   — last 5 hearing-aid sales (if any)
-    """
+    """One-shot history payload used by the universal patient drawer."""
     p = await db.patients.find_one(
         {"patient_id": patient_id, "clinic_id": user["clinic_id"]},
         {"_id": 0},
@@ -351,7 +328,6 @@ async def patient_history(patient_id: str,
          "lines": 1},
     ).sort("invoice_date", -1).to_list(10)
 
-    # ha_sales may or may not be present for every clinic — degrade gracefully.
     try:
         ha_sales = await db.ha_sales.find(
             {"clinic_id": user["clinic_id"], "patient_id": patient_id},
@@ -410,15 +386,7 @@ async def create_appointment_with_invoice(
     payload: AppointmentWithInvoiceRequest,
     user=Depends(get_current_user), db=Depends(get_db),
 ):
-    """Atomic: create appointment + (optionally) a draft invoice in one call.
-
-    FD ticks tests in the modal, the UI pre-fills `invoice_lines` with catalog
-    prices, FD can edit, then this endpoint books the slot AND creates the
-    unpaid invoice. If `raise_invoice=False` (or lines are empty), only the
-    appointment is created.
-    """
-    # Step 1 — create the appointment (delegates to the existing validation pipeline)
-    import httpx  # noqa: F401 — only to show intent; we use the local router directly below
+    """Atomic: create appointment + (optionally) a draft invoice in one call."""
     from routers.appointments import create_appointment, AppointmentCreate
 
     apt_payload = AppointmentCreate(
@@ -452,8 +420,6 @@ async def create_appointment_with_invoice(
             invoice = await billing_create_invoice(inv_payload, user=user, db=db)
             invoice = invoice.model_dump() if hasattr(invoice, "model_dump") else invoice
         except Exception as e:
-            # Don't roll back the appointment — reception can raise the invoice
-            # later from the appointment row. Surface the billing error though.
             invoice = {"error": str(e)}
 
     return {
@@ -465,19 +431,16 @@ async def create_appointment_with_invoice(
 
 # ---------- one-time migration (idempotent, called from server.py lifespan) -
 async def migrate_legacy_report_statuses(db) -> Dict[str, int]:
-    """Migrate pre-Feb-2026 report_status values to the new 3-state model.
+    """Migrate every non-`completed`, non-`draft` legacy status → `completed`.
 
-    Called on each boot; idempotent (no-op after first run).
+    After Feb 2026 v2, the lifecycle has only `draft` and `completed`.
+    Called on each boot; idempotent.
     """
-    r1 = await db.test_sessions.update_many(
-        {"report_status": {"$in": ["test_completed", "printed"]}},
-        {"$set": {"report_status": "report_ready"}},
-    )
-    r2 = await db.test_sessions.update_many(
-        {"report_status": "handed_over"},
+    legacy = ["test_completed", "printed", "report_ready", "handed_over", "ready", "finalized"]
+    r = await db.test_sessions.update_many(
+        {"report_status": {"$in": legacy}},
         {"$set": {"report_status": "completed"}},
     )
     return {
-        "merged_into_report_ready": int(r1.modified_count or 0),
-        "merged_into_completed": int(r2.modified_count or 0),
+        "merged_into_completed": int(r.modified_count or 0),
     }

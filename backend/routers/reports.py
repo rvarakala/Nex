@@ -1,9 +1,13 @@
 """PDF report generation + short-lived signed share-link endpoints."""
 import hashlib
+import io
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from auth import get_current_user
 from database import get_db
@@ -46,7 +50,34 @@ async def _load_session_and_patient(db, session_id: str) -> tuple[dict, dict]:
     return session, patient
 
 
-def _stream_pdf(session_id: str, session: dict, patient: dict) -> StreamingResponse:
+async def _stream_uploaded_pdf(db, session: dict) -> StreamingResponse | None:
+    """Return the client-uploaded (as-printed) PDF from GridFS, if any.
+
+    When the audiologist clicked "Save & Print Report" we captured the live
+    Report preview DOM into a PDF and stored it. That blob *is* the patient's
+    report — fall through to the template generator only if the upload is missing.
+    """
+    fs_id = session.get("report_pdf_fs_id")
+    if not fs_id:
+        return None
+    try:
+        bucket = AsyncIOMotorGridFSBucket(db, bucket_name="session_reports")
+        stream = await bucket.open_download_stream(ObjectId(fs_id))
+        raw = await stream.read()
+    except Exception as e:
+        logger.warning(f"uploaded pdf missing or unreadable for {session.get('session_id')}: {e}")
+        return None
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="audiogram_report_{session.get("session_id")}.pdf"'},
+    )
+
+
+async def _stream_pdf(db, session_id: str, session: dict, patient: dict) -> StreamingResponse:
+    uploaded = await _stream_uploaded_pdf(db, session)
+    if uploaded is not None:
+        return uploaded
     try:
         pdf_buffer = generate_report_pdf(session_id, session, patient)
         return StreamingResponse(
@@ -70,7 +101,7 @@ async def generate_session_report(session_id: str,
         raise HTTPException(status_code=403, detail="Not authorised")
     if patient_clinic and patient_clinic != user["clinic_id"]:
         raise HTTPException(status_code=403, detail="Not authorised")
-    return _stream_pdf(session_id, session, patient)
+    return await _stream_pdf(db, session_id, session, patient)
 
 
 # ---- Short-lived share-link ----
@@ -158,7 +189,7 @@ async def get_shared_report_pdf(token: str, request: Request, db=Depends(get_db)
     except Exception as e:
         logger.warning(f"share_link.audit_update_failed: {e}")
 
-    return _stream_pdf(session_id, session, patient)
+    return await _stream_pdf(db, session_id, session, patient)
 
 
 # ---- Read-only audit surface for the app ----
