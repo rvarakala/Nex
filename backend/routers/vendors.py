@@ -45,6 +45,37 @@ async def create_vendor(payload: VendorCreate,
     return obj
 
 
+@router.get("/vendors/stats")
+async def vendors_stats(user=Depends(get_current_user), db=Depends(get_db)):
+    """Per-vendor open-PO summary for the Vendors master page.
+
+    "Open" PO = any status other than `closed` or `cancelled`. We return the
+    raw PO grand-total (not net-of-received) because finance wants to see the
+    liability they've already committed to the vendor — partial receipts are
+    reconciled against the invoice via the GRN ledger downstream.
+    """
+    # Single aggregation — cheap even for hundreds of vendors.
+    pipeline = [
+        {"$match": {
+            "clinic_id": user["clinic_id"],
+            "status": {"$nin": ["closed", "cancelled"]},
+        }},
+        {"$group": {
+            "_id": "$vendor_id",
+            "open_po_count": {"$sum": 1},
+            # `total` is the GST-inclusive grand total set when the PO is created.
+            "outstanding_amount": {"$sum": {"$ifNull": ["$total", 0]}},
+        }},
+    ]
+    out: dict = {}
+    async for row in db.purchase_orders.aggregate(pipeline):
+        out[row["_id"]] = {
+            "open_po_count": int(row.get("open_po_count") or 0),
+            "outstanding_amount": float(row.get("outstanding_amount") or 0),
+        }
+    return out
+
+
 @router.get("/vendors/{vendor_id}", response_model=Vendor)
 async def get_vendor(vendor_id: str,
                      user=Depends(get_current_user), db=Depends(get_db)):

@@ -14,6 +14,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function VendorsPage() {
   const [rows, setRows] = useState([]);
+  const [statsMap, setStatsMap] = useState({}); // vendor_id → {open_po_count, outstanding_amount}
   const [search, setSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -26,8 +27,12 @@ export default function VendorsPage() {
       const params = {};
       if (search) params.search = search;
       if (!showInactive) params.active = true;
-      const r = await axios.get(`${API}/vendors`, { params });
-      setRows(r.data || []);
+      const [listR, statsR] = await Promise.all([
+        axios.get(`${API}/vendors`, { params }),
+        axios.get(`${API}/vendors/stats`).catch(() => ({ data: {} })),
+      ]);
+      setRows(listR.data || []);
+      setStatsMap(statsR.data || {});
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Unable to load vendors');
     } finally {
@@ -44,7 +49,11 @@ export default function VendorsPage() {
 
   const toggleActive = async (v) => {
     if (v.active) {
-      if (!window.confirm(`Deactivate ${v.name}? This hides it from PO dropdowns but preserves history.`)) return;
+      const s = statsMap[v.vendor_id];
+      const extra = s && s.open_po_count > 0
+        ? `\n\n⚠ This vendor has ${s.open_po_count} open PO(s) · ₹${Number(s.outstanding_amount || 0).toLocaleString('en-IN')} outstanding. Existing POs are preserved; only the dropdown is hidden.`
+        : '';
+      if (!window.confirm(`Deactivate ${v.name}?${extra}`)) return;
       try {
         await axios.delete(`${API}/vendors/${v.vendor_id}`);
         await load();
@@ -126,6 +135,7 @@ export default function VendorsPage() {
                 <th className="px-3 py-2 text-left">Contact</th>
                 <th className="px-3 py-2 text-left">GSTIN / State</th>
                 <th className="px-3 py-2 text-right">Terms</th>
+                <th className="px-3 py-2 text-right">Open POs</th>
                 <th className="px-3 py-2 text-center">Status</th>
                 <th className="px-3 py-2"></th>
               </tr>
@@ -148,6 +158,28 @@ export default function VendorsPage() {
                     <div className="text-slate-500">{v.state || ''}</div>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-xs">{v.payment_terms_days || 30}d</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-xs" data-testid={`ha-vendor-open-${v.vendor_id}`}>
+                    {(() => {
+                      const s = statsMap[v.vendor_id];
+                      if (!s || s.open_po_count === 0) {
+                        return <span className="text-slate-400 italic text-[11px]">—</span>;
+                      }
+                      const amt = Number(s.outstanding_amount || 0);
+                      const amtLabel = amt >= 100000
+                        ? `₹${(amt / 100000).toFixed(1)}L`
+                        : amt >= 1000
+                        ? `₹${(amt / 1000).toFixed(0)}k`
+                        : `₹${amt.toFixed(0)}`;
+                      return (
+                        <div className="inline-flex items-center gap-1" title={`${s.open_po_count} open PO(s) · ₹${amt.toLocaleString('en-IN')} outstanding (GST-incl.)`}>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            {s.open_po_count}
+                          </span>
+                          <span className="font-semibold text-slate-700">{amtLabel}</span>
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td className="px-3 py-2 text-center">
                     {v.active ? (
                       <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded">ACTIVE</span>
