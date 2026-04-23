@@ -1,7 +1,6 @@
 import React from 'react';
 import '@/App.css';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './AuthContext';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';import { AuthProvider, useAuth } from './AuthContext';
 import { SubscriptionProvider, ModuleGate } from './SubscriptionContext';
 import { TestContextProvider } from './TestContext';
 import { ProtectedRoute } from './shell/ProtectedRoute';
@@ -21,6 +20,7 @@ import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
 import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
+import { usePageViewTracker } from './hooks/usePageViewTracker';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -55,7 +55,19 @@ function App() {
       <AuthProvider>
         <SubscriptionProvider>
           <TestContextProvider>
-            <Routes>
+            <AppRoutes />
+          </TestContextProvider>
+        </SubscriptionProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+function AppRoutes() {
+  // Track page views on every route change (authenticated users only)
+  usePageViewTracker();
+  return (
+    <Routes>
               {/* PUBLIC */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/signup" element={<SignupPage />} />
@@ -101,10 +113,6 @@ function App() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </TestContextProvider>
-        </SubscriptionProvider>
-      </AuthProvider>
-    </BrowserRouter>
   );
 }
 

@@ -795,6 +795,66 @@ async def list_online(
     return [deserialize_datetime(r) for r in rows]
 
 
+@router.get("/activity/users/{user_id}/pageviews")
+async def user_page_views(
+    user_id: str,
+    limit: int = 30,
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Recent page views for a specific user — shown in the online-user drawer."""
+    from utils.activity import list_page_views
+    rows = await list_page_views(db, user_id, limit=limit)
+    return [deserialize_datetime(r) for r in rows]
+
+
+class ForceLogoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: Optional[str] = None
+
+
+@router.post("/activity/users/{user_id}/force-logout")
+async def force_logout_user(
+    user_id: str,
+    payload: ForceLogoutRequest,
+    actor=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Invalidate ALL active sessions for a user by bumping their token_version.
+
+    JWTs are stateless, so we enforce revocation by incrementing
+    `users.token_version`. Every subsequent authenticated request checks
+    that its JWT's `tv` claim is ≥ the user's current token_version; if
+    not, we 401. Affected user must sign in again.
+
+    Only founder & super_admin can use this action.
+    """
+    if actor.get("role") not in ("founder", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only founder or super_admin can force-logout")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "email": 1, "token_version": 1, "name": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    new_tv = int(target.get("token_version", 0) or 0) + 1
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"token_version": new_tv, "last_seen_at": None}}
+    )
+    # Audit trail
+    await db.admin_audit_logs.insert_one(serialize_datetime({
+        "log_id": f"LOG-{uuid.uuid4().hex[:8].upper()}",
+        "actor_email": actor["email"], "actor_role": actor.get("role"),
+        "action": "force_logout",
+        "details": {"target_user_id": user_id, "target_email": target.get("email"),
+                    "new_token_version": new_tv, "reason": payload.reason or ""},
+        "at": datetime.now(timezone.utc),
+    }))
+    return {
+        "ok": True, "user_id": user_id, "email": target.get("email"),
+        "token_version": new_tv,
+        "message": f"All sessions for {target.get('email')} revoked. User must sign in again.",
+    }
+
+
 @router.get("/activity/funnel")
 async def get_activation_funnel(
     user=Depends(require_permission("usage:read")),

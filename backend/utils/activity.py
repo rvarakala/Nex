@@ -132,7 +132,7 @@ async def record_heartbeat(db, user_id: str, request: Optional[Request] = None) 
 
 
 async def list_online_users(db, window_seconds: int = ONLINE_WINDOW_SECONDS) -> list[dict]:
-    """Return users active within the last `window_seconds`. Joined with clinic."""
+    """Return users active within the last `window_seconds`. Joined with clinic + geo."""
     # users.last_seen_at is stored as aware UTC; Mongo strips tzinfo on insert.
     cutoff_naive = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=window_seconds)
     users = await db.users.find(
@@ -150,6 +150,11 @@ async def list_online_users(db, window_seconds: int = ONLINE_WINDOW_SECONDS) -> 
     ).to_list(len(clinic_ids))
     cmap = {c["clinic_id"]: c for c in clinics}
 
+    # Resolve IPs → geo, batched
+    from utils.geoip import resolve_ips_batch
+    ips = [u.get("last_seen_ip") for u in users if u.get("last_seen_ip")]
+    geo_map = await resolve_ips_batch(db, ips)
+
     out = []
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     for u in users:
@@ -158,6 +163,7 @@ async def list_online_users(db, window_seconds: int = ONLINE_WINDOW_SECONDS) -> 
             ls = ls.replace(tzinfo=None)
         seconds_ago = int((now_naive - ls).total_seconds()) if ls else None
         clinic = cmap.get(u.get("clinic_id"), {})
+        geo = geo_map.get(u.get("last_seen_ip"), {})
         out.append({
             "user_id": u.get("user_id"),
             "email": u.get("email"),
@@ -172,8 +178,73 @@ async def list_online_users(db, window_seconds: int = ONLINE_WINDOW_SECONDS) -> 
             "seconds_ago": seconds_ago,
             "last_seen_ip": u.get("last_seen_ip"),
             "last_seen_ua": u.get("last_seen_ua"),
+            # Geo-derived (preferred over clinic city when different)
+            "geo_city": geo.get("city") or None,
+            "geo_region": geo.get("region") or None,
+            "geo_country": geo.get("country") or None,
+            "geo_country_code": geo.get("country_code") or None,
+            "geo_lat": geo.get("lat"),
+            "geo_lon": geo.get("lon"),
         })
     return out
+
+
+# ==================== PAGE VIEW TRACKING ====================
+
+# Capped ~10 MB / 200k views — auto-rotates
+PAGE_VIEWS_CAP_SIZE = 10 * 1024 * 1024
+PAGE_VIEWS_MAX_DOCS = 200_000
+
+# Per-user throttle (avoid write-spam from e.g. auto-polling pages)
+_last_pageview_written: dict[str, datetime] = {}
+PAGEVIEW_THROTTLE_SECONDS = 2
+
+
+async def ensure_page_views_collection(db) -> None:
+    names = await db.list_collection_names()
+    if "page_views" in names:
+        return
+    try:
+        await db.create_collection(
+            "page_views",
+            capped=True,
+            size=PAGE_VIEWS_CAP_SIZE,
+            max=PAGE_VIEWS_MAX_DOCS,
+        )
+    except Exception:
+        pass
+
+
+async def record_page_view(db, user: dict, path: str, ip: Optional[str] = None) -> None:
+    """Write a page view event (throttled)."""
+    if not path:
+        return
+    uid = user.get("user_id")
+    if not uid:
+        return
+    now = datetime.now(timezone.utc)
+    last = _last_pageview_written.get(uid + ":" + path[:50])
+    if last is not None and (now - last).total_seconds() < PAGEVIEW_THROTTLE_SECONDS:
+        return
+    _last_pageview_written[uid + ":" + path[:50]] = now
+    try:
+        await db.page_views.insert_one({
+            "at": now,
+            "user_id": uid,
+            "email": user.get("email"),
+            "name": user.get("name"),
+            "role": user.get("role"),
+            "clinic_id": user.get("clinic_id"),
+            "path": path[:300],
+            "ip": ip,
+        })
+    except Exception:
+        pass
+
+
+async def list_page_views(db, user_id: str, limit: int = 30) -> list[dict]:
+    rows = await db.page_views.find({"user_id": user_id}, {"_id": 0}).sort("at", -1).to_list(min(limit, 200))
+    return rows
 
 
 async def compute_activation_stage(db, clinic_id: str) -> str:

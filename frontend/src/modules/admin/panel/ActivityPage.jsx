@@ -48,8 +48,182 @@ const prettyUA = (ua) => {
   return 'Other';
 };
 
+// =================== USER DETAIL DRAWER ===================
+const UserDetailDrawer = ({ user, onClose, onForceLogout }) => {
+  const [pageviews, setPageviews] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!user) { setPageviews([]); return; }
+    setLoading(true);
+    axios.get(`${API}/admin/v2/activity/users/${user.user_id}/pageviews`, { params: { limit: 40 } })
+      .then((r) => setPageviews(r.data || []))
+      .catch(() => setPageviews([]))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  if (!user) return null;
+
+  const doForceLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await axios.post(`${API}/admin/v2/activity/users/${user.user_id}/force-logout`, {
+        reason: 'Manual revoke by admin',
+      });
+      onForceLogout?.(user);
+      onClose();
+    } catch (ex) {
+      // eslint-disable-next-line no-alert
+      alert(ex?.response?.data?.detail || 'Force logout failed');
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex" data-testid="user-drawer">
+      <button
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+        data-testid="drawer-backdrop"
+      />
+      <div className="relative ml-auto w-full sm:w-[420px] h-full bg-white shadow-2xl flex flex-col animate-in slide-in-from-right">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center text-white font-bold text-sm relative flex-shrink-0">
+              {(user.name || user.email || '?').charAt(0).toUpperCase()}
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full ring-2 ring-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-slate-900 truncate">{user.name || user.email}</div>
+              <div className="text-[11px] text-slate-500 truncate">
+                <span className="uppercase font-semibold">{(user.role || '').replace('_', ' ')}</span>
+                {' · '}{user.clinic_name}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-1"
+            data-testid="drawer-close"
+          >×</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-auto p-5 space-y-5">
+          {/* Location */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+              <MapPin size={11} /> Location
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">IP Address</span>
+                <span className="font-mono text-slate-900">{user.last_seen_ip || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Geo (from IP)</span>
+                <span className="text-slate-900">
+                  {user.geo_city || user.geo_country
+                    ? `${user.geo_city || ''}${user.geo_city && user.geo_country ? ', ' : ''}${user.geo_country || ''}`
+                    : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Clinic registered</span>
+                <span className="text-slate-900">{user.city || '—'}, {user.state || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Device</span>
+                <span className="text-slate-900">{prettyUA(user.last_seen_ua)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Last seen</span>
+                <span className="text-emerald-600 font-semibold">{fmtRelative(user.last_seen_at)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Page views */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+              <Activity size={11} /> Recent Pages ({pageviews.length})
+            </div>
+            {loading ? (
+              <div className="text-xs text-slate-400 italic py-3 text-center">Loading…</div>
+            ) : pageviews.length === 0 ? (
+              <div className="text-xs text-slate-400 italic bg-slate-50 rounded p-3 text-center">
+                No page views tracked yet. Starts recording on their next navigation.
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden" data-testid="drawer-pageviews">
+                {pageviews.map((pv, i) => (
+                  <div key={`${pv.at}-${i}`} className="px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-slate-50 text-[11px]">
+                    <code className="font-mono text-slate-800 truncate">{pv.path}</code>
+                    <span className="text-slate-400 font-mono flex-shrink-0">{fmtRelative(pv.at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Clinic card */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Clinic</div>
+            <div className="bg-slate-50 rounded-lg p-3 text-xs space-y-1">
+              <div className="font-bold text-slate-900 mb-1">{user.clinic_name}</div>
+              <div className="text-slate-600">Tier: <b>{user.tier || '—'}</b></div>
+              <div className="text-slate-600">ID: <code className="font-mono">{user.clinic_id}</code></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer — force logout */}
+        <div className="px-5 py-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
+          {!confirm ? (
+            <button
+              onClick={() => setConfirm(true)}
+              data-testid="drawer-force-logout-btn"
+              className="w-full py-2 text-xs font-bold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors"
+            >
+              🚫 Force Logout (Revoke all sessions)
+            </button>
+          ) : (
+            <div className="space-y-2" data-testid="drawer-force-logout-confirm">
+              <div className="text-[11px] text-rose-700 font-semibold text-center">
+                Revoke all sessions for {user.email}? They'll be signed out immediately.
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirm(false)}
+                  disabled={loggingOut}
+                  className="flex-1 py-2 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={doForceLogout}
+                  disabled={loggingOut}
+                  data-testid="drawer-force-logout-confirm-btn"
+                  className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 rounded-lg"
+                >
+                  {loggingOut ? 'Revoking…' : 'Yes, revoke'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // =================== WHO'S ONLINE NOW ===================
-const OnlineNow = ({ rows, windowMin, onWindow }) => {
+const OnlineNow = ({ rows, windowMin, onWindow, onSelectUser }) => {
   // Group by clinic
   const byClinic = useMemo(() => {
     const map = {};
@@ -122,7 +296,12 @@ const OnlineNow = ({ rows, windowMin, onWindow }) => {
               </div>
               {/* User rows */}
               {c.users.map((u) => (
-                <div key={u.user_id} className="px-5 py-2 pl-8 flex items-center gap-3 hover:bg-slate-50" data-testid={`online-user-${u.user_id}`}>
+                <button
+                  key={u.user_id}
+                  onClick={() => onSelectUser?.(u)}
+                  className="w-full px-5 py-2 pl-8 flex items-center gap-3 hover:bg-sky-50 transition-colors text-left group"
+                  data-testid={`online-user-${u.user_id}`}
+                >
                   <div className="relative flex-shrink-0">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center text-white text-[10px] font-bold">
                       {(u.name || u.email || '?').charAt(0).toUpperCase()}
@@ -130,10 +309,11 @@ const OnlineNow = ({ rows, windowMin, onWindow }) => {
                     <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-semibold text-slate-800 truncate">{u.name || u.email}</div>
+                    <div className="text-[12px] font-semibold text-slate-800 truncate group-hover:text-sky-700">{u.name || u.email}</div>
                     <div className="text-[10px] text-slate-500 truncate">
                       <span className="uppercase font-semibold">{(u.role || '').replace('_', ' ')}</span>
-                      {u.last_seen_ip && <> · {u.last_seen_ip}</>}
+                      {u.geo_city && <> · 📍 {u.geo_city}{u.geo_country_code ? `, ${u.geo_country_code}` : ''}</>}
+                      {!u.geo_city && u.last_seen_ip && <> · {u.last_seen_ip}</>}
                       {u.last_seen_ua && <> · {prettyUA(u.last_seen_ua)}</>}
                     </div>
                   </div>
@@ -141,8 +321,9 @@ const OnlineNow = ({ rows, windowMin, onWindow }) => {
                     <div className="text-[10px] font-bold text-emerald-600">
                       {u.seconds_ago < 60 ? `${u.seconds_ago}s ago` : `${Math.round(u.seconds_ago / 60)}m ago`}
                     </div>
+                    <div className="text-[9px] text-slate-400 group-hover:text-sky-500">View details →</div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ))}
@@ -404,6 +585,7 @@ export default function ActivityPage() {
   const [tenants, setTenants] = useState([]);
   const [online, setOnline] = useState([]);
   const [onlineWindow, setOnlineWindow] = useState(5);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [err, setErr] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -530,7 +712,7 @@ export default function ActivityPage() {
 
       {/* Online Now + Funnel */}
       <div className="grid lg:grid-cols-2 gap-4">
-        <OnlineNow rows={online} windowMin={onlineWindow} onWindow={setOnlineWindow} />
+        <OnlineNow rows={online} windowMin={onlineWindow} onWindow={setOnlineWindow} onSelectUser={setSelectedUser} />
         <Funnel data={funnel} />
       </div>
 
@@ -558,6 +740,16 @@ export default function ActivityPage() {
           <TenantFunnelTable rows={tenants} />
         </div>
       </div>
+
+      {/* Slide-in drawer for online user details */}
+      <UserDetailDrawer
+        user={selectedUser}
+        onClose={() => setSelectedUser(null)}
+        onForceLogout={() => {
+          // Remove user from the online list immediately for snappy feedback
+          setOnline((prev) => prev.filter((u) => u.user_id !== selectedUser?.user_id));
+        }}
+      />
     </div>
   );
 }

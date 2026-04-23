@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -134,12 +135,15 @@ async def lifespan(_app: FastAPI):
         await db.waitlist_signups.create_index("email", unique=True)
         await db.waitlist_signups.create_index([("created_at", -1)])
         # Login events — capped audit (Phase 14D Activity Tracking)
-        from utils.activity import ensure_login_events_collection
+        from utils.activity import ensure_login_events_collection, ensure_page_views_collection
         await ensure_login_events_collection(db)
+        await ensure_page_views_collection(db)
         try:
             await db.login_events.create_index([("clinic_id", 1), ("at", -1)])
             await db.login_events.create_index([("at", -1)])
             await db.users.create_index([("last_seen_at", -1)])
+            await db.page_views.create_index([("user_id", 1), ("at", -1)])
+            await db.geoip_cache.create_index("ip", unique=True)
         except Exception as e:
             logger.debug(f"login_events index skip: {e}")
         # AUDINEXA Couriers / Estimates / Approvals (Phase 12.B)
@@ -287,7 +291,10 @@ async def login(req: LoginRequest, request: Request):
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not user.get("active", True) or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token(user["user_id"], user["email"], user["role"], user["clinic_id"])
+    token = create_access_token(
+        user["user_id"], user["email"], user["role"], user["clinic_id"],
+        token_version=int(user.get("token_version", 0) or 0),
+    )
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0})
     # Fire-and-forget login audit (never blocks or fails the login)
     from utils.activity import record_login
@@ -311,6 +318,25 @@ async def login(req: LoginRequest, request: Request):
 async def auth_me(user=Depends(get_current_user)):
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0})
     return {"user": user, "clinic": clinic}
+
+
+class PageViewIn(BaseModel):
+    path: str = Field(..., min_length=1, max_length=300)
+
+
+@api_router.post("/activity/pageview")
+async def record_page_view_endpoint(
+    payload: PageViewIn,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Authenticated frontend pings this on every route change. Throttled
+    server-side to avoid write-storms."""
+    from utils.activity import record_page_view
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else None)
+    await record_page_view(db, user, payload.path, ip=ip)
+    return {"ok": True}
 
 
 # ==================== M01: CLINIC ROUTES ====================

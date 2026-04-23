@@ -47,12 +47,13 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str, role: str, clinic_id: str) -> str:
+def create_access_token(user_id: str, email: str, role: str, clinic_id: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "email": email,
         "role": role,
         "clinic_id": clinic_id,
+        "tv": int(token_version or 0),  # token version — incremented to force-logout all sessions
         "exp": datetime.now(timezone.utc) + ACCESS_TOKEN_TTL,
         "type": "access",
     }
@@ -97,6 +98,12 @@ async def get_current_user(request: Request):
     # Safety: reject if stored clinic_id no longer matches token claim (tenant boundary)
     if user.get("clinic_id") != payload.get("clinic_id"):
         raise HTTPException(status_code=401, detail="Tenant mismatch")
+    # Force-logout check: if user's token_version was bumped after this token
+    # was issued, reject (user must re-login)
+    current_tv = int(user.get("token_version", 0) or 0)
+    token_tv = int(payload.get("tv", 0) or 0)
+    if token_tv < current_tv:
+        raise HTTPException(status_code=401, detail="Session revoked, please sign in again")
     # Heartbeat — fire-and-forget, never blocks the request
     try:
         from utils.activity import record_heartbeat
