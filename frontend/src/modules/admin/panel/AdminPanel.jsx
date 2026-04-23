@@ -30,6 +30,8 @@ const SettingsPage       = lazy(() => import('./SettingsPage'));
 const UsersRolesPage     = lazy(() => import('./UsersRolesPage'));
 const ActivityPage       = lazy(() => import('./ActivityPage'));
 
+import AdminGlobalSearch from './AdminGlobalSearch';
+
 const NAV_GROUPS = [
   {
     label: 'Core',
@@ -184,8 +186,7 @@ export default function AdminPanel() {
             <div className="text-xs font-semibold text-slate-700 truncate">{window.location.pathname.split('/').slice(-1)[0] || 'dashboard'}</div>
           </div>
           <div className="flex items-center gap-2 text-[12px] text-slate-500 flex-shrink-0">
-            <Search size={14} />
-            <span className="hidden lg:inline">Press <kbd className="mx-1 px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-[10px] font-mono">⌘K</kbd> to search</span>
+            <AdminGlobalSearch />
           </div>
         </header>
 

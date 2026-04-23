@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 import axios from 'axios';
 import { PageHeader, Card, Pill, fmtDate, Empty } from './shared';
 import { ShieldCheck, UserPlus } from 'lucide-react';
@@ -15,6 +16,9 @@ export default function UsersRolesPage() {
   const [users, setUsers] = useState([]);
   const [rbac, setRbac] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [page, setPage] = useState(1);
+  const pagedUsers = usePaginationSlice(users, page, DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [users.length]);
 
   const load = async () => {
     const [u, m] = await Promise.all([
@@ -57,7 +61,7 @@ export default function UsersRolesPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {pagedUsers.map((u) => (
               <tr key={u.user_id} className="border-t border-slate-100">
                 <td className="px-4 py-2 font-semibold">{u.name}</td>
                 <td className="px-4 py-2 text-xs">{u.email}</td>
@@ -73,6 +77,7 @@ export default function UsersRolesPage() {
             {users.length === 0 && <tr><td colSpan={7}><Empty>No internal users yet.</Empty></td></tr>}
           </tbody>
         </table>
+        <Pagination page={page} setPage={setPage} total={users.length} testidPrefix="users-pagination" />
       </Card>
 
       <Card title="RBAC Matrix" subtitle="Action permissions per role">

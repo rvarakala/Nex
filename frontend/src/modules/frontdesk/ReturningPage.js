@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
+import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -16,6 +17,9 @@ export default function ReturningPage() {
   const [sessions, setSessions] = useState([]);
   const [loadingResults, setLoadingResults] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [page, setPage] = useState(1);
+  const pagedResults = usePaginationSlice(results, page, DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [query, results.length]);
   const debounceRef = useRef(null);
 
   // Debounced search
@@ -25,7 +29,7 @@ export default function ReturningPage() {
       if (!query.trim()) { setResults([]); return; }
       setLoadingResults(true);
       try {
-        const r = await axios.get(`${API}/patients`, { params: { search: query, limit: 30 } });
+        const r = await axios.get(`${API}/patients`, { params: { search: query, limit: 200 } });
         setResults(r.data || []);
       } catch (e) { console.error(e); }
       finally { setLoadingResults(false); }
@@ -101,7 +105,7 @@ export default function ReturningPage() {
               >+ Register as New</button>
             </div>
           )}
-          {results.map((p) => (
+          {pagedResults.map((p) => (
             <button
               key={p.patient_id}
               type="button"
@@ -121,6 +125,9 @@ export default function ReturningPage() {
             </button>
           ))}
         </div>
+        {results.length > DEFAULT_PAGE_SIZE && (
+          <Pagination page={page} setPage={setPage} total={results.length} testidPrefix="ret-pagination" />
+        )}
       </div>
 
       {/* Right: detail card */}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import AudinexaPipelineDrawer from '../repair/AudinexaPipelineDrawer';
+import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -46,6 +47,9 @@ export default function ServiceTicketsPage() {
   const [creating, setCreating] = useState(false);
   const [openNo, setOpenNo] = useState(null);
   const [me, setMe] = useState(null);
+  const [page, setPage] = useState(1);
+  const pagedRows = usePaginationSlice(rows, page, DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [status, rows.length]);
 
   useEffect(() => { (async () => {
     try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); } catch {/*noop*/}
@@ -108,7 +112,7 @@ export default function ServiceTicketsPage() {
           </thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={9} className="py-10 text-center text-slate-400 italic text-xs">No tickets yet.</td></tr>}
-            {rows.map(t => (
+            {pagedRows.map(t => (
               <tr key={t.ticket_no} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`ha-tix-row-${t.ticket_no}`}>
                 <td className="px-3 py-2 font-mono text-[11px] font-bold text-indigo-700">{t.ticket_no}</td>
                 <td className="px-3 py-2 text-xs">
@@ -128,6 +132,7 @@ export default function ServiceTicketsPage() {
             ))}
           </tbody>
         </table>
+        <Pagination page={page} setPage={setPage} total={rows.length} testidPrefix="ha-tix-pagination" />
       </div>
 
       {creating && <NewTicketModal onClose={() => setCreating(false)} onCreated={(t) => { setCreating(false); load(); setOpenNo(t.ticket_no); }} />}

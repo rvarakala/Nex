@@ -808,6 +808,66 @@ async def user_page_views(
     return [deserialize_datetime(r) for r in rows]
 
 
+@router.get("/search")
+async def global_admin_search(
+    q: str = "",
+    limit: int = 10,
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Unified admin search — tenants (clinic name/city/id), leads
+    (email/clinic/contact), and internal users (email/name).
+
+    Returns a mixed result list grouped by entity type. Case-insensitive
+    substring match. Results capped at `limit` per group.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"q": q, "tenants": [], "leads": [], "users": [], "total": 0}
+
+    import re
+    rx = {"$regex": re.escape(q), "$options": "i"}
+    safe_limit = max(1, min(limit, 25))
+
+    # Tenants — by name, clinic_id, or city
+    tenants = await db.clinics.find(
+        {"$or": [{"name": rx}, {"clinic_id": rx}, {"city": rx}, {"state": rx}]},
+        {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "state": 1,
+         "subscription_tier": 1, "status": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(safe_limit)
+
+    # Leads / waitlist — by email, clinic_name, contact_name, city
+    leads = await db.waitlist_signups.find(
+        {"$or": [{"email": rx}, {"clinic_name": rx}, {"contact_name": rx}, {"city": rx}]},
+        {"_id": 0, "email": 1, "clinic_name": 1, "contact_name": 1,
+         "city": 1, "stage": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(safe_limit)
+
+    # Internal / all users — by email or name (exclude clinic-owner roles to keep internal separate,
+    # OR include them so founder can find anyone). We include everyone here.
+    users = await db.users.find(
+        {"$or": [{"email": rx}, {"name": rx}]},
+        {"_id": 0, "user_id": 1, "email": 1, "name": 1, "role": 1,
+         "clinic_id": 1, "active": 1, "last_seen_at": 1}
+    ).sort("last_seen_at", -1).to_list(safe_limit)
+
+    # Attach clinic name to users for display
+    uc_ids = list({u.get("clinic_id") for u in users if u.get("clinic_id")})
+    if uc_ids:
+        uclinics = await db.clinics.find({"clinic_id": {"$in": uc_ids}}, {"_id": 0, "clinic_id": 1, "name": 1}).to_list(len(uc_ids))
+        cmap = {c["clinic_id"]: c.get("name") for c in uclinics}
+        for u in users:
+            u["clinic_name"] = cmap.get(u.get("clinic_id"))
+
+    return {
+        "q": q,
+        "tenants": [deserialize_datetime(r) for r in tenants],
+        "leads": [deserialize_datetime(r) for r in leads],
+        "users": [deserialize_datetime(r) for r in users],
+        "total": len(tenants) + len(leads) + len(users),
+    }
+
+
 class ForceLogoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: Optional[str] = None

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { PageHeader, Card, fmtDate, Empty } from './shared';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const PER_STAGE_LIMIT = 25;
 
 const STAGE_COLOR = {
   'Lead': 'bg-slate-100 text-slate-700 border-slate-300',
@@ -16,6 +17,7 @@ const STAGE_COLOR = {
 export default function LeadsPage() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
+  const [expanded, setExpanded] = useState({}); // stage → bool
 
   const load = async () => {
     try {
@@ -30,6 +32,8 @@ export default function LeadsPage() {
     load();
   };
 
+  const toggleStage = (s) => setExpanded((prev) => ({ ...prev, [s]: !prev[s] }));
+
   if (err) return <div className="p-6 text-rose-700">{err}</div>;
   if (!d) return <div className="p-6 text-slate-500">Loading leads pipeline…</div>;
 
@@ -40,37 +44,60 @@ export default function LeadsPage() {
       <PageHeader title="Leads / Trial CRM" subtitle={`${d.rows.length} prospects in the pipeline`} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4">
-        {d.stages.map((s) => (
-          <div key={s} className="bg-white rounded-xl border border-slate-200 flex flex-col min-h-[300px]">
-            <div className={`px-4 py-2.5 border-b border-slate-200 flex items-center justify-between ${STAGE_COLOR[s]}`}>
-              <span className="text-[11px] font-bold uppercase tracking-wider">{s}</span>
-              <span className="text-[10px] font-mono">{d.counts[s] || 0}</span>
-            </div>
-            <div className="flex-1 p-2 space-y-2 overflow-auto" data-testid={`stage-col-${s.replace(' ', '-')}`}>
-              {byStage[s].map((r) => (
-                <div key={r.email} className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:bg-white cursor-grab">
-                  <div className="text-sm font-semibold text-slate-900">{r.clinic_name || r.email}</div>
-                  <div className="text-[11px] text-slate-600">{r.contact_name || '—'}</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{r.email}</div>
-                  {r.city && <div className="text-[10px] text-slate-500">{r.city}</div>}
-                  {r.source && <div className="text-[9px] mt-1 text-indigo-600 font-semibold uppercase tracking-wider">{r.source}</div>}
-                  {r.notes && <div className="text-[10px] text-slate-500 mt-1 italic line-clamp-2">{r.notes}</div>}
-                  <div className="text-[9px] text-slate-400 mt-2">{fmtDate(r.created_at)}</div>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {d.stages.filter((x) => x !== s).map((to) => (
-                      <button key={to} onClick={() => moveLead(r.email, to)}
-                        className="text-[9px] px-1.5 py-0.5 rounded text-slate-600 bg-white border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700"
-                        data-testid={`move-${r.email}-to-${to.replace(' ', '-')}`}>
-                        → {to}
-                      </button>
-                    ))}
+        {d.stages.map((s) => {
+          const all = byStage[s];
+          const showAll = expanded[s];
+          const shown = showAll ? all : all.slice(0, PER_STAGE_LIMIT);
+          const more = all.length - shown.length;
+          return (
+            <div key={s} className="bg-white rounded-xl border border-slate-200 flex flex-col min-h-[300px]">
+              <div className={`px-4 py-2.5 border-b border-slate-200 flex items-center justify-between ${STAGE_COLOR[s]}`}>
+                <span className="text-[11px] font-bold uppercase tracking-wider">{s}</span>
+                <span className="text-[10px] font-mono">{d.counts[s] || 0}</span>
+              </div>
+              <div className="flex-1 p-2 space-y-2 overflow-auto" data-testid={`stage-col-${s.replace(' ', '-')}`}>
+                {shown.map((r) => (
+                  <div key={r.email} className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:bg-white cursor-grab">
+                    <div className="text-sm font-semibold text-slate-900">{r.clinic_name || r.email}</div>
+                    <div className="text-[11px] text-slate-600">{r.contact_name || '—'}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{r.email}</div>
+                    {r.city && <div className="text-[10px] text-slate-500">{r.city}</div>}
+                    {r.source && <div className="text-[9px] mt-1 text-indigo-600 font-semibold uppercase tracking-wider">{r.source}</div>}
+                    {r.notes && <div className="text-[10px] text-slate-500 mt-1 italic line-clamp-2">{r.notes}</div>}
+                    <div className="text-[9px] text-slate-400 mt-2">{fmtDate(r.created_at)}</div>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {d.stages.filter((x) => x !== s).map((to) => (
+                        <button key={to} onClick={() => moveLead(r.email, to)}
+                          className="text-[9px] px-1.5 py-0.5 rounded text-slate-600 bg-white border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700"
+                          data-testid={`move-${r.email}-to-${to.replace(' ', '-')}`}>
+                          → {to}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {byStage[s].length === 0 && <Empty>—</Empty>}
+                ))}
+                {all.length === 0 && <Empty>—</Empty>}
+                {more > 0 && (
+                  <button
+                    onClick={() => toggleStage(s)}
+                    data-testid={`leads-show-more-${s.replace(' ', '-')}`}
+                    className="w-full py-2 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                  >
+                    + Show {more} more
+                  </button>
+                )}
+                {showAll && all.length > PER_STAGE_LIMIT && (
+                  <button
+                    onClick={() => toggleStage(s)}
+                    className="w-full py-2 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                  >
+                    Collapse ↑
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
