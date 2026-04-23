@@ -113,3 +113,52 @@ code {
         border-bottom-color: inherit;
     }
 }
+
+
+/* ===== Global Mobile Responsiveness Helpers ===== */
+
+/* Prevent any page from creating horizontal overflow on small screens.
+   Pages that intentionally scroll wide tables should use a .scroll-x wrapper. */
+html, body {
+    overflow-x: hidden;
+}
+
+/* Tables that are too wide for mobile → allow horizontal scroll with
+   hint via a soft shadow on the right edge. Used by default for any page
+   that wraps a <table> in a <div class="overflow-x-auto"> (already common). */
+@media (max-width: 640px) {
+    .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Any page using a fixed pixel min-width layout should shrink first
+       before causing horizontal scroll of the whole page. */
+    .min-w-\[900px\], .min-w-\[1000px\], .min-w-\[1100px\], .min-w-\[1200px\] {
+        min-width: 100%;
+    }
+
+    /* Dense desktop tables — shrink font on mobile for readability */
+    table {
+        font-size: 12px;
+    }
+
+    /* Common grid patterns — force single column on mobile */
+    .grid.grid-cols-2,
+    .grid.grid-cols-3,
+    .grid.grid-cols-4,
+    .grid.grid-cols-5,
+    .grid.grid-cols-6 {
+        grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+
+    /* Padding shrink on mobile for card-heavy pages */
+    .p-6 { padding: 1rem; }
+    .p-8 { padding: 1.25rem; }
+    .px-6 { padding-left: 1rem; padding-right: 1rem; }
+    .px-8 { padding-left: 1.25rem; padding-right: 1.25rem; }
+}
+
+/* Make sure any <main data-testid="app-main"> child pages can scroll */
+[data-testid="app-main"] {
+    -webkit-overflow-scrolling: touch;
+}
