@@ -193,16 +193,27 @@ function NewTrialModal({ onClose, onCreated }) {
     return () => { cancelled = true; clearTimeout(h); };
   }, [search]);
 
-  // Fetch IN_STOCK serials for this branch (narrow list; user picks)
+  // Fetch demo-pool serials for this branch first; saleable is a secondary tab.
+  const [stockSource, setStockSource] = useState('demo'); // 'demo' | 'saleable'
   useEffect(() => {
     if (!branch) return;
     (async () => {
       try {
-        const r = await axios.get(`${API}/ha/serial-items`, { params: { state: 'IN_STOCK', branch_id: branch, limit: 200 } });
-        setSerialList(Array.isArray(r.data) ? r.data : []);
+        if (stockSource === 'demo') {
+          // Demo-stock endpoint returns all demo serials (both IN_STOCK & TRIAL_OUT).
+          const r = await axios.get(`${API}/ha/demo-stock`, { params: { branch_id: branch } });
+          // Only IN_STOCK demo units are eligible for a new trial.
+          setSerialList((Array.isArray(r.data) ? r.data : []).filter(s => s.state === 'IN_STOCK'));
+        } else {
+          const r = await axios.get(`${API}/ha/serial-items`, { params: { state: 'IN_STOCK', branch_id: branch, limit: 200 } });
+          // Exclude demo pool — those are handled by the 'demo' source.
+          setSerialList((Array.isArray(r.data) ? r.data : []).filter(s => (s.pool || 'saleable') !== 'demo'));
+        }
+        // Clear any picks when source changes — serial_ids are not comparable.
+        setPicks([]);
       } catch { setSerialList([]); }
     })();
-  }, [branch]);
+  }, [branch, stockSource]);
 
   const filteredSerials = useMemo(() => {
     if (!serialSearch) return serialList.slice(0, 30);
@@ -228,6 +239,10 @@ function NewTrialModal({ onClose, onCreated }) {
     if (!branch)  { setErr('Pick a branch'); return; }
     if (!picks.length) { setErr('Pick at least one serial'); return; }
     if (!returnDate) { setErr('Enter return date'); return; }
+    if (stockSource === 'saleable' && !(notes && notes.trim())) {
+      setErr('External unit selected — please describe the source in Notes (e.g. loaner from Phonak rep, colleague branch, etc.).');
+      return;
+    }
     setSaving(true);
     try {
       const body = {
@@ -249,7 +264,7 @@ function NewTrialModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-auto p-5" onClick={(e) => e.stopPropagation()} data-testid="ha-trial-new-modal">
         <h2 className="text-lg font-bold mb-3">Issue New Trial</h2>
         {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-3" data-testid="ha-trial-err">{err}</div>}
@@ -286,10 +301,37 @@ function NewTrialModal({ onClose, onCreated }) {
         </div>
 
         <div className="mb-3">
-          <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-0.5 font-semibold">Pick IN_STOCK Serials * ({picks.length} selected)</span>
+          <div className="flex items-center justify-between mb-1">
+            <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold" data-testid="ha-trial-pick-label">
+              {stockSource === 'demo'
+                ? `Pick DEMO serials * (${picks.length} selected)`
+                : `Pick EXTERNAL / saleable serials * (${picks.length} selected)`}
+            </span>
+            <div className="flex items-center gap-1 text-[10px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setStockSource('demo')}
+                data-testid="ha-trial-src-demo"
+                className={`px-2 py-0.5 rounded border ${stockSource === 'demo' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-slate-600 border-slate-300'}`}
+              >Demo Stock</button>
+              <button
+                type="button"
+                onClick={() => setStockSource('saleable')}
+                data-testid="ha-trial-src-saleable"
+                className={`px-2 py-0.5 rounded border ${stockSource === 'saleable' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-300'}`}
+                title="Use a non-demo unit — will require a source note below."
+              >External unit</button>
+            </div>
+          </div>
           <input value={serialSearch} onChange={(e) => setSerialSearch(e.target.value)} placeholder="Filter serial no / product…" className="w-full border border-slate-300 rounded px-2 py-1 text-xs mb-1" data-testid="ha-trial-serial-search" />
           <div className="max-h-48 overflow-auto border border-slate-200 rounded">
-            {filteredSerials.length === 0 && <div className="px-2 py-2 text-[11px] italic text-slate-500">No IN_STOCK serials in this branch.</div>}
+            {filteredSerials.length === 0 && (
+              <div className="px-2 py-2 text-[11px] italic text-slate-500" data-testid="ha-trial-no-serials">
+                {stockSource === 'demo'
+                  ? 'No DEMO units available in this branch. Switch to "External unit" and describe the source in Notes below.'
+                  : 'No saleable IN_STOCK serials in this branch.'}
+              </div>
+            )}
             {filteredSerials.map(s => {
               const picked = picks.find(p => p.serial_id === s.serial_id);
               return (
@@ -297,6 +339,7 @@ function NewTrialModal({ onClose, onCreated }) {
                   <input type="checkbox" checked={!!picked} onChange={() => toggleSerial(s.serial_id)} data-testid={`ha-trial-pick-${s.serial_id}`} />
                   <span className="font-mono font-bold flex-1">{s.serial_no}</span>
                   <span className="text-slate-500 text-[10px]">{s.product_id}</span>
+                  <span className={`text-[9px] px-1 rounded ${s.pool === 'demo' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>{s.pool || 'saleable'}</span>
                   {picked && (
                     <select value={picked.side} onChange={(e) => setSide(s.serial_id, e.target.value)} className="text-[10px] border border-slate-300 rounded" data-testid={`ha-trial-side-${s.serial_id}`}>
                       <option value="single">Single</option>
@@ -308,6 +351,11 @@ function NewTrialModal({ onClose, onCreated }) {
               );
             })}
           </div>
+          {stockSource === 'saleable' && picks.length > 0 && (
+            <div className="mt-1 text-[10px] bg-amber-50 border border-amber-200 text-amber-800 rounded px-2 py-1" data-testid="ha-trial-external-warn">
+              ⚠ External unit — source note is required in the <b>Notes</b> field below before issuing this trial.
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-3 mb-3">

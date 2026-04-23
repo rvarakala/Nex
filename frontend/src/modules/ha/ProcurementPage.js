@@ -125,7 +125,7 @@ function CreatePOModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full p-5" onClick={(e) => e.stopPropagation()} data-testid="ha-po-new-modal">
         <h2 className="text-lg font-bold mb-4">New Purchase Order</h2>
         {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-3">{err}</div>}
@@ -349,7 +349,7 @@ function GRNModal({ po, products, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto p-5" onClick={(e) => e.stopPropagation()} data-testid="ha-grn-modal">
         <h2 className="text-lg font-bold mb-1">Receive Goods — {po.po_no}</h2>
         <p className="text-[11px] text-slate-500 mb-3">Posting will spawn a serial item per scanned serial (IN_STOCK) and add to accessory stock. This action is logged.</p>

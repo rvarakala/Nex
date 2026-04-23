@@ -153,7 +153,7 @@ function NewQuoteModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-auto p-5" onClick={(e) => e.stopPropagation()} data-testid="ha-quote-new-modal">
         <h2 className="text-lg font-bold mb-3">New Quotation</h2>
         {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-3">{err}</div>}
@@ -230,6 +230,7 @@ function NewQuoteModal({ onClose, onCreated }) {
                         <option value="single">single</option>
                         <option value="left">left</option>
                         <option value="right">right</option>
+                        <option value="both">both</option>
                       </select>
                     </td>
                     <td className="px-2 py-1 text-right"><input type="number" min={1} value={l.qty} onChange={(e) => { const c=[...lines]; c[i]={...c[i],qty:Number(e.target.value)}; setLines(c); }} data-testid={`ha-quote-line-${i}-qty`} className="w-14 border border-slate-300 rounded px-1 py-0.5 text-right text-xs" /></td>

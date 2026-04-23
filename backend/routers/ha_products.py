@@ -8,14 +8,15 @@ Role gates:
 - write: inventory_manager or clinic_owner (super_admin always)
 """
 import re
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timezone
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from auth import get_current_user, require_roles
+from auth import get_current_user, require_roles, user_can_see_branch
 from database import get_db
-from models_ha import Product, ProductCreate
+from models_ha import Product, ProductCreate, SerialItem
 from utils.serde import serialize_datetime, deserialize_datetime
 
 router = APIRouter(prefix="/api/ha")
@@ -109,3 +110,112 @@ async def deactivate_product(
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
     return {"message": "Deactivated", "product_id": product_id}
+
+
+# ==================== INLINE SERIAL-NUMBER ADD ====================
+
+class SerialAddIn(BaseModel):
+    """Quick-add entry used by the Catalogue form's 'Serial Numbers' section.
+
+    One row per physical unit. All fields other than `serial_no` and `branch_id`
+    are optional — the inventory manager can back-fill later.
+    """
+    serial_no: str
+    branch_id: str
+    pool: Literal["saleable", "demo", "loaner", "refurbished"] = "saleable"
+    warranty_end_date: Optional[str] = None
+    grn_no: Optional[str] = None
+
+
+@router.post("/products/{product_id}/serials")
+async def add_serials_to_product(
+    product_id: str, payload: List[SerialAddIn],
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Quick-add one or many physical units for this product. Each row creates
+    a `serial_items` doc in state IN_STOCK. Duplicates (by `serial_no` within
+    the clinic) are rejected — manufacturer stickers are globally unique.
+    """
+    product = await db.ha_products.find_one(
+        {"product_id": product_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not product.get("is_serialised", True):
+        raise HTTPException(status_code=400,
+                            detail="This product is not serialised (accessories/batteries)")
+    if not payload:
+        return {"inserted": 0, "serials": []}
+
+    # Validate branches + check duplicate serial numbers (per-clinic uniqueness).
+    serial_nos = [p.serial_no.strip() for p in payload if p.serial_no.strip()]
+    if len(set(serial_nos)) != len(serial_nos):
+        raise HTTPException(status_code=400, detail="Duplicate serial_no in request body")
+    existing = await db.serial_items.find(
+        {"clinic_id": user["clinic_id"], "serial_no": {"$in": serial_nos}},
+        {"_id": 0, "serial_no": 1},
+    ).to_list(len(serial_nos))
+    if existing:
+        dupes = sorted(e["serial_no"] for e in existing)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Serial number(s) already exist in this clinic: {dupes}",
+        )
+
+    for p in payload:
+        if not user_can_see_branch(user, p.branch_id):
+            raise HTTPException(
+                status_code=403, detail=f"Branch {p.branch_id} not in your access")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    docs = []
+    created: List[dict] = []
+    for p in payload:
+        si = SerialItem(
+            clinic_id=user["clinic_id"],
+            branch_id=p.branch_id,
+            product_id=product_id,
+            serial_no=p.serial_no.strip(),
+            state="IN_STOCK",
+            pool=p.pool,
+            warranty_end_date=p.warranty_end_date,
+            grn_no=p.grn_no,
+            updated_at=now_iso,
+        )
+        docs.append(serialize_datetime(si.model_dump()))
+        created.append(si.model_dump())
+    await db.serial_items.insert_many(docs, ordered=True)
+
+    # Audit trail — one event per insert.
+    events = [{
+        "serial_id": d["serial_id"],
+        "from": None, "to": "IN_STOCK",
+        "at": now_iso, "actor_user_id": user["user_id"],
+        "ref_doc": {"kind": "catalogue-quick-add", "id": product_id},
+        "note": f"Added via Catalogue form ({d.get('pool', 'saleable')})",
+    } for d in docs]
+    if events:
+        await db.serial_events.insert_many(events, ordered=True)
+
+    return {"inserted": len(created), "serials": [deserialize_datetime(s) for s in created]}
+
+
+@router.get("/products/{product_id}/serials")
+async def list_product_serials(
+    product_id: str,
+    user=Depends(get_current_user), db=Depends(get_db),
+):
+    """List existing physical units for a product (tenant-scoped).
+    Used by the Catalogue form to show what's already on file."""
+    product = await db.ha_products.find_one(
+        {"product_id": product_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    rows = await db.serial_items.find(
+        {"clinic_id": user["clinic_id"], "product_id": product_id},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(500)
+    return [deserialize_datetime(r) for r in rows]

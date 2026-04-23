@@ -1,0 +1,44 @@
+{
+  "summary": "Iter22 — HA Catalogue inline serials + Demo Stock tab + trial source gate + quotation side='both' — fully verified. Created /app/backend/tests/test_iter22_ha_serials_demo.py (15 tests, 15/15 PASS in 7.6s) covering all 10 backend bullets from the review request. Frontend smoke-tested via Playwright (admin login → Catalogue modal → + New Product → ha-pf-serials-section visible → + Add Serial twice spawns 2 rows → click inside modal keeps it open → backdrop click closes it → Demo Stock tab navigates and renders stats+table+promote button → Issue New Trial modal has 'Demo Stock' default + 'External unit' toggle). Screenshots captured for catalogue modal, demo stock page, and trials issue modal all render correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_ha_serials_demo.py",
+    "/app/test_reports/pytest/iter22.xml",
+    "/app/test_reports/pytest/iter22_full.xml"
+  ],
+  "action_items": [
+    "Update /app/backend/tests/test_phase4_5_ha_trials.py — 9 pre-existing tests now fail because they pick a saleable IN_STOCK serial without passing `notes`. The new trial validation (iter22) correctly rejects this. These tests need to either (a) flip the serial to demo pool first via POST /ha/serial-items/{id}/mark-demo, OR (b) pass notes='loaner from X' in the payload. This is NOT a regression bug — it is expected behaviour per the user story. Main agent should update the test fixtures to use demo-pool serials (preferred) so the old lifecycle/convert/extend tests pass again.",
+    "Recharts console warnings on admin dashboard ('width(-1) and height(-1) of chart should be greater than 0') — minor, not blocking, but worth investigating ResponsiveContainer parent sizing."
+  ],
+  "critical_code_review_comments": [
+    "routers/ha_products.py:130-201 add_serials_to_product — clean: tenant+branch scope, 409 on duplicate (per-clinic uniqueness check via $in query), 400 on non-serialised product, role-gated to clinic_owner+inventory_manager, writes serial_events audit trail with kind='catalogue-quick-add'. Good.",
+    "routers/ha_inventory.py:192-232 mark-demo — correctly idempotent (returns early if already demo), correctly rejects non-IN_STOCK/RESERVED states with 409, role-gated, writes pool-change audit event. unmark-demo:235-271 — correctly 409 on not-in-demo and on not-IN_STOCK. demo-stock:274-313 — correctly hydrates product+patient maps via $in queries (avoids N+1). Good.",
+    "routers/ha_trials.py:160-174 — non-demo guard fires BEFORE serial transition, so failed trials don't leave half-transitioned state. source field set to 'demo' or 'external' at line 195. Clear detail message. Good.",
+    "models_ha.py:255 Side=Literal['left','right','single','both'] — both QuoteLine and SaleLine pick this up via type alias. Verified quotation create with side='both' returns 200 and persists via test_create_quotation_with_both.",
+    "Frontend ProductCataloguePage.js:227+ — Serial Numbers section is conditional on is_serialised checkbox; ha-pf-serials-section has 2-click-add-rows flow verified; branch dropdown pre-populated with user's branches.",
+    "DemoStockPage.js / HAModule.js:39 — Demo Stock tab correctly placed BETWEEN Inventory Board and Quotations in sub-nav as requested. Route /ha/demo-stock wired.",
+    "ModalShell.js — uses mousedown target-guard pattern (e.target === e.currentTarget on mousedown) which prevents drag-select-outside-but-release-inside from closing. Better than onClick-only guard. Verified via Playwright: clicking on select inside modal does NOT close it; clicking top-left corner (true backdrop) DOES close it.",
+    "No mongodb _id leakage seen in any of /ha/products/{id}/serials, /ha/demo-stock, /ha/serial-items/{id}/mark-demo, /ha/trials responses — all endpoints use projection {'_id': 0}."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter22_ha_serials_demo.py (NEW — 15 tests, 15/15 PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 iter22 tests pass). Regression: 9 pre-existing test_phase4_5_ha_trials.py tests now fail due to the intentional new validation — test fixtures need updating (see action_items), NOT a code bug.",
+    "frontend": "100% of smoke-tested flows (Demo Stock tab, Catalogue modal with inline serials, ModalShell backdrop guard, Trials Issue modal toggles) render and behave correctly via Playwright."
+  },
+  "test_credentials": "admin@acs.in/admin123, audiologist@acs.in/audio123, frontdesk@acs.in/frontdesk123, accounts@acs.in/accounts123, admin@delhi.test/delhiadmin123",
+  "seed_data_creation": "~15 Mumbai catalogue products (brand prefix 'TESTIter22-') with ~25 serial_items (prefixes SN-, DEMO-, DUP-, TR-, TB-ISR-), ~10 serial_events (catalogue-quick-add + pool-change), 3 transient trials that were auto-returned during cleanup, 1 quotation with side='both'. All test data uses identifiable TESTIter22 / DEMO / TR / SN / DUP prefixes for future cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 5 user-reported iter22 bugs are fixed and covered by test_iter22_ha_serials_demo.py. The only follow-up is updating test_phase4_5_ha_trials.py so the old trial lifecycle tests use demo-pool serials (or pass notes). Frontend ModalShell component is shared ONLY by ProductForm + DemoStockPromoteModal; the other 9 HA modals have inline e.target===e.currentTarget guards that were verified via regex batch patch — a future agent could spot-check one of them (e.g. QuotationStudioPage line-edit modal) by opening it and clicking a select inside to confirm it doesn't disappear.",
+  "rca of the issue": "N/A — this is a feature-addition iteration, not a bug iteration. All 5 user-reported asks (inline serial entry, modal stability, quotation 'both', Demo Stock tab, trial source gate) are correctly implemented per the spec. Only follow-up: the 9 failing test_phase4_5_ha_trials.py tests fail BY DESIGN because the iter22 validation correctly rejects saleable-without-notes; main agent just needs to update those fixtures to use demo-pool serials so they reflect the new business rule."
+}

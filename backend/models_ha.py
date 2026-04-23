@@ -252,7 +252,7 @@ class GRNCreate(BaseModel):
 # ==================== QUOTATION ====================
 
 QuoteStatus = Literal["draft", "sent", "accepted", "rejected", "expired", "cancelled", "converted"]
-Side = Literal["left", "right", "single"]
+Side = Literal["left", "right", "single", "both"]
 
 
 class QuoteLine(BaseModel):
@@ -493,6 +493,7 @@ class Trial(BaseModel):
     accessories_given: List[str] = Field(default_factory=list) # e.g., ["Dome M x4", "Wax-guards x2"]
     condition_photos: List[str] = Field(default_factory=list)  # URLs / data-URLs (lightweight)
     notes: Optional[str] = None
+    source: Optional[str] = "demo"  # "demo" (all picks from demo pool) | "external" (at least one non-demo — see notes)
     converted_sale_no: Optional[str] = None                    # if trial converted to sale
     created_by_user_id: str
     created_at: datetime = Field(default_factory=datetime.utcnow)

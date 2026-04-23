@@ -244,7 +244,7 @@ function AppraiseModal({ candidate, onClose, onCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-xl w-full p-5"
            onClick={(e) => e.stopPropagation()} data-testid="ha-upgrade-appraise-modal">
         <h2 className="text-lg font-bold mb-1">Appraise Trade-in</h2>
@@ -322,7 +322,7 @@ function TradeInDrawer({ ti, canWrite, onClose, onMutated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-5"
            onClick={(e) => e.stopPropagation()} data-testid="ha-upgrade-ti-drawer">
         <div className="flex items-center justify-between mb-2">

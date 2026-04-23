@@ -157,6 +157,22 @@ async def create_trial(
             raise HTTPException(status_code=403,
                                 detail=f"Serial {s['serial_no']} is in another branch")
 
+    # Operational guard-rail (requested Apr 2026): trials must use DEMO units.
+    # If the caller picks a saleable / non-demo unit, the audiologist must
+    # declare WHERE the instrument came from via `notes` (manufacturer loan,
+    # colleague, repaired unit back on shelf, etc.).
+    non_demo = [s for s in by_id.values() if (s.get("pool") or "saleable") != "demo"]
+    if non_demo and not (payload.notes and payload.notes.strip()):
+        external_list = ", ".join(sorted(s["serial_no"] for s in non_demo))
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Demo pool is empty for serial(s) {external_list}. "
+                "Enter the instrument source in Notes (e.g. 'loaner from Phonak rep', "
+                "'colleague-branch Hyderabad') before issuing the trial."
+            ),
+        )
+
     trial_no = await next_number(db, "trial", user["clinic_id"])
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -176,6 +192,7 @@ async def create_trial(
         accessories_given=payload.accessories_given,
         condition_photos=payload.condition_photos,
         notes=payload.notes,
+        source=("external" if non_demo else "demo"),
         created_by_user_id=user["user_id"],
         updated_at=now_iso,
     )

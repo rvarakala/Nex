@@ -189,6 +189,130 @@ async def transition_serial_state(
     return updated
 
 
+@router.post("/serial-items/{serial_id}/mark-demo")
+async def mark_serial_demo(
+    serial_id: str, payload: dict | None = None,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Move a saleable unit into the DEMO pool (state stays IN_STOCK).
+
+    Demo units are intended for take-home trials and clinic demos — they
+    should never be sold. Only owners/inventory managers can flip the pool
+    to prevent accidental saleable → demo cross-contamination.
+    """
+    row = await db.serial_items.find_one(
+        {"serial_id": serial_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Serial item not found")
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if row.get("pool") == "demo":
+        return deserialize_datetime(row)
+    if row["state"] not in ("IN_STOCK", "RESERVED"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot mark demo — unit is currently {row['state']}",
+        )
+    note = (payload or {}).get("note") if payload else None
+    now = datetime.now(timezone.utc).isoformat()
+    await db.serial_items.update_one(
+        {"serial_id": serial_id},
+        {"$set": {"pool": "demo", "updated_at": now}},
+    )
+    await db.serial_events.insert_one({
+        "serial_id": serial_id,
+        "from": row["state"], "to": row["state"],  # pool-only change
+        "at": now, "actor_user_id": user["user_id"],
+        "ref_doc": {"kind": "pool-change", "to_pool": "demo"},
+        "note": note or "Moved to demo pool",
+    })
+    updated = await db.serial_items.find_one({"serial_id": serial_id}, {"_id": 0})
+    return deserialize_datetime(updated)
+
+
+@router.post("/serial-items/{serial_id}/unmark-demo")
+async def unmark_serial_demo(
+    serial_id: str, payload: dict | None = None,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Return a demo unit to the saleable pool (e.g. to sell a demo at a
+    discount, or retire from the demo pool)."""
+    row = await db.serial_items.find_one(
+        {"serial_id": serial_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Serial item not found")
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if row.get("pool") != "demo":
+        raise HTTPException(status_code=409, detail="Unit is not in demo pool")
+    if row["state"] != "IN_STOCK":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Return the unit to stock first (currently {row['state']})",
+        )
+    now = datetime.now(timezone.utc).isoformat()
+    await db.serial_items.update_one(
+        {"serial_id": serial_id},
+        {"$set": {"pool": "saleable", "updated_at": now}},
+    )
+    note = (payload or {}).get("note") if payload else None
+    await db.serial_events.insert_one({
+        "serial_id": serial_id,
+        "from": row["state"], "to": row["state"],
+        "at": now, "actor_user_id": user["user_id"],
+        "ref_doc": {"kind": "pool-change", "to_pool": "saleable"},
+        "note": note or "Removed from demo pool",
+    })
+    updated = await db.serial_items.find_one({"serial_id": serial_id}, {"_id": 0})
+    return deserialize_datetime(updated)
+
+
+@router.get("/demo-stock")
+async def list_demo_stock(
+    branch_id: Optional[str] = None,
+    user=Depends(get_current_user), db=Depends(get_db),
+):
+    """Demo units only — both IN_STOCK (available for trial) and TRIAL_OUT
+    (currently with a patient). Used by the Demo Stock tab."""
+    q = _branch_scope(user)
+    q["pool"] = "demo"
+    if branch_id:
+        if not user_can_see_branch(user, branch_id):
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        q["branch_id"] = branch_id
+    rows = await db.serial_items.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+    # Hydrate product + patient names for the UI.
+    product_ids = list({r["product_id"] for r in rows if r.get("product_id")})
+    pmap: dict = {}
+    if product_ids:
+        async for p in db.ha_products.find(
+            {"clinic_id": user["clinic_id"], "product_id": {"$in": product_ids}},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1, "form_factor": 1},
+        ):
+            pmap[p["product_id"]] = p
+    patient_ids = list({r["current_patient_id"] for r in rows if r.get("current_patient_id")})
+    patmap: dict = {}
+    if patient_ids:
+        async for pt in db.patients.find(
+            {"clinic_id": user["clinic_id"], "patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "name": 1, "mrd": 1, "mobile": 1},
+        ):
+            patmap[pt["patient_id"]] = pt
+
+    out = []
+    for r in rows:
+        r = deserialize_datetime(r)
+        r["product"] = pmap.get(r.get("product_id"))
+        r["current_patient"] = patmap.get(r.get("current_patient_id"))
+        out.append(r)
+    return out
+
+
 # ==================== ACCESSORY STOCK ====================
 
 @router.get("/accessory-stock", response_model=List[AccessoryStock])

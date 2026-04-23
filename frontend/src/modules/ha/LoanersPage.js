@@ -202,7 +202,7 @@ function NewLoanerModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-5" onClick={(e) => e.stopPropagation()} data-testid="ha-loaner-modal">
         <h2 className="text-lg font-bold mb-3">Issue Loaner Unit</h2>
         {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-3">{err}</div>}
