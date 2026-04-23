@@ -2,14 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 
-const ROLE_SHORTCUTS = [
-  { label: 'Founder', email: 'founder@audinexa.com', pw: 'founder123' },
-  { label: 'Front Desk', email: 'frontdesk@acs.in', pw: 'frontdesk123' },
-  { label: 'Audiologist', email: 'audiologist@acs.in', pw: 'audio123' },
-  { label: 'Accounts', email: 'accounts@acs.in', pw: 'accounts123' },
-  { label: 'Super Admin', email: 'admin@acs.in', pw: 'admin123' },
-];
-
 export default function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
@@ -45,8 +37,6 @@ const roleHome = (role) => {
       setBusy(false);
     }
   };
-
-  const quickFill = (e, pw) => { setEmail(e); setPassword(pw); };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
@@ -100,25 +90,6 @@ const roleHome = (role) => {
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
-
-          {/* Demo role quick-fills */}
-          <div className="pt-3 border-t border-slate-100">
-            <div className="text-[10px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Demo accounts</div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {ROLE_SHORTCUTS.map((r) => (
-                <button
-                  key={r.email}
-                  type="button"
-                  onClick={() => quickFill(r.email, r.pw)}
-                  data-testid={`login-quick-${r.label.toLowerCase().replace(/\s+/g,'-')}`}
-                  className="text-[10px] py-1 px-1.5 border border-slate-200 rounded hover:bg-slate-50 text-slate-700 text-left"
-                >
-                  <div className="font-semibold">{r.label}</div>
-                  <div className="text-slate-400 truncate">{r.email}</div>
-                </button>
-              ))}
-            </div>
-          </div>
         </form>
 
         <div className="text-center mt-4 text-[10px] text-slate-500">
