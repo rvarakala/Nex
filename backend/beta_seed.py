@@ -153,6 +153,13 @@ async def seed_beta_testers(reset: bool = False) -> list[dict]:
             "created_at": now,
         }))
 
+        # Seed default service catalogue so Billing works out of the box
+        try:
+            import billing as billing_module
+            await billing_module.seed_default_services(db, cid)
+        except Exception as e:
+            print(f"[warn] service seeding skipped for {cid}: {e}")
+
         credentials.append({**t, "password": password, "status": "created"})
 
     _write_credentials_md(credentials)

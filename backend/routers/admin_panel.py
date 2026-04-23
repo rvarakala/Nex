@@ -855,6 +855,15 @@ async def seed_beta_testers_endpoint(
             "branch_ids": [branch_id],
             "created_at": now,
         }))
+
+        # Seed default service catalogue so Billing works on day 1
+        try:
+            import billing as billing_module
+            await billing_module.seed_default_services(db, cid)
+        except Exception as e:
+            # Don't fail the whole seeder if service catalogue insert fails
+            print(f"[warn] service seeding skipped for {cid}: {e}")
+
         credentials.append({
             "clinic": t["name"], "city": t["city"], "contact": t["contact_name"],
             "email": t["email"], "password": password, "status": "created",

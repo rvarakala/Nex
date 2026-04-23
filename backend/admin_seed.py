@@ -183,6 +183,14 @@ async def seed_admin_panel_demo(db):
             {"clinic_id": cid, "branch_ids": {"$size": 0}},
             {"$set": {"branch_ids": [branch_id]}},
         )
+
+        # Seed default service catalogue — so billing dropdown isn't empty on day 1
+        try:
+            import billing as billing_module
+            await billing_module.seed_default_services(db, cid)
+        except Exception as e:
+            logger.warning(f"Service catalogue seeding skipped for {cid}: {e}")
+
         logger.info(f"Seeded demo tenant: {cid}")
 
     # ---- 4. Sample leads (use waitlist_signups so existing leads UI continues working) ----

@@ -205,19 +205,49 @@ export default function CreateInvoicePage() {
             <button onClick={addCustomLine} data-testid="ci-add-custom"
               className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded">+ Custom line</button>
           </div>
-          <select onChange={(e) => { if (e.target.value) { addLine(e.target.value); e.target.value = ''; } }}
-            data-testid="ci-add-service"
-            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white">
-            <option value="">— Pick a service from catalogue —</option>
-            {['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'].map((cat) => (
-              <optgroup key={cat} label={cat}>
-                {services.filter((s) => s.category === cat).map((s) => {
-                  const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
-                  return <option key={s.service_id} value={s.service_id}>{label}</option>;
-                })}
-              </optgroup>
-            ))}
-          </select>
+          {services.length === 0 ? (
+            <div
+              data-testid="ci-no-services"
+              className="text-xs bg-amber-50 border border-amber-200 rounded px-2.5 py-2 text-amber-800 flex items-center justify-between gap-2"
+            >
+              <span>
+                <b>No services in your catalogue yet.</b> Add items in{' '}
+                <a href="/billing/catalog" className="underline font-semibold hover:text-amber-900">Service Catalogue</a>{' '}
+                or use <b>+ Custom line</b> above.
+              </span>
+            </div>
+          ) : (
+            <select
+              onChange={(e) => { if (e.target.value) { addLine(e.target.value); e.target.value = ''; } }}
+              data-testid="ci-add-service"
+              defaultValue=""
+              className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
+            >
+              <option value="">— Pick a service from catalogue —</option>
+              {['Consultation', 'Audiology', 'Hearing Aid', 'Accessory']
+                .map((cat) => ({ cat, items: services.filter((s) => s.category === cat) }))
+                .filter(({ items }) => items.length > 0)
+                .map(({ cat, items }) => (
+                  <optgroup key={cat} label={cat}>
+                    {items.map((s) => {
+                      const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
+                      return <option key={s.service_id} value={s.service_id}>{label}</option>;
+                    })}
+                  </optgroup>
+                ))}
+              {/* Catch-all for services with no category / unknown category */}
+              {services.filter((s) => !['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'].includes(s.category)).length > 0 && (
+                <optgroup label="Other">
+                  {services
+                    .filter((s) => !['Consultation', 'Audiology', 'Hearing Aid', 'Accessory'].includes(s.category))
+                    .map((s) => {
+                      const label = `${s.name} — ₹${s.price}${s.is_taxable ? ` (+${s.gst_rate}% GST)` : ' (exempt)'}`;
+                      return <option key={s.service_id} value={s.service_id}>{label}</option>;
+                    })}
+                </optgroup>
+              )}
+            </select>
+          )}
         </div>
 
         {/* Lines */}
