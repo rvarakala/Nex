@@ -10,7 +10,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import {
-  Activity, Clock, AlertTriangle, TrendingUp, Users, RefreshCw, Search,
+  Activity, Clock, AlertTriangle, TrendingUp, Users, RefreshCw, Search, Wifi, MapPin,
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -46,6 +46,110 @@ const prettyUA = (ua) => {
     return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).split('/')[0] : 'Browser';
   }
   return 'Other';
+};
+
+// =================== WHO'S ONLINE NOW ===================
+const OnlineNow = ({ rows, windowMin, onWindow }) => {
+  // Group by clinic
+  const byClinic = useMemo(() => {
+    const map = {};
+    rows.forEach((r) => {
+      const k = r.clinic_id || '_none';
+      if (!map[k]) {
+        map[k] = {
+          clinic_id: r.clinic_id,
+          clinic_name: r.clinic_name || r.clinic_id,
+          city: r.city,
+          tier: r.tier,
+          users: [],
+        };
+      }
+      map[k].users.push(r);
+    });
+    return Object.values(map).sort((a, b) => b.users.length - a.users.length);
+  }, [rows]);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5" data-testid="online-now">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Wifi size={20} className="text-emerald-500" />
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full ring-2 ring-white animate-pulse" />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Who's Online Now</div>
+            <div className="text-lg font-bold text-slate-900">
+              {rows.length} active user{rows.length === 1 ? '' : 's'} across {byClinic.length} clinic{byClinic.length === 1 ? '' : 's'}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+          <span>Active in last</span>
+          <select
+            value={windowMin}
+            onChange={(e) => onWindow(Number(e.target.value))}
+            className="bg-slate-50 border border-slate-300 rounded px-2 py-0.5"
+            data-testid="online-window-filter"
+          >
+            {[5, 15, 30, 60].map((m) => <option key={m} value={m}>{m} min</option>)}
+          </select>
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="text-xs text-slate-400 italic py-8 text-center" data-testid="online-empty">
+          No one's online right now.<br />
+          <span className="text-[10px]">Anyone making an authenticated API call in the last {windowMin} min will show up here.</span>
+        </div>
+      ) : (
+        <div className="max-h-[380px] overflow-auto -mx-5">
+          {byClinic.map((c) => (
+            <div key={c.clinic_id || 'unknown'} className="border-b border-slate-100 last:border-b-0">
+              {/* Clinic header row */}
+              <div className="px-5 py-2 bg-slate-50/60 flex items-center gap-2 text-[11px] font-semibold text-slate-700 sticky top-0">
+                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full flex-shrink-0 animate-pulse" />
+                <span className="truncate flex-1">{c.clinic_name}</span>
+                {c.city && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-500">
+                    <MapPin size={10} /> {c.city}
+                  </span>
+                )}
+                <span className="inline-block text-[9px] uppercase tracking-wider font-bold text-slate-500">{c.tier || '—'}</span>
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/15 text-emerald-700">
+                  {c.users.length}
+                </span>
+              </div>
+              {/* User rows */}
+              {c.users.map((u) => (
+                <div key={u.user_id} className="px-5 py-2 pl-8 flex items-center gap-3 hover:bg-slate-50" data-testid={`online-user-${u.user_id}`}>
+                  <div className="relative flex-shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center text-white text-[10px] font-bold">
+                      {(u.name || u.email || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-slate-800 truncate">{u.name || u.email}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      <span className="uppercase font-semibold">{(u.role || '').replace('_', ' ')}</span>
+                      {u.last_seen_ip && <> · {u.last_seen_ip}</>}
+                      {u.last_seen_ua && <> · {prettyUA(u.last_seen_ua)}</>}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-[10px] font-bold text-emerald-600">
+                      {u.seconds_ago < 60 ? `${u.seconds_ago}s ago` : `${Math.round(u.seconds_ago / 60)}m ago`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 // =================== FUNNEL BAR ===================
@@ -298,6 +402,8 @@ export default function ActivityPage() {
   const [inactive, setInactive] = useState([]);
   const [inactiveDays, setInactiveDays] = useState(7);
   const [tenants, setTenants] = useState([]);
+  const [online, setOnline] = useState([]);
+  const [onlineWindow, setOnlineWindow] = useState(5);
   const [err, setErr] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -305,36 +411,42 @@ export default function ActivityPage() {
     setRefreshing(true);
     setErr(null);
     try {
-      const [f, l, i, t] = await Promise.all([
+      const [f, l, i, t, o] = await Promise.all([
         axios.get(`${API}/admin/v2/activity/funnel`),
         axios.get(`${API}/admin/v2/activity/logins`, { params: { limit: 30 } }),
         axios.get(`${API}/admin/v2/activity/inactive`, { params: { days: inactiveDays } }),
         axios.get(`${API}/admin/v2/activity/funnel/by-tenant`, { params: { limit: 200 } }),
+        axios.get(`${API}/admin/v2/activity/online`, { params: { minutes: onlineWindow } }),
       ]);
       setFunnel(f.data);
       setLogins(l.data || []);
       setInactive(i.data || []);
       setTenants(t.data || []);
+      setOnline(o.data || []);
     } catch (ex) {
       setErr(ex?.response?.data?.detail || 'Failed to load activity data');
     } finally {
       setLoginsLoading(false);
       setRefreshing(false);
     }
-  }, [inactiveDays]);
+  }, [inactiveDays, onlineWindow]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh login feed every 30s (lightweight, only the feed endpoint)
+  // Auto-refresh online list + login feed every 30s (lightweight endpoints)
   useEffect(() => {
     const iv = setInterval(async () => {
       try {
-        const r = await axios.get(`${API}/admin/v2/activity/logins`, { params: { limit: 30 } });
+        const [r, o] = await Promise.all([
+          axios.get(`${API}/admin/v2/activity/logins`, { params: { limit: 30 } }),
+          axios.get(`${API}/admin/v2/activity/online`, { params: { minutes: onlineWindow } }),
+        ]);
         setLogins(r.data || []);
+        setOnline(o.data || []);
       } catch { /* ignore polling errors */ }
     }, 30_000);
     return () => clearInterval(iv);
-  }, []);
+  }, [onlineWindow]);
 
   // Quick stats from funnel
   const stats = useMemo(() => {
@@ -382,7 +494,17 @@ export default function ActivityPage() {
 
       {/* KPI strip */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-4 text-white" data-testid="kpi-online">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-50 flex items-center gap-1">
+              <Wifi size={11} /> Online Now
+            </div>
+            <div className="text-2xl font-black mt-1 flex items-center gap-2">
+              {online.length}
+              {online.length > 0 && <span className="w-2 h-2 bg-white rounded-full animate-pulse" />}
+            </div>
+            <div className="text-[10px] text-emerald-50/80">active right now ({onlineWindow}m window)</div>
+          </div>
           <div className="bg-white border border-slate-200 rounded-xl p-4" data-testid="kpi-total">
             <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Total Clinics</div>
             <div className="text-2xl font-black text-slate-900 mt-1">{stats.total}</div>
@@ -406,10 +528,25 @@ export default function ActivityPage() {
         </div>
       )}
 
-      {/* Funnel + Login Feed */}
+      {/* Online Now + Funnel */}
       <div className="grid lg:grid-cols-2 gap-4">
+        <OnlineNow rows={online} windowMin={onlineWindow} onWindow={setOnlineWindow} />
         <Funnel data={funnel} />
+      </div>
+
+      {/* Login Feed + spacer for grid balance */}
+      <div className="grid lg:grid-cols-2 gap-4">
         <LoginFeed logins={logins} loading={loginsLoading} />
+        <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col items-center justify-center text-center" data-testid="activity-tips">
+          <TrendingUp size={26} className="text-orange-400 mb-2" />
+          <div className="text-sm font-bold text-slate-800 mb-1">Outreach playbook</div>
+          <ul className="text-[11px] text-slate-600 space-y-1.5 text-left max-w-sm leading-relaxed">
+            <li>• <b className="text-slate-800">Ghost clinics</b> (above) — WhatsApp them today. First 24h is the highest-conversion window.</li>
+            <li>• <b className="text-slate-800">At-risk 7d+</b> (below) — schedule a 15-min screen share to unblock.</li>
+            <li>• <b className="text-slate-800">First Invoice</b> stage users — they're converting. Upsell them to PREMIUM.</li>
+            <li>• <b className="text-slate-800">Active</b> stage users — ask for a testimonial / case study.</li>
+          </ul>
+        </div>
       </div>
 
       {/* Inactive + Tenant table */}

@@ -86,6 +86,7 @@ async def get_current_user(request: Request):
     """FastAPI dependency — returns dict: {user_id, email, role, clinic_id}.
 
     The DB existence check is done once per request so revoked users are rejected.
+    Also updates user's last-seen heartbeat (throttled to 1 write/min per user).
     """
     token = _extract_token(request)
     payload = decode_token(token)
@@ -96,6 +97,12 @@ async def get_current_user(request: Request):
     # Safety: reject if stored clinic_id no longer matches token claim (tenant boundary)
     if user.get("clinic_id") != payload.get("clinic_id"):
         raise HTTPException(status_code=401, detail="Tenant mismatch")
+    # Heartbeat — fire-and-forget, never blocks the request
+    try:
+        from utils.activity import record_heartbeat
+        await record_heartbeat(db, user["user_id"], request)
+    except Exception:
+        pass
     return {
         "user_id": user["user_id"],
         "email": user["email"],

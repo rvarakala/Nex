@@ -139,6 +139,7 @@ async def lifespan(_app: FastAPI):
         try:
             await db.login_events.create_index([("clinic_id", 1), ("at", -1)])
             await db.login_events.create_index([("at", -1)])
+            await db.users.create_index([("last_seen_at", -1)])
         except Exception as e:
             logger.debug(f"login_events index skip: {e}")
         # AUDINEXA Couriers / Estimates / Approvals (Phase 12.B)

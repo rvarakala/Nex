@@ -778,6 +778,23 @@ async def list_recent_logins(
     return [deserialize_datetime(r) for r in rows]
 
 
+@router.get("/activity/online")
+async def list_online(
+    minutes: int = 5,
+    user=Depends(require_permission("usage:read")),
+    db=Depends(get_db),
+):
+    """Users currently active — any authenticated request in the last N minutes.
+
+    Each authenticated API call updates user.last_seen_at (throttled to
+    1 write/min per user). This endpoint returns everyone still inside
+    that window, with their clinic + location details.
+    """
+    from utils.activity import list_online_users
+    rows = await list_online_users(db, window_seconds=max(60, minutes * 60))
+    return [deserialize_datetime(r) for r in rows]
+
+
 @router.get("/activity/funnel")
 async def get_activation_funnel(
     user=Depends(require_permission("usage:read")),
