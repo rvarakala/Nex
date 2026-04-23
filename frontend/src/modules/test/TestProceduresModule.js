@@ -52,6 +52,25 @@ const DEFAULT_IMPEDANCE = {
 const DEFAULT_SPEECH = { wrs_right: [], wrs_left: [], wrs_soundfield: [], wrs_soundfield_aided: [], fields: {} };
 const BLANK_EAR = (ear) => ({ ear, ac_measurements: [], bc_measurements: [], mcl_measurements: [], ucl_measurements: [], ff_measurements: [], ffa_measurements: [] });
 
+// Front-desk test codes → diagnostics tab IDs. Kept in sync with FRONTDESK_TEST_OPTIONS
+// used in the BookAppointmentModal.
+const RECOMMENDED_TAB_MAP = {
+  pta: 'pure_tone',
+  impedance: 'impedance',
+  speech: 'speech',
+  oae: 'oae',
+  abr: 'abr',
+  soundfield: 'soundfield',
+  special: 'special',
+  tinnitus: 'tinnitus',
+  pediatric: 'pediatric',
+};
+const TEST_LABEL = {
+  pta: 'PTA', impedance: 'Impedance', speech: 'Speech', oae: 'OAE',
+  abr: 'ABR', soundfield: 'Sound Field', special: 'Special Tests',
+  tinnitus: 'Tinnitus', pediatric: 'Pediatric',
+};
+
 export default function TestProceduresModule() {
   const { activeTest, clearActiveTest } = useTestContext();
   const { user } = useAuth();
@@ -64,6 +83,16 @@ export default function TestProceduresModule() {
   const [reportAudiogramMode, setReportAudiogramMode] = useState('separate');
   const [showGhost, setShowGhost] = useState(true);
   const [prevSession, setPrevSession] = useState(null);
+
+  // Report-handover state + front-desk intake triage
+  const [sessionMeta, setSessionMeta] = useState({
+    report_status: 'draft',
+    visit_type: 'walkin',
+    recommended_tests: [],
+    referred_by: null,
+  });
+  const [completingTest, setCompletingTest] = useState(false);
+  const [completedToast, setCompletedToast] = useState(false);
 
   const [preTestData, setPreTestData] = useState(DEFAULT_PRE_TEST);
   const [impedanceData, setImpedanceData] = useState(DEFAULT_IMPEDANCE);
@@ -98,6 +127,20 @@ export default function TestProceduresModule() {
         setTinnitusData(s?.tinnitus_data || { fields: {} });
         setRightEarData(s?.right_ear_audiogram || BLANK_EAR('right'));
         setLeftEarData(s?.left_ear_audiogram || BLANK_EAR('left'));
+
+        // Front-desk intake triage + report lifecycle
+        const recommended = Array.isArray(s?.recommended_tests) ? s.recommended_tests : [];
+        setSessionMeta({
+          report_status: s?.report_status || 'draft',
+          visit_type: s?.visit_type || 'walkin',
+          recommended_tests: recommended,
+          referred_by: s?.referred_by || null,
+        });
+        // Auto-switch to the first recommended tab (if any) — audiologist can override.
+        if (recommended.length > 0) {
+          const first = RECOMMENDED_TAB_MAP[recommended[0]];
+          if (first) setActiveTab(first);
+        }
 
         // Load prior session for ghost
         const sessList = await axios.get(`${API}/sessions`, { params: { patient_id: activeTest.patient.patient_id, limit: 20 } });
@@ -175,6 +218,35 @@ export default function TestProceduresModule() {
     if (ear === 'right') setRightEarData(data); else setLeftEarData(data);
   };
 
+  // ==================== REPORT HANDOVER ====================
+  const handleCompleteTest = useCallback(async () => {
+    if (!activeTest?.sessionId) return;
+    setCompletingTest(true);
+    try {
+      // Make sure everything is persisted before we flip the status
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      await axios.put(`${API}/sessions/${activeTest.sessionId}`, {
+        pre_test_data: preTestData, impedance_data: impedanceData, speech_data: speechData,
+        special_tests_data: specialTestsData, oae_data: oaeData, soundfield_data: soundfieldData,
+        abr_data: abrData, pediatric_data: pediatricData, tinnitus_data: tinnitusData,
+        right_ear_audiogram: rightEarData, left_ear_audiogram: leftEarData,
+      });
+      await axios.post(`${API}/sessions/${activeTest.sessionId}/complete-test`);
+      setSessionMeta((m) => ({ ...m, report_status: 'test_completed' }));
+      setCompletedToast(true);
+      setTimeout(() => setCompletedToast(false), 2500);
+      // After 1.5s, send the audiologist back to Front Desk. They can still Print from Reports.
+      setTimeout(() => { clearActiveTest(); navigate('/reports'); }, 1500);
+    } catch (err) {
+      console.error('Complete test failed', err);
+      alert(err?.response?.data?.detail || 'Could not mark test completed. Please try again.');
+    } finally {
+      setCompletingTest(false);
+    }
+  }, [activeTest?.sessionId, preTestData, impedanceData, speechData, specialTestsData,
+      oaeData, soundfieldData, abrData, pediatricData, tinnitusData,
+      rightEarData, leftEarData, clearActiveTest, navigate]);
+
   // ==================== EMPTY STATE: no active test ====================
   if (!activeTest?.patient || !activeTest?.sessionId) {
     return (
@@ -216,15 +288,90 @@ export default function TestProceduresModule() {
         {activeTest.token && (
           <div className="text-[10px] text-amber-800">Token #{activeTest.token.token_no}</div>
         )}
-        <button
-          onClick={() => navigate(`/ha/fittings?patient_id=${encodeURIComponent(activeTest.patient.patient_id)}&auto=1`)}
-          data-testid="test-start-fitting"
-          className="ml-3 px-2 py-0.5 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm"
-          title="Start a hearing-aid fitting for this patient"
-        >
-          Start Fitting →
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/ha/fittings?patient_id=${encodeURIComponent(activeTest.patient.patient_id)}&auto=1`)}
+            data-testid="test-start-fitting"
+            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm"
+            title="Start a hearing-aid fitting for this patient"
+          >
+            Start Fitting →
+          </button>
+          <button
+            onClick={handleCompleteTest}
+            disabled={completingTest || sessionMeta.report_status !== 'draft'}
+            data-testid="test-complete-btn"
+            title={sessionMeta.report_status === 'draft'
+              ? 'Mark the diagnostic session as complete — moves to Pending Reports'
+              : 'Test already marked complete'}
+            className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow-sm"
+          >
+            {sessionMeta.report_status === 'draft'
+              ? (completingTest ? 'Saving…' : '✓ Test Completed')
+              : '✓ Completed'}
+          </button>
+        </div>
       </div>
+
+      {/* Front-desk recommendation banner — shown when reception pre-marked tests */}
+      {(sessionMeta.recommended_tests.length > 0 || sessionMeta.visit_type === 'consultation') && (
+        <div
+          data-testid="recommended-tests-banner"
+          className={`border-b px-3 py-1.5 flex items-center gap-3 flex-shrink-0 text-xs ${
+            sessionMeta.visit_type === 'consultation'
+              ? 'bg-violet-50 border-violet-200 text-violet-900'
+              : 'bg-sky-50 border-sky-200 text-sky-900'
+          }`}
+        >
+          {sessionMeta.visit_type === 'consultation' ? (
+            <>
+              <span className="font-bold uppercase tracking-wide text-[10px] px-1.5 py-0.5 bg-violet-200 rounded">
+                Consultation
+              </span>
+              <span>Front desk marked this as a consultation — decide tests after speaking with the patient.</span>
+            </>
+          ) : (
+            <>
+              <span className="font-bold uppercase tracking-wide text-[10px] px-1.5 py-0.5 bg-sky-200 rounded">
+                {sessionMeta.visit_type === 'referral' ? 'Referral' : 'Walk-in'}
+              </span>
+              <span className="font-semibold">Recommended tests:</span>
+              <div className="flex items-center gap-1 flex-wrap">
+                {sessionMeta.recommended_tests.map((t) => {
+                  const label = TEST_LABEL[t] || t;
+                  const tab = RECOMMENDED_TAB_MAP[t];
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => tab && setActiveTab(tab)}
+                      data-testid={`recommended-chip-${t}`}
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-colors ${
+                        tab && activeTab === tab
+                          ? 'bg-sky-600 text-white border-sky-700'
+                          : 'bg-white text-sky-700 border-sky-300 hover:bg-sky-100'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {sessionMeta.referred_by && (
+                <span className="ml-auto italic text-slate-600">
+                  Ref: <b>{sessionMeta.referred_by}</b>
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {completedToast && (
+        <div data-testid="complete-toast"
+             className="absolute top-4 right-4 z-50 bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-lg animate-pulse">
+          ✓ Session moved to Pending Reports
+        </div>
+      )}
 
       <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
 

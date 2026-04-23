@@ -91,6 +91,11 @@ class Appointment(BaseModel):
     service: str
     priority: Literal["normal", "urgent", "vip"] = "normal"
 
+    # Front-desk intake triage (front-desk marks what to perform)
+    visit_type: Literal["referral", "walkin", "consultation"] = "walkin"
+    recommended_tests: List[str] = Field(default_factory=list)   # e.g. ["pta", "impedance"]
+    referred_by: Optional[str] = None                            # ENT / GP name if visit_type=referral
+
     start_at: datetime                                # Full timestamp (UTC)
     end_at: datetime
     duration_minutes: int = 30
@@ -114,6 +119,9 @@ class AppointmentCreate(BaseModel):
     priority: Literal["normal", "urgent", "vip"] = "normal"
     room: Optional[str] = None
     notes: Optional[str] = None
+    visit_type: Literal["referral", "walkin", "consultation"] = "walkin"
+    recommended_tests: List[str] = Field(default_factory=list)
+    referred_by: Optional[str] = None
 
 
 class WaitlistEntry(BaseModel):
@@ -822,6 +830,21 @@ class TestSession(BaseModel):
     clinical_impression: Optional[str] = None
     recommendations: List[str] = []
     
+    # Front-desk intake triage (copied from Appointment at session start)
+    visit_type: Optional[Literal["referral", "walkin", "consultation"]] = "walkin"
+    recommended_tests: List[str] = Field(default_factory=list)   # tests front-desk marked
+    referred_by: Optional[str] = None                            # ENT / GP name when visit_type=referral
+    appointment_id: Optional[str] = None                         # Link back for handover tracking
+
+    # Report-handover lifecycle — separate from `status` (which is audiologist's working state).
+    # draft → test_completed → printed → handed_over → completed
+    report_status: Literal["draft", "test_completed", "printed", "handed_over", "completed"] = "draft"
+    test_completed_at: Optional[datetime] = None
+    test_completed_by_user_id: Optional[str] = None
+    printed_at: Optional[datetime] = None
+    handed_over_at: Optional[datetime] = None
+    handed_over_by_user_id: Optional[str] = None
+
     # Metadata
     status: Literal["draft", "completed", "finalized"] = "draft"
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -836,6 +859,8 @@ class TestSessionCreate(BaseModel):
     test_methods: List[str] = ["headphones"]
     symptoms: List[str] = []
     chief_complaint: Optional[str] = None
+    # Optional — if provided, server pulls visit_type / recommended_tests / referred_by from the appointment
+    appointment_id: Optional[str] = None
 
 
 class TestSessionUpdate(BaseModel):

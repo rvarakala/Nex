@@ -67,6 +67,7 @@ export default function AppShell({ children }) {
     try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch { return false; }
   });
   const [unreadCloseout, setUnreadCloseout] = useState(null);
+  const [pendingReports, setPendingReports] = useState(0);
 
   useEffect(() => {
     try { localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
@@ -89,6 +90,22 @@ export default function AppShell({ children }) {
     const iv = setInterval(fetchCloseout, 60000);
     return () => clearInterval(iv);
   }, [fetchCloseout, canSeeCloseout]);
+
+  // Pending-reports badge (visible to everyone who sees the Reports nav entry)
+  const fetchPendingReports = useCallback(async () => {
+    try {
+      const r = await axios.get(`${API}/reports/pending-count`);
+      setPendingReports(Number(r.data?.pending) || 0);
+    } catch (err) {
+      if (err?.response?.status !== 404) console.warn('[AppShell] pending-count failed:', err?.message);
+    }
+  }, []);
+  useEffect(() => {
+    if (!user) return;
+    fetchPendingReports();
+    const iv = setInterval(fetchPendingReports, 60000);
+    return () => clearInterval(iv);
+  }, [fetchPendingReports, user]);
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
@@ -140,7 +157,7 @@ export default function AppShell({ children }) {
           { to: '/analytics/clinical', Icon: HeartPulse, label: 'Clinical Analytics', testid: 'nav-clinical-analytics' },
         (user?.role !== 'audiologist') && (superAdminBypass || access['referral-partners']) &&
           { to: '/partners', Icon: Handshake, label: 'Referral Partners', testid: 'nav-partners' },
-        { to: '/reports', Icon: FileText, label: 'Reports', testid: 'nav-reports' },
+        { to: '/reports', Icon: FileText, label: 'Reports', testid: 'nav-reports', badge: pendingReports > 0 ? pendingReports : null },
       ].filter(Boolean),
     },
     user?.role === 'super_admin' && {

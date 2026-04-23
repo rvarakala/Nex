@@ -92,6 +92,9 @@ async def create_appointment(payload: AppointmentCreate,
         end_at=end,
         duration_minutes=payload.duration_minutes,
         notes=payload.notes,
+        visit_type=payload.visit_type,
+        recommended_tests=payload.recommended_tests,
+        referred_by=payload.referred_by,
         created_by_user_id=user["user_id"],
     )
     await db.appointments.insert_one(serialize_datetime(obj.model_dump()))
@@ -179,7 +182,8 @@ async def update_appointment(appointment_id: str, payload: dict,
                 },
             })
 
-    for k in ("service", "room", "priority", "status", "notes"):
+    for k in ("service", "room", "priority", "status", "notes",
+              "visit_type", "recommended_tests", "referred_by"):
         if k in payload:
             update[k] = payload[k]
 

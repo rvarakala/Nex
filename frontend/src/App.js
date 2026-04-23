@@ -21,6 +21,7 @@ import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
 import DataExportPage from './modules/data/DataExportPage';
+import ReportsModule from './modules/reports/ReportsModule';
 import { usePageViewTracker } from './hooks/usePageViewTracker';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import TopProgressBar from './components/TopProgressBar';
@@ -98,7 +99,7 @@ function AppRoutes() {
                 <ShelledRoute><ModuleGate module="diagnostics"><TestProceduresModule /></ModuleGate></ShelledRoute>
               } />
               <Route path="/reports" element={
-                <ShelledRoute><ModuleGate module="diagnostics"><TestProceduresModule /></ModuleGate></ShelledRoute>
+                <ShelledRoute><ReportsModule /></ShelledRoute>
               } />
               <Route path="/ha/*" element={
                 <ShelledRoute><ModuleGate module="hearing-aids"><HAModule /></ModuleGate></ShelledRoute>

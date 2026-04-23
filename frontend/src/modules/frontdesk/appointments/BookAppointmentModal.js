@@ -8,6 +8,21 @@ const SERVICES = ['Consultation', 'PTA', 'Immittance', 'OAE', 'ABR/BERA', 'ASSR'
 const ROOMS = ['Room 1', 'Room 2', 'Sound Booth'];
 const DURATIONS = [15, 30, 45, 60, 90];
 
+// Front-desk "what tests to perform" chip picker. Kept in sync with the
+// RECOMMENDED_TAB_MAP in TestProceduresModule — the audiologist sees the
+// matching tab pre-highlighted.
+const FRONTDESK_TEST_OPTIONS = [
+  { key: 'pta',        label: 'PTA' },
+  { key: 'impedance',  label: 'Impedance' },
+  { key: 'speech',     label: 'Speech' },
+  { key: 'oae',        label: 'OAE' },
+  { key: 'abr',        label: 'ABR' },
+  { key: 'soundfield', label: 'Sound Field' },
+  { key: 'special',    label: 'Special Tests' },
+  { key: 'tinnitus',   label: 'Tinnitus' },
+  { key: 'pediatric',  label: 'Pediatric' },
+];
+
 export default function BookAppointmentModal({ audiologists, initialDate, existing, onClose, onSaved }) {
   const isEdit = !!existing?.appointment_id;
   const today = useMemo(() => (initialDate ? initialDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)), [initialDate]);
@@ -30,6 +45,15 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [slots, setSlots] = useState([]);
+
+  // Front-desk intake triage (the user's "recommended tests" feature)
+  const [visitType, setVisitType] = useState(existing?.visit_type || 'walkin');
+  const [recommendedTests, setRecommendedTests] = useState(
+    Array.isArray(existing?.recommended_tests) ? existing.recommended_tests : [],
+  );
+  const [referredBy, setReferredBy] = useState(existing?.referred_by || '');
+  const toggleRecTest = (k) => setRecommendedTests((prev) =>
+    prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
 
   // Patient search debounce
   useEffect(() => {
@@ -67,12 +91,18 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
         await axios.put(`${API}/appointments/${existing.appointment_id}`, {
           audiologist_id: audiologistId, service, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
+          visit_type: visitType,
+          recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
+          referred_by: visitType === 'referral' ? (referredBy || null) : null,
         });
       } else {
         await axios.post(`${API}/appointments`, {
           patient_id: selectedPatient.patient_id, audiologist_id: audiologistId,
           service, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
+          visit_type: visitType,
+          recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
+          referred_by: visitType === 'referral' ? (referredBy || null) : null,
         });
         if (existing?._waitlist_entry_id) {
           try { await axios.put(`${API}/waitlist/${existing._waitlist_entry_id}/status`, { status: 'scheduled' }); } catch {}
@@ -205,6 +235,70 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
             <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">Notes</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} data-testid="bk-notes"
               className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded resize-y" />
+          </div>
+
+          {/* ==================== FRONT-DESK INTAKE TRIAGE ==================== */}
+          <div className="pt-1.5 border-t border-dashed border-slate-200" data-testid="bk-intake-block">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Intake · what to perform</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+
+            {/* Visit type — 3 cases requested by the user */}
+            <div className="flex gap-1 mb-2" role="radiogroup" aria-label="visit-type">
+              {[
+                { key: 'walkin', label: 'Walk-in', tip: 'Direct walk-in — pick the specific test(s) to run.' },
+                { key: 'referral', label: 'Referral', tip: 'ENT / doctor referral with specific tests recommended.' },
+                { key: 'consultation', label: 'Consultation', tip: 'Enquiry — audiologist decides tests after consult.' },
+              ].map((v) => (
+                <button key={v.key} type="button" onClick={() => setVisitType(v.key)} title={v.tip}
+                  data-testid={`bk-visit-${v.key}`}
+                  className={`flex-1 px-2 py-1 text-[11px] font-semibold rounded border transition-colors ${
+                    visitType === v.key
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-300 hover:bg-indigo-50'
+                  }`}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Referred-by line — only for referral */}
+            {visitType === 'referral' && (
+              <input
+                type="text" value={referredBy} onChange={(e) => setReferredBy(e.target.value)}
+                placeholder="Referred by (ENT / GP name)"
+                data-testid="bk-referred-by"
+                className="w-full mb-2 px-2 py-1.5 text-xs border border-slate-300 rounded"
+              />
+            )}
+
+            {/* Test chip-picker — hidden for consultation (audiologist decides) */}
+            {visitType !== 'consultation' ? (
+              <div>
+                <div className="text-[10px] text-slate-500 mb-1">Select recommended tests (audiologist will see these pre-selected):</div>
+                <div className="flex flex-wrap gap-1" data-testid="bk-recommended-tests">
+                  {FRONTDESK_TEST_OPTIONS.map((t) => {
+                    const on = recommendedTests.includes(t.key);
+                    return (
+                      <button key={t.key} type="button" onClick={() => toggleRecTest(t.key)}
+                        data-testid={`bk-rec-${t.key}`}
+                        className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border transition-colors ${
+                          on
+                            ? 'bg-sky-600 text-white border-sky-700'
+                            : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400 hover:bg-sky-50'
+                        }`}>
+                        {on ? '✓ ' : ''}{t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="px-2 py-1.5 text-[11px] text-violet-700 bg-violet-50 border border-violet-200 rounded italic" data-testid="bk-consultation-note">
+                The audiologist will decide which tests to run after speaking with the patient.
+              </div>
+            )}
           </div>
 
           {err && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1" data-testid="bk-error">{err}</div>}

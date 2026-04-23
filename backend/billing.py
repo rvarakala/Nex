@@ -449,9 +449,16 @@ async def pending_reports(user=Depends(get_current_user), db=Depends(get_db)):
     for s in sessions:
         if s.get("session_id") in delivered_ids:
             continue
-        status = s.get("report_status") or s.get("status")
+        # Prefer the new report-lifecycle field, but when it's still 'draft'
+        # (= audiologist hasn't clicked "Test Completed" yet), fall back to the
+        # legacy `status` field so sessions PUT-ed to completed continue to surface.
+        rstatus = s.get("report_status")
+        status = rstatus if (rstatus and rstatus != "draft") else s.get("status")
         # Include sessions with ready/finalized reports; also include fresh ones if no status filter matches
-        if status in {"finalized", "ready", "completed"} or not status:
+        if status in {"finalized", "ready", "completed", "test_completed", "printed"} or not status:
+            # Skip terminal states (already handed over via the new flow)
+            if rstatus in ("handed_over", "completed") and rstatus != status:
+                pass  # noop — we include it in 'status' check above
             pending.append({
                 "session_id": s.get("session_id"),
                 "patient_id": s.get("patient_id"),

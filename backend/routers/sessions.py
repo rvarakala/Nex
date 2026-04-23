@@ -16,11 +16,46 @@ router = APIRouter(prefix="/api")
 @router.post("/sessions", response_model=TestSession)
 async def create_test_session(session: TestSessionCreate,
                               user=Depends(get_current_user), db=Depends(get_db)):
-    """Create a new test session. Tenant-scoped via authenticated user."""
+    """Create a new test session. Tenant-scoped via authenticated user.
+
+    If an `appointment_id` is provided (or an auto-discovered open appointment
+    for this patient today exists), we copy the front-desk intake triage
+    (`visit_type`, `recommended_tests`, `referred_by`) onto the session so the
+    audiologist sees what was marked at reception.
+    """
     p = await db.patients.find_one({"patient_id": session.patient_id, "clinic_id": user["clinic_id"]})
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
-    session_obj = TestSession(**session.model_dump())
+
+    # Try to locate an appointment for this session — explicit id wins, else the
+    # most-recent same-day appointment for this patient at this clinic.
+    appt = None
+    if session.appointment_id:
+        appt = await db.appointments.find_one(
+            {"appointment_id": session.appointment_id, "clinic_id": user["clinic_id"]}, {"_id": 0}
+        )
+    if not appt:
+        today_prefix = datetime.utcnow().strftime("%Y-%m-%d")
+        appt = await db.appointments.find_one(
+            {
+                "clinic_id": user["clinic_id"],
+                "patient_id": session.patient_id,
+                "start_at": {"$regex": f"^{today_prefix}"},
+                "status": {"$ne": "cancelled"},
+            },
+            {"_id": 0},
+            sort=[("start_at", -1)],
+        )
+
+    extras: dict = {}
+    if appt:
+        extras["appointment_id"] = appt.get("appointment_id")
+        extras["visit_type"] = appt.get("visit_type") or "walkin"
+        extras["recommended_tests"] = appt.get("recommended_tests") or []
+        extras["referred_by"] = appt.get("referred_by")
+
+    payload = session.model_dump(exclude={"appointment_id"})
+    session_obj = TestSession(**payload, **extras)
     doc = serialize_datetime(session_obj.model_dump())
     doc["clinic_id"] = user["clinic_id"]
     await db.test_sessions.insert_one(doc)

@@ -1,4 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import axios from 'axios';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // Constants, narrative builder
 import { CLINIC_STORAGE_KEY, TOGGLEABLE_SECTIONS, loadClinic, fmtDate } from './reports/constants';
@@ -137,7 +140,15 @@ const ReportsPanel = ({
     buildResultEntries,
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    // Fire the handover status flip in the background — don't block the print dialog.
+    if (sessionId) {
+      axios.post(`${API}/sessions/${sessionId}/mark-printed`).catch((e) => {
+        console.warn('mark-printed failed:', e?.message);
+      });
+    }
+    window.print();
+  };
 
   // When the Tymp page is "New page", the conclusion block (Results + Recommendations/Advice
   // + Signature) is deferred to the end of the report so the ENT reads test data first.
