@@ -81,11 +81,33 @@ export default function ReportsModule() {
     ['front_desk', 'clinic_owner', 'super_admin', 'accounts', 'founder'].includes(user?.role),
   [user?.role]);
 
-  const openPatientReport = (row) => {
-    // Navigate to an existing patient page — the patient portal shows session history
-    // with the option to print each report.
-    navigate(`/patients/${row.patient_id}?session=${row.session_id}`);
-  };
+  const openPatientReport = useCallback(async (row) => {
+    // Fetch the report PDF as an authenticated blob, then open it in a new tab.
+    // (Direct navigation to /api/reports/{id}/pdf would 401 because the browser
+    //  can't attach the Authorization header on a cross-origin URL.)
+    try {
+      const r = await axios.get(`${API}/reports/${row.session_id}/pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const w = window.open(url, '_blank');
+      if (!w) {
+        // Popup blocked — fall back to a download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `report-${row.session_id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      // Flip status → printed in the background (idempotent on the backend)
+      axios.post(`${API}/sessions/${row.session_id}/mark-printed`).catch(() => { });
+      // Revoke URL after a minute so the preview has time to render
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      // Refresh the list so the row moves from Pending → Ready for Handover
+      setTimeout(load, 1200);
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Could not open the report PDF.');
+    }
+  }, [load]);
 
   const markHandedOver = async (row) => {
     if (!canHandover) return;

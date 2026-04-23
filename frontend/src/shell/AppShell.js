@@ -58,7 +58,7 @@ const TierBadge = ({ tier }) => {
 export default function AppShell({ children }) {
   const { user, clinic, logout } = useAuth();
   const { access, superAdminBypass, tier } = useSubscription();
-  const { activeTest } = useTestContext();
+  const { activeTest, clearActiveTest } = useTestContext();
   const navigate = useNavigate();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -106,6 +106,30 @@ export default function AppShell({ children }) {
     const iv = setInterval(fetchPendingReports, 60000);
     return () => clearInterval(iv);
   }, [fetchPendingReports, user]);
+
+  // Auto-clear the global "Active test" badge if the session has already moved past
+  // the audiologist (test_completed / printed / handed_over / completed). Guards against
+  // the chip lingering when the audiologist completed the test on a different tab
+  // or when the user navigated away mid-save.
+  useEffect(() => {
+    const sid = activeTest?.sessionId;
+    if (!sid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/sessions/${sid}`);
+        if (cancelled) return;
+        const rs = r.data?.report_status;
+        if (rs && rs !== 'draft') {
+          clearActiveTest();
+        }
+      } catch (err) {
+        // 404 → session no longer exists; clear stale chip too
+        if (err?.response?.status === 404) clearActiveTest();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTest?.sessionId, clearActiveTest]);
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
@@ -314,8 +338,22 @@ export default function AppShell({ children }) {
               <Menu size={18} />
             </button>
             {activeTest?.patient && (
-              <div className="hidden lg:block text-[11px] bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-amber-800" data-testid="active-test-badge">
-                Active test: <b>{activeTest.patient.name}</b> · {activeTest.patient.mrd || activeTest.patient.patient_id}
+              <div
+                className="hidden lg:flex items-center gap-1.5 text-[11px] bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-amber-800"
+                data-testid="active-test-badge"
+              >
+                <span>
+                  Active test: <b>{activeTest.patient.name}</b> · {activeTest.patient.mrd || activeTest.patient.patient_id}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearActiveTest}
+                  data-testid="active-test-dismiss"
+                  title="Dismiss — I'm done with this session"
+                  className="text-amber-500 hover:text-amber-900 hover:bg-amber-100 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold leading-none transition-colors"
+                >
+                  ×
+                </button>
               </div>
             )}
           </div>
