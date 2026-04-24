@@ -516,3 +516,14 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/backend/routers/admin_panel_b.py` (+ ~75 LoC export endpoint)
 - `/app/frontend/src/modules/admin/panel/ClinicAssignmentsPage.jsx` (+ `exportCSV` handler, Export CSV button, Download icon)
 
+
+---
+
+### Parked / Remind-me-later backlog
+
+- **Scheduled Email Report for super-admins** (parked Feb 2026 at user's request). APScheduler job that, on a cadence, bundles the Clinic Assignments + Clinic Switch Audit CSVs and emails them to the platform team. Open questions to resolve when resumed:
+  1. Delivery mode — (a) mocked/archive only, (b) real email via Resend, (c) real email via SendGrid, (d) on-demand download only (no scheduler).
+  2. Cadence — monthly 1st 09:00 IST (default) vs weekly vs per-report configurable from UI.
+  3. Recipients — founder only / founder+super_admin / curated list in `/admin/settings`.
+  Ready-to-build scaffolding ideas: new `scheduled_report_runs` Mongo collection, `/admin/scheduled-reports` page with history + manual "Send now" + per-run CSV download from GridFS.
+
