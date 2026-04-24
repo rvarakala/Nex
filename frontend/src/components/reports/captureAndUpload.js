@@ -1,9 +1,30 @@
 /**
  * Capture the live Report preview DOM → multi-page A4 PDF → upload to backend.
  *
- * This is the single source of truth for "what the patient receives". The
- * audiologist's print dialog and the server-stored archive are both fed from
- * the same html2canvas render, so they match byte-for-byte.
+ * Single source of truth for "what the patient receives". The audiologist's
+ * print dialog and the server-stored archive are both fed from the same
+ * html2canvas render, so they match byte-for-byte.
+ *
+ * ## Pagination strategy (v2)
+ * The previous implementation rendered the whole report as one giant
+ * canvas and then blind-sliced at A4 pixel boundaries. That worked fine
+ * when the default clinic header was compact — but as soon as a user
+ * uploaded a taller logo / longer clinic address, the pixel boundary
+ * started falling mid-audiogram / mid-table, producing the "continuous
+ * printing, page breaks ignored" bug a beta tester reported.
+ *
+ * This version paginates **DOM-aware**:
+ *   1. Any direct descendant with class `.report-page-break` is a
+ *      **hard break** — the current page is closed and a fresh page starts
+ *      on that child.
+ *   2. Between hard breaks, we slice only at **direct-child boundaries** of
+ *      `#report-preview`. A section/table/audiogram is therefore never
+ *      cut mid-element. If one child alone is > A4 (rare; e.g. a massive
+ *      audiogram SVG), we fall back to blind slicing *inside that single
+ *      child* only.
+ *
+ * The DOM is NOT mutated — we read layout metrics with `offsetTop` /
+ * `offsetHeight` before calling html2canvas.
  */
 import axios from 'axios';
 import html2canvas from 'html2canvas';
@@ -11,9 +32,86 @@ import { jsPDF } from 'jspdf';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-// A4 @ 72 DPI. jsPDF in `mm` mode works with real millimetres.
+// A4 in mm.
 const A4_W_MM = 210;
 const A4_H_MM = 297;
+
+// Class names that should trigger a hard page break before the element.
+const HARD_BREAK_CLASSES = ['report-page-break', 'page-break-before', 'pagebreak'];
+
+const hasBreakClass = (el) =>
+  HARD_BREAK_CLASSES.some((c) => el.classList && el.classList.contains(c));
+
+/**
+ * Walk a rendered canvas into a list of [startY, endY] slices such that:
+ *   - no slice is taller than one A4 page,
+ *   - every cut falls at a safe DOM-child boundary (or at a forced hard-break),
+ *   - we fall back to blind-slicing only when a single child is itself > A4.
+ *
+ * @param {HTMLElement} root       the element that was rendered
+ * @param {HTMLCanvasElement} canvas the full-element render
+ * @returns {Array<[number, number]>} Y ranges in canvas pixels
+ */
+function planPageSlices(root, canvas) {
+  const children = Array.from(root.children);
+  const rootTop = root.offsetTop;
+  const scrollHeight = root.scrollHeight;
+  const scale = canvas.height / Math.max(scrollHeight, 1);
+  const pageHeightPx = Math.floor((A4_H_MM / A4_W_MM) * canvas.width);
+
+  // Each child's TOP and BOTTOM in root coordinates, then scaled to canvas px.
+  const childSpans = children.map((c) => {
+    const top = c.offsetTop - rootTop;
+    const bottom = top + c.offsetHeight;
+    return {
+      topCv: Math.round(top * scale),
+      bottomCv: Math.round(bottom * scale),
+      hardBreak: hasBreakClass(c),
+    };
+  });
+
+  const pageEnds = []; // cumulative Y-coords in canvas px where pages end
+  let pageStart = 0;
+
+  for (const span of childSpans) {
+    // Hard break BEFORE this child: close current page at the previous
+    // content tail, jump the cursor to the top of the break child.
+    if (span.hardBreak) {
+      if (span.topCv > pageStart) pageEnds.push(span.topCv);
+      pageStart = span.topCv;
+    }
+
+    // Soft pagination: would this child overflow the current page?
+    if (span.bottomCv - pageStart > pageHeightPx) {
+      // Close the page at the child's TOP so nothing gets cut mid-section.
+      if (span.topCv > pageStart) {
+        pageEnds.push(span.topCv);
+        pageStart = span.topCv;
+      }
+      // If the child itself is taller than A4 (rare — oversized audiogram
+      // SVG, huge table), blind-slice inside it; outer children are safe.
+      while (span.bottomCv - pageStart > pageHeightPx) {
+        pageStart += pageHeightPx;
+        pageEnds.push(pageStart);
+      }
+    }
+  }
+  // Tail: whatever's left after the last child.
+  if (pageStart < canvas.height) pageEnds.push(canvas.height);
+
+  // Build [start, end] pairs from the sorted ends.
+  const slices = [];
+  let s = 0;
+  for (const e of pageEnds) {
+    // Skip empty / degenerate slices (e.g. two consecutive hard-breaks
+    // against each other, or a trailing tail already flushed).
+    if (e > s) {
+      slices.push([s, e]);
+      s = e;
+    }
+  }
+  return slices;
+}
 
 /**
  * Render a DOM element to a multi-page A4 PDF and POST it to
@@ -28,52 +126,42 @@ export async function captureAndUploadPdf(element, sessionId) {
     return { ok: false, error: 'missing element or session id' };
   }
 
-  // Render at 2x for crisp audiogram plots without ballooning file size too much.
+  // Render at 2x for crisp audiogram plots without ballooning file size.
   const canvas = await html2canvas(element, {
     scale: 2,
     useCORS: true,
     backgroundColor: '#ffffff',
     logging: false,
-    // Capture the whole scrollable height, not just what's on screen.
     windowWidth: element.scrollWidth,
     windowHeight: element.scrollHeight,
   });
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const slices = planPageSlices(element, canvas);
 
-  // Map the rendered canvas onto A4 pages. The element is 210mm wide by design,
-  // so width scaling is 1:1; page-break by height.
-  const imgWidthMM = A4_W_MM;
-  const imgHeightMM = (canvas.height * imgWidthMM) / canvas.width;
+  for (let i = 0; i < slices.length; i++) {
+    const [start, end] = slices[i];
+    const sliceH = end - start;
 
-  // If the full render fits on one page, drop it in and we're done.
-  if (imgHeightMM <= A4_H_MM + 0.5) {
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    pdf.addImage(dataUrl, 'JPEG', 0, 0, imgWidthMM, imgHeightMM, undefined, 'FAST');
-  } else {
-    // Slice the canvas into A4-height chunks.
-    const pageHeightPx = Math.floor((A4_H_MM / imgWidthMM) * canvas.width);
-    let y = 0;
-    let pageIdx = 0;
-    while (y < canvas.height) {
-      const slice = document.createElement('canvas');
-      slice.width = canvas.width;
-      slice.height = Math.min(pageHeightPx, canvas.height - y);
-      const ctx = slice.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, slice.width, slice.height);
-      ctx.drawImage(
-        canvas,
-        0, y, canvas.width, slice.height,
-        0, 0, slice.width, slice.height,
-      );
-      const dataUrl = slice.toDataURL('image/jpeg', 0.92);
-      const sliceHeightMM = (slice.height * imgWidthMM) / slice.width;
-      if (pageIdx > 0) pdf.addPage();
-      pdf.addImage(dataUrl, 'JPEG', 0, 0, imgWidthMM, sliceHeightMM, undefined, 'FAST');
-      y += pageHeightPx;
-      pageIdx += 1;
-    }
+    const slice = document.createElement('canvas');
+    slice.width = canvas.width;
+    slice.height = sliceH;
+    const ctx = slice.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, slice.width, slice.height);
+    ctx.drawImage(
+      canvas,
+      0, start, canvas.width, sliceH,
+      0, 0, slice.width, sliceH,
+    );
+
+    const dataUrl = slice.toDataURL('image/jpeg', 0.92);
+    const sliceHeightMM = (sliceH * A4_W_MM) / canvas.width;
+
+    if (i > 0) pdf.addPage();
+    // Top-align each slice on the A4 page. White A4 canvas below unused
+    // area is fine — we don't stretch content to fill the page.
+    pdf.addImage(dataUrl, 'JPEG', 0, 0, A4_W_MM, sliceHeightMM, undefined, 'FAST');
   }
 
   const blob = pdf.output('blob');

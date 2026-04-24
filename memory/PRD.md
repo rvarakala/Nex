@@ -605,3 +605,30 @@ NOAH real-time sync, fax, US-style insurance/claims.
 **Files touched:**
 - `/app/frontend/src/modules/frontdesk/AppointmentsPage.js` (+ `minuteFromEvent` helper, visual guides, tooltip copy, signature change to string-time).
 
+
+---
+
+### [Feb 2026] Bug Fix — Report PDF "continuous printing, page breaks ignored" (beta user)
+
+**User report (with PDF attached):** "When generating Report — report is printing continuously inspite of selecting the 'New Page for New Tests'. Earlier this worked with our logo and clinic details, but today a user uploaded his logo & address and this happened."
+
+**Root cause:** `captureAndUpload.js` was rendering the whole `#report-preview` DOM as a **single giant html2canvas canvas** and then **blind-slicing it at A4 pixel boundaries**. The `.report-page-break` wrapper (used by the "New page for Tympanometry" toggle) has `page-break-before: always` — but that CSS only affects the browser's native print engine, **not html2canvas**. Result: as soon as any user uploaded a taller logo / longer clinic address, the A4 boundary started falling mid-audiogram / mid-table / mid-section, and the "New page for new test" toggle silently stopped working.
+
+**Permanent fix** — rewrite of `captureAndUpload.js` with a **DOM-aware paginator** (`planPageSlices`):
+1. **Respect hard page breaks.** Any direct descendant with class `.report-page-break`, `.page-break-before`, or `.pagebreak` closes the current page and starts a new one at its top — always, regardless of how tall the header got.
+2. **Soft-break at child boundaries.** When content would overflow A4 even without a hard break (tall logo + patient + PTA + tymp all on page 1), the slicer cuts at the **nearest child-boundary that still fits** — so a section, table or audiogram is **never** cut mid-element.
+3. **Fallback blind-slicing only for a child that is itself taller than A4** (rare: an oversized audiogram SVG). Even then the blind cut is contained *inside that one oversized child*, so nothing else is affected.
+
+**Verification (unit tests + live browser):**
+- 7 algorithmic unit tests (Node, via `/tmp/test_paginator.js`) covering: small content, hard breaks, soft overflow at child boundary, oversized child fallback, multiple hard-break classes, break-at-top no-empty-page, and the real-world bug scenario. ALL 7 PASS.
+- Live browser test against a synthetic DOM mimicking the reported bug (tall 600px header + 200 patient + 500 PTA + 600 `.report-page-break` tymp): produced exactly **3 A4 pages** with cuts at `1692 → 2740 → 4024` px — every boundary is a child boundary, no slice exceeds the A4 pixel limit of 2245px.
+
+**What this means for beta users:**
+- The "New page for new test" toggle now **always works**, regardless of clinic logo height or address length.
+- Even when that toggle is OFF, reports with tall headers will paginate cleanly at section boundaries instead of cutting sections in half.
+- No server change required; no migration of historical PDFs needed (new PDFs generated from this release onwards will be clean).
+
+**Files touched:**
+- `/app/frontend/src/components/reports/captureAndUpload.js` (full rewrite, ~175 LoC)
+- `/tmp/test_paginator.js` (throwaway unit test harness, not committed)
+
