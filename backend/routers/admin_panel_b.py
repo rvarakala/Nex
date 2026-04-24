@@ -832,6 +832,86 @@ async def list_clinic_assignments(
     return {"count": len(out), "rows": out}
 
 
+@router.get("/clinic-assignments/export.csv")
+async def export_clinic_assignments_csv(
+    q: Optional[str] = None,
+    limit: int = 5000,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """CSV snapshot of who-can-access-which-clinic for compliance audits.
+
+    Flattens the JSON shape into ONE ROW PER ASSIGNMENT. A user with
+    1 primary + 2 additional clinics produces 3 rows, each tagged
+    `assignment_type = primary | additional`. This makes the file trivial
+    to sort/filter in Excel for an internal audit cycle.
+    """
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    query: dict = {"clinic_id": {"$ne": "audinexa-platform"}}
+    if q:
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}},
+        ]
+    users = await db.users.find(
+        query, {"_id": 0, "password_hash": 0, "token_version": 0},
+    ).sort("email", 1).to_list(min(max(limit, 1), 50000))
+
+    # Hydrate clinic metadata in one round-trip.
+    all_ids: set[str] = set()
+    for u in users:
+        if u.get("clinic_id"):
+            all_ids.add(u["clinic_id"])
+        for cid in u.get("additional_clinic_ids", []) or []:
+            all_ids.add(cid)
+    clinics = await db.clinics.find(
+        {"clinic_id": {"$in": list(all_ids)}},
+        {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "state": 1, "subscription_tier": 1, "active": 1},
+    ).to_list(len(all_ids) or 1)
+    cmap = {c["clinic_id"]: c for c in clinics}
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "user_id", "user_email", "user_name", "user_role", "user_active",
+        "assignment_type", "clinic_id", "clinic_name", "clinic_city", "clinic_state",
+        "clinic_tier", "clinic_active", "user_created_at",
+    ])
+
+    def _write(u, cid, kind):
+        c = cmap.get(cid) or {}
+        writer.writerow([
+            u.get("user_id", ""), u.get("email", ""), u.get("name", ""),
+            u.get("role", ""), "yes" if u.get("active", True) else "no",
+            kind, cid or "", c.get("name", ""),
+            c.get("city", ""), c.get("state", ""),
+            c.get("subscription_tier", ""),
+            "yes" if c.get("active", True) else "no",
+            u.get("created_at", ""),
+        ])
+
+    for u in users:
+        primary = u.get("clinic_id")
+        if primary:
+            _write(u, primary, "primary")
+        for cid in u.get("additional_clinic_ids", []) or []:
+            _write(u, cid, "additional")
+
+    filename = f"clinic-assignments-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/clinics-directory")
 async def clinics_directory(
     user=Depends(get_current_user),

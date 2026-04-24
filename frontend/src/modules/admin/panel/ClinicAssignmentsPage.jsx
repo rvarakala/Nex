@@ -13,7 +13,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Link2, Plus, Search, X, Building2 } from 'lucide-react';
+import { Link2, Plus, Search, X, Building2, Download } from 'lucide-react';
 import { PageHeader, Card, Pill, Empty, tierTone, fmtDate } from './shared';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 
@@ -26,6 +26,32 @@ export default function ClinicAssignmentsPage() {
   const [page, setPage] = useState(1);
   const [linkFor, setLinkFor] = useState(null); // user row to open link-modal for
   const [err, setErr] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const exportCSV = async () => {
+    setExporting(true); setErr('');
+    try {
+      const r = await axios.get(`${API}/admin/v2/clinic-assignments/export.csv`, {
+        params: q ? { q } : {},
+        responseType: 'blob',
+      });
+      const blob = new Blob([r.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dispo = r.headers['content-disposition'] || '';
+      const m = /filename="([^"]+)"/i.exec(dispo);
+      a.download = m ? m[1] : `clinic-assignments-${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -77,6 +103,16 @@ export default function ClinicAssignmentsPage() {
           </div>
           <button type="submit" data-testid="ca-search-btn" className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded">
             Search
+          </button>
+          <button
+            type="button"
+            onClick={exportCSV}
+            disabled={exporting || rows.length === 0}
+            data-testid="ca-export-csv-btn"
+            title={rows.length === 0 ? 'No rows to export' : 'Download current list as CSV (one row per assignment)'}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 border border-emerald-300 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Download size={12} /> {exporting ? 'Exporting…' : 'Export CSV'}
           </button>
         </form>
       </PageHeader>

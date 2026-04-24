@@ -501,3 +501,18 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/backend/routers/admin_panel_b.py` (+ ~60 LoC export endpoint)
 - `/app/frontend/src/modules/admin/panel/ClinicSwitchAuditPage.jsx` (+ `exportCSV` handler, `buildParams` extract, Export CSV button, Download icon)
 
+
+---
+
+### [Feb 2026] Clinic Assignments — CSV Export — COMPLETE
+
+**What shipped:**
+- Backend: `GET /api/admin/v2/clinic-assignments/export.csv?q=` — super_admin/founder-gated. **One row per assignment** (a user with 1 primary + 2 additional clinics yields 3 rows), each tagged `assignment_type = primary | additional`. 13 columns covering user identity/status + full clinic metadata (`clinic_id, clinic_name, clinic_city, clinic_state, clinic_tier, clinic_active`). Sorted by user_email. Hard cap 50 000 rows.
+- Frontend: "Export CSV" button (emerald outline, Download icon) added to the Clinic Assignments page header next to Search. Reuses the axios blob + Blob-URL download pattern so Bearer-auth + server-supplied filename work. Respects the active search filter. Disabled/greyed when zero rows.
+
+**Verified (Feb 2026):** Full list export → 125 users produced 127 assignment rows (matches the page's "Total clinic assignments: 127" tile). Filtered export (`?q=kimshearing`) returned 2 rows — KIMS owner's primary (KIMS Hearing Center) + additional (Apollo Audiology), both correctly tagged. Playwright download trigger confirmed end-to-end.
+
+**Files touched:**
+- `/app/backend/routers/admin_panel_b.py` (+ ~75 LoC export endpoint)
+- `/app/frontend/src/modules/admin/panel/ClinicAssignmentsPage.jsx` (+ `exportCSV` handler, Export CSV button, Download icon)
+
