@@ -142,15 +142,21 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
     return sum + Math.max(0, gross - disc);
   }, 0);
 
+  // Track whether the last patient-search request has completed with zero
+  // hits. Used to show a "No patient found" message so the user isn't left
+  // wondering why the Book button is disabled after typing a name.
+  const [patientSearchRun, setPatientSearchRun] = useState(false);
+
   // Patient search debounce
   useEffect(() => {
     if (selectedPatient && patientQuery === selectedPatient.name) return;
-    if (!patientQuery || patientQuery.trim().length < 2) { setPatientResults([]); return; }
+    if (!patientQuery || patientQuery.trim().length < 2) { setPatientResults([]); setPatientSearchRun(false); return; }
     const t = setTimeout(async () => {
       try {
         const r = await axios.get(`${API}/patients`, { params: { search: patientQuery, limit: 8 } });
         setPatientResults(r.data || []);
       } catch { setPatientResults([]); }
+      finally { setPatientSearchRun(true); }
     }, 250);
     return () => clearTimeout(t);
   }, [patientQuery, selectedPatient]);
@@ -168,6 +174,21 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
   const valid = selectedPatient && audiologistId && service && date && time;
+
+  // Collect human-readable reasons the form isn't submittable yet.
+  // Surfaced both under the Patient field and next to the Book button so
+  // the user never has to guess why the CTA is greyed out.
+  const missing = [];
+  if (!selectedPatient) missing.push('patient');
+  if (!audiologistId) missing.push('audiologist');
+  if (!service) missing.push('service');
+  if (!date) missing.push('date');
+  if (!time) missing.push('time');
+
+  // Patient-field helper states (not a *blocking* error — just UX nudges).
+  const patientQueryTrimmed = patientQuery.trim();
+  const showPickHint = !selectedPatient && patientQueryTrimmed.length >= 2 && patientResults.length > 0;
+  const showNoMatchHint = !selectedPatient && patientQueryTrimmed.length >= 2 && patientSearchRun && patientResults.length === 0;
 
   const submit = async () => {
     if (!valid) return;
@@ -255,6 +276,22 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
                     <div className="text-[9px] text-slate-500">{p.mrd || p.patient_id} · {p.age}{(p.gender||'')[0]}{p.mobile ? ` · ${p.mobile}` : ''}</div>
                   </button>
                 ))}
+              </div>
+            )}
+            {/* Inline helpers: guide the user when patient isn't yet chosen. */}
+            {!isEdit && showPickHint && (
+              <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" data-testid="bk-pick-hint">
+                Pick a patient from the list above to continue.
+              </div>
+            )}
+            {!isEdit && showNoMatchHint && (
+              <div className="mt-1 text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5" data-testid="bk-no-match-hint">
+                No patient found for "{patientQueryTrimmed}". Register them first in <span className="font-semibold">Front Desk → + New Patient</span>, then book the appointment.
+              </div>
+            )}
+            {selectedPatient && (
+              <div className="mt-1 text-[10px] text-emerald-700" data-testid="bk-patient-selected">
+                ✓ {selectedPatient.name} selected
               </div>
             )}
           </div>
@@ -507,12 +544,26 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
           {err && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1" data-testid="bk-error">{err}</div>}
         </div>
 
-        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
-          <button onClick={submit} disabled={!valid || busy} data-testid="bk-save"
-            className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold rounded">
-            {busy ? 'Saving…' : (isEdit ? 'Save changes' : 'Book appointment')}
-          </button>
+        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            {!valid && !busy && (
+              <div className="text-[10px] text-amber-700" data-testid="bk-missing-hint">
+                Still needed: <span className="font-semibold">{missing.join(', ')}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
+            <button
+              onClick={submit}
+              disabled={!valid || busy}
+              data-testid="bk-save"
+              title={!valid ? `Still needed: ${missing.join(', ')}` : ''}
+              className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded"
+            >
+              {busy ? 'Saving…' : (isEdit ? 'Save changes' : 'Book appointment')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

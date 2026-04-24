@@ -519,6 +519,31 @@ NOAH real-time sync, fax, US-style insurance/claims.
 
 ---
 
+### [Feb 2026] Bug Fix — Book Appointment button stuck disabled (beta user)
+
+**User report:** Beta user filled out the Book Appointment form completely (patient name "Raaaa", audiologist Ravi, date 24-04-2026, time 10:00, service PTA, duration, room, notes, intake Referral) but the "Book appointment" button stayed greyed out with no explanation.
+
+**Root cause:** The Patient field is an autocomplete that binds a `patient_id` only when the user clicks a result in the dropdown. Typing a free-text name never populated `selectedPatient`, so `valid = selectedPatient && ...` stayed `false`. The modal gave **zero feedback** about why the CTA was disabled — the user didn't know they had to pick from the dropdown (and in the beta user's case, "Raaaa" was a non-existent patient the FD had in mind but never registered).
+
+**Fix (`BookAppointmentModal.js`):**
+1. Under the Patient input, added three mutually-exclusive hints:
+   - **"Pick a patient from the list above to continue."** (amber) — shown when the search query has ≥2 chars and results are available but none clicked yet.
+   - **"No patient found for 'X'. Register them first in Front Desk → + New Patient, then book the appointment."** (red) — shown when search debounced completed with zero hits. Explicitly points the user to the registration workflow.
+   - **"✓ Name selected"** (green) — confirmation after a valid pick.
+2. Next to the disabled Book button, added a live "Still needed: patient, audiologist, …" summary listing each missing field. Also added a matching `title` tooltip on the button and `disabled:cursor-not-allowed` class so the disabled state is visually unambiguous.
+3. Added `patientSearchRun` flag so the "no match" banner only appears *after* a search request actually completed (avoids flash-of-wrong-state during debounce).
+
+**Verified (Playwright, `frontdesk@acs.in`):**
+- Junk name "Raaaa" → red no-match banner + "Still needed: patient" footer + disabled button ✓
+- Real query "TEST_BILL" → 8 results in dropdown + amber pick hint ✓
+- Clicking a result → green "✓ selected" badge + button enabled + missing-hint disappears ✓
+
+**Files touched:** `/app/frontend/src/modules/frontdesk/appointments/BookAppointmentModal.js` (~25 LoC added, no behavioural regression).
+
+
+
+---
+
 ### Parked / Remind-me-later backlog
 
 - **Scheduled Email Report for super-admins** (parked Feb 2026 at user's request). APScheduler job that, on a cadence, bundles the Clinic Assignments + Clinic Switch Audit CSVs and emails them to the platform team. Open questions to resolve when resumed:
