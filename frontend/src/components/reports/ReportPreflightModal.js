@@ -18,10 +18,10 @@
  * them return to the builder without any side effects.
  */
 import React, { useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, FileText, Info, Printer, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, Info, Printer, Wand2, XCircle } from 'lucide-react';
 import { analyzeReportLayout } from './captureAndUpload';
 
-export default function ReportPreflightModal({ open, onConfirm, onCancel, rootElementId = 'report-preview' }) {
+export default function ReportPreflightModal({ open, onConfirm, onCancel, onApplyFix, rootElementId = 'report-preview' }) {
   // Analyze every time the modal opens (cheap; ~5 ms).
   const analysis = useMemo(() => {
     if (!open) return null;
@@ -95,9 +95,23 @@ export default function ReportPreflightModal({ open, onConfirm, onCancel, rootEl
                     : { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-900', iconColor: 'text-blue-700', Icon: Info };
                 const Icon = cfg.Icon;
                 return (
-                  <div key={i} className={`flex items-start gap-2 p-2.5 border rounded ${cfg.bg}`} data-testid={`preflight-warn-${w.level}-${i}`}>
-                    <Icon size={13} className={`${cfg.iconColor} mt-0.5 flex-shrink-0`} />
-                    <div className={`text-[11px] leading-snug ${cfg.text}`}>{w.message}</div>
+                  <div key={i} className={`border rounded ${cfg.bg}`} data-testid={`preflight-warn-${w.level}-${i}`}>
+                    <div className="flex items-start gap-2 p-2.5">
+                      <Icon size={13} className={`${cfg.iconColor} mt-0.5 flex-shrink-0`} />
+                      <div className={`flex-1 text-[11px] leading-snug ${cfg.text}`}>{w.message}</div>
+                    </div>
+                    {w.fixKey && onApplyFix && (
+                      <div className="px-2.5 pb-2 -mt-1">
+                        <button
+                          type="button"
+                          onClick={() => onApplyFix(w.fixKey, w.fixLabel)}
+                          data-testid={`preflight-fix-${w.fixKey}`}
+                          className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded border ${cfg.text} bg-white hover:bg-slate-50 border-current/40`}
+                        >
+                          <Wand2 size={10} /> {w.fixLabel || 'Apply suggested fix'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

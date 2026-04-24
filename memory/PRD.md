@@ -718,3 +718,29 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/frontend/src/components/ReportsPanel.js` (+ `layoutStatus` state, MutationObserver `useEffect`, prop plumbing to sidebar).
 - `/app/frontend/src/components/reports/BuilderSidebar.js` (+ `layoutStatus` destructure, pulsing dot element, live tooltip).
 
+
+---
+
+### [Feb 2026] Feature — Preflight Auto-Fix Suggestions
+
+**What shipped:**
+- `analyzeReportLayout()` now attaches an optional `{fixKey, fixLabel}` pair to a warning when a concrete one-click remedy exists:
+  - `fixKey: 'shrink-audiograms'` / label `'Use smaller audiograms'` → attached when an oversized single child is detected.
+  - `fixKey: 'tymp-inline'` / label `'Move Tympanometry inline'` → attached when the report reaches ≥ 4 pages.
+- `ReportPreflightModal` renders an "Apply suggested fix" button (with a `Wand2` icon) inline below any warning that carries a `fixKey`. Button colour matches the warning's own palette (amber for `warn`, etc.).
+- `ReportsPanel` owns an `applyPreflightFix(key)` dispatcher: `'tymp-inline'` → `setTympPlacement('inline')`, `'shrink-audiograms'` → `setAudiogramSize('standard')`. Applying a fix closes the modal so the audiologist can glance at the updated preview; the silent watchdog recomputes severity within ~400ms and updates the Print-button dot. Re-clicking Print re-opens a fresh preflight with the new state.
+
+**UX example (beta user scenario):**
+1. Audiologist enables "Tymp on new page" + a long narrative. Preview balloons to 4 pages.
+2. Watchdog dot on Print turns amber (`warn`).
+3. Click Print → preflight modal shows "This report will print as 4 pages..." + **[Move Tympanometry inline] button** directly below.
+4. One click → state flips, Tymp re-joins the main page, report becomes 2 pages.
+5. Watchdog dot goes green (`ok`). Click Print again → clean preflight → PDF generated.
+
+**Verified (live DOM algorithm test):** 4-page scenario correctly produced `{level:'warn', fixKey:'tymp-inline', fixLabel:'Move Tympanometry inline'}`. Lint clean on all three touched files.
+
+**Files touched:**
+- `/app/frontend/src/components/reports/captureAndUpload.js` (+`fixKey`/`fixLabel` on two warnings)
+- `/app/frontend/src/components/reports/ReportPreflightModal.js` (+ `onApplyFix` prop, inline fix button, `Wand2` icon)
+- `/app/frontend/src/components/ReportsPanel.js` (+ `applyPreflightFix` dispatcher, prop plumb)
+

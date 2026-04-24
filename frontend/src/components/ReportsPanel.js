@@ -174,6 +174,19 @@ const ReportsPanel = ({
     setTimeout(() => { handlePrint(); }, 0);
   };
 
+  // Auto-fix dispatcher: each preflight warning can carry a `fixKey` that
+  // maps to a one-click remedy. Applying a fix closes the modal so the
+  // audiologist can see the updated preview (the watchdog dot will update
+  // within ~400ms); they can re-open Print when satisfied.
+  const applyPreflightFix = (key) => {
+    if (key === 'tymp-inline') {
+      setTympPlacement('inline');
+    } else if (key === 'shrink-audiograms') {
+      setAudiogramSize('standard');
+    }
+    setPreflightOpen(false);
+  };
+
   // ---------- Silent layout watchdog ----------
   // Re-runs analyzeReportLayout whenever the report preview DOM changes
   // (section toggled, finding typed, audiogram edited, …). Exposes a
@@ -305,6 +318,7 @@ const ReportsPanel = ({
         open={preflightOpen}
         onConfirm={confirmPrint}
         onCancel={closePreflight}
+        onApplyFix={applyPreflightFix}
       />
     </div>
   );

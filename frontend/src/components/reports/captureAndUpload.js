@@ -205,12 +205,16 @@ export function analyzeReportLayout(root) {
   if (anyOversizedChild) {
     warnings.push({
       level: 'warn',
+      fixKey: 'shrink-audiograms',
+      fixLabel: 'Use smaller audiograms',
       message: 'A single section is taller than one A4 page and will be split across pages. Consider disabling long sections (e.g. large narrative text) or toggling "Tympanometry on new page" to rebalance.',
     });
   }
   if (pageCount >= 4) {
     warnings.push({
       level: 'warn',
+      fixKey: 'tymp-inline',
+      fixLabel: 'Move Tympanometry inline',
       message: `This report will print as ${pageCount} pages. If that's more than expected, trim sections or disable "Tympanometry on new page" to consolidate.`,
     });
   }
