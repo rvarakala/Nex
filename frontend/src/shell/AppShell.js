@@ -7,6 +7,7 @@ import {
   Menu, Search as SearchIcon, Settings, Database,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
+import ClinicSwitcher from './ClinicSwitcher';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
 import AppSwitcher from './AppSwitcher';
@@ -243,6 +244,9 @@ export default function AppShell({ children }) {
             </div>
           </div>
         )}
+        <div className="mt-2">
+          <ClinicSwitcher collapsed={collapsed} />
+        </div>
       </div>
 
       {/* Nav sections */}

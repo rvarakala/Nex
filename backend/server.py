@@ -330,6 +330,127 @@ async def auth_me(user=Depends(get_current_user)):
     return {"user": user, "clinic": clinic}
 
 
+# ==================== MULTI-CLINIC SWITCHER ====================
+
+@api_router.get("/auth/my-clinics")
+async def my_clinics(user=Depends(get_current_user)):
+    """Every clinic this user can sign into — primary + granted additionals.
+
+    Used by the top-nav clinic-switcher dropdown. Includes the *active*
+    clinic_id so the UI can highlight it.
+    """
+    ids = list({user["primary_clinic_id"], *user.get("additional_clinic_ids", [])})
+    clinics = await db.clinics.find(
+        {"clinic_id": {"$in": ids}},
+        {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "state": 1,
+         "logo_fs_id": 1, "subscription_tier": 1, "active": 1},
+    ).to_list(len(ids))
+    return {
+        "active_clinic_id": user["clinic_id"],
+        "primary_clinic_id": user["primary_clinic_id"],
+        "clinics": clinics,
+    }
+
+
+class SwitchClinicIn(BaseModel):
+    clinic_id: str
+
+
+@api_router.post("/auth/switch-clinic")
+async def switch_clinic(
+    payload: SwitchClinicIn, request: Request,  # noqa: ARG001
+    user=Depends(get_current_user),
+):
+    """Re-issues a JWT bound to a different clinic the user has been granted.
+
+    The token_version is preserved — we do not bump it, so parallel sessions
+    (if any) stay valid. Switching is purely a re-scope of the active tenant;
+    the user's identity and role are unchanged.
+    """
+    target = payload.clinic_id
+    allowed = {user["primary_clinic_id"], *user.get("additional_clinic_ids", [])}
+    if target not in allowed:
+        raise HTTPException(status_code=403, detail="You don't have access to that clinic")
+
+    clinic = await db.clinics.find_one(
+        {"clinic_id": target}, {"_id": 0, "clinic_id": 1, "name": 1},
+    )
+    if not clinic:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    # Token version lookup (to preserve current force-logout state).
+    udoc = await db.users.find_one(
+        {"user_id": user["user_id"]}, {"_id": 0, "token_version": 1},
+    )
+    token = create_access_token(
+        user_id=user["user_id"],
+        email=user["email"],
+        role=user["role"],
+        clinic_id=target,
+        token_version=int((udoc or {}).get("token_version") or 0),
+    )
+    return {"access_token": token, "token_type": "bearer",
+            "active_clinic_id": target, "active_clinic_name": clinic["name"]}
+
+
+class LinkClinicIn(BaseModel):
+    user_id: str
+    clinic_id: str
+
+
+@api_router.post("/auth/link-clinic")
+async def link_clinic_to_user(
+    payload: LinkClinicIn,
+    user=Depends(get_current_user),
+):
+    """Grant a user access to an additional clinic.
+
+    Gate: only `super_admin` or `founder` can do this (multi-clinic is a
+    provisioning action — typically done by AUDINEXA support staff when a
+    chain owner onboards a new branch-clinic). Idempotent.
+    """
+    if user.get("role") not in ("super_admin", "founder"):
+        raise HTTPException(status_code=403, detail="Super admin only")
+
+    target_user = await db.users.find_one(
+        {"user_id": payload.user_id}, {"_id": 0, "password_hash": 0},
+    )
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    clinic = await db.clinics.find_one(
+        {"clinic_id": payload.clinic_id}, {"_id": 0, "clinic_id": 1, "name": 1},
+    )
+    if not clinic:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    # If this is the user's primary clinic already, nothing to do.
+    if target_user.get("clinic_id") == payload.clinic_id:
+        return {"ok": True, "already_primary": True}
+
+    await db.users.update_one(
+        {"user_id": payload.user_id},
+        {"$addToSet": {"additional_clinic_ids": payload.clinic_id}},
+    )
+    return {"ok": True, "user_id": payload.user_id,
+            "clinic_id": payload.clinic_id, "clinic_name": clinic["name"]}
+
+
+@api_router.post("/auth/unlink-clinic")
+async def unlink_clinic_from_user(
+    payload: LinkClinicIn,
+    user=Depends(get_current_user),
+):
+    """Revoke a user's access to an additional clinic. Super-admin only."""
+    if user.get("role") not in ("super_admin", "founder"):
+        raise HTTPException(status_code=403, detail="Super admin only")
+    await db.users.update_one(
+        {"user_id": payload.user_id},
+        {"$pull": {"additional_clinic_ids": payload.clinic_id},
+         "$inc": {"token_version": 1}},  # kick them out of any session holding that clinic
+    )
+    return {"ok": True}
+
+
 class PageViewIn(BaseModel):
     path: str = Field(..., min_length=1, max_length=300)
 

@@ -88,6 +88,11 @@ async def get_current_user(request: Request):
 
     The DB existence check is done once per request so revoked users are rejected.
     Also updates user's last-seen heartbeat (throttled to 1 write/min per user).
+
+    Multi-clinic: the JWT's `clinic_id` claim is the *active* clinic. We check
+    that the user has access to it either as their primary clinic or via
+    `additional_clinic_ids`. The returned dict's `clinic_id` is the JWT's
+    active one — so every downstream tenant-scoped query just works.
     """
     token = _extract_token(request)
     payload = decode_token(token)
@@ -95,9 +100,15 @@ async def get_current_user(request: Request):
     user = await db.users.find_one({"user_id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user or not user.get("active", True):
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    # Safety: reject if stored clinic_id no longer matches token claim (tenant boundary)
-    if user.get("clinic_id") != payload.get("clinic_id"):
+
+    # Multi-clinic: accept the token's clinic_id if it's the primary OR one of
+    # the user's granted additional clinics (set by super_admin via Settings).
+    allowed: set = {user.get("clinic_id")}
+    for cid in user.get("additional_clinic_ids", []) or []:
+        allowed.add(cid)
+    if payload.get("clinic_id") not in allowed:
         raise HTTPException(status_code=401, detail="Tenant mismatch")
+
     # Force-logout check: if user's token_version was bumped after this token
     # was issued, reject (user must re-login)
     current_tv = int(user.get("token_version", 0) or 0)
@@ -115,7 +126,9 @@ async def get_current_user(request: Request):
         "email": user["email"],
         "name": user.get("name", ""),
         "role": user["role"],
-        "clinic_id": user["clinic_id"],
+        "clinic_id": payload["clinic_id"],  # ← active clinic from JWT, not user.clinic_id
+        "primary_clinic_id": user.get("clinic_id"),
+        "additional_clinic_ids": list(user.get("additional_clinic_ids", []) or []),
         "branch_ids": user.get("branch_ids", []) or [],
         "active": user.get("active", True),
     }

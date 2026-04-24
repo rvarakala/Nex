@@ -70,6 +70,21 @@ export const AuthProvider = ({ children }) => {
     setClinic(null);
   };
 
+  // Multi-clinic switcher — requests a new JWT bound to a sibling clinic
+  // this user has been granted access to. On success, replace the stored
+  // token + hydrate user/clinic from the fresh /auth/me so every downstream
+  // query is scoped to the new tenant.
+  const switchClinic = async (clinic_id) => {
+    const r = await axios.post(`${API}/auth/switch-clinic`, { clinic_id });
+    localStorage.setItem(TOKEN_KEY, r.data.access_token);
+    // Clear any tenant-scoped caches the user had on the old clinic.
+    localStorage.removeItem('acs.activeTest');
+    const me = await axios.get(`${API}/auth/me`);
+    setUser(me.data.user);
+    setClinic(me.data.clinic);
+    return me.data;
+  };
+
   const hasRole = (...roles) => {
     if (!user) return false;
     if (user.role === 'super_admin' || user.role === 'founder') return true;
@@ -77,7 +92,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, clinic, loading, login, loginWithToken, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, clinic, loading, login, loginWithToken, logout, switchClinic, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
