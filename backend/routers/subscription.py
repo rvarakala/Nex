@@ -89,6 +89,42 @@ async def join_waitlist(payload: WaitlistCreate, db=Depends(get_db)):
             "message": "You're on the waitlist. We'll email you at launch."}
 
 
+# ==================== PUBLIC VISITOR COUNTER ====================
+
+@router.post("/public/visitor-ping")
+async def visitor_ping(db=Depends(get_db)):
+    """Lightweight landing-page visitor counter.
+
+    Atomic `$inc` on a single `site_stats` doc — MongoDB's upsert guarantees
+    correctness under concurrency. Not real analytics (no per-session dedup);
+    just a friendly social-proof widget on the landing page.
+    """
+    now = datetime.now(timezone.utc)
+    today_key = now.strftime("%Y-%m-%d")
+    await db.site_stats.update_one(
+        {"_id": "visitors"},
+        {"$inc": {"total": 1, f"by_day.{today_key}": 1},
+         "$set": {"last_at": now.isoformat()}},
+        upsert=True,
+    )
+    doc = await db.site_stats.find_one({"_id": "visitors"}, {"_id": 0, "total": 1, "by_day": 1})
+    return {
+        "total": int((doc or {}).get("total") or 0),
+        "today": int(((doc or {}).get("by_day") or {}).get(today_key) or 0),
+    }
+
+
+@router.get("/public/visitor-count")
+async def visitor_count(db=Depends(get_db)):
+    """Read-only count (no increment) for cached display."""
+    doc = await db.site_stats.find_one({"_id": "visitors"}, {"_id": 0, "total": 1, "by_day": 1})
+    today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return {
+        "total": int((doc or {}).get("total") or 0),
+        "today": int(((doc or {}).get("by_day") or {}).get(today_key) or 0),
+    }
+
+
 # ==================== PUBLIC CLINIC SIGNUP ====================
 
 class ClinicSignup(BaseModel):

@@ -35,6 +35,15 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
 
   // Form
   const [audiologistId, setAudiologistId] = useState(existing?.audiologist_id || (audiologists[0]?.user_id || ''));
+  // Re-sync audiologist dropdown once the async /users fetch returns.
+  // Without this, opening the modal before the fetch completes caches
+  // `audiologists = []` and the dropdown stays empty forever.
+  useEffect(() => {
+    if (!audiologistId && audiologists.length > 0) {
+      setAudiologistId(existing?.audiologist_id || audiologists[0].user_id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audiologists]);
   const [service, setService] = useState(existing?.service || 'PTA');
   const [room, setRoom] = useState(existing?.room || '');
   const [priority, setPriority] = useState(existing?.priority || 'normal');

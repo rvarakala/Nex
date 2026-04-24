@@ -589,6 +589,45 @@ const DataSection = () => (
   </section>
 );
 
+// ==================== VISITOR COUNTER (small, bottom-right pill) ====================
+const VisitorCounter = () => {
+  const [count, setCount] = React.useState(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+    // Session-scoped de-dupe: only ping once per browser session (no spam).
+    try {
+      if (!sessionStorage.getItem('audinexa_visitor_pinged')) {
+        sessionStorage.setItem('audinexa_visitor_pinged', '1');
+        axios.post(`${API}/public/visitor-ping`)
+          .then((r) => { if (mounted) setCount(r.data); })
+          .catch(() => {
+            // Fallback to read-only count if ping fails.
+            axios.get(`${API}/public/visitor-count`).then((r) => { if (mounted) setCount(r.data); }).catch(() => {});
+          });
+      } else {
+        axios.get(`${API}/public/visitor-count`)
+          .then((r) => { if (mounted) setCount(r.data); })
+          .catch(() => {});
+      }
+    } catch { /* sessionStorage unavailable */ }
+    return () => { mounted = false; };
+  }, []);
+
+  if (!count || count.total == null) return null;
+  return (
+    <div
+      className="fixed bottom-4 right-4 z-40 bg-slate-900/90 backdrop-blur-md border border-white/10 text-white text-[11px] font-mono rounded-full px-3 py-1.5 flex items-center gap-2 shadow-lg shadow-black/40"
+      data-testid="visitor-counter"
+      title={`Total visits to audinexa.com · Today: ${count.today || 0}`}
+    >
+      <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+      <span className="text-slate-300">Visits:</span>
+      <span className="font-bold text-white tabular-nums" data-testid="visitor-counter-total">{Number(count.total).toLocaleString('en-IN')}</span>
+    </div>
+  );
+};
+
 // ==================== WAITLIST FORM (stateful) ====================
 const WaitlistForm = () => {
   const [email, setEmail] = useState('');

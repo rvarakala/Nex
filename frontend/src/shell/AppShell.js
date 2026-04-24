@@ -198,6 +198,13 @@ export default function AppShell({ children }) {
         { to: '/data-export', Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
       ],
     },
+    // Settings — clinic owners + super admins only.
+    (user?.role === 'clinic_owner' || user?.role === 'super_admin' || user?.role === 'founder') && {
+      label: 'Settings',
+      items: [
+        { to: '/settings/clinic', Icon: Settings, label: 'Settings', testid: 'nav-settings' },
+      ],
+    },
   ].filter(Boolean);
 
   const sideWidth = collapsed ? 'w-[64px]' : 'w-[220px]';

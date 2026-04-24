@@ -16,6 +16,7 @@ import TestProceduresModule from './modules/test/TestProceduresModule';
 import HAModule from './modules/ha/HAModule';
 import RepairModule from './modules/repair/RepairModule';
 import AdminPanel from './modules/admin/panel/AdminPanel';
+import SettingsModule from './modules/settings/SettingsModule';
 import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
 import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
@@ -119,6 +120,9 @@ function AppRoutes() {
               {/* CLINIC DATA EXPORT — role-gated inside the page */}
               <Route path="/data-export" element={
                 <ShelledRoute><DataExportPage /></ShelledRoute>
+              } />
+              <Route path="/settings/*" element={
+                <ShelledRoute><SettingsModule /></ShelledRoute>
               } />
 
               {/* SUPER-ADMIN PANEL (founder / super_admin only — own shell) */}

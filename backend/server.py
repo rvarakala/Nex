@@ -419,6 +419,7 @@ from routers import admin_panel as admin_panel_router         # noqa: E402
 from routers import admin_panel_b as admin_panel_b_router     # noqa: E402
 from routers import export_data as export_data_router         # noqa: E402
 from routers import report_handover as report_handover_router # noqa: E402
+from routers import settings as settings_router                # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -452,6 +453,7 @@ app.include_router(admin_panel_router.router)
 app.include_router(admin_panel_b_router.router)
 app.include_router(export_data_router.router)
 app.include_router(report_handover_router.router)
+app.include_router(settings_router.router)
 
 app.add_middleware(
     CORSMiddleware,
