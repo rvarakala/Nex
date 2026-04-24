@@ -585,3 +585,23 @@ NOAH real-time sync, fax, US-style insurance/claims.
   3. Recipients — founder only / founder+super_admin / curated list in `/admin/settings`.
   Ready-to-build scaffolding ideas: new `scheduled_report_runs` Mongo collection, `/admin/scheduled-reports` page with history + manual "Send now" + per-run CSV download from GridFS.
 
+
+---
+
+### [Feb 2026] Enhancement — 15-min granularity for right-click booking
+
+**What changed:**
+- Day view's hour-row `onContextMenu` now maps the **vertical click position** inside the row to one of four 15-minute sub-slots (`:00`, `:15`, `:30`, `:45`). `Math.floor((offsetY / height) * 4)` clamped to `[0..3]`.
+- Added visual aids: `:15` / `:30` / `:45` tick labels in the time gutter and dashed quarter-hour dividers across the slot body (pointer-events off so they don't steal right-clicks).
+- `onSlotRightClick` signature changed from `(date, hour:number)` → `(date, timeStr:"HH:MM")`. Empty-state + Week-grid callers now pass `"10:00"` as a default.
+- Tooltip row updated: "Tip: right-click any hour slot to book — top-of-row = :00, quarter-down = :15, half = :30, three-quarter = :45."
+
+**Verified (Playwright, `frontdesk@acs.in`):**
+- Right-click at relY=0.05 (top) → `time=15:00` ✓
+- Right-click at relY=0.35 → `time=15:15` ✓
+- Right-click at relY=0.55 → `time=15:30` ✓
+- Right-click at relY=0.85 → `time=15:45` ✓
+
+**Files touched:**
+- `/app/frontend/src/modules/frontdesk/AppointmentsPage.js` (+ `minuteFromEvent` helper, visual guides, tooltip copy, signature change to string-time).
+

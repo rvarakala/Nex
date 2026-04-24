@@ -148,10 +148,12 @@ export default function AppointmentsPage() {
   // Right-click on a calendar cell → open the Book modal with date + time
   // pre-filled. Lets the FD create appointments by pointing at a slot,
   // not by clicking the top-right + button and typing the time again.
-  const onSlotRightClick = (clickedDate, hour) => {
+  // `timeStr` is already normalised to "HH:MM" (supports 15-min granularity
+  // on the day grid; always "10:00" on the week grid + empty states).
+  const onSlotRightClick = (clickedDate, timeStr) => {
     setAnchorDate(clickedDate);
     setModalInitial({
-      _prefillTime: typeof hour === 'number' ? `${String(hour).padStart(2, '0')}:00` : undefined,
+      _prefillTime: typeof timeStr === 'string' ? timeStr : undefined,
     });
     setModalOpen(true);
   };
@@ -281,29 +283,49 @@ const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel,
   if (appointments.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-slate-200 p-8 text-center"
-           onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(date, 10); }}>
+           onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(date, '10:00'); }}>
         <div className="text-sm text-slate-500 mb-2">No appointments on this day</div>
         <div className="text-[11px] text-slate-400">Use "+ Book Appointment" or <span className="font-semibold">right-click</span> any hour slot to schedule one.</div>
       </div>
     );
   }
 
+  // Map a right-click's Y-offset inside an hour row to one of the four
+  // 15-minute sub-slots. We clamp to [0..3] so a click at the very bottom
+  // edge doesn't overflow into the next hour.
+  const minuteFromEvent = (e, h) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const idx = Math.min(3, Math.max(0, Math.floor((offsetY / Math.max(rect.height, 1)) * 4)));
+    const mm = idx * 15;
+    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  };
+
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
       <div className="px-3 py-1 text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 italic">
-        Tip: right-click any hour slot to book at that time.
+        Tip: right-click any hour slot to book — top-of-row = :00, quarter-down = :15, half = :30, three-quarter = :45.
       </div>
       {hours.map((h) => (
         <div key={h} className="flex border-b border-slate-100 last:border-0 min-h-[56px]"
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => onSlotDrop(h)}
-          onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(date, h); }}
-          title="Right-click to book at this time"
+          onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(date, minuteFromEvent(e, h)); }}
+          title="Right-click to book — position within the row picks the 15-min slot"
           data-testid={`slot-hour-${h}`}>
-          <div className="w-16 flex-shrink-0 text-[10px] font-semibold text-slate-400 px-2 py-1.5 border-r border-slate-100 tabular-nums">
-            {String(h).padStart(2, '0')}:00
+          <div className="w-16 flex-shrink-0 text-[10px] font-semibold text-slate-400 px-2 py-1.5 border-r border-slate-100 tabular-nums relative">
+            <div>{String(h).padStart(2, '0')}:00</div>
+            {/* 15-min tick marks — visual guide for the right-click sub-slots. */}
+            <div className="absolute left-0 right-0 top-1/4 text-[8px] text-slate-300">:15</div>
+            <div className="absolute left-0 right-0 top-2/4 text-[8px] text-slate-400">:30</div>
+            <div className="absolute left-0 right-0 top-3/4 text-[8px] text-slate-300">:45</div>
           </div>
-          <div className="flex-1 p-1.5 space-y-1">
+          <div className="flex-1 p-1.5 space-y-1 relative">
+            {/* Quarter-hour dashed dividers. Pointer-events off so they
+                don't steal right-clicks from the parent row. */}
+            <div className="absolute inset-x-0 top-1/4 border-t border-dashed border-slate-100 pointer-events-none" />
+            <div className="absolute inset-x-0 top-2/4 border-t border-dashed border-slate-200 pointer-events-none" />
+            <div className="absolute inset-x-0 top-3/4 border-t border-dashed border-slate-100 pointer-events-none" />
             {(apptByHour[h] || []).map((a) => (
               <ApptCard key={a.appointment_id} a={a} onStatusChange={onStatusChange} onCancel={onCancel} onSendReminder={onSendReminder} onInvoice={onInvoice} onEdit={onEdit} onDragStart={onDragStart} />
             ))}
@@ -398,7 +420,7 @@ const WeekGrid = ({ anchor, appointments, audiologists, onDrop, onEdit, onSlotRi
             key={k}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDayDrop(d)}
-            onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(d, 10); }}
+            onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(d, '10:00'); }}
             title="Right-click to book on this day at 10:00"
             data-testid={`week-day-${k}`}
             className={`bg-white rounded border ${isToday ? 'border-blue-400' : 'border-slate-200'} overflow-hidden flex flex-col`}
