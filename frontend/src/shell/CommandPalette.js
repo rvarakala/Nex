@@ -54,7 +54,12 @@ export default function CommandPalette({ open, onClose }) {
         ]);
         setPatients(pRes.data || []);
         setInvoices(iRes.data || []);
-      } catch { /* ignore */ }
+      } catch (err) {
+        // Both inner requests have `.catch(() => ({data:[]}))` fallbacks above,
+        // so we only get here on totally unexpected errors (network down,
+        // Promise.all reject). Log for dev visibility — never block typing.
+        console.warn('[CommandPalette] search failed:', err?.message);
+      }
     }, 180);
     return () => clearTimeout(t);
   }, [q, open]);
