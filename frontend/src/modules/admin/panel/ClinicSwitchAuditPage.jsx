@@ -8,7 +8,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ArrowRight, Building2, Clock, Search } from 'lucide-react';
+import { ArrowRight, Building2, Clock, Download, Search } from 'lucide-react';
 import { PageHeader, Card, Empty, fmtDateTime } from './shared';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 
@@ -20,15 +20,46 @@ export default function ClinicSwitchAuditPage() {
   const [err, setErr] = useState('');
   const [filters, setFilters] = useState({ user_id: '', clinic_id: '', since: '' });
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+
+  const buildParams = () => {
+    const params = {};
+    if (filters.user_id.trim()) params.user_id = filters.user_id.trim();
+    if (filters.clinic_id.trim()) params.clinic_id = filters.clinic_id.trim();
+    if (filters.since) params.since = new Date(filters.since).toISOString();
+    return params;
+  };
+
+  const exportCSV = async () => {
+    setExporting(true); setErr('');
+    try {
+      const r = await axios.get(`${API}/admin/v2/clinic-switch-audit/export.csv`, {
+        params: buildParams(),
+        responseType: 'blob',
+      });
+      const blob = new Blob([r.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Filename is echoed by the server; fall back to a sensible default.
+      const dispo = r.headers['content-disposition'] || '';
+      const m = /filename="([^"]+)"/i.exec(dispo);
+      a.download = m ? m[1] : `clinic-switch-audit-${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true); setErr('');
     try {
-      const params = {};
-      if (filters.user_id.trim()) params.user_id = filters.user_id.trim();
-      if (filters.clinic_id.trim()) params.clinic_id = filters.clinic_id.trim();
-      if (filters.since) params.since = new Date(filters.since).toISOString();
-      const r = await axios.get(`${API}/admin/v2/clinic-switch-audit`, { params });
+      const r = await axios.get(`${API}/admin/v2/clinic-switch-audit`, { params: buildParams() });
       setData(r.data || { count: 0, rows: [], distinct_users: 0, top_movers: [] });
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Failed to load');
@@ -95,6 +126,16 @@ export default function ClinicSwitchAuditPage() {
               className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-300 rounded"
             >
               Clear
+            </button>
+            <button
+              type="button"
+              onClick={exportCSV}
+              disabled={exporting || data.count === 0}
+              data-testid="csa-export-csv-btn"
+              title={data.count === 0 ? 'No rows to export' : 'Download filtered results as CSV'}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 border border-emerald-300 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download size={12} /> {exporting ? 'Exporting…' : 'Export CSV'}
             </button>
           </div>
         </form>

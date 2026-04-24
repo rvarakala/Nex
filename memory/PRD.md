@@ -486,3 +486,18 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - Frontend Playwright: both pages render under `/admin/*` as super_admin, nav entries appear under Governance group, search filter works, Link modal opens with 50 eligible clinics (excludes already-granted), audit trail renders with From → To arrow + IP column.
 - Lint: 0 issues in new JSX; 0 issues in modified `server.py`.
 
+
+---
+
+### [Feb 2026] Switch Audit — CSV Export — COMPLETE
+
+**What shipped:**
+- Backend: `GET /api/admin/v2/clinic-switch-audit/export.csv` — accepts the same `user_id` / `clinic_id` / `since` / `limit` filters as the JSON endpoint; returns a proper `text/csv; charset=utf-8` stream with `Content-Disposition: attachment; filename="clinic-switch-audit-YYYYMMDD-HHMMSS.csv"`. 11 columns: `at, audit_id, user_id, user_email, user_role, from_clinic_id, from_clinic_name, to_clinic_id, to_clinic_name, ip, user_agent`. Default cap 5000 rows (hard ceiling 50 000).
+- Frontend: "Export CSV" button (emerald outline, Download icon) added next to Apply / Clear on `/admin/clinic-switch-audit`. Uses axios `responseType: 'blob'` + Blob URL so the Bearer-auth header flows through; filename echoed from server `Content-Disposition`. Disabled when `count === 0`. Loading state = "Exporting…".
+
+**Verified (Feb 2026):** Backend curl returns correct MIME + headers + CSV body. UI click fires the browser download handler and saves `clinic-switch-audit-20260424-132548.csv` (321 B) with header row + audit row. Respects active filters.
+
+**Files touched:**
+- `/app/backend/routers/admin_panel_b.py` (+ ~60 LoC export endpoint)
+- `/app/frontend/src/modules/admin/panel/ClinicSwitchAuditPage.jsx` (+ `exportCSV` handler, `buildParams` extract, Export CSV button, Download icon)
+

@@ -893,3 +893,67 @@ async def clinic_switch_audit(
         "distinct_users": len(by_user),
         "top_movers": [{"user": k, "switch_count": v} for k, v in top_movers],
     }
+
+
+
+@router.get("/clinic-switch-audit/export.csv")
+async def export_clinic_switch_audit_csv(
+    user_id: Optional[str] = None,
+    clinic_id: Optional[str] = None,
+    since: Optional[str] = None,
+    limit: int = 5000,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """CSV dump of the switch-audit trail for compliance hand-off.
+
+    Accepts the same filters as the JSON endpoint, but caps the default
+    at 5000 rows (Mongo cursor hard-cap 50k) so a single export is
+    downloadable without streaming chunked responses.
+    """
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    q: dict = {}
+    if user_id:
+        q["user_id"] = user_id
+    if clinic_id:
+        q["$or"] = [
+            {"from_clinic_id": clinic_id},
+            {"to_clinic_id": clinic_id},
+        ]
+    if since:
+        q["at"] = {"$gte": since}
+
+    rows = await db.clinic_switch_audit.find(
+        q, {"_id": 0},
+    ).sort("at", -1).to_list(min(max(limit, 1), 50000))
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "at", "audit_id", "user_id", "user_email", "user_role",
+        "from_clinic_id", "from_clinic_name",
+        "to_clinic_id", "to_clinic_name",
+        "ip", "user_agent",
+    ])
+    for r in rows:
+        writer.writerow([
+            r.get("at", ""), r.get("audit_id", ""),
+            r.get("user_id", ""), r.get("user_email", ""), r.get("user_role", ""),
+            r.get("from_clinic_id", ""), r.get("from_clinic_name", ""),
+            r.get("to_clinic_id", ""), r.get("to_clinic_name", ""),
+            r.get("ip", ""), r.get("user_agent", ""),
+        ])
+
+    filename = f"clinic-switch-audit-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
