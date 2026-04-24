@@ -546,6 +546,39 @@ NOAH real-time sync, fax, US-style insurance/claims.
 
 ### Parked / Remind-me-later backlog
 
+
+---
+
+### [Feb 2026] Enhancement — Inline Patient Registration + Right-Click-to-Book (beta user ask)
+
+**User asks (verbatim):**
+> "rather toggling between New Patient & Appointment — make sure that you can create/add new patient in both windows (both ways user can do it). And also on calendar — user right-clicks on the date and desired time, he can enter/book appointment."
+
+**What shipped:**
+
+1. **Inline "+ Register new patient" inside Book Appointment modal** (`BookAppointmentModal.js`)
+   - Both the **amber "Pick a patient"** hint and the **red "No patient found"** banner now include a `+ Register new` (or `+ Register "{typed name}" as a new patient`) link.
+   - Clicking it reveals an inline REGISTER NEW PATIENT sub-form right inside the same modal — fields: Name (auto-prefilled from the search box), Mobile (10-digit), Age, Gender.
+   - Submit hits `POST /api/patients` with the minimal `PatientCreate` shape. On success: sub-form closes, the fresh patient becomes `selectedPatient`, green "✓ selected" badge appears, Book button enables. No re-typing, no tab switching.
+   - If the backend detects a duplicate by mobile (`existing_patient` response), it auto-uses that existing record instead of erroring — same UX as the standalone New Patient page.
+
+2. **Right-click any calendar slot to book at that time** (`AppointmentsPage.js`)
+   - Day view: each `slot-hour-{h}` row has an `onContextMenu` that opens the Book modal pre-filled with the clicked date + `HH:00` time. Added the tooltip row "Tip: right-click any hour slot to book at that time." and updated the empty-day placeholder to mention the shortcut.
+   - Week view: right-click on any day card opens the modal pre-filled with that date + 10:00 as a sensible default. Title tooltip shows the hint.
+   - Required a new `initialTime` prop plumbed into `BookAppointmentModal` so callers can seed the time input without faking a fake `existing` appointment.
+
+**Verified (Playwright, `frontdesk@acs.in` session):**
+- Right-click on 15:00 slot → modal opened with `time=15:00`, `date=2026-04-24`. ✓
+- Typed junk name "Zzunique999" → no-match banner + register link appeared. ✓
+- Clicked register link → inline form appeared with name pre-filled. ✓
+- Filled Mobile=9725535418, Age=42, Gender=Male → Register & use → sub-form closed, "✓ Inline Tester selected" badge showed, Book button ENABLED. ✓
+
+**Files touched:**
+- `/app/frontend/src/modules/frontdesk/appointments/BookAppointmentModal.js` (+ ~75 LoC quick-register form + state + submit handler + `initialTime` prop)
+- `/app/frontend/src/modules/frontdesk/AppointmentsPage.js` (+ `onSlotRightClick` handler, threaded into `DayList` + `WeekGrid`, tooltip row, empty-state hint)
+
+**Note on "reverse direction" (New Patient → Book Appointment inline):** This already exists in the stack. The New Patient workflow has a "Register + Start Diagnostics" CTA and an invoice/appointment shortcut. If the beta tester specifically wants a "Register + Book Appointment" terminal action instead of the existing flows, I can add it next — just confirm.
+
 - **Scheduled Email Report for super-admins** (parked Feb 2026 at user's request). APScheduler job that, on a cadence, bundles the Clinic Assignments + Clinic Switch Audit CSVs and emails them to the platform team. Open questions to resolve when resumed:
   1. Delivery mode — (a) mocked/archive only, (b) real email via Resend, (c) real email via SendGrid, (d) on-demand download only (no scheduler).
   2. Cadence — monthly 1st 09:00 IST (default) vs weekly vs per-report configurable from UI.

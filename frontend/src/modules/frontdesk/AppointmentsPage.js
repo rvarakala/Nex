@@ -145,6 +145,17 @@ export default function AppointmentsPage() {
     });
   };
 
+  // Right-click on a calendar cell → open the Book modal with date + time
+  // pre-filled. Lets the FD create appointments by pointing at a slot,
+  // not by clicking the top-right + button and typing the time again.
+  const onSlotRightClick = (clickedDate, hour) => {
+    setAnchorDate(clickedDate);
+    setModalInitial({
+      _prefillTime: typeof hour === 'number' ? `${String(hour).padStart(2, '0')}:00` : undefined,
+    });
+    setModalOpen(true);
+  };
+
   return (
     <div className="h-full flex flex-col" data-testid="appointments-page">
       {/* Toolbar */}
@@ -212,6 +223,7 @@ export default function AppointmentsPage() {
             onSendReminder={sendReminder}
             onInvoice={goToInvoice}
             onEdit={(a) => { setModalInitial(a); setModalOpen(true); }}
+            onSlotRightClick={onSlotRightClick}
           />
         ) : (
           <WeekGrid
@@ -220,6 +232,7 @@ export default function AppointmentsPage() {
             audiologists={audiologists}
             onDrop={onDrop}
             onEdit={(a) => { setModalInitial(a); setModalOpen(true); }}
+            onSlotRightClick={onSlotRightClick}
           />
         )}
       </div>
@@ -228,6 +241,7 @@ export default function AppointmentsPage() {
         <BookAppointmentModal
           audiologists={audiologists}
           initialDate={anchorDate}
+          initialTime={modalInitial?._prefillTime || undefined}
           existing={modalInitial}
           onClose={() => setModalOpen(false)}
           onSaved={() => { setModalOpen(false); load(); }}
@@ -245,7 +259,7 @@ export default function AppointmentsPage() {
 }
 
 // ===================== DAY LIST (time-sorted cards) =====================
-const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel, onSendReminder, onInvoice, onEdit, date }) => {
+const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel, onSendReminder, onInvoice, onEdit, onSlotRightClick, date }) => {
   // Drop target = hour slot (8am-8pm)
   const hours = Array.from({ length: 13 }, (_, i) => 8 + i);
   const apptByHour = {};
@@ -266,19 +280,25 @@ const DayList = ({ appointments, audiologists, onDrop, onStatusChange, onCancel,
 
   if (appointments.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-slate-200 p-8 text-center">
+      <div className="bg-white rounded-lg border border-slate-200 p-8 text-center"
+           onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(date, 10); }}>
         <div className="text-sm text-slate-500 mb-2">No appointments on this day</div>
-        <div className="text-[11px] text-slate-400">Use "+ Book Appointment" to schedule one.</div>
+        <div className="text-[11px] text-slate-400">Use "+ Book Appointment" or <span className="font-semibold">right-click</span> any hour slot to schedule one.</div>
       </div>
     );
   }
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <div className="px-3 py-1 text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 italic">
+        Tip: right-click any hour slot to book at that time.
+      </div>
       {hours.map((h) => (
         <div key={h} className="flex border-b border-slate-100 last:border-0 min-h-[56px]"
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => onSlotDrop(h)}
+          onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(date, h); }}
+          title="Right-click to book at this time"
           data-testid={`slot-hour-${h}`}>
           <div className="w-16 flex-shrink-0 text-[10px] font-semibold text-slate-400 px-2 py-1.5 border-r border-slate-100 tabular-nums">
             {String(h).padStart(2, '0')}:00
@@ -347,7 +367,7 @@ const ApptCard = ({ a, onStatusChange, onCancel, onSendReminder, onInvoice, onEd
 };
 
 // ===================== WEEK GRID =====================
-const WeekGrid = ({ anchor, appointments, audiologists, onDrop, onEdit }) => {
+const WeekGrid = ({ anchor, appointments, audiologists, onDrop, onEdit, onSlotRightClick }) => {
   const monday = startOfWeek(anchor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
   const dragData = React.useRef(null);
@@ -378,6 +398,8 @@ const WeekGrid = ({ anchor, appointments, audiologists, onDrop, onEdit }) => {
             key={k}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDayDrop(d)}
+            onContextMenu={(e) => { e.preventDefault(); onSlotRightClick?.(d, 10); }}
+            title="Right-click to book on this day at 10:00"
             data-testid={`week-day-${k}`}
             className={`bg-white rounded border ${isToday ? 'border-blue-400' : 'border-slate-200'} overflow-hidden flex flex-col`}
           >

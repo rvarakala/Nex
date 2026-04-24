@@ -23,7 +23,7 @@ const FRONTDESK_TEST_OPTIONS = [
   { key: 'pediatric',  label: 'Pediatric' },
 ];
 
-export default function BookAppointmentModal({ audiologists, initialDate, existing, onClose, onSaved }) {
+export default function BookAppointmentModal({ audiologists, initialDate, initialTime, existing, onClose, onSaved }) {
   const isEdit = !!existing?.appointment_id;
   const today = useMemo(() => (initialDate ? initialDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)), [initialDate]);
 
@@ -49,7 +49,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
   const [priority, setPriority] = useState(existing?.priority || 'normal');
   const [duration, setDuration] = useState(existing?.duration_minutes || 30);
   const [date, setDate] = useState(existing?.start_at ? existing.start_at.slice(0, 10) : today);
-  const [time, setTime] = useState(existing?.start_at ? existing.start_at.slice(11, 16) : '10:00');
+  const [time, setTime] = useState(existing?.start_at ? existing.start_at.slice(11, 16) : (initialTime || '10:00'));
   const [notes, setNotes] = useState(existing?.notes || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -146,6 +146,59 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
   // hits. Used to show a "No patient found" message so the user isn't left
   // wondering why the Book button is disabled after typing a name.
   const [patientSearchRun, setPatientSearchRun] = useState(false);
+
+  // Inline quick-register sub-form state — lets the user create a new
+  // patient without leaving the Book Appointment modal. Kept minimal
+  // (only the required PatientCreate fields + mobile for dedup) so the
+  // FD can reach the audiologist slot in ≤ 2 clicks.
+  const [quickRegOpen, setQuickRegOpen] = useState(false);
+  const [qrName, setQrName] = useState('');
+  const [qrMobile, setQrMobile] = useState('');
+  const [qrAge, setQrAge] = useState('');
+  const [qrGender, setQrGender] = useState('Male');
+  const [qrBusy, setQrBusy] = useState(false);
+  const [qrErr, setQrErr] = useState('');
+
+  const openQuickReg = () => {
+    setQrName(patientQuery.trim() || '');
+    setQrMobile('');
+    setQrAge('');
+    setQrGender('Male');
+    setQrErr('');
+    setQuickRegOpen(true);
+  };
+  const submitQuickReg = async () => {
+    setQrErr('');
+    if (!qrName.trim()) { setQrErr('Name is required'); return; }
+    const ageNum = parseInt(qrAge, 10);
+    if (!ageNum || ageNum < 0 || ageNum > 120) { setQrErr('Enter a valid age'); return; }
+    setQrBusy(true);
+    try {
+      const r = await axios.post(`${API}/patients`, {
+        name: qrName.trim(), age: ageNum, gender: qrGender,
+        mobile: qrMobile.trim() || null,
+      });
+      // Auto-select the freshly-created patient and close the sub-form.
+      setSelectedPatient(r.data);
+      setPatientQuery(r.data.name);
+      setPatientResults([]);
+      setPatientDropdown(false);
+      setQuickRegOpen(false);
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      if (d && typeof d === 'object' && d.existing_patient) {
+        // Backend found a duplicate by mobile — auto-use that record.
+        setSelectedPatient(d.existing_patient);
+        setPatientQuery(d.existing_patient.name);
+        setQuickRegOpen(false);
+        setQrErr('');
+      } else {
+        setQrErr(typeof d === 'string' ? d : (e?.message || 'Registration failed'));
+      }
+    } finally {
+      setQrBusy(false);
+    }
+  };
 
   // Patient search debounce
   useEffect(() => {
@@ -280,18 +333,60 @@ export default function BookAppointmentModal({ audiologists, initialDate, existi
             )}
             {/* Inline helpers: guide the user when patient isn't yet chosen. */}
             {!isEdit && showPickHint && (
-              <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" data-testid="bk-pick-hint">
-                Pick a patient from the list above to continue.
+              <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" data-testid="bk-pick-hint">
+                <span>Pick a patient from the list above to continue.</span>
+                <button type="button" onClick={openQuickReg} data-testid="bk-quick-register-btn"
+                  className="text-[10px] font-semibold text-indigo-700 hover:text-indigo-900 underline">
+                  + Register new
+                </button>
               </div>
             )}
             {!isEdit && showNoMatchHint && (
-              <div className="mt-1 text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5" data-testid="bk-no-match-hint">
-                No patient found for "{patientQueryTrimmed}". Register them first in <span className="font-semibold">Front Desk → + New Patient</span>, then book the appointment.
+              <div className="mt-1 text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-1" data-testid="bk-no-match-hint">
+                <div>No patient found for "{patientQueryTrimmed}".</div>
+                <button type="button" onClick={openQuickReg} data-testid="bk-quick-register-btn-no-match"
+                  className="mt-0.5 text-[10px] font-semibold text-rose-800 hover:text-rose-950 underline">
+                  + Register "{patientQueryTrimmed}" as a new patient
+                </button>
               </div>
             )}
             {selectedPatient && (
               <div className="mt-1 text-[10px] text-emerald-700" data-testid="bk-patient-selected">
                 ✓ {selectedPatient.name} selected
+              </div>
+            )}
+
+            {/* Inline Quick-Register form — doesn't navigate away. */}
+            {!isEdit && quickRegOpen && (
+              <div className="mt-2 border border-indigo-200 bg-indigo-50/50 rounded p-2 space-y-1.5" data-testid="bk-quick-register-form">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-800">Register new patient</div>
+                  <button type="button" onClick={() => setQuickRegOpen(false)} className="text-[14px] text-indigo-700 hover:text-indigo-900 leading-none" data-testid="bk-quick-register-close">×</button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <input type="text" value={qrName} onChange={(e) => setQrName(e.target.value)} placeholder="Name *" data-testid="bk-qr-name"
+                    className="col-span-2 px-2 py-1 text-xs border border-slate-300 rounded" />
+                  <input type="tel" value={qrMobile} onChange={(e) => setQrMobile(e.target.value.replace(/[^\d]/g, '').slice(0, 10))} placeholder="Mobile (10 digits)" data-testid="bk-qr-mobile"
+                    className="px-2 py-1 text-xs border border-slate-300 rounded" />
+                  <input type="number" value={qrAge} onChange={(e) => setQrAge(e.target.value)} placeholder="Age *" data-testid="bk-qr-age"
+                    className="px-2 py-1 text-xs border border-slate-300 rounded" min="0" max="120" />
+                  <select value={qrGender} onChange={(e) => setQrGender(e.target.value)} data-testid="bk-qr-gender"
+                    className="col-span-2 px-2 py-1 text-xs border border-slate-300 rounded bg-white">
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                {qrErr && <div className="text-[10px] text-rose-700" data-testid="bk-qr-error">{qrErr}</div>}
+                <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                  <button type="button" onClick={() => setQuickRegOpen(false)}
+                    className="px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
+                  <button type="button" onClick={submitQuickReg} disabled={qrBusy}
+                    data-testid="bk-qr-save"
+                    className="px-2 py-0.5 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 rounded">
+                    {qrBusy ? 'Registering…' : 'Register & use'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
