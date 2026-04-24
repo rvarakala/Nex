@@ -632,3 +632,31 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/frontend/src/components/reports/captureAndUpload.js` (full rewrite, ~175 LoC)
 - `/tmp/test_paginator.js` (throwaway unit test harness, not committed)
 
+
+---
+
+### [Feb 2026] Bug Fix — Clinic Name Truncated + Tagline Washed-Out in Report Header (beta user)
+
+**User report (with screenshot):** A beta user's clinic name "ACS Audiology Clinic & Vertigo Clinic & Rehabilitation Center" (61 chars) rendered as **"ACS Audiology Clinic & Vertigo Clinic & Rehabilitatio"** — last 8 chars cut off. The tagline "Hearing & Balance Centre" also looked washed-out / half-faded.
+
+**Root cause (`ReportHeader.js`):**
+1. The clinic name div had `truncate` (= `overflow:hidden; white-space:nowrap; text-overflow:ellipsis;`) which forces a single-line clip instead of wrapping. With a fixed 17px font + a 58%-wide column, any name > ~42 chars got chopped.
+2. The tagline used `text-gray-500` (#6B7280) which html2canvas + JPEG compression rendered as an anemic ghost at 10px.
+3. The right-side contact column had no max-width, so a long address ate into the name column even before the clip kicked in.
+
+**Permanent fix:**
+- Removed `truncate` from clinic name; added `break-words` so the name **always wraps** instead of clipping.
+- Added an **adaptive font-size tier** based on name length:
+  - ≤ 42 chars → 17px / `leading-tight`
+  - 43–52 chars → 15px / `leading-snug`
+  - > 52 chars → 13px / `leading-snug`
+  - So the user's 61-char name renders at 13px on 2 lines, fully legible.
+- Bumped tagline to `text-gray-600 font-medium` (#4B5563 + 500 weight) — noticeably darker and crisper through html2canvas.
+- Capped right contact column at `max-w-[42%]` + gave left side `flex-1` so the name column always gets layout priority.
+- Added `break-words` to address lines and `break-all` to email (emails can't be hyphenated but can cut anywhere on overflow).
+- Made the tagline render conditionally so empty-tagline clinics don't get an empty div eating vertical space.
+
+**Verified:** Live browser evaluation confirmed the 61-char name correctly maps to `text-[13px] leading-snug`, `break-words` is active, and `nameEl.innerText === clinic.name` (no clipping).
+
+**Files touched:** `/app/frontend/src/components/reports/layout/ReportHeader.js` (focused rewrite, ~55 LoC).
+
