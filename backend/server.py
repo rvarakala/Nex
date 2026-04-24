@@ -550,6 +550,7 @@ from routers import patients as patients_router       # noqa: E402
 from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
 from routers import sessions as sessions_router       # noqa: E402
+from routers import diagnostics_queue as diagnostics_queue_router  # noqa: E402
 from routers import ref_docs as ref_docs_router       # noqa: E402
 from routers import branches as branches_router       # noqa: E402
 from routers import vendors as vendors_router         # noqa: E402
@@ -584,6 +585,7 @@ app.include_router(patients_router.router)
 app.include_router(appointments_router.router)
 app.include_router(tokens_router.router)
 app.include_router(sessions_router.router)
+app.include_router(diagnostics_queue_router.router)
 app.include_router(ref_docs_router.router)
 app.include_router(branches_router.router)
 app.include_router(vendors_router.router)

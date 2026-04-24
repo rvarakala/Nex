@@ -219,7 +219,25 @@ async def frontdesk_dashboard(user=Depends(get_current_user), db=Depends(get_db)
         "start_at": {"$gte": f"{day_key}T00:00:00", "$lte": f"{day_key}T23:59:59"},
         "status": {"$nin": ["cancelled"]},
     })
+    checked_in_now = await db.appointments.count_documents({
+        "clinic_id": clinic_id,
+        "start_at": {"$gte": f"{day_key}T00:00:00", "$lte": f"{day_key}T23:59:59"},
+        "status": "checked_in",
+    })
     waitlist_active = await db.waitlist.count_documents({"clinic_id": clinic_id, "status": "active"})
+
+    # Completed today: either a session marked completed today OR an
+    # appointment flipped to completed today. We take the union count
+    # (sessions usually win since completing a session also closes the
+    # appointment in the new diagnostics-queue flow).
+    try:
+        sessions_completed_today = await db.test_sessions.count_documents({
+            "clinic_id": clinic_id,
+            "status": {"$in": ["completed", "finalized"]},
+            "updated_at": {"$gte": today_start.isoformat()},
+        })
+    except Exception:
+        sessions_completed_today = 0
 
     collections_today = 0.0
     try:
@@ -249,7 +267,9 @@ async def frontdesk_dashboard(user=Depends(get_current_user), db=Depends(get_db)
             "appointments_today": appointments_today,
             "waitlist_active": waitlist_active,
             "waiting_now": waiting_now,
+            "checked_in_now": checked_in_now,
             "in_progress": in_progress,
+            "completed_today": sessions_completed_today,
             "collections_today": collections_today,
             "pending_reports": pending_reports,
         },

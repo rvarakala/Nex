@@ -776,3 +776,39 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/frontend/src/modules/admin/panel/DashboardPage.jsx` (1-line key change)
 - `/app/frontend/src/modules/billing/InvoiceDetailPage.js` (audit comment + eslint-disable)
 
+
+---
+
+### [Feb 2026] Feature — Diagnostics Queue Board + FD Status KPIs (P1, complete)
+
+**User ask (verbatim):** "in Diagnostics Section → rather showing 'No active diagnostic session', show the Patients List who are in Queue, Waiting, Checked in. Audiologist will click the patient → it should show 'In Progress'. After test completed, audiologist clicks 'Completed'. Then in Dashboard of Front Desk should show: Completed, In Progress, Check-in, Waiting."
+
+**Phase 1 — Diagnostics Queue Board (frontend)**
+- New component `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` (~200 LoC) — renders a 4-column Kanban-style board (Waiting · Checked In · In Progress · Completed) with per-column counts and per-row priority stripes (urgent=rose, vip=fuchsia, normal=slate).
+- Replaces the old "No active diagnostic session" empty state in `TestProceduresModule.js`. Still shows "+ New Walk-in" and "Returning Patient" buttons in the header, so the prior CTAs remain reachable.
+- **One-click start**: clicking a Waiting/Checked-In/In-Progress card calls `POST /api/diagnostics/queue/start`, transitions the linked token+appointment, and navigates into the test module with the patient's active session. Completed cards open the archived report instead.
+- Auto-refresh every 20s.
+
+**Phase 2 — Front Desk Dashboard KPIs (frontend + backend)**
+- `GET /api/dashboard/frontdesk` response extended with `checked_in_now` + `completed_today` (session completions today).
+- `DashboardPage.js` now shows an 8-tile KPI strip (`kpi-waiting`, `kpi-checked-in`, `kpi-in-progress`, `kpi-completed-today` + existing Walk-ins / Returning / Appointments / Collections).
+
+**Phase 3 — Backend orchestrator**
+- New router `/app/backend/routers/diagnostics_queue.py` (~350 LoC) — three endpoints:
+  1. `GET /api/diagnostics/queue` — merges today's tokens + appointments + draft sessions into four columns, dedupes by patient_id keeping the most-advanced state (waiting < checked_in < in_progress < completed), hydrates patient metadata in ONE bulk find, sorts by priority then arrival time. Response: `{counts, columns, as_of}`.
+  2. `POST /api/diagnostics/queue/start {patient_id, token_id?, appointment_id?, session_id?}` — idempotent: reuses any draft session for this patient today; else creates one; flips matching token to `in_testing`, matching appointment to `in_progress`. Returns `{session_id, patient, token_id, appointment_id}` for the frontend to set as `activeTest`.
+  3. `POST /api/diagnostics/queue/complete {session_id}` — flips session to `completed`, matching token to `completed`, matching appointment to `completed`. Idempotent. Fire-and-forget from the client after report generation (piggy-backs on the existing "Save & Print Report" flow in `TestProceduresModule.js`).
+
+**End-to-end verified (curl, live preview):**
+- Issue token for "DQ Test Patient" → board shows 1 in Waiting ✓
+- Click start → board shows 0 Waiting, 1 In Progress; token flipped to in_testing; new session created ✓
+- POST complete → board shows 0 In Progress, 1 Completed; FD dashboard `completed_today=1` ✓
+- Test data cleaned up after verification ✓
+
+**Files touched/added:**
+- Backend: `/app/backend/routers/diagnostics_queue.py` (NEW), `/app/backend/server.py` (+2 lines include), `/app/backend/routers/tokens.py` (+ `checked_in_now` + `completed_today` KPIs)
+- Frontend: `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` (NEW), `/app/frontend/src/modules/test/TestProceduresModule.js` (+ import, empty-state swap, post-complete queue flip), `/app/frontend/src/modules/frontdesk/DashboardPage.js` (+2 KPI tiles)
+- `/app/memory/PRD.md` (this entry)
+
+Lint: clean on all touched files (Python + JS).
+

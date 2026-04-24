@@ -18,6 +18,7 @@ import ABRPanel from '../../components/ABRPanel';
 import PediatricPanel from '../../components/PediatricPanel';
 import TinnitusPanel from '../../components/TinnitusPanel';
 import { captureAndUploadPdf } from '../../components/reports/captureAndUpload';
+import DiagnosticsQueueBoard from './DiagnosticsQueueBoard';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -255,6 +256,11 @@ export default function TestProceduresModule() {
         setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
       }
 
+      // Flip linked queue token + appointment to `completed` so the FD
+      // dashboard + diagnostics board update in real time. Fire-and-forget
+      // — never blocks the print path.
+      axios.post(`${API}/diagnostics/queue/complete`, { session_id: activeTest.sessionId }).catch(() => {});
+
       // 4. Fetch the now-stored PDF and open it in a new tab for printing.
       try {
         const r = await axios.get(`${API}/reports/${activeTest.sessionId}/pdf`, { responseType: 'blob' });
@@ -283,24 +289,10 @@ export default function TestProceduresModule() {
       rightEarData, leftEarData]);
 
   // ==================== EMPTY STATE: no active test ====================
+  // Shows today's diagnostics queue instead of a blank placeholder so the
+  // audiologist can pick the next patient with ONE click.
   if (!activeTest?.patient || !activeTest?.sessionId) {
-    return (
-      <div className="h-full flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center max-w-md">
-          <div className="w-14 h-14 rounded-full bg-amber-100 mx-auto flex items-center justify-center mb-3">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-          </div>
-          <h2 className="text-base font-bold text-slate-800">No active diagnostic session</h2>
-          <p className="text-xs text-slate-500 mt-1 mb-4">Start a new visit from the Front Desk — register a walk-in or look up a returning patient.</p>
-          <div className="flex gap-2 justify-center">
-            <button onClick={() => navigate('/frontdesk/new')} data-testid="test-empty-new" className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded shadow-sm">+ New Patient</button>
-            <button onClick={() => navigate('/frontdesk/returning')} data-testid="test-empty-returning" className="px-3 py-1.5 text-xs bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded">Returning Patient</button>
-          </div>
-        </div>
-      </div>
-    );
+    return <DiagnosticsQueueBoard />;
   }
 
   // ==================== RENDER ====================

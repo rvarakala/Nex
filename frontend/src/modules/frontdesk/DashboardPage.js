@@ -62,14 +62,15 @@ export default function DashboardPage() {
       <ClinicPulse kpis={k} />
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2" data-testid="dashboard-kpis">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2" data-testid="dashboard-kpis">
         <KpiCard testid="kpi-walkins" label="Walk-ins Today" value={loading ? '—' : k.walkins_today ?? 0} accent="text-blue-700" />
         <KpiCard testid="kpi-returning" label="Returning Today" value={loading ? '—' : k.returning_today ?? 0} accent="text-indigo-700" />
         <KpiCard testid="kpi-appointments" label="Appointments" value={loading ? '—' : k.appointments_today ?? 0} accent="text-slate-500" />
-        <KpiCard testid="kpi-waiting" label="Waiting Now" value={loading ? '—' : k.waiting_now ?? 0} accent="text-amber-700" />
+        <KpiCard testid="kpi-waiting" label="Waiting" value={loading ? '—' : k.waiting_now ?? 0} accent="text-amber-700" />
+        <KpiCard testid="kpi-checked-in" label="Checked In" value={loading ? '—' : k.checked_in_now ?? 0} accent="text-indigo-700" />
         <KpiCard testid="kpi-in-progress" label="In Progress" value={loading ? '—' : k.in_progress ?? 0} accent="text-purple-700" />
-        <KpiCard testid="kpi-collections" label="Collections Today" value={loading ? '—' : `₹${k.collections_today ?? 0}`} accent="text-slate-500" />
-        <KpiCard testid="kpi-pending-reports" label="Pending Reports" value={loading ? '—' : k.pending_reports ?? 0} accent="text-rose-700" />
+        <KpiCard testid="kpi-completed-today" label="Completed Today" value={loading ? '—' : k.completed_today ?? 0} accent="text-emerald-700" />
+        <KpiCard testid="kpi-collections" label="Collections" value={loading ? '—' : `₹${k.collections_today ?? 0}`} accent="text-slate-500" />
       </div>
 
       {/* Quick actions */}
