@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { captureAndUploadPdf } from './reports/captureAndUpload';
+import ReportPreflightModal from './reports/ReportPreflightModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -158,6 +159,21 @@ const ReportsPanel = ({
     window.print();
   };
 
+  // Preflight: when the audiologist clicks Print, first open the "Looks
+  // good?" modal so they can sanity-check page count + layout warnings
+  // BEFORE the PDF is uploaded to GridFS and sent to the patient.
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const openPreflight = () => setPreflightOpen(true);
+  const closePreflight = () => setPreflightOpen(false);
+  const confirmPrint = () => {
+    setPreflightOpen(false);
+    // Defer a microtask so the modal teardown fully unmounts before
+    // html2canvas runs — the modal overlay itself is outside
+    // `#report-preview` so it doesn't affect capture, but this keeps the
+    // print flow feeling instant.
+    setTimeout(() => { handlePrint(); }, 0);
+  };
+
   // When the Tymp page is "New page", the conclusion block (Results + Recommendations/Advice
   // + Signature) is deferred to the end of the report so the ENT reads test data first.
   const mainPageSections = sections
@@ -193,7 +209,7 @@ const ReportsPanel = ({
         patient={patient}
         rightEarData={rightEarData}
         leftEarData={leftEarData}
-        onPrint={handlePrint}
+        onPrint={openPreflight}
       />
 
       {/* ========== LIVE PREVIEW ========== */}
@@ -248,6 +264,15 @@ const ReportsPanel = ({
           )}
         </div>
       </div>
+
+      {/* Preflight "Looks good?" modal — rendered at the panel root so it
+          overlays both the sidebar and the preview, and shows before the
+          PDF capture runs. */}
+      <ReportPreflightModal
+        open={preflightOpen}
+        onConfirm={confirmPrint}
+        onCancel={closePreflight}
+      />
     </div>
   );
 };

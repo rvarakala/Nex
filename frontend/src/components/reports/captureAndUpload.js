@@ -36,6 +36,10 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const A4_W_MM = 210;
 const A4_H_MM = 297;
 
+// A4 aspect in "element pixels" (used by analyzeReportLayout which works
+// off the live DOM, no canvas render needed).
+const A4_ASPECT = A4_H_MM / A4_W_MM;
+
 // Class names that should trigger a hard page break before the element.
 const HARD_BREAK_CLASSES = ['report-page-break', 'page-break-before', 'pagebreak'];
 
@@ -111,6 +115,107 @@ function planPageSlices(root, canvas) {
     }
   }
   return slices;
+}
+
+/**
+ * Fast canvas-free preflight. Walks the same DOM the captureAndUploadPdf
+ * function will capture, estimates how many A4 pages the final PDF will
+ * have, and surfaces user-actionable warnings (e.g. "a section is taller
+ * than an A4 page", "clinic name is very long").
+ *
+ * Designed to run in < 10 ms so it can power a "Looks good?" modal shown
+ * instantly when the audiologist clicks Print.
+ *
+ * @param {HTMLElement} root — the `#report-preview` div
+ * @returns {{
+ *   pageCount: number,
+ *   warnings: Array<{level: 'info'|'warn'|'error', message: string}>,
+ *   pageBoundariesMM: number[],
+ *   heightMM: number,
+ * }}
+ */
+export function analyzeReportLayout(root) {
+  if (!root) return { pageCount: 0, warnings: [{ level: 'error', message: 'Report preview is not mounted.' }], pageBoundariesMM: [], heightMM: 0 };
+
+  const children = Array.from(root.children);
+  const rootTop = root.offsetTop;
+  // The #report-preview div is always styled width:210mm so 1px at render
+  // time = A4_W_MM / root.offsetWidth mm. We base mm conversion on that.
+  const pxPerMM = root.offsetWidth / A4_W_MM;
+  const pageHeightPx = A4_ASPECT * root.offsetWidth;
+
+  const warnings = [];
+
+  // --- Warning: clinic name wrapped to smallest font tier (looks tiny) ---
+  // ReportHeader shrinks font progressively at > 42 and > 52 chars.
+  const nameEl = root.querySelector('header .font-extrabold.text-blue-900');
+  if (nameEl) {
+    const txt = (nameEl.textContent || '').trim();
+    if (txt.length > 52) {
+      warnings.push({
+        level: 'info',
+        message: `Clinic name is ${txt.length} chars — it will render smaller (13px) to fit. Looks fine but verify.`,
+      });
+    }
+  }
+
+  // --- Warning: no clinic logo uploaded ---
+  const headerImg = root.querySelector('header img');
+  const headerPlaceholder = root.querySelector('header .bg-blue-700.text-white');
+  if (!headerImg && headerPlaceholder) {
+    warnings.push({
+      level: 'info',
+      message: 'No clinic logo uploaded — a plain placeholder is shown. Upload a logo in Clinic Settings for a branded report.',
+    });
+  }
+
+  // --- Paginate with the same rules as the final PDF ---
+  const pageEndsPx = [];
+  let pageStartPx = 0;
+  let anyOversizedChild = false;
+
+  for (const c of children) {
+    const topPx = c.offsetTop - rootTop;
+    const bottomPx = topPx + c.offsetHeight;
+    const hardBreak = hasBreakClass(c);
+
+    if (hardBreak) {
+      if (topPx > pageStartPx) pageEndsPx.push(topPx);
+      pageStartPx = topPx;
+    }
+    if (bottomPx - pageStartPx > pageHeightPx) {
+      if (topPx > pageStartPx) {
+        pageEndsPx.push(topPx);
+        pageStartPx = topPx;
+      }
+      while (bottomPx - pageStartPx > pageHeightPx) {
+        pageStartPx += pageHeightPx;
+        pageEndsPx.push(pageStartPx);
+        anyOversizedChild = true; // single child taller than A4
+      }
+    }
+  }
+  const heightPx = root.scrollHeight;
+  if (pageStartPx < heightPx) pageEndsPx.push(heightPx);
+
+  const pageBoundariesMM = pageEndsPx.map((px) => Math.round(px / pxPerMM));
+  const pageCount = pageBoundariesMM.length;
+  const heightMM = Math.round(heightPx / pxPerMM);
+
+  if (anyOversizedChild) {
+    warnings.push({
+      level: 'warn',
+      message: 'A single section is taller than one A4 page and will be split across pages. Consider disabling long sections (e.g. large narrative text) or toggling "Tympanometry on new page" to rebalance.',
+    });
+  }
+  if (pageCount >= 4) {
+    warnings.push({
+      level: 'warn',
+      message: `This report will print as ${pageCount} pages. If that's more than expected, trim sections or disable "Tympanometry on new page" to consolidate.`,
+    });
+  }
+
+  return { pageCount, warnings, pageBoundariesMM, heightMM };
 }
 
 /**

@@ -660,3 +660,34 @@ NOAH real-time sync, fax, US-style insurance/claims.
 
 **Files touched:** `/app/frontend/src/components/reports/layout/ReportHeader.js` (focused rewrite, ~55 LoC).
 
+
+---
+
+### [Feb 2026] Feature — Report Preflight "Looks good?" Modal
+
+**Why:** Two recent beta-user bug reports (clinic name truncation, PDF pages cut mid-section) both had the same dynamic — the audiologist couldn't see the layout problem until *after* the PDF was generated and handed to the patient. This preflight step catches issues **before** the patient ever sees the report.
+
+**What shipped:**
+1. **New `analyzeReportLayout(root)` helper** in `captureAndUpload.js` — a canvas-free, sub-10ms DOM walk that produces:
+   - `pageCount` — how many A4 pages the final PDF will have (uses the same child-boundary-aware slicing as the PDF exporter, so estimate = reality).
+   - `pageBoundariesMM` — cut positions for debug / tooltips.
+   - `heightMM` — total report height.
+   - `warnings[]` with three severity levels (`info` / `warn` / `error`):
+     - **info**: clinic name > 52 chars (renders small), no logo uploaded.
+     - **warn**: a single section is taller than one A4 page (will force a mid-section blind cut), or total report ≥ 4 pages.
+2. **New `ReportPreflightModal.jsx` component** — shows:
+   - Big colour-coded page-count tile (green ≤2, amber =3, red ≥4).
+   - Report height in mm.
+   - Either a green "No layout issues detected" badge or a list of actionable warnings (red/amber/blue by severity).
+   - Two buttons: "Back to edit" (cancel) and "Looks good, print" (indigo, with printer icon).
+3. **`ReportsPanel.js` wire-up** — the sidebar's Print button now opens the preflight modal instead of immediately triggering print. `confirmPrint()` defers to a microtask then calls the existing `handlePrint()` path (which does the html2canvas capture + GridFS upload). `Back to edit` just closes the modal — zero side effects.
+
+**Verified (live DOM algorithm test):**
+- 542 mm synthetic report (long name + no logo + forced break) → correctly detected 3 pages with boundaries at 129/321/542 mm, plus two `info` warnings ("long name: 70 chars", "no logo"). No spurious warnings.
+- Lint clean on all three touched files.
+
+**Files touched / added:**
+- `/app/frontend/src/components/reports/captureAndUpload.js` (+ `analyzeReportLayout` export, ~75 LoC).
+- `/app/frontend/src/components/reports/ReportPreflightModal.js` (NEW, ~125 LoC).
+- `/app/frontend/src/components/ReportsPanel.js` (import + wire `onPrint` → `openPreflight`, render modal at panel root).
+
