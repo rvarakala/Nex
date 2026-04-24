@@ -415,6 +415,8 @@ export const BuilderSidebar = ({
   patient, rightEarData, leftEarData,
   // Actions
   onPrint,
+  // Live layout watchdog status — { pageCount, warnLevel: 'ok'|'info'|'warn'|'error' }
+  layoutStatus,
 }) => {
   const handleWhatsappShare = () => {
     const msg = buildWhatsappMessage({ patient, clinic, rightEarData, leftEarData, ptFindings, recText });
@@ -436,10 +438,27 @@ export const BuilderSidebar = ({
         <button
           onClick={onPrint}
           data-testid="report-print-btn"
-          className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 rounded flex items-center justify-center gap-1 shadow-sm"
+          title={layoutStatus?.warnLevel && layoutStatus.warnLevel !== 'ok'
+            ? `${layoutStatus.pageCount} page${layoutStatus.pageCount === 1 ? '' : 's'} · layout issues detected — click to review`
+            : `${layoutStatus?.pageCount || ''} page${layoutStatus?.pageCount === 1 ? '' : 's'} · layout looks clean`}
+          className="relative bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 rounded flex items-center justify-center gap-1 shadow-sm"
         >
           <PrintIcon />
           Print / PDF
+          {/* Watchdog dot: lights up when analyzeReportLayout surfaces any
+              warning. Colour-coded by severity so the audiologist sees at
+              a glance whether something needs attention — no extra click. */}
+          {layoutStatus?.warnLevel && layoutStatus.warnLevel !== 'ok' && (
+            <span
+              data-testid={`report-print-dot-${layoutStatus.warnLevel}`}
+              aria-label={`Layout ${layoutStatus.warnLevel}`}
+              className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ring-2 ring-white ${
+                layoutStatus.warnLevel === 'error' ? 'bg-rose-500'
+                : layoutStatus.warnLevel === 'warn' ? 'bg-amber-400'
+                : 'bg-sky-400'
+              } animate-pulse`}
+            />
+          )}
         </button>
         <button
           onClick={handleWhatsappShare}

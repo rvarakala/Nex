@@ -691,3 +691,30 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/frontend/src/components/reports/ReportPreflightModal.js` (NEW, ~125 LoC).
 - `/app/frontend/src/components/ReportsPanel.js` (import + wire `onPrint` → `openPreflight`, render modal at panel root).
 
+
+---
+
+### [Feb 2026] Feature — Live Layout Watchdog Dot on Print Button
+
+**What shipped:**
+- New `useEffect` in `ReportsPanel.js` attaches a `MutationObserver` to `#report-preview` (watching `childList`, `subtree`, `attributes`, `characterData`). Any DOM change inside the report preview — section toggle, finding typed, audiogram edited, clinic settings tweaked — triggers `analyzeReportLayout()` **debounced at 400ms**. Canvas-free, ~5ms per run, no perceptible cost.
+- Analysis severity is reduced to one of four levels: `ok` / `info` / `warn` / `error`. State is stored in `layoutStatus = { pageCount, warnLevel }`.
+- `BuilderSidebar` now accepts a `layoutStatus` prop and renders a **pulsing coloured dot** at the top-right corner of the Print button:
+  - 🔴 `error` (rose-500)
+  - 🟠 `warn` (amber-400)
+  - 🔵 `info` (sky-400)
+  - No dot when `ok`
+- Button `title` tooltip also updates in real time — e.g. `"3 pages · layout issues detected — click to review"` vs `"2 pages · layout looks clean"`.
+
+**UX flow:**
+1. Audiologist fills out the report.
+2. As soon as a layout hazard appears (e.g. they upload a tall logo, type a 60-char clinic name, toggle "Tymp on new page" with already-heavy Results), a dot appears on the Print button within ~400ms.
+3. Tooltip + preflight modal (already shipped) explain what's wrong and how to fix it.
+4. `ok` state → no visual noise at all.
+
+**Verified (live DOM mutation test):** Baseline (short name, no logo) = `info`. Adding a 3500px oversized section → `warn`, page count jumps to 5. Removing it + setting a 60-char name → back to `info`, page count 1. Severity transitions correctly in response to DOM mutations.
+
+**Files touched:**
+- `/app/frontend/src/components/ReportsPanel.js` (+ `layoutStatus` state, MutationObserver `useEffect`, prop plumbing to sidebar).
+- `/app/frontend/src/components/reports/BuilderSidebar.js` (+ `layoutStatus` destructure, pulsing dot element, live tooltip).
+

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { captureAndUploadPdf } from './reports/captureAndUpload';
+import { captureAndUploadPdf, analyzeReportLayout } from './reports/captureAndUpload';
 import ReportPreflightModal from './reports/ReportPreflightModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -174,6 +174,38 @@ const ReportsPanel = ({
     setTimeout(() => { handlePrint(); }, 0);
   };
 
+  // ---------- Silent layout watchdog ----------
+  // Re-runs analyzeReportLayout whenever the report preview DOM changes
+  // (section toggled, finding typed, audiogram edited, …). Exposes a
+  // severity "dot" on the Print button so the audiologist can see at a
+  // glance whether anything needs attention — before they ever click
+  // Print. The analyze call is canvas-free (~5 ms), so debouncing at
+  // 400ms is enough to avoid thrash without feeling laggy.
+  const [layoutStatus, setLayoutStatus] = useState({ pageCount: 0, warnLevel: 'ok' });
+  useEffect(() => {
+    const el = document.getElementById('report-preview');
+    if (!el) return undefined;
+    let timer = null;
+    const severityOf = (warnings) =>
+      warnings.some((w) => w.level === 'error') ? 'error'
+        : warnings.some((w) => w.level === 'warn') ? 'warn'
+          : warnings.length > 0 ? 'info'
+            : 'ok';
+    const run = () => {
+      try {
+        const a = analyzeReportLayout(el);
+        setLayoutStatus({ pageCount: a.pageCount, warnLevel: severityOf(a.warnings) });
+      } catch {
+        // Never surface a broken analyzer to the user — this is a hint, not a gate.
+      }
+    };
+    const debounced = () => { if (timer) clearTimeout(timer); timer = setTimeout(run, 400); };
+    run();
+    const observer = new MutationObserver(debounced);
+    observer.observe(el, { childList: true, subtree: true, attributes: true, characterData: true });
+    return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
+  }, []);
+
   // When the Tymp page is "New page", the conclusion block (Results + Recommendations/Advice
   // + Signature) is deferred to the end of the report so the ENT reads test data first.
   const mainPageSections = sections
@@ -210,6 +242,7 @@ const ReportsPanel = ({
         rightEarData={rightEarData}
         leftEarData={leftEarData}
         onPrint={openPreflight}
+        layoutStatus={layoutStatus}
       />
 
       {/* ========== LIVE PREVIEW ========== */}
