@@ -5,7 +5,8 @@ from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
+import uuid
 
 # IST helpers — shared module (single source of truth)
 from utils.ist import IST, ist_day_start_utc, ist_today_ymd, ist_next_day_start_utc  # noqa: F401
@@ -358,7 +359,7 @@ class SwitchClinicIn(BaseModel):
 
 @api_router.post("/auth/switch-clinic")
 async def switch_clinic(
-    payload: SwitchClinicIn, request: Request,  # noqa: ARG001
+    payload: SwitchClinicIn, request: Request,
     user=Depends(get_current_user),
 ):
     """Re-issues a JWT bound to a different clinic the user has been granted.
@@ -366,6 +367,10 @@ async def switch_clinic(
     The token_version is preserved — we do not bump it, so parallel sessions
     (if any) stay valid. Switching is purely a re-scope of the active tenant;
     the user's identity and role are unchanged.
+
+    Every switch is persisted to `clinic_switch_audit` with IP + user-agent
+    so super-admins have a compliance-grade trail of who moved between
+    which tenants.
     """
     target = payload.clinic_id
     allowed = {user["primary_clinic_id"], *user.get("additional_clinic_ids", [])}
@@ -378,6 +383,12 @@ async def switch_clinic(
     if not clinic:
         raise HTTPException(status_code=404, detail="Clinic not found")
 
+    # Capture the *from* clinic name while we still hold the old context.
+    from_clinic = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "clinic_id": 1, "name": 1},
+    ) or {"clinic_id": user["clinic_id"], "name": "(unknown)"}
+
     # Token version lookup (to preserve current force-logout state).
     udoc = await db.users.find_one(
         {"user_id": user["user_id"]}, {"_id": 0, "token_version": 1},
@@ -389,6 +400,31 @@ async def switch_clinic(
         clinic_id=target,
         token_version=int((udoc or {}).get("token_version") or 0),
     )
+
+    # --- Audit trail (fire-and-forget, not critical path) ---------------
+    # Skip the audit insert when the user "switches" to the clinic they
+    # are already on — that's a no-op the UI shouldn't trigger but might.
+    if target != user["clinic_id"]:
+        try:
+            client_ip = (request.headers.get("x-forwarded-for") or request.client.host or "").split(",")[0].strip() if request else ""
+            ua = (request.headers.get("user-agent") or "")[:300] if request else ""
+            await db.clinic_switch_audit.insert_one({
+                "audit_id": f"CSA-{uuid.uuid4().hex[:10].upper()}",
+                "user_id": user["user_id"],
+                "user_email": user["email"],
+                "user_role": user["role"],
+                "from_clinic_id": from_clinic["clinic_id"],
+                "from_clinic_name": from_clinic.get("name"),
+                "to_clinic_id": target,
+                "to_clinic_name": clinic["name"],
+                "ip": client_ip,
+                "user_agent": ua,
+                "at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            # Never let audit failure block a legitimate switch.
+            pass
+
     return {"access_token": token, "token_type": "bearer",
             "active_clinic_id": target, "active_clinic_name": clinic["name"]}
 

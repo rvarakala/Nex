@@ -450,3 +450,39 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - Admin UI to manage `additional_clinic_ids` per user (currently super_admin must call `/api/auth/link-clinic` via curl or Admin Panel direct-DB).
 - Optional: audit log for clinic switches (who/when/from→to) for compliance.
 
+
+---
+
+### [Feb 2026] Super-Admin UI: Clinic Assignments + Switch Audit — COMPLETE
+
+**What shipped:**
+
+1. **Clinic Assignments page** (`/admin/clinic-assignments`) — founders / super_admins can now manage multi-clinic grants from UI instead of curl:
+   - Lists every tenant user with primary clinic, additional clinics, total-count badge, role/status.
+   - Search by name/email; sort shows multi-clinic owners first.
+   - Inline `×` unlink per additional clinic (confirm-prompt; token_version bumped server-side so old sessions lose that clinic).
+   - `+ Link clinic` modal with searchable 84-clinic directory, excludes clinics the user already has access to.
+   - Stat tiles: total users, multi-clinic owners, total clinic assignments.
+
+2. **Clinic Switch Audit page** (`/admin/clinic-switch-audit`) — compliance-grade trail of every `POST /api/auth/switch-clinic`:
+   - Captures `user_id, user_email, user_role, from_clinic_{id,name}, to_clinic_{id,name}, ip, user_agent, at`.
+   - Filters by user_id, clinic_id (either side), and date-since.
+   - Stat tiles: total switches, distinct users, top mover with count.
+   - "Top movers" summary card surfaces unusual hopping patterns (abuse / compliance signal).
+   - Persisted to new `clinic_switch_audit` Mongo collection; audit write is non-blocking (try/except — never fails a legit switch).
+
+**Backend endpoints (all super_admin/founder-gated):**
+- `GET  /api/admin/v2/clinic-assignments?q=&limit=` — hydrated user+clinic view
+- `GET  /api/admin/v2/clinics-directory` — flat clinic list for Link modal autocomplete
+- `GET  /api/admin/v2/clinic-switch-audit?user_id=&clinic_id=&since=&limit=` — filtered trail + top-movers aggregate
+- `POST /api/auth/switch-clinic` extended to insert the audit row (no-op when switching to the same clinic)
+
+**Files touched:**
+- Backend: `/app/backend/server.py` (+ audit write on switch, timezone/uuid top-level imports), `/app/backend/routers/admin_panel_b.py` (+3 endpoints, +130 LoC).
+- Frontend: `/app/frontend/src/modules/admin/panel/ClinicAssignmentsPage.jsx` (NEW, ~270 LoC), `/app/frontend/src/modules/admin/panel/ClinicSwitchAuditPage.jsx` (NEW, ~170 LoC), `/app/frontend/src/modules/admin/panel/AdminPanel.jsx` (nav + routes).
+
+**Verification (Feb 2026):**
+- Backend curl: assignments list shows KIMS owner with `total_clinics=2` + Apollo as additional; switch-audit captures switch with IP `34.170.12.145`; directory returns 84 clinics.
+- Frontend Playwright: both pages render under `/admin/*` as super_admin, nav entries appear under Governance group, search filter works, Link modal opens with 50 eligible clinics (excludes already-granted), audit trail renders with From → To arrow + IP column.
+- Lint: 0 issues in new JSX; 0 issues in modified `server.py`.
+

@@ -8,7 +8,7 @@ import { useAuth } from '../../../AuthContext';
 import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Flame, ToggleLeft,
   LogOut, Search, ShieldCheck, Headphones, BarChart3, HeartPulse,
-  Megaphone, Bell, FileClock, Settings, Users, Activity,
+  Megaphone, Bell, FileClock, Settings, Users, Activity, Link2, Shuffle,
 } from 'lucide-react';
 
 // Lazy-load route components → each becomes its own JS chunk, fetched only
@@ -29,6 +29,8 @@ const AuditLogPage       = lazy(() => import('./AuditLogPage'));
 const SettingsPage       = lazy(() => import('./SettingsPage'));
 const UsersRolesPage     = lazy(() => import('./UsersRolesPage'));
 const ActivityPage       = lazy(() => import('./ActivityPage'));
+const ClinicAssignmentsPage = lazy(() => import('./ClinicAssignmentsPage'));
+const ClinicSwitchAuditPage = lazy(() => import('./ClinicSwitchAuditPage'));
 
 import AdminGlobalSearch from './AdminGlobalSearch';
 
@@ -64,7 +66,9 @@ const NAV_GROUPS = [
     items: [
       { to: '/admin/notifications', label: 'Notifications', icon: Bell, testid: 'nav-admin-notifications' },
       { to: '/admin/audit', label: 'Audit Logs', icon: FileClock, testid: 'nav-admin-audit' },
+      { to: '/admin/clinic-switch-audit', label: 'Switch Audit', icon: Shuffle, testid: 'nav-admin-switch-audit' },
       { to: '/admin/users', label: 'Users & Roles', icon: Users, testid: 'nav-admin-users' },
+      { to: '/admin/clinic-assignments', label: 'Clinic Assignments', icon: Link2, testid: 'nav-admin-clinic-assignments' },
       { to: '/admin/settings', label: 'Settings', icon: Settings, testid: 'nav-admin-settings' },
     ],
   },
@@ -215,7 +219,9 @@ export default function AdminPanel() {
               <Route path="system" element={<SystemHealthPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="audit" element={<AuditLogPage />} />
+              <Route path="clinic-switch-audit" element={<ClinicSwitchAuditPage />} />
               <Route path="users" element={<UsersRolesPage />} />
+              <Route path="clinic-assignments" element={<ClinicAssignmentsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Routes>

@@ -763,3 +763,133 @@ async def update_internal_user(
         raise HTTPException(404, detail="Internal user not found")
     await _log_audit(db, caller, "internal_user.update", user_id, after=updates, request=request)
     return deserialize_datetime(r)
+
+
+# ==================== 15. CLINIC ASSIGNMENTS (Multi-Clinic admin) ====================
+#
+# Lets founders / super_admins manage which clinics a user can sign into.
+# Used by the /admin/clinic-assignments page + switch-audit viewer.
+# Mutations re-use the already-existing POST /api/auth/link-clinic and
+# /api/auth/unlink-clinic endpoints — this module only adds listing views.
+
+@router.get("/clinic-assignments")
+async def list_clinic_assignments(
+    q: Optional[str] = None,
+    limit: int = 200,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """All non-platform users with their primary + additional clinic grants.
+
+    Filters out the internal audinexa-platform users (they never belong to
+    a clinic tenant). Optional `q` matches name/email substring.
+    """
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+
+    query: dict = {"clinic_id": {"$ne": "audinexa-platform"}}
+    if q:
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}},
+        ]
+    rows = await db.users.find(
+        query,
+        {"_id": 0, "password_hash": 0, "token_version": 0},
+    ).sort("created_at", -1).to_list(limit)
+
+    # Hydrate clinic names for primary + additional in one round-trip.
+    all_ids: set[str] = set()
+    for r in rows:
+        if r.get("clinic_id"):
+            all_ids.add(r["clinic_id"])
+        for cid in r.get("additional_clinic_ids", []) or []:
+            all_ids.add(cid)
+    clinics = await db.clinics.find(
+        {"clinic_id": {"$in": list(all_ids)}},
+        {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "subscription_tier": 1},
+    ).to_list(len(all_ids) or 1)
+    cmap = {c["clinic_id"]: c for c in clinics}
+
+    out = []
+    for r in rows:
+        extras = r.get("additional_clinic_ids", []) or []
+        out.append({
+            "user_id": r["user_id"],
+            "email": r["email"],
+            "name": r.get("name"),
+            "role": r.get("role"),
+            "active": r.get("active", True),
+            "primary_clinic_id": r.get("clinic_id"),
+            "primary_clinic": cmap.get(r.get("clinic_id")),
+            "additional_clinic_ids": extras,
+            "additional_clinics": [cmap[c] for c in extras if c in cmap],
+            "total_clinics": 1 + len(extras),
+            "created_at": r.get("created_at"),
+        })
+    # Multi-clinic owners first, then single-clinic users — easiest to spot.
+    out.sort(key=lambda u: (-u["total_clinics"], u.get("email") or ""))
+    return {"count": len(out), "rows": out}
+
+
+@router.get("/clinics-directory")
+async def clinics_directory(
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Flat clinic list for the 'Link clinic' autocomplete in Assignments UI."""
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    rows = await db.clinics.find(
+        {},
+        {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "state": 1, "subscription_tier": 1, "active": 1},
+    ).sort("name", 1).to_list(500)
+    return rows
+
+
+# ==================== 16. CLINIC SWITCH AUDIT (compliance trail) ====================
+
+@router.get("/clinic-switch-audit")
+async def clinic_switch_audit(
+    user_id: Optional[str] = None,
+    clinic_id: Optional[str] = None,
+    since: Optional[str] = None,
+    limit: int = 300,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Chronological view of every `/auth/switch-clinic` call.
+
+    Filters: `user_id` (exact), `clinic_id` (either from- or to-clinic),
+    `since` (ISO-8601 lower bound on `at`). Sorted newest-first.
+    """
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+
+    q: dict = {}
+    if user_id:
+        q["user_id"] = user_id
+    if clinic_id:
+        q["$or"] = [
+            {"from_clinic_id": clinic_id},
+            {"to_clinic_id": clinic_id},
+        ]
+    if since:
+        q["at"] = {"$gte": since}
+
+    rows = await db.clinic_switch_audit.find(
+        q, {"_id": 0},
+    ).sort("at", -1).to_list(limit)
+
+    # Aggregate: how many distinct users + top movers
+    by_user: dict[str, int] = {}
+    for r in rows:
+        by_user[r.get("user_email") or r.get("user_id")] = by_user.get(r.get("user_email") or r.get("user_id"), 0) + 1
+    top_movers = sorted(by_user.items(), key=lambda kv: -kv[1])[:10]
+
+    return {
+        "count": len(rows),
+        "rows": rows,
+        "distinct_users": len(by_user),
+        "top_movers": [{"user": k, "switch_count": v} for k, v in top_movers],
+    }
