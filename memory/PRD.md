@@ -812,3 +812,20 @@ NOAH real-time sync, fax, US-style insurance/claims.
 
 Lint: clean on all touched files (Python + JS).
 
+
+
+---
+
+### [Feb 2026] Enhancement — Drag-and-Drop Between Diagnostics Columns
+
+**What shipped:**
+- Cards in the Diagnostics Queue Board are now draggable (HTML5 native — no new dependency).
+- Valid transitions: Waiting → In Progress · Checked In → In Progress · In Progress → Completed · Waiting/Checked In → Completed (quick-close for consultation-only visits). Reverse and same-column drops snap back silently. Completed cards are read-only (can't be dragged out).
+- Visual feedback: valid target column gets an indigo ring + "Drop here" placeholder; invalid column gets 60% opacity and `dropEffect='none'`.
+- Drop to **In Progress** → calls existing `/queue/start` + navigates into test module (same as single-click).
+- Drop to **Completed** → idempotent `start-then-complete` via existing endpoints; stays on the board (no navigation) so the audiologist can bulk-process.
+- Click / Enter / Space still work alongside drag — card is `role=button tabIndex=0`.
+
+**Verified (Playwright E2E on live preview):** Seeded a walk-in token → dragged "Drag Test" card from Waiting to Completed → confirmed Waiting=0, Completed=1 + backend token+session state flipped correctly. Screenshots show valid-target ring, "Drop here" placeholder, and final landed state.
+
+**Files touched:** `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` (+ ~85 LoC — drag state, handlers, column-level onDrop/onDragOver/onDragEnter/onDragLeave, card `draggable` switch). No backend change required — reuses existing `/queue/start` + `/queue/complete`.

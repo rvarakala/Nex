@@ -38,6 +38,11 @@ export default function DiagnosticsQueueBoard() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [starting, setStarting] = useState(null);  // patient_id currently starting
+  // Drag-and-drop state: which source column a card is being dragged from,
+  // and which column is currently being hovered over. Powers the column
+  // highlight + drop-validity gating.
+  const [dragFrom, setDragFrom] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,18 +60,9 @@ export default function DiagnosticsQueueBoard() {
     return () => clearInterval(iv);
   }, [load]);
 
-  const pickAndStart = async (row) => {
-    // Completed rows open the existing report instead of starting a new session.
-    if (row.state === 'completed') {
-      if (row.session_id) {
-        setActiveTest({
-          patient: { patient_id: row.patient_id, name: row.name, age: row.age, gender: row.gender, mrd: row.mrd, mobile: row.mobile },
-          sessionId: row.session_id,
-        });
-        navigate('/test');
-      }
-      return;
-    }
+  // --- Action primitives (shared by click & drag-drop) -------------------
+
+  const startAndNavigate = async (row) => {
     setStarting(row.patient_id);
     try {
       const r = await axios.post(`${API}/diagnostics/queue/start`, {
@@ -81,6 +77,86 @@ export default function DiagnosticsQueueBoard() {
       setErr(e?.response?.data?.detail || 'Could not start session');
     } finally {
       setStarting(null);
+    }
+  };
+
+  const markComplete = async (row) => {
+    // Drag-to-complete from In Progress: need the session_id. From other
+    // columns we do a "start-then-complete" (quick close for a
+    // consultation-only visit). Both flows are already idempotent on the
+    // backend — safe to chain.
+    setStarting(row.patient_id);
+    try {
+      let sessionId = row.session_id;
+      if (!sessionId) {
+        const r = await axios.post(`${API}/diagnostics/queue/start`, {
+          patient_id: row.patient_id,
+          token_id: row.token_id || undefined,
+          appointment_id: row.appointment_id || undefined,
+        });
+        sessionId = r.data.session_id;
+      }
+      await axios.post(`${API}/diagnostics/queue/complete`, { session_id: sessionId });
+      await load();
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Could not mark complete');
+    } finally {
+      setStarting(null);
+    }
+  };
+
+  const pickAndStart = async (row) => {
+    // Completed rows open the existing report instead of starting a new session.
+    if (row.state === 'completed') {
+      if (row.session_id) {
+        setActiveTest({
+          patient: { patient_id: row.patient_id, name: row.name, age: row.age, gender: row.gender, mrd: row.mrd, mobile: row.mobile },
+          sessionId: row.session_id,
+        });
+        navigate('/test');
+      }
+      return;
+    }
+    await startAndNavigate(row);
+  };
+
+  // --- Drag-and-drop -----------------------------------------------------
+  //
+  // Allowed transitions:
+  //   waiting     → in_progress   (start session, stay on board)
+  //   checked_in  → in_progress   (start session, stay on board)
+  //   in_progress → completed     (close session)
+  //   waiting     → completed     (consultation-only quick close)
+  //   checked_in  → completed     (consultation-only quick close)
+  // Anything else (e.g. completed → anywhere, same-column drop) is a
+  // no-op — the row just snaps back visually.
+  const canDrop = (from, to) => {
+    if (!from || from === to) return false;
+    if (from === 'completed') return false;
+    if (to === 'in_progress') return from === 'waiting' || from === 'checked_in';
+    if (to === 'completed') return from !== 'completed';
+    return false;
+  };
+
+  const handleDrop = async (toCol, e) => {
+    e.preventDefault();
+    setDragOver(null);
+    try {
+      const raw = e.dataTransfer.getData('application/json');
+      if (!raw) return;
+      const payload = JSON.parse(raw);
+      if (!canDrop(payload.from, toCol)) return;
+      if (toCol === 'in_progress') {
+        // Same shape `startAndNavigate` expects — opens the test module.
+        await startAndNavigate(payload);
+      } else if (toCol === 'completed') {
+        // Don't navigate; the audiologist is bulk-processing the board.
+        await markComplete(payload);
+      }
+    } catch {
+      // swallow — dragdrop should never crash the UI
+    } finally {
+      setDragFrom(null);
     }
   };
 
@@ -103,7 +179,7 @@ export default function DiagnosticsQueueBoard() {
           <span className="text-[11px] text-slate-500">
             {totalPending === 0
               ? 'No patients pending — you can register a walk-in or call the next one.'
-              : `${totalPending} pending · ${data.counts.completed || 0} completed today`}
+              : `${totalPending} pending · ${data.counts.completed || 0} completed today · drag a card between columns or click to start`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -134,8 +210,27 @@ export default function DiagnosticsQueueBoard() {
           {COLUMNS.map((col) => {
             const rows = data.columns[col.key] || [];
             const Icon = col.Icon;
+            const isValidTarget = canDrop(dragFrom, col.key);
+            const isHovered = dragOver === col.key && isValidTarget;
+            const isInvalidHover = dragOver === col.key && !isValidTarget;
             return (
-              <div key={col.key} className={`rounded-lg border ${col.accent} flex flex-col min-h-[280px]`} data-testid={`dq-col-${col.key}`}>
+              <div
+                key={col.key}
+                className={`rounded-lg border flex flex-col min-h-[280px] transition-all ${col.accent} ${
+                  isHovered ? 'ring-2 ring-indigo-500 ring-offset-1 shadow-lg scale-[1.01]' : ''
+                } ${isInvalidHover ? 'opacity-60' : ''}`}
+                data-testid={`dq-col-${col.key}`}
+                onDragOver={(e) => {
+                  if (dragFrom) { e.preventDefault(); e.dataTransfer.dropEffect = isValidTarget ? 'move' : 'none'; }
+                }}
+                onDragEnter={(e) => { if (dragFrom) { e.preventDefault(); setDragOver(col.key); } }}
+                onDragLeave={(e) => {
+                  // Leaving is noisy during hover-over-child; only clear when we
+                  // truly leave the column bounding box.
+                  if (!e.currentTarget.contains(e.relatedTarget)) setDragOver((v) => (v === col.key ? null : v));
+                }}
+                onDrop={(e) => handleDrop(col.key, e)}
+              >
                 <div className="px-3 py-2 border-b border-slate-200/60 bg-white/40 flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center gap-1.5">
                     <Icon size={13} className={`text-${col.tone}-700`} />
@@ -147,14 +242,23 @@ export default function DiagnosticsQueueBoard() {
                 </div>
                 <div className="flex-1 p-2 space-y-1.5 overflow-auto">
                   {rows.length === 0 ? (
-                    <div className="text-[10px] text-slate-400 italic text-center py-6">No patients in this stage.</div>
+                    <div className="text-[10px] text-slate-400 italic text-center py-6">
+                      {isHovered ? 'Drop here' : 'No patients in this stage.'}
+                    </div>
                   ) : (
                     rows.map((row) => (
                       <PatientCard
                         key={`${col.key}-${row.patient_id}-${row.token_id || row.appointment_id || row.session_id || ''}`}
                         row={row}
+                        fromCol={col.key}
                         isBusy={starting === row.patient_id}
                         onPick={() => pickAndStart(row)}
+                        onDragStart={(e) => {
+                          setDragFrom(col.key);
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('application/json', JSON.stringify({ ...row, from: col.key }));
+                        }}
+                        onDragEnd={() => { setDragFrom(null); setDragOver(null); }}
                       />
                     ))
                   )}
@@ -168,18 +272,24 @@ export default function DiagnosticsQueueBoard() {
   );
 }
 
-function PatientCard({ row, isBusy, onPick }) {
+function PatientCard({ row, fromCol, isBusy, onPick, onDragStart, onDragEnd }) {
   const ctaLabel = row.state === 'completed'
     ? 'View report →'
     : row.state === 'in_progress'
       ? 'Resume →'
       : 'Start test →';
+  const draggable = fromCol !== 'completed';  // completed cards are read-only.
   return (
-    <button
+    <div
+      draggable={draggable && !isBusy}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      role="button"
+      tabIndex={0}
       onClick={onPick}
-      disabled={isBusy}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPick(); }}
       data-testid={`dq-card-${row.patient_id}`}
-      className={`w-full text-left bg-white rounded p-2 shadow-sm hover:shadow-md transition-shadow ${PRIO_STYLE[row.priority || 'normal']} disabled:opacity-50 disabled:cursor-wait group`}
+      className={`w-full text-left bg-white rounded p-2 shadow-sm hover:shadow-md transition-shadow ${PRIO_STYLE[row.priority || 'normal']} ${isBusy ? 'opacity-50 cursor-wait' : 'cursor-pointer'} group select-none`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -219,6 +329,6 @@ function PatientCard({ row, isBusy, onPick }) {
           {isBusy ? 'Opening…' : ctaLabel}
         </span>
       </div>
-    </button>
+    </div>
   );
 }
