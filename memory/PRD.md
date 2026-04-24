@@ -418,3 +418,35 @@ NOAH real-time sync, fax, US-style insurance/claims.
 **Files touched:**
 - `/app/backend/routers/ha_products.py` (+105 LoC), `ha_inventory.py` (+120 LoC), `ha_trials.py` (+23 LoC guard + `source` field), `models_ha.py` (Side + Trial.source).
 - `/app/frontend/src/components/ModalShell.js` (NEW), `modules/ha/ProductCataloguePage.js` (rewritten with inline serials), `modules/ha/DemoStockPage.js` (NEW), `modules/ha/TrialsPage.js` (demo-first UX), `modules/ha/QuotationStudioPage.js` (both option), `modules/ha/HAModule.js` (new tab), plus batch backdrop patch across 9 HA modals.
+
+---
+
+### [Feb 2026] Multi-Clinic Brand Wrapper (Clinic Switcher) — COMPLETE
+
+**User problem:** Clinic owners who run multiple clinics (e.g. 5 branches across tenants) had to log out / log in to switch context. Requested one-login, one-switcher UX.
+
+**What shipped:**
+1. **Backend** (`/app/backend/server.py`)
+   - `GET /api/auth/my-clinics` — returns active + primary + all additional clinics the signed-in user can sign into.
+   - `POST /api/auth/switch-clinic` — re-issues a JWT bound to the target clinic (403 if not in `additional_clinic_ids`). Token version preserved.
+   - `POST /api/auth/link-clinic` — super_admin/founder only; grants a user access to an additional clinic (idempotent, `$addToSet`).
+   - `POST /api/auth/unlink-clinic` — revokes access, bumps `token_version` to kick existing sessions.
+   - `get_current_user` merged `additional_clinic_ids` into the user dict so downstream endpoints respect the cross-clinic grant.
+2. **Frontend**
+   - `/app/frontend/src/AuthContext.js` — new `switchClinic(clinic_id)` context method.
+   - `/app/frontend/src/shell/ClinicSwitcher.js` — compact sidebar dropdown, auto-hidden for single-clinic users, shows active clinic with a green check, city/state/tier subline.
+   - Wired into `AppShell.js` sidebar header.
+3. **UX fix during verification** — switcher originally reloaded to `/` (public landing page). Changed to `/app` so `PostLoginRedirect` routes each role to its default dashboard (`/frontdesk`, `/test`, `/admin/dashboard`, `/partner`).
+
+**Verification (Feb 2026):**
+- Backend: `my-clinics` returns both clinics for KIMS owner, `switch-clinic` issues fresh JWT scoped to Apollo, 403 returned for unauthorized tenant (`tenant-soundcare-hyd`). Patient list differs between tenants (KIMS=Jasmita, Apollo=trivi) — isolation confirmed.
+- Frontend (screenshots): Sidebar header + stats + pending reports count change on switch (KIMS pending=2, Apollo pending=0). Round-trip KIMS → Apollo → KIMS successful, all dashboard widgets update.
+
+**Files touched:**
+- `/app/backend/server.py` (+4 endpoints), `/app/backend/auth.py` (merged `additional_clinic_ids` in current-user context).
+- `/app/frontend/src/AuthContext.js`, `/app/frontend/src/shell/ClinicSwitcher.js` (NEW), `/app/frontend/src/shell/AppShell.js` (mount).
+
+**Next steps / future enhancements:**
+- Admin UI to manage `additional_clinic_ids` per user (currently super_admin must call `/api/auth/link-clinic` via curl or Admin Panel direct-DB).
+- Optional: audit log for clinic switches (who/when/from→to) for compliance.
+

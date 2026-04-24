@@ -47,9 +47,11 @@ export default function ClinicSwitcher({ collapsed = false }) {
     try {
       await switchClinic(cid);
       // Hard-reload so every module discards its in-memory cache and
-      // re-fetches for the newly-active tenant. Cleanest UX for a
-      // tenant boundary change.
-      window.location.href = '/';
+      // re-fetches for the newly-active tenant. We land on /app so the
+      // PostLoginRedirect routes to the user's role-default page
+      // (e.g. /frontdesk, /test, /admin/dashboard) — routing to "/"
+      // would drop the user on the public landing page.
+      window.location.href = '/app';
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Switch failed');
       setBusy(false);
