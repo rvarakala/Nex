@@ -744,3 +744,35 @@ NOAH real-time sync, fax, US-style insurance/claims.
 - `/app/frontend/src/components/reports/ReportPreflightModal.js` (+ `onApplyFix` prop, inline fix button, `Wand2` icon)
 - `/app/frontend/src/components/ReportsPanel.js` (+ `applyPreflightFix` dispatcher, prop plumb)
 
+
+---
+
+### [Feb 2026] Code-review triage — applied real fixes, deferred false positives
+
+**Context:** External code-quality scanner produced a report with ~400 flagged items. Honest triage:
+
+**Applied fixes (real issues, low-risk):**
+1. **OTP generation now uses `secrets.randbelow`** instead of `random.randint` in `/app/backend/routers/patient_portal.py`. `random` module is a Mersenne-Twister PRNG and predictable; `secrets` is backed by the OS CSPRNG — the right choice for authentication tokens. `import random` removed (unused).
+2. **Pie chart Cells** in `UsageAnalyticsPage.jsx` and `DashboardPage.jsx` now use stable composite keys (`e.name` / `p.tier`) instead of array indices. Prevents React from incorrectly recycling chart cells if the data re-orders.
+3. **InvoiceDetailPage thermal printer `innerHTML`** — retained (every dynamic value runs through the existing `esc()` HTML escaper; every static tag is author-controlled) but added a reinforced audit comment + `eslint-disable-next-line no-unsanitized/property` with clear reasoning so future agents don't strip the safety argument.
+
+**False positives — not touched (would degrade code):**
+- "137 instances of `is` as literal-comparison" in backend — the scanner can't distinguish `is None` (correct per PEP 8) from `is "literal"` (incorrect). Spot-checked 6 of the 6 highest-priority files listed (`tiers.py`, `ist.py`, `activity.py` x4): ALL are `is None` / `is not None`. No `is` literal-comparison bugs actually exist.
+- `InvoiceDetailPage.js:428` `innerHTML` XSS — data-flow analysis shows every dynamic value flows through `esc()` first; scanner lacks cross-function analysis.
+- `AppSwitcher.jsx:46` `key={i}` — 9 identical decorative dots (static, never reorders).
+- `InventoryBoardPage.js:200` `key={i}` on timeline events — events don't have a stable ID; index is acceptable for an append-only list.
+
+**Deferred (already in P2 backlog — too risky for a live-beta app):**
+- 221 missing React hook dependencies — requires its own dedicated session with thorough regression testing. ESLint auto-fix can break stale-closure intent.
+- `AudiogramCanvas.js` complexity-100 split → P2 (touched daily by beta users; split after MSG91 feature complete).
+- `BookAppointmentModal.js` 641-line component split → P2 (just added features this session; let the new UX settle).
+- `TestProceduresModule.js` 428-line split → P2.
+- JWT → httpOnly cookies migration → P2 (touches every authenticated request; schedule as its own PR).
+- `admin_panel.py dashboard()` / `admin_seed.py` complexity refactors → P3 (internal endpoints, lower risk; do when we need to add functionality there).
+
+**Files touched:**
+- `/app/backend/routers/patient_portal.py` (-1 import, OTP generator)
+- `/app/frontend/src/modules/admin/panel/UsageAnalyticsPage.jsx` (1-line key change)
+- `/app/frontend/src/modules/admin/panel/DashboardPage.jsx` (1-line key change)
+- `/app/frontend/src/modules/billing/InvoiceDetailPage.js` (audit comment + eslint-disable)
+

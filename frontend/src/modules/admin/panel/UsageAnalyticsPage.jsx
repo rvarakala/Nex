@@ -47,7 +47,7 @@ export default function UsageAnalyticsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={pie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label>
-                  {pie.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  {pie.map((e) => <Cell key={e.name} fill={e.fill} />)}
                 </Pie>
                 <Tooltip contentStyle={{ fontSize: 11 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />

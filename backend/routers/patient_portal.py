@@ -22,7 +22,6 @@ Tier gate: STANDARD + PREMIUM (via module "patient-portal").
 from __future__ import annotations
 
 import os
-import random
 import secrets
 import hashlib
 from datetime import datetime, timezone, timedelta, date
@@ -173,7 +172,7 @@ async def request_otp(payload: OTPRequest, db=Depends(get_db)):
     if not patient:
         return {"sent": True, "dev_note": "no_matching_patient"}
 
-    otp = f"{random.randint(0, 999999):06d}"
+    otp = f"{secrets.randbelow(1_000_000):06d}"
     exp_iso = (datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
     await db.patient_otps.update_one(
         {"clinic_id": payload.clinic_id, "patient_id": patient["patient_id"]},

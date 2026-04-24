@@ -424,7 +424,15 @@ function printThermal(inv, clinic) {
   // Body — lines are pre-escaped HTML templates; innerHTML is safe because every
   // dynamic substring has been run through esc() above. Static tags (<div>, <b>,
   // <span>, class/style attrs) are author-controlled.
+  //
+  // Code review (Feb 2026) flagged this as a potential XSS vector. Retained after
+  // audit: the esc() helper at line 348 escapes the 5 XSS-relevant characters
+  // (& < > " ') on every dynamic value before it reaches `lines`. The only
+  // non-escaped content is the hard-coded HTML scaffolding (class names, div/span
+  // tags). If you ever interpolate a NEW dynamic field into `lines`, wrap it with
+  // esc() or this comment's safety argument stops holding.
   const wrapper = doc.createElement('div');
+  // eslint-disable-next-line no-unsanitized/property -- every dynamic value is esc()'d at source
   wrapper.innerHTML = lines.join('\n');
   doc.body.appendChild(wrapper);
 

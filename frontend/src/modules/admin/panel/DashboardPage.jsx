@@ -67,7 +67,7 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={plan_distribution} dataKey="count" nameKey="tier" cx="50%" cy="50%" outerRadius={70} label>
-                  {plan_distribution.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
+                  {plan_distribution.map((p, i) => <Cell key={p.tier || `plan-${i}`} fill={PIE_COLORS[i]} />)}
                 </Pie>
                 <Tooltip formatter={(v, n) => [v + ' clinics', n]} contentStyle={{ fontSize: 11 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
