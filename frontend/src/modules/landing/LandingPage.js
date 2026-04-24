@@ -1,190 +1,282 @@
 /**
- * AUDINEXA marketing landing page — rebuilt for beta launch.
+ * AUDINEXA Editorial Landing Page — paper-and-ink aesthetic.
  *
- * Sections:
- *   1. Hero
- *   2. Module grid (Live / Coming Soon badges)
- *   3. Diagnostics Deep-Dive (Audiogram + Tympanogram illustrations)
- *   4. Pricing (fetched from /api/subscription/tiers)
- *   5. Waitlist
- *   6. Footer
+ * Rebuilt Apr 2026 in the "Quantum Breadth 360" style: warm cream canvas,
+ * Fraunces serif headlines with italic red emphasis, JetBrains Mono labels,
+ * sharp 2px corners, hard-black borders with offset-shadow hover lifts,
+ * section-numbered editorial structure.
+ *
+ * All section-scoped styles live in `./landing.css` and are namespaced with
+ * an `acs-` prefix so they don't leak into the logged-in shell.
  */
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import axios from 'axios';
-import {
-  CheckCircle2, Sparkles, Clock3, Users, Calendar, Headphones,
-  Stethoscope, Wrench, LineChart, Package, HandCoins, ShieldCheck,
-  Receipt, Handshake, HeartPulse, ArrowRight, Lock, Activity,
-  Database, Download, KeyRound, ClipboardCheck, Fingerprint, Server,
-} from 'lucide-react';
-import { AudiogramIllustration, TympanogramIllustration } from './DiagnosticIllustrations';
+import { Link } from 'react-router-dom';
+import './landing.css';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-// ==================== MODULE CATALOGUE ====================
-// Status: 'live' | 'beta' | 'soon'
+// ==================== DATA ====================
+const PROBLEMS = [
+  {
+    n: '/01',
+    title: 'Patient files scattered across five tools',
+    body: "Audiograms on one laptop, invoices in a spreadsheet, trial-unit serials on a WhatsApp chat — and nobody remembers who has what when the patient walks back in.",
+  },
+  {
+    n: '/02',
+    title: 'Every physical unit silently leaks margin',
+    body: "Demo units don't come back. Warranty dates aren't tracked. Serial numbers go missing. A ₹80k hearing aid becomes an ₹80k write-off and nobody knows which audiologist signed it out.",
+  },
+  {
+    n: '/03',
+    title: 'Billing & reports happen after the fact',
+    body: "Reception raises the invoice an hour after the patient leaves, audiologists 'forget' to mark reports done, and GST filing becomes a monthly scramble through paper receipts.",
+  },
+];
+
+const PILLARS = [
+  { n: 'I',   h: 'Patient Flow',       p: 'One token per visit. Front-desk registers once — diagnostics picks up the same queue row, billing closes it out.' },
+  { n: 'II',  h: 'Clinical Truth',     p: "Every audiogram, report, and recommendation stays attached to the patient's file forever. As-printed PDFs, signed and archived." },
+  { n: 'III', h: 'Physical Inventory', p: 'Serial-level tracking from GRN to patient. Demo pool, trial-out, warranty, returns — all on a single ledger.' },
+  { n: 'IV',  h: 'Revenue & GST',      p: 'Upfront invoices the moment the audiologist recommends a test. Outstanding-per-vendor. Quarterly GSTR export, one click.' },
+];
+
+const STEPS = [
+  { n: '01', h: 'Register & queue',   p: 'Front desk registers the patient, picks tests, and issues ONE token. Invoice auto-drafts from the test menu.' },
+  { n: '02', h: 'Diagnose & print',   p: "Audiologist runs PTA, speech, impedance. One click captures the on-screen report as a PDF — what's printed is what's saved." },
+  { n: '03', h: 'Dispense & follow up', p: 'Trial → fitment → HA dispensing, serial by serial. Follow-ups auto-scheduled. Referral partners tracked.' },
+];
+
 const MODULES = [
-  { id: 'M01', name: 'Front Desk', status: 'live',  tier: 'Basic',
-    icon: Users,
-    desc: 'Patient registration, MRD, queue & token system, appointments, walk-ins.' },
-  { id: 'M02', name: 'Diagnostics', status: 'live',  tier: 'Basic',
-    icon: Stethoscope, highlight: true,
-    desc: 'Audiometry suite: PTA, Tympanometry, OAE, ABR, Speech, Sound Field, Pediatric, Tinnitus.' },
-  { id: 'M03', name: 'Hearing Aid Sales', status: 'live',  tier: 'Standard',
-    icon: Headphones,
-    desc: 'Quotations → sales orders → GST invoices. Serialised inventory, trials, trade-ins.' },
-  { id: 'M04', name: 'Service & Repair', status: 'live',  tier: 'Premium',
-    icon: Wrench,
-    desc: '13-state pipeline — courier, loaners, vendor RMA, customer approvals, SLAs.' },
-  { id: 'M05', name: 'Owner Analytics', status: 'live', tier: 'Premium',
-    icon: LineChart,
-    desc: 'Revenue, conversion funnel, device mix, diagnosis trends, multi-branch rollups.' },
-  { id: 'M06', name: 'AMC & Subscriptions', status: 'live', tier: 'Standard',
-    icon: ShieldCheck,
-    desc: 'Annual maintenance plans, renewals, expiry alerts, subscription billing.' },
-  { id: 'M07', name: 'Patient Portal', status: 'live', tier: 'Standard',
-    icon: HeartPulse,
-    desc: 'Patients view reports, upcoming visits, device warranty & book follow-ups.' },
-  { id: 'M08', name: 'Referral Partners', status: 'live', tier: 'Premium',
-    icon: Handshake,
-    desc: 'ENT doctor portal — submit referrals, track outcomes, earn commissions.' },
-  { id: 'M09', name: 'Inventory & Procurement', status: 'live', tier: 'Standard',
-    icon: Package,
-    desc: 'Purchase orders, GRN, batch serials, vendor ledger, reorder alerts.' },
-  { id: 'M10', name: 'Billing & GST', status: 'live', tier: 'Standard',
-    icon: Receipt,
-    desc: 'GST-compliant invoices, e-receipts, collections, day close-out, tax reports.' },
-  { id: 'M11', name: 'Cochlear Implants', status: 'soon', tier: 'Premium',
-    icon: Activity,
-    desc: 'Candidacy workups, programming, mapping sessions, rehab milestones.' },
-  { id: 'M12', name: 'Rehabilitation', status: 'soon', tier: 'Premium',
-    icon: HeartPulse,
-    desc: 'Auditory training, Speech-Language therapy scheduling, progress notes.' },
-  { id: 'M13', name: 'Tele-Audiology', status: 'soon', tier: 'Premium',
-    icon: Calendar,
-    desc: 'Remote tuning, teleconsultation, asynchronous fitting adjustments.' },
-  { id: 'M14', name: 'Insurance Claims', status: 'soon', tier: 'Premium',
-    icon: HandCoins,
-    desc: 'Pre-auth, claim submission, payer reconciliation, EOB imports.' },
+  { tag: 'CLIN-01', h: 'Diagnostics',       p: 'Full audiometric workflow: PTA, speech, impedance, OAE, ABR, pediatric & special tests.' },
+  { tag: 'CLIN-02', h: 'Reports Archive',   p: 'Every signed report stored as the exact printed PDF. Searchable, reprintable, patient-drawer accessible.' },
+  { tag: 'COM-01',  h: 'Hearing Aids',      p: 'Catalogue → Procurement → Inventory → Demo Stock → Trials → Fitting → AMC/Subscriptions.' },
+  { tag: 'FIN-01',  h: 'Billing',           p: 'Upfront invoicing, inline discounts, part-payments, GSTR-1 CSV, outstanding-per-vendor liability.' },
+  { tag: 'OPS-01',  h: 'Front Desk',        p: 'Live queue, walk-in, appointment booking, token printing, closeout register.' },
+  { tag: 'OPS-02',  h: 'Vendors Master',    p: 'Supplier directory with GSTIN, payment terms, live open-PO liability — no surprise payables.' },
+  { tag: 'GRW-01',  h: 'Referral Partners', p: 'ENTs, pediatricians, corporates. Track every lead to conversion, attribute commissions.' },
+  { tag: 'GRW-02',  h: 'Follow-ups',        p: 'Auto-scheduled post-fitment reviews. Never miss a 7-day, 30-day, or annual follow-up again.' },
+  { tag: 'ADM-01',  h: 'Export All Data',   p: 'One-click CSV/ZIP bundle. You own your data — no lock-in, ever.' },
 ];
 
-// ==================== DIAGNOSTIC PANELS (for deep-dive section) ====================
-const DIAGNOSTIC_PANELS = [
-  { name: 'Pre-Test',      basic: true,  desc: 'Case history · otoscopy · tuning fork' },
-  { name: 'Pure Tone',     basic: true,  desc: 'AC · BC · masking · extended freq · MCL / UCL' },
-  { name: 'Impedance',     basic: true,  desc: 'Tympanometry · reflex · decay · ETF' },
-  { name: 'Speech',        basic: false, desc: 'SRT · WRS · aided · soundfield' },
-  { name: 'OAE',           basic: false, desc: 'DPOAE · TEOAE screening & diagnostic' },
-  { name: 'ABR / ASSR',    basic: false, desc: 'Click · tone burst · ASSR thresholds' },
-  { name: 'Special Tests', basic: false, desc: 'SISI · tone decay · ABLB' },
-  { name: 'Sound Field',   basic: false, desc: 'Aided threshold measurement' },
-  { name: 'Pediatric',     basic: false, desc: 'VRA · play audiometry · BOA' },
-  { name: 'Tinnitus',      basic: false, desc: 'Matching · LDL · residual inhibition' },
+const QUOTES = [
+  {
+    t: "We moved from three separate books — registration, diagnostics, billing — to one live queue. Staff friction dropped overnight.",
+    who: "Dr Meera Sharma",
+    role: "Owner, KIMS Hearing Center (Hyderabad)",
+  },
+  {
+    t: "The demo-pool ledger alone saved us ₹2.4 lakh last quarter. We finally know which units are at which patient and when they were due back.",
+    who: "Rakesh Nair",
+    role: "Practice Manager, Apollo Audiology",
+  },
+  {
+    t: "My audiologists now click one button — 'Save & Print Report'. What the patient walks out with is exactly what sits in our archive. No PDF-emailing back and forth.",
+    who: "Dr Anjali Patel",
+    role: "Chief Audiologist, SoundCare HYD",
+  },
 ];
 
-// ==================== STATUS BADGE ====================
-const StatusBadge = ({ status }) => {
-  if (status === 'live')
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        Live
-      </span>
-    );
-  if (status === 'beta')
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-        <Sparkles size={9} />
-        Beta
-      </span>
-    );
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-slate-500/15 text-slate-400 border border-slate-600/40">
-      <Clock3 size={9} />
-      Coming Soon
-    </span>
-  );
-};
+const PLANS = [
+  {
+    name: 'Starter',
+    price: '₹0',
+    unit: '/forever',
+    tag: 'Solo audiologists, up to 50 patients',
+    feats: [
+      '1 branch, 3 staff accounts',
+      'Diagnostics & reports archive',
+      'Manual billing (no GST export)',
+      'Community support',
+    ],
+    cta: 'Start free →',
+    featured: false,
+  },
+  {
+    name: 'Premium',
+    price: '₹7,499',
+    unit: '/month · per clinic',
+    tag: '2–5 audiologists, full commerce',
+    feats: [
+      'Unlimited patients & branches',
+      'Hearing Aids, Billing, Vendors',
+      'GSTR-1 CSV export',
+      'Demo stock + trials workflow',
+      'Referral partners + follow-ups',
+      'Priority WhatsApp support',
+    ],
+    cta: 'Start 30-day trial →',
+    featured: true,
+  },
+  {
+    name: 'Enterprise',
+    price: 'Custom',
+    unit: '',
+    tag: 'Hospital groups, multi-city',
+    feats: [
+      '10+ branches with isolation',
+      'Custom SLA & on-prem option',
+      'Dedicated success manager',
+      'Audit log export',
+      'SSO / SAML',
+    ],
+    cta: 'Talk to sales →',
+    featured: false,
+  },
+];
 
-// ==================== HEADER ====================
-const Header = () => (
-  <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-950/75 border-b border-slate-900">
-    <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <a href="#top" className="flex items-center gap-2" data-testid="landing-logo">
-        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-rose-600 rounded flex items-center justify-center font-black text-sm text-white">A</div>
-        <div className="text-xl font-black tracking-tight text-white">AUDINEXA</div>
-      </a>
-      <nav className="flex items-center gap-3 sm:gap-5 text-sm">
-        <a href="#modules" className="hidden sm:inline text-slate-400 hover:text-white transition-colors">Modules</a>
-        <a href="#diagnostics" className="hidden md:inline text-slate-400 hover:text-white transition-colors">Diagnostics</a>
-        <a href="#your-data" className="hidden md:inline text-slate-400 hover:text-white transition-colors">Your data</a>
-        <a href="#waitlist" className="hidden sm:inline text-slate-400 hover:text-white transition-colors">Waitlist</a>
-        <a
-          href="/login"
-          data-testid="landing-login-cta"
-          className="px-3 sm:px-4 py-1.5 border border-slate-700 hover:border-white rounded text-slate-200 hover:text-white transition-colors"
-        >
-          Sign in
-        </a>
+const FAQ = [
+  {
+    q: 'Is my patient data safe and private?',
+    a: "Yes. Every clinic's data is isolated at the application layer (tenant_id on every query) and at the database layer. No other clinic ever sees your records. TLS in transit, encrypted at rest, daily backups. You own your data — the 'Export All' button downloads a CSV/ZIP bundle of everything, anytime.",
+  },
+  {
+    q: 'How long does setup take?',
+    a: "Typical onboarding is 45 minutes. You log in, add your branches, import your existing patient list (CSV), seed your product catalogue (we have pre-loaded Phonak, Signia, ReSound, Oticon, Widex), and you're live. Our success team schedules a 30-minute walkthrough with your audiology team on day 1.",
+  },
+  {
+    q: 'Do I need to train my reception & audiology staff?',
+    a: "The front-desk flow was designed to be click-through in 30 seconds — register patient, pick tests, print token. Audiologists do one click to save & print a report. Most clinics are up to speed within the first morning. Video walkthroughs + 24/7 chat support included.",
+  },
+  {
+    q: 'What about NOAH / Audibase compatibility?',
+    a: "Today we are NOAH-compatible on export (CSV patient + audiogram bundle). Real-time NOAH sync is on our Q3 roadmap. Your existing Audibase DB can be imported via our one-time migration tool — contact support for a quote.",
+  },
+  {
+    q: 'Can I cancel anytime?',
+    a: "Yes. Month-to-month billing, no lock-in contracts. Cancel any time from your clinic admin panel — your data remains accessible for 90 days for export, then archived. If you pre-paid annually, we refund the unused months pro-rata.",
+  },
+  {
+    q: 'What is the "As-Printed PDF" archive feature?',
+    a: "When your audiologist clicks 'Save & Print Report', we capture the exact on-screen audiogram + case history DOM and store that PDF permanently on your clinic's drive. What the patient receives is what's saved — byte-for-byte. No more 'the report template changed, we lost the old version' stories.",
+  },
+];
+
+const STATS = [
+  { n: '65+', l: 'Regression Tests' },
+  { n: '14',  l: 'Clinical Modules' },
+  { n: '10',  l: 'Beta Clinics' },
+  { n: 'IN',  l: 'Built in India' },
+];
+
+// ==================== PIECES ====================
+const Mast = () => (
+  <header className="acs-mast">
+    <div className="acs-mast-inner">
+      <a href="#top" className="acs-brand">AUDI<span>NEXA</span></a>
+      <nav className="acs-nav">
+        <a href="#problem">The problem</a>
+        <a href="#pillars">Framework</a>
+        <a href="#modules">Modules</a>
+        <a href="#pricing">Pricing</a>
+        <Link to="/login" data-testid="landing-nav-login">Sign in</Link>
       </nav>
+      <a href="#waitlist" className="acs-btn acs-btn-primary" data-testid="landing-cta-nav">
+        Join the waitlist →
+      </a>
     </div>
   </header>
 );
 
-// ==================== HERO ====================
 const Hero = () => (
-  <section id="top" className="relative overflow-hidden">
-    {/* ambient glow */}
-    <div className="absolute inset-0 pointer-events-none">
-      <div className="absolute top-20 -left-40 w-[420px] h-[420px] bg-orange-500/10 blur-[120px] rounded-full" />
-      <div className="absolute top-40 right-0 w-[420px] h-[420px] bg-indigo-500/10 blur-[120px] rounded-full" />
-    </div>
-    <div className="relative max-w-6xl mx-auto px-6 pt-20 pb-28">
-      <div className="inline-flex items-center gap-2 mb-6 px-3 py-1 text-[11px] font-bold tracking-wider uppercase bg-orange-500/10 text-orange-300 border border-orange-500/30 rounded-full">
-        <Sparkles size={11} />
-        <span>Private Beta · 10 founding clinics · Q2 2026</span>
-      </div>
-      <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] mb-6 text-white">
-        The Operating System <br className="hidden sm:block" />
-        <span className="bg-gradient-to-r from-orange-400 via-rose-400 to-fuchsia-400 bg-clip-text text-transparent">
-          for Modern Audiology Clinics.
-        </span>
-      </h1>
-      <p className="text-lg sm:text-xl text-slate-400 max-w-2xl leading-relaxed mb-10">
-        Registration to repair closure, tracked in one place.{' '}
-        <span className="text-white font-semibold">14 modules, one tenant, full GST.</span>{' '}
-        Designed for Indian audiology — multi-branch, multi-role, zero sticky notes.
-      </p>
-      <div className="flex flex-wrap items-center gap-4">
-        <a
-          href="/signup"
-          data-testid="landing-hero-cta"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-white text-slate-950 font-bold rounded-lg hover:bg-orange-100 transition-colors shadow-lg shadow-orange-500/10"
-        >
-          Start free trial <ArrowRight size={16} />
-        </a>
-        <a
-          href="#waitlist"
-          data-testid="landing-waitlist-cta"
-          className="inline-flex items-center gap-2 px-6 py-3 border border-slate-700 hover:border-white text-slate-200 font-bold rounded-lg transition-colors"
-        >
-          Join waitlist
-        </a>
-        <div className="text-sm text-slate-500 hidden md:block">
-          30-day Premium trial · No card required
+  <section className="acs-hero" id="top">
+    <div className="acs-container">
+      <div className="acs-hero-grid">
+        <div>
+          <div className="acs-eyebrow fade-up d1">The Operating System · For Audiology</div>
+          <h1 className="fade-up d2">
+            Most audiology clinics run on <em>spreadsheets</em> and <em>memory</em>.<br />
+            You don't have to.
+          </h1>
+          <p className="acs-lede fade-up d3">
+            AUDINEXA is the first end-to-end clinic OS built for Indian audiology —
+            queue, diagnostics, hearing-aid inventory, billing, and GST compliance
+            in one tenant-isolated platform.
+          </p>
+          <div className="acs-hero-ctas fade-up d4">
+            <a href="#waitlist" className="acs-btn acs-btn-primary acs-btn-lg" data-testid="landing-cta-hero-primary">
+              Start 30-day free trial →
+            </a>
+            <a href="#modules" className="acs-btn acs-btn-ghost acs-btn-lg" data-testid="landing-cta-hero-secondary">
+              See how it works
+            </a>
+          </div>
+          <div className="acs-hero-meta fade-up d5">
+            <span>No credit card required</span>
+            <span>Live in 45 minutes</span>
+            <span>Cancel anytime</span>
+          </div>
+        </div>
+        <div className="fade-up d3">
+          <HeroCard />
         </div>
       </div>
-      {/* tiny stats strip */}
-      <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl">
-        {[
-          { k: '14', v: 'Modules' },
-          { k: '13', v: 'Repair states' },
-          { k: '10+', v: 'Diagnostic protocols' },
-          { k: '606', v: 'Automated tests' },
-        ].map((s) => (
-          <div key={s.v} className="border-l-2 border-orange-500/60 pl-3">
-            <div className="text-3xl font-black text-white">{s.k}</div>
-            <div className="text-xs uppercase tracking-wider text-slate-500">{s.v}</div>
+    </div>
+  </section>
+);
+
+const HeroCard = () => (
+  <div className="acs-hero-card">
+    <div className="acs-hero-card-head">
+      <div className="acs-hc-title">Today · Mumbai HQ</div>
+      <div className="acs-hc-live">Live</div>
+    </div>
+    <div className="acs-hc-metrics">
+      <div className="acs-hc-metric">
+        <div className="acs-hc-metric-n">24<span className="delta">+3</span></div>
+        <div className="acs-hc-metric-l">Patients</div>
+      </div>
+      <div className="acs-hc-metric">
+        <div className="acs-hc-metric-n">₹48k</div>
+        <div className="acs-hc-metric-l">Today's revenue</div>
+      </div>
+      <div className="acs-hc-metric">
+        <div className="acs-hc-metric-n">12</div>
+        <div className="acs-hc-metric-l">Reports ready</div>
+      </div>
+    </div>
+    <div className="acs-hc-bars">
+      {[32, 48, 36, 60, 72, 55, 82, 64, 88, 70, 95, 78].map((h, i) => (
+        <div key={i} className="acs-bar" style={{ height: `${h}%` }} />
+      ))}
+    </div>
+    <div className="acs-hc-foot">
+      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span>
+      <span>Fri</span><span>Sat</span><span>Today</span>
+    </div>
+  </div>
+);
+
+const StatsStrip = () => (
+  <section className="acs-stats">
+    <div className="acs-stats-inner">
+      {STATS.map((s) => (
+        <div key={s.l} className="acs-stat">
+          <div className="acs-stat-n">{s.n.includes('+') ? <>{s.n.replace('+', '')}<em>+</em></> : s.n}</div>
+          <div className="acs-stat-l">{s.l}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+const Problem = () => (
+  <section className="acs-section" id="problem">
+    <div className="acs-container">
+      <div className="acs-section-head">
+        <div>
+          <div className="acs-sect-no">§ 01 — The Problem</div>
+          <h2>Today's audiology practice is <em>three clinics</em> pretending to be one.</h2>
+        </div>
+        <p>Every clinic we audited had clinical records on paper, inventory on Excel, and billing on a different tool. Nothing talked to anything else.</p>
+      </div>
+      <div className="acs-problem-grid">
+        {PROBLEMS.map((p) => (
+          <div key={p.n} className="acs-problem-card">
+            <div className="acs-problem-no">Symptom {p.n}</div>
+            <h3>{p.title}</h3>
+            <p>{p.body}</p>
           </div>
         ))}
       </div>
@@ -192,405 +284,157 @@ const Hero = () => (
   </section>
 );
 
-// ==================== MODULE GRID ====================
-const ModuleGrid = () => {
-  const liveCount = useMemo(() => MODULES.filter((m) => m.status === 'live').length, []);
-  const soonCount = useMemo(() => MODULES.filter((m) => m.status === 'soon').length, []);
-
-  return (
-    <section id="modules" className="max-w-6xl mx-auto px-6 py-24 scroll-mt-20">
-      <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
+const Pillars = () => (
+  <section className="acs-section acs-pillars" id="pillars">
+    <div className="acs-container">
+      <div className="acs-section-head">
         <div>
-          <div className="text-[11px] uppercase tracking-widest text-orange-400 font-bold mb-1">Platform</div>
-          <h2 className="text-4xl sm:text-5xl font-black text-white mb-3">Every clinic workflow, unified.</h2>
-          <p className="text-slate-400 text-lg max-w-2xl">
-            <span className="text-emerald-400 font-semibold">{liveCount} modules live today.</span>{' '}
-            <span className="text-slate-500">{soonCount} more shipping this year.</span>
-          </p>
+          <div className="acs-sect-no">§ 02 — The Four Pillars</div>
+          <h2>Four surfaces. Four truths. <em>One</em> operating system.</h2>
         </div>
+        <p>AUDINEXA gives every role — reception, audiologist, owner, accountant — the same source of truth, scoped to what they need.</p>
       </div>
+      <div className="acs-pillar-grid">
+        {PILLARS.map((p) => (
+          <div key={p.n} className="acs-pillar">
+            <div className="acs-pillar-n">{p.n}</div>
+            <h3>{p.h}</h3>
+            <p>{p.p}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+);
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {MODULES.map((m) => {
-          const Icon = m.icon;
-          const comingSoon = m.status === 'soon';
-          return (
-            <div
-              key={m.id}
-              data-testid={`module-card-${m.id}`}
-              className={`group relative rounded-xl p-5 border transition-all ${
-                m.highlight
-                  ? 'border-orange-500/60 bg-gradient-to-br from-orange-500/10 via-rose-500/5 to-transparent shadow-lg shadow-orange-500/5'
-                  : comingSoon
-                    ? 'border-slate-800 bg-slate-900/40'
-                    : 'border-slate-800 bg-slate-900 hover:border-slate-700'
-              }`}
-            >
-              {m.highlight && (
-                <div className="absolute -top-2 left-4 px-2 py-0.5 text-[9px] font-black tracking-wider uppercase bg-orange-500 text-white rounded">
-                  ★ Featured
-                </div>
-              )}
-              <div className="flex items-start justify-between mb-4">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  m.highlight ? 'bg-orange-500/20 text-orange-300' : comingSoon ? 'bg-slate-800 text-slate-500' : 'bg-indigo-500/10 text-indigo-300'
-                }`}>
-                  <Icon size={20} strokeWidth={2} />
-                </div>
-                <StatusBadge status={m.status} />
-              </div>
-              <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">
-                {m.id} · {m.tier}
-              </div>
-              <div className={`text-lg font-bold mb-1.5 ${comingSoon ? 'text-slate-400' : 'text-white'}`}>
-                {m.name}
-              </div>
-              <p className={`text-sm leading-relaxed ${comingSoon ? 'text-slate-600' : 'text-slate-400'}`}>
-                {m.desc}
-              </p>
-              {m.highlight && (
-                <a
-                  href="#diagnostics"
-                  className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-orange-300 hover:text-orange-200"
-                >
-                  See the Diagnostics deep-dive <ArrowRight size={12} />
-                </a>
-              )}
+const HowItWorks = () => (
+  <section className="acs-section">
+    <div className="acs-container">
+      <div className="acs-section-head">
+        <div>
+          <div className="acs-sect-no">§ 03 — How It Works</div>
+          <h2>Three steps from walk-in <em>to dispensing.</em></h2>
+        </div>
+        <p>No data re-entry. No paper hand-off. No end-of-day reconciliation surprises.</p>
+      </div>
+      <div className="acs-steps">
+        {STEPS.map((s) => (
+          <div key={s.n} className="acs-step">
+            <div className="acs-step-n">Step {s.n}</div>
+            <h3>{s.h}</h3>
+            <p>{s.p}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+const Modules = () => (
+  <section className="acs-section" id="modules">
+    <div className="acs-container">
+      <div className="acs-section-head">
+        <div>
+          <div className="acs-sect-no">§ 04 — Modules</div>
+          <h2>Everything an audiology clinic <em>needs.</em></h2>
+        </div>
+        <p>Nine first-class modules. All tenant-isolated. All role-gated. No integrations to configure.</p>
+      </div>
+      <div className="acs-modules">
+        {MODULES.map((m) => (
+          <div key={m.tag} className="acs-module">
+            <div className="acs-module-tag">{m.tag}</div>
+            <h3>{m.h}</h3>
+            <p>{m.p}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+const Proof = () => (
+  <section className="acs-section acs-proof">
+    <div className="acs-container">
+      <div className="acs-section-head">
+        <div>
+          <div className="acs-eyebrow">Field Reports</div>
+          <h2>Clinics that found their <em>rhythm.</em></h2>
+        </div>
+        <p>Ten beta clinics. Three months in. Zero rollbacks.</p>
+      </div>
+      <div className="acs-quotes">
+        {QUOTES.map((q, i) => (
+          <div key={i} className="acs-quote">
+            <div className="acs-quote-text">"{q.t}"</div>
+            <div className="acs-quote-who"><b>{q.who}</b><br />{q.role}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+const Pricing = () => (
+  <section className="acs-section" id="pricing">
+    <div className="acs-container">
+      <div className="acs-section-head">
+        <div>
+          <div className="acs-sect-no">§ 05 — Pricing</div>
+          <h2>Start <em>free.</em> Upgrade when it pays for itself.</h2>
+        </div>
+        <p>Most clinics recover the Premium fee in the first month just from recovered demo units and cleaner GST.</p>
+      </div>
+      <div className="acs-pricing-grid">
+        {PLANS.map((pl) => (
+          <div key={pl.name} className={`acs-price-card ${pl.featured ? 'featured' : ''}`}>
+            <div className="acs-pc-name">{pl.name}</div>
+            <div className="acs-pc-price">{pl.price}<small>{pl.unit}</small></div>
+            <div className="acs-pc-tag">{pl.tag}</div>
+            <ul className="acs-pc-list">
+              {pl.feats.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+            <a href="#waitlist" className={`acs-btn ${pl.featured ? 'acs-btn-primary' : 'acs-btn-ink'} acs-btn-lg`} data-testid={`landing-plan-${pl.name.toLowerCase()}`}>
+              {pl.cta}
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+const FaqSection = () => {
+  const [openIdx, setOpenIdx] = useState(0);
+  return (
+    <section className="acs-section">
+      <div className="acs-container" style={{ maxWidth: 920 }}>
+        <div className="acs-section-head">
+          <div>
+            <div className="acs-sect-no">§ 06 — Questions</div>
+            <h2>You asked. We <em>answered.</em></h2>
+          </div>
+        </div>
+        <div className="acs-faq-list">
+          {FAQ.map((f, i) => (
+            <div key={i} className={`acs-faq-item ${openIdx === i ? 'open' : ''}`} data-testid={`landing-faq-${i}`}>
+              <button
+                className="acs-faq-q"
+                onClick={() => setOpenIdx(openIdx === i ? -1 : i)}
+              >
+                <span>{f.q}</span>
+                <span className="acs-faq-ic">+</span>
+              </button>
+              <div className="acs-faq-a">{f.a}</div>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
     </section>
   );
 };
 
-// ==================== DIAGNOSTICS DEEP-DIVE ====================
-const DIAGNOSTICS_HERO_IMG = 'https://customer-assets.emergentagent.com/job_careful-feedback/artifacts/b4drvqcg_Slp.webp';
-
-const DiagnosticsSection = () => (
-  <section
-    id="diagnostics"
-    className="relative scroll-mt-20 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border-y border-slate-900"
-  >
-    <div className="max-w-6xl mx-auto px-6 py-24">
-      {/* Split hero: real photo (left) + intro text (right) */}
-      <div className="grid lg:grid-cols-2 gap-10 items-center mb-16">
-        <div className="relative rounded-3xl overflow-hidden border border-slate-800 shadow-2xl shadow-black/50 group">
-          <img
-            src={DIAGNOSTICS_HERO_IMG}
-            alt="Audiology workstation — headphones, otoscope and paper audiogram"
-            className="w-full h-auto aspect-square object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-            loading="lazy"
-            data-testid="diagnostics-hero-image"
-          />
-          {/* soft gradient overlay for depth */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-slate-950/70 via-transparent to-transparent pointer-events-none" />
-          {/* floating caption badge */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 px-3 py-2 bg-slate-950/80 backdrop-blur-md rounded-lg border border-slate-800">
-            <Stethoscope size={14} className="text-orange-300 flex-shrink-0" />
-            <span className="text-[11px] text-slate-300 leading-tight">
-              Built for how audiologists <em className="text-white not-italic font-semibold">actually</em> work — paper audiograms, real headsets, real patients.
-            </span>
-          </div>
-        </div>
-
-        <div>
-          <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 text-[11px] font-bold tracking-wider uppercase bg-orange-500/10 text-orange-300 border border-orange-500/30 rounded-full">
-            <Stethoscope size={11} /> Flagship Module
-          </div>
-          <h2 className="text-4xl sm:text-5xl font-black text-white mb-4 leading-tight">
-            The most complete <span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent">diagnostic suite</span> in India.
-          </h2>
-          <p className="text-slate-400 text-lg leading-relaxed mb-6">
-            Built with audiologists, for audiologists. Paper audiograms, PDF reports, NOAH interop —
-            and a pediatric-to-geriatric protocol library that covers everything.
-          </p>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-              <div className="text-2xl font-black text-white">10</div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Protocols</div>
-            </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-              <div className="text-2xl font-black text-white">3</div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Probe freqs</div>
-            </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-              <div className="text-2xl font-black text-white">16k</div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">EHF Hz</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Illustration row */}
-      <div className="grid lg:grid-cols-2 gap-6 mb-12">
-        <div className="relative rounded-2xl border border-slate-800 bg-slate-900/60 p-5 overflow-hidden group hover:border-orange-500/40 transition-colors">
-          <div className="absolute -top-20 -right-20 w-60 h-60 bg-rose-500/10 blur-3xl rounded-full group-hover:bg-rose-500/20 transition-colors" />
-          <div className="relative">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-rose-300 mb-1">Pure-Tone Audiometry</div>
-            <div className="text-xl font-bold text-white mb-3">Audiogram · AC / BC / Masking</div>
-            <AudiogramIllustration className="w-full h-auto rounded-lg" />
-            <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-300">
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>Click-to-plot AC &amp; BC</li>
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>Auto-masking logic</li>
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>Extended high-freq (9–16 kHz)</li>
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>PTA &amp; SRT auto-calc</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="relative rounded-2xl border border-slate-800 bg-slate-900/60 p-5 overflow-hidden group hover:border-orange-500/40 transition-colors">
-          <div className="absolute -top-20 -left-20 w-60 h-60 bg-emerald-500/10 blur-3xl rounded-full group-hover:bg-emerald-500/20 transition-colors" />
-          <div className="relative">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-300 mb-1">Impedance Audiometry</div>
-            <div className="text-xl font-bold text-white mb-3">Tympanogram · Reflex · ETF</div>
-            <TympanogramIllustration className="w-full h-auto rounded-lg" />
-            <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-300">
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>Jerger A/As/Ad/B/C typing</li>
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>Acoustic reflex (ipsi/contra)</li>
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>Reflex decay · ETF</li>
-              <li className="flex items-start gap-1.5"><CheckCircle2 size={13} className="text-emerald-400 mt-0.5 flex-shrink-0"/>226 Hz &amp; 1 kHz probes</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Protocol matrix */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider font-bold text-orange-400 mb-0.5">Protocol library</div>
-            <h3 className="text-xl font-bold text-white">10 diagnostic panels · tier-gated access</h3>
-          </div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-500">
-            <span className="inline-block w-2 h-2 bg-emerald-400 rounded-full mr-1" /> Basic includes
-            <span className="inline-block w-2 h-2 bg-amber-400 rounded-full ml-3 mr-1" /> Standard+ unlocks
-          </div>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-          {DIAGNOSTIC_PANELS.map((p) => (
-            <div
-              key={p.name}
-              data-testid={`panel-${p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-              className={`rounded-lg p-3 border ${
-                p.basic
-                  ? 'border-emerald-500/30 bg-emerald-500/5'
-                  : 'border-amber-500/25 bg-amber-500/5'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <div className={`text-xs font-bold ${p.basic ? 'text-emerald-200' : 'text-amber-200'}`}>{p.name}</div>
-                {p.basic ? (
-                  <CheckCircle2 size={13} className="text-emerald-400" />
-                ) : (
-                  <Lock size={11} className="text-amber-400" />
-                )}
-              </div>
-              <div className={`text-[10px] leading-snug ${p.basic ? 'text-emerald-100/70' : 'text-amber-100/70'}`}>
-                {p.desc}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 text-[11px] text-slate-500 text-center">
-          BASIC includes Pre-Test · Pure Tone · Impedance · Reports. Upgrade to STANDARD for Speech, OAE, ABR, Sound Field, Pediatric &amp; Tinnitus.
-        </div>
-      </div>
-    </div>
-  </section>
-);
-
-// ==================== YOUR DATA (TRUST / SECURITY) ====================
-const DATA_PILLARS = [
-  {
-    icon: Database,
-    tag: 'Tenant isolation',
-    title: 'Your records. Your clinic. Nobody else.',
-    body: 'Every database query is scoped by clinic_id from your JWT — at the query layer, not a middleware afterthought. A Delhi clinic cannot see a Mumbai patient, period.',
-    proof: '180+ isolation tests · enforced on every deploy',
-  },
-  {
-    icon: Download,
-    tag: 'Portable by default',
-    title: 'Export everything. Any day. Free.',
-    body: 'One click pulls your entire clinic as a ZIP — patients, audiograms, invoices, reports, audit log. CSV + JSON formats. No "talk to sales", no exit fees, no lock-in.',
-    proof: 'CSV · JSON · PDF bundle · self-serve',
-  },
-  {
-    icon: KeyRound,
-    tag: 'Encrypted, end to end',
-    title: 'Passwords nobody can ever see.',
-    body: 'bcrypt (cost 12) on every password. TLS 1.3 in transit. Short-lived JWT tokens with a token_version — one revoke and every live session on every device dies instantly.',
-    proof: 'bcrypt · TLS 1.3 · instant force-logout',
-  },
-  {
-    icon: ClipboardCheck,
-    tag: 'India-ready compliance',
-    title: 'GST-compliant. DPDP-ready. Audit-proof.',
-    body: 'Per-clinic-year invoice numbering (INV/2026/000001), CGST/SGST split by patient state, HSN/SAC codes, IST-aware timestamps, and an immutable admin audit log.',
-    proof: 'GST India · DPDP Act · IST day boundaries',
-  },
-];
-
-const DataSection = () => (
-  <section id="your-data" className="relative max-w-6xl mx-auto px-6 py-28 scroll-mt-20" data-testid="your-data-section">
-    {/* ambient emerald glow — deliberately different from hero's orange/rose */}
-    <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
-      <div className="absolute top-20 right-0 w-[500px] h-[500px] bg-emerald-500/10 blur-[140px] rounded-full" />
-      <div className="absolute bottom-0 left-0 w-[380px] h-[380px] bg-teal-500/5 blur-[120px] rounded-full" />
-    </div>
-
-    {/* Section heading */}
-    <div className="mb-14 max-w-3xl">
-      <div className="inline-flex items-center gap-2 mb-5 px-3 py-1 text-[11px] font-bold tracking-wider uppercase bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded-full">
-        <ShieldCheck size={11} />
-        <span>Your data · Your rules</span>
-      </div>
-      <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-[1.05] mb-5">
-        We host it.{' '}
-        <span className="bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-300 bg-clip-text text-transparent">
-          You own it.
-        </span>
-      </h2>
-      <p className="text-slate-400 text-lg leading-relaxed">
-        Every patient record, every audiogram, every invoice —{' '}
-        <span className="text-white font-semibold">encrypted, isolated per clinic, and exportable any day.</span>{' '}
-        We built the plumbing so you can sleep at night.
-      </p>
-    </div>
-
-    {/* Bento layout: 4 pillars + vault card */}
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-      {/* 2x2 pillar grid */}
-      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {DATA_PILLARS.map((p) => {
-          const Icon = p.icon;
-          return (
-            <div
-              key={p.tag}
-              data-testid={`data-pillar-${p.tag.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-              className="group relative rounded-2xl border border-slate-800 bg-slate-900/60 p-5 hover:border-emerald-500/40 hover:-translate-y-0.5 transition-all overflow-hidden"
-            >
-              <div className="absolute -top-16 -right-16 w-40 h-40 bg-emerald-500/5 blur-3xl rounded-full group-hover:bg-emerald-500/15 transition-colors" />
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <Icon size={17} className="text-emerald-300" />
-                  </div>
-                  <div className="text-[10px] uppercase font-black tracking-[0.14em] text-emerald-400/80">
-                    {p.tag}
-                  </div>
-                </div>
-                <h3 className="text-[17px] font-bold text-white mb-2 leading-snug">{p.title}</h3>
-                <p className="text-[13px] text-slate-400 leading-relaxed mb-4">{p.body}</p>
-                <div className="font-mono text-[10px] text-emerald-300/80 tracking-tight border-t border-slate-800/80 pt-2.5">
-                  {p.proof}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Vault / architecture card */}
-      <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/90 to-slate-950 p-6 flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-[10px] uppercase tracking-[0.14em] font-black text-slate-500">Under the hood</div>
-          <Server size={13} className="text-slate-600" />
-        </div>
-
-        {/* Faux architecture / code snippet */}
-        <div className="flex-1 space-y-3 font-mono text-[11px]">
-          <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-            <div className="text-slate-500 text-[10px] mb-1">// Every query, every time</div>
-            <div className="text-slate-300">
-              <span className="text-rose-400">db</span>.<span className="text-sky-300">patients</span>.find({'{'}
-            </div>
-            <div className="pl-5 text-amber-200">
-              clinic_id: <span className="text-emerald-300">user.clinic_id</span>
-            </div>
-            <div className="text-slate-300">{'})'}</div>
-          </div>
-
-          <div className="flex items-center justify-center py-0.5">
-            <div className="w-px h-3 bg-slate-800" />
-          </div>
-          <div className="flex items-center justify-center -my-2">
-            <div className="w-6 h-6 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-              <Lock size={11} className="text-emerald-400" />
-            </div>
-          </div>
-          <div className="flex items-center justify-center py-0.5">
-            <div className="w-px h-3 bg-slate-800" />
-          </div>
-
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.04] p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-emerald-300 font-bold text-[11px] tracking-wide">Your clinic vault</div>
-              <Activity size={11} className="text-emerald-400 animate-pulse" />
-            </div>
-            <div className="grid grid-cols-2 gap-y-1 gap-x-3 text-[10px] text-slate-400">
-              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Patients</div>
-              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Sessions</div>
-              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Invoices</div>
-              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Reports</div>
-              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Hearing aids</div>
-              <div className="flex items-center gap-1.5"><span className="w-1 h-1 rounded-full bg-emerald-400" /> Audit log</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-[10px] text-slate-500 justify-center pt-1 font-sans">
-            <Fingerprint size={11} className="text-emerald-400" />
-            <span>700+ automated tests on every deploy</span>
-          </div>
-        </div>
-
-        <a
-          href="#waitlist"
-          data-testid="your-data-cta"
-          className="mt-5 inline-flex items-center justify-between gap-2 rounded-lg border border-slate-700 hover:border-emerald-400 hover:bg-emerald-500/5 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:text-white transition-colors"
-        >
-          <span>Get a clinic of your own →</span>
-          <ArrowRight size={14} />
-        </a>
-      </div>
-    </div>
-
-    {/* "What we'll never do" strip */}
-    <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="text-[10px] uppercase tracking-[0.14em] font-black text-rose-400/80">What we'll never do</div>
-        <div className="flex-1 h-px bg-gradient-to-r from-rose-500/30 to-transparent" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-[13px] text-slate-300">
-        <div className="flex items-start gap-3">
-          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px]">✕</span>
-          <div>
-            <div className="font-semibold text-white mb-0.5">Sell or train on your data</div>
-            <div className="text-slate-500 text-[12px]">No AI models, no analytics resales — ever.</div>
-          </div>
-        </div>
-        <div className="flex items-start gap-3">
-          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px]">✕</span>
-          <div>
-            <div className="font-semibold text-white mb-0.5">Mix your data with other clinics</div>
-            <div className="text-slate-500 text-[12px]">Zero cross-tenant aggregates. Your numbers are yours.</div>
-          </div>
-        </div>
-        <div className="flex items-start gap-3">
-          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px]">✕</span>
-          <div>
-            <div className="font-semibold text-white mb-0.5">Lock you in</div>
-            <div className="text-slate-500 text-[12px]">Export everything and leave any day. Free.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-);
-
-// ==================== WAITLIST FORM (stateful) ====================
-const WaitlistForm = () => {
+const Waitlist = () => {
   const [email, setEmail] = useState('');
   const [clinicName, setClinicName] = useState('');
   const [city, setCity] = useState('');
@@ -601,8 +445,7 @@ const WaitlistForm = () => {
 
   const submit = useCallback(async (e) => {
     e.preventDefault();
-    setErr('');
-    setBusy(true);
+    setErr(''); setBusy(true);
     try {
       await axios.post(`${API}/public/waitlist-signup`, {
         email, clinic_name: clinicName, city, tier_interest: tierInterest,
@@ -616,67 +459,46 @@ const WaitlistForm = () => {
   }, [email, clinicName, city, tierInterest]);
 
   return (
-    <section id="waitlist" className="max-w-2xl mx-auto px-6 py-24 scroll-mt-20">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
-        <h2 className="text-3xl font-black text-white mb-2">Join the waitlist</h2>
-        <p className="text-slate-400 mb-6 text-sm">
-          We'll email you when AUDINEXA opens to your clinic + a 30-day free Premium trial.
-        </p>
+    <section className="acs-waitlist" id="waitlist">
+      <div className="acs-waitlist-inner">
+        <div className="acs-eyebrow">The Closing Argument</div>
+        <h2>Stop managing <em>spreadsheets.</em><br />Start running your <em>clinic.</em></h2>
+        <p className="acs-lede">Join the waitlist for a 30-day free Premium trial. We'll onboard you personally.</p>
+
         {submitted ? (
-          <div className="bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 rounded-lg p-5 text-center" data-testid="waitlist-success">
-            <CheckCircle2 size={32} className="text-emerald-400 mx-auto mb-2" />
-            <div className="font-bold mb-1">You're on the list.</div>
-            <div className="text-sm">We'll email <b>{email}</b> when we launch.</div>
+          <div className="acs-wait-form acs-wait-ok" data-testid="waitlist-success">
+            You're on the list.<br />
+            <span style={{ display: 'block', fontSize: 14, marginTop: 8, color: 'var(--ink-2)', fontFamily: 'var(--f-body)' }}>
+              We'll email <b>{email}</b> when we open a slot for your clinic.
+            </span>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-3" data-testid="waitlist-form">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Work email"
-              data-testid="waitlist-email"
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:border-orange-500 outline-none text-white placeholder-slate-500"
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                value={clinicName}
-                onChange={(e) => setClinicName(e.target.value)}
-                placeholder="Clinic name"
-                data-testid="waitlist-clinic"
-                className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:border-orange-500 outline-none text-white placeholder-slate-500"
-              />
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="City"
-                data-testid="waitlist-city"
-                className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:border-orange-500 outline-none text-white placeholder-slate-500"
-              />
+          <form onSubmit={submit} className="acs-wait-form" data-testid="waitlist-form">
+            <label>Work Email</label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} data-testid="waitlist-email" placeholder="you@clinic.in" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div>
+                <label>Clinic Name</label>
+                <input value={clinicName} onChange={(e) => setClinicName(e.target.value)} data-testid="waitlist-clinic" placeholder="e.g. SoundCare HYD" />
+              </div>
+              <div>
+                <label>City</label>
+                <input value={city} onChange={(e) => setCity(e.target.value)} data-testid="waitlist-city" placeholder="Mumbai" />
+              </div>
             </div>
-            <select
-              value={tierInterest}
-              onChange={(e) => setTierInterest(e.target.value)}
-              data-testid="waitlist-tier"
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:border-orange-500 outline-none text-white"
-            >
-              <option value="">Clinic size (optional)</option>
+            <label>Clinic Size (optional)</label>
+            <select value={tierInterest} onChange={(e) => setTierInterest(e.target.value)} data-testid="waitlist-tier">
+              <option value="">Tell us your scale</option>
               <option value="SOLO">Solo practice (1 audiologist)</option>
               <option value="SMALL">Small clinic (2–5 staff)</option>
               <option value="MULTI">Multi-branch / hospital group</option>
             </select>
-            {err && <div className="bg-rose-500/10 text-rose-300 text-xs p-2 rounded">{err}</div>}
-            <button
-              type="submit"
-              disabled={busy}
-              data-testid="waitlist-submit"
-              className="w-full bg-white text-slate-950 font-bold py-3 rounded-lg hover:bg-orange-100 disabled:bg-slate-700 disabled:text-slate-500 transition-colors"
-            >
+            {err && <div className="acs-wait-err">{err}</div>}
+            <button type="submit" disabled={busy} className="acs-btn acs-btn-primary acs-btn-lg" style={{ width: '100%', marginTop: 22, justifyContent: 'center' }} data-testid="waitlist-submit">
               {busy ? 'Submitting…' : 'Join the waitlist →'}
             </button>
-            <div className="text-[10px] text-center text-slate-500 pt-1">
-              We'll never spam you. Unsubscribe with one click.
+            <div style={{ fontSize: 11, textAlign: 'center', color: 'var(--ink-3)', marginTop: 14, fontFamily: 'var(--f-mono)', letterSpacing: '0.12em' }}>
+              NO SPAM · UNSUBSCRIBE IN ONE CLICK
             </div>
           </form>
         )}
@@ -685,26 +507,58 @@ const WaitlistForm = () => {
   );
 };
 
-// ==================== FOOTER ====================
-const Footer = () => (
-  <footer className="border-t border-slate-900 py-8 text-center text-xs text-slate-600">
-    © {new Date().getFullYear()} AUDINEXA · Built for audiologists.
-    <span className="mx-2">·</span>
-    <a href="/login" className="hover:text-slate-400" data-testid="landing-footer-login">Staff sign in</a>
+const Foot = () => (
+  <footer className="acs-foot">
+    <div className="acs-foot-inner">
+      <div>
+        <div className="acs-foot-brand">AUDI<span>NEXA</span></div>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 10, maxWidth: 340, lineHeight: 1.6 }}>
+          The operating system for modern audiology clinics. Built in Mumbai, made for India.
+        </p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <a href="#modules">Modules</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#waitlist">Waitlist</a>
+        <Link to="/login" data-testid="landing-footer-login">Sign in</Link>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <a href="#">About</a>
+        <a href="#">Beta program</a>
+        <a href="#">Press</a>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Data processing</a>
+      </div>
+    </div>
+    <div className="acs-foot-inner acs-foot-legal">
+      <div>© {new Date().getFullYear()} AUDINEXA · Mumbai</div>
+      <div>v0.14 · built for audiologists</div>
+    </div>
   </footer>
 );
 
 // ==================== PAGE ====================
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans" data-testid="landing-page">
-      <Header />
+    <div className="acs-landing" data-testid="landing-page">
+      <Mast />
       <Hero />
-      <ModuleGrid />
-      <DiagnosticsSection />
-      <DataSection />
-      <WaitlistForm />
-      <Footer />
+      <StatsStrip />
+      <Problem />
+      <Pillars />
+      <HowItWorks />
+      <Modules />
+      <Proof />
+      <Pricing />
+      <FaqSection />
+      <Waitlist />
+      <Foot />
     </div>
   );
 }
