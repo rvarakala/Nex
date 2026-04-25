@@ -93,7 +93,14 @@ async def lifespan(_app: FastAPI):
         await db.serial_events.create_index([("serial_id", 1), ("at", -1)])
         await db.purchase_orders.create_index("po_no", unique=True)
         await db.purchase_orders.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
-        await db.grns.create_index("grn_no", unique=True)
+        # Numbering identifiers are clinic-scoped — same `GRN-YYYY-NNNN` may legitimately
+        # exist in two different tenants. Use a compound (clinic_id, grn_no) unique key
+        # and drop the legacy global index if present (safe: only blocks cross-tenant dupes).
+        try:
+            await db.grns.drop_index("grn_no_1")
+        except Exception:
+            pass
+        await db.grns.create_index([("clinic_id", 1), ("grn_no", 1)], unique=True, name="uniq_clinic_grn_no")
         await db.grns.create_index([("po_no", 1), ("received_at", -1)])
         await db.accessory_stock.create_index("sku_id", unique=True)
         await db.accessory_stock.create_index([("clinic_id", 1), ("branch_id", 1), ("product_id", 1), ("variant", 1)], name="uniq_accessory_variant", unique=True)
@@ -120,8 +127,12 @@ async def lifespan(_app: FastAPI):
         await db.ha_subscriptions.create_index("subscription_id", unique=True)
         await db.ha_subscriptions.create_index([("clinic_id", 1), ("status", 1), ("next_due_date", 1)])
         await db.ha_subscriptions.create_index([("clinic_id", 1), ("patient_id", 1)])
-        # Service tickets (post-P7 UI catch-up)
-        await db.service_tickets.create_index("ticket_no", unique=True)
+        # Service tickets (post-P7 UI catch-up) — ticket_no clinic-scoped
+        try:
+            await db.service_tickets.drop_index("ticket_no_1")
+        except Exception:
+            pass
+        await db.service_tickets.create_index([("clinic_id", 1), ("ticket_no", 1)], unique=True, name="uniq_clinic_ticket_no")
         await db.service_tickets.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.service_tickets.create_index([("clinic_id", 1), ("patient_id", 1)])
         await db.service_tickets.create_index("serial_id")

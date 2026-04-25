@@ -389,7 +389,17 @@ async def create_grn(
         await db.serial_events.insert_many(serial_event_docs)
 
     # ----- Persist the GRN document now that inventory writes succeeded -----
-    await db.grns.insert_one(serialize_datetime(grn.model_dump()))
+    # Defensive: if a duplicate `grn_no` slips through (e.g. legacy data inserted
+    # directly bypassing the counter), keep minting fresh numbers until the
+    # insert succeeds rather than 500-ing the request.
+    for _ in range(5):
+        try:
+            await db.grns.insert_one(serialize_datetime(grn.model_dump()))
+            break
+        except DuplicateKeyError:
+            grn.grn_no = await next_number(db, "grn", user["clinic_id"])
+    else:
+        raise HTTPException(status_code=500, detail="Could not allocate a unique GRN number")
 
     # ----- Update PO status -----
     # `received_by_key` already includes this GRN's lines (computed pre-insert).

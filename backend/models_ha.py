@@ -657,7 +657,10 @@ class ServiceTicket(BaseModel):
     serial_id: Optional[str] = None                             # the unit being serviced
     serial_no: Optional[str] = None
     kind: TicketKind = "repair"
-    complaint: str
+    # `complaint` is required for new tickets (enforced by ServiceTicketCreate), but
+    # legacy/seeded rows may carry it under `issue_summary` — keep response-side
+    # defensive so a single bad row can't 500-crash the whole list endpoint.
+    complaint: Optional[str] = None
     status: TicketStatus = "open"
     technician_user_id: Optional[str] = None
     technician_name: Optional[str] = None
@@ -666,7 +669,7 @@ class ServiceTicket(BaseModel):
     cost_to_patient: float = 0.0
     warranty_covered: bool = False
     loaner_serial_id: Optional[str] = None                      # if a LOANER was issued
-    created_by_user_id: str
+    created_by_user_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
     resolved_at: Optional[str] = None

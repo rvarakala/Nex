@@ -58,6 +58,36 @@ def _branch_scope(user: dict) -> dict:
     return {"clinic_id": user["clinic_id"], "branch_id": {"$in": user.get("branch_ids") or []}}
 
 
+# ---- Legacy schema mapping ---------------------------------------------------
+# A handful of seeded/imported tickets were written with a different field
+# vocabulary (issue_summary, assigned_to_user_id, estimate_amount, completed_at)
+# and lowercase status values that aren't part of the canonical TicketStatus
+# Literal. Normalize at read time so the UI keeps working without a destructive
+# migration.
+_LEGACY_STATUS_MAP = {
+    "received": "open",
+    "estimated": "in_progress",
+    "approved": "in_progress",
+    "rejected": "cancelled",
+    "completed": "resolved",
+}
+
+
+def _normalize_legacy(row: dict) -> dict:
+    if "complaint" not in row or not row.get("complaint"):
+        row["complaint"] = row.get("issue_summary") or row.get("complaint_text") or ""
+    if "technician_user_id" not in row and row.get("assigned_to_user_id"):
+        row["technician_user_id"] = row["assigned_to_user_id"]
+    if "cost_to_patient" not in row and row.get("estimate_amount") is not None:
+        row["cost_to_patient"] = float(row["estimate_amount"] or 0)
+    if "resolved_at" not in row and row.get("completed_at"):
+        row["resolved_at"] = row["completed_at"]
+    s = row.get("status")
+    if s in _LEGACY_STATUS_MAP:
+        row["status"] = _LEGACY_STATUS_MAP[s]
+    return row
+
+
 async def _load(db, clinic_id: str, ticket_no: str) -> dict:
     row = await db.service_tickets.find_one(
         {"clinic_id": clinic_id, "ticket_no": ticket_no}, {"_id": 0},
@@ -92,7 +122,7 @@ async def list_tickets(
     if technician_user_id:
         q["technician_user_id"] = technician_user_id
     rows = await db.service_tickets.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    return [deserialize_datetime(r) for r in rows]
+    return [deserialize_datetime(_normalize_legacy(r)) for r in rows]
 
 
 @router.get("/service-tickets/{ticket_no}", response_model=ServiceTicket)
@@ -100,15 +130,15 @@ async def get_ticket(ticket_no: str, user=Depends(get_current_user), db=Depends(
     row = await _load(db, user["clinic_id"], ticket_no)
     if not user_can_see_branch(user, row["branch_id"]):
         raise HTTPException(status_code=403, detail="Ticket not in your branch")
-    return deserialize_datetime(row)
+    return deserialize_datetime(_normalize_legacy(row))
 
 
 @router.get("/service-tickets-kpis")
 async def kpis(user=Depends(get_current_user), db=Depends(get_db)):
     base = _branch_scope(user)
-    open_n = await db.service_tickets.count_documents({**base, "status": "open"})
-    in_prog = await db.service_tickets.count_documents({**base, "status": "in_progress"})
-    resolved = await db.service_tickets.count_documents({**base, "status": "resolved"})
+    open_n = await db.service_tickets.count_documents({**base, "status": {"$in": ["open", "received"]}})
+    in_prog = await db.service_tickets.count_documents({**base, "status": {"$in": ["in_progress", "estimated", "approved"]}})
+    resolved = await db.service_tickets.count_documents({**base, "status": {"$in": ["resolved", "completed"]}})
     closed = await db.service_tickets.count_documents({**base, "status": "closed"})
     warranty = await db.service_tickets.count_documents({**base, "warranty_covered": True})
     return {"open": open_n, "in_progress": in_prog, "resolved": resolved,

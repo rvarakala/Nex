@@ -158,6 +158,12 @@ async def seed():
     # Special: delete clinic doc + users by clinic_id
     await db.clinics.delete_many({"clinic_id": CLINIC_ID})
     await db.users.delete_many({"clinic_id": CLINIC_ID})
+    # Reset clinic-scoped numbering counters so reseeded GRN/JOB/PO/SALE etc.
+    # numbers stay aligned with the seeded sample data.
+    try:
+        await db.counters.delete_many({"_id": {"$regex": f":{CLINIC_ID}:"}})
+    except Exception:  # noqa: BLE001
+        pass
 
     # ---- 2. Clinic ----------------------------------------------------------
     await db.clinics.insert_one({
@@ -361,11 +367,11 @@ async def seed():
                 "product_id": prod["product_id"], "serial_no": serial_no,
                 "state": state, "pool": "saleable",
                 "warranty_end_date": wend,
-                "grn_no": f"GRN/2026/{str(grn_seq).zfill(4)}",
+                "grn_no": f"GRN-2026-{str(grn_seq).zfill(4)}",
                 "created_at": _iso(NOW - timedelta(days=random.randint(20, 150))),
             })
         grn_docs.append({
-            "grn_no": f"GRN/2026/{str(grn_seq).zfill(4)}",
+            "grn_no": f"GRN-2026-{str(grn_seq).zfill(4)}",
             "clinic_id": CLINIC_ID, "branch_id": BRANCH_ID,
             "vendor_id": vendor["vendor_id"], "vendor_name": vendor["name"],
             "po_no": None,
@@ -378,6 +384,12 @@ async def seed():
         grn_seq += 1
     await db.serial_items.insert_many(serial_docs)
     await db.grns.insert_many(grn_docs)
+    # Advance the GRN counter so live POSTs don't collide with seeded numbers
+    await db.counters.update_one(
+        {"_id": f"grn:{CLINIC_ID}:2026"},
+        {"$set": {"seq": len(grn_docs)}},
+        upsert=True,
+    )
     print(f"  ✓ Serial items: {len(serial_docs)} | GRNs: {len(grn_docs)}")
 
     # ---- 10. Appointments (~60: patient + vendor + sales rep + internal + tech_staff) -
@@ -736,15 +748,16 @@ async def seed():
     for i in range(8):
         patient = random.choice(patient_docs)
         sale = random.choice(sale_docs)
-        status = random.choice(["received", "in_progress", "estimated", "approved", "completed", "completed"])
+        status = random.choice(["open", "in_progress", "in_progress", "in_progress", "resolved", "resolved"])
         ticket_docs.append({
-            "ticket_no": f"SVC/2026/{str(i+1).zfill(4)}",
+            "ticket_no": f"JOB-2026-{str(i+1).zfill(4)}",
             "clinic_id": CLINIC_ID, "branch_id": BRANCH_ID,
             "patient_id": patient["patient_id"], "patient_name": patient["name"],
             "patient_mobile": patient["mobile"],
             "serial_id": sale["lines"][0]["serial_id"],
             "serial_no": sale["lines"][0]["serial_no"],
-            "issue_summary": random.choice([
+            "kind": "repair",
+            "complaint": random.choice([
                 "Right device intermittent — no sound",
                 "Battery drain reported by patient",
                 "Receiver replacement needed",
@@ -752,16 +765,25 @@ async def seed():
                 "Bluetooth pairing failure",
                 "Tube discoloured — replacement",
             ]),
-            "diagnosis": "Pending technician inspection" if status in ("received", "in_progress")
+            "diagnosis": "Pending technician inspection" if status == "open"
                           else "Device serviced and verified",
             "status": status,
-            "estimate_amount": random.choice([0, 0, 850, 1200, 2500, 3500]),
-            "assigned_to_user_id": tech_id,
+            "cost_to_patient": float(random.choice([0, 0, 850, 1200, 2500, 3500])),
+            "warranty_covered": False,
+            "technician_user_id": tech_id,
+            "technician_name": "Suresh Kumar",
+            "created_by_user_id": owner_id,
             "received_at": _iso(NOW - timedelta(days=random.randint(0, 25))),
             "created_at": _iso(NOW - timedelta(days=random.randint(0, 25))),
-            "completed_at": _iso(NOW - timedelta(days=random.randint(0, 5))) if status == "completed" else None,
+            "resolved_at": _iso(NOW - timedelta(days=random.randint(0, 5))) if status == "resolved" else None,
         })
     await db.service_tickets.insert_many(ticket_docs)
+    # Advance the JOB counter so future tickets don't collide with seeded numbers
+    await db.counters.update_one(
+        {"_id": f"job:{CLINIC_ID}:2026"},
+        {"$set": {"seq": len(ticket_docs)}},
+        upsert=True,
+    )
     print(f"  ✓ Service tickets: {len(ticket_docs)}")
 
     # ---- 17. Standalone diagnostic invoices (mixed status) -----------------

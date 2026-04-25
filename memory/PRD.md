@@ -1,5 +1,14 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## Recent Fixes (Feb 2026)
+- **2026-04-25 — Service Job page fix + GRN race-condition hardening**:
+  - `GET /api/ha/service-tickets` was 500-ing for tenants whose seeded data used legacy field names (`issue_summary`, `assigned_to_user_id`, `estimate_amount`, `completed_at`) and lowercase status values (`received`/`estimated`/`approved`/`completed`), crashing Pydantic response validation.
+  - Made `complaint` and `created_by_user_id` Optional on the `ServiceTicket` response model + added `_normalize_legacy()` in `routers/ha_service.py` to map legacy fields to canonical schema at read time.
+  - Updated KPIs to count legacy and canonical status values together.
+  - `seed_demo_premium.py`: rewritten to emit canonical schema (`complaint`, `technician_user_id`, `cost_to_patient`, `resolved_at`, `created_by_user_id`) + canonical numbering (`JOB-2026-NNNN`, `GRN-2026-NNNN`); seeds now bump `counters` so live POSTs continue from the seeded sequence.
+  - **GRN duplicate-key hardening**: `db.grns.grn_no` and `db.service_tickets.ticket_no` indexes were globally unique (causing cross-tenant collisions). Replaced with compound `(clinic_id, *)` unique indexes — old indexes dropped automatically on startup. POST `/api/ha/grns` now retries on `DuplicateKeyError` with a fresh number (max 5 attempts).
+  - Verified: Service Tickets page now loads 9 records, KPIs render, "+ New Ticket" creates `JOB-2026-0009` cleanly.
+
 ## Original Problem Statement
 Build a full ACS (Audiology Clinic Suite) per the Product Vision Blueprint v1.
 Multi-module India-first SaaS: **M01 Front Desk → M02 Diagnostics → M03 Reports**.
