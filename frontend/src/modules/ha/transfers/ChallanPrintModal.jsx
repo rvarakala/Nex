@@ -59,16 +59,20 @@ export default function ChallanPrintModal({ transfer, onClose }) {
 
   const printChallan = () => {
     if (!docRef.current) return;
-    // Print just the doc node by isolating it via a class the print stylesheet matches.
     const win = window.open('', '_blank', 'noopener,width=900,height=1100');
     if (!win) { window.alert('Pop-up blocked. Allow pop-ups to print.'); return; }
-    const html = docRef.current.outerHTML;
-    win.document.write(`<!doctype html><html><head><title>${transfer.challan_no || 'Delivery Challan'}</title>
-      <meta charset="utf-8"><style>
-        @page { size: A4 portrait; margin: 0; }
-        html, body { margin: 0; padding: 0; background: white; }
-      </style></head><body>${html}</body></html>`);
-    win.document.close();
+    // Build the popup document with safe DOM APIs (no document.write).
+    // The challan body is already rendered React markup — we deep-clone the
+    // node so any sanitisation React applied (text-escaping etc.) carries over.
+    const d = win.document;
+    d.title = transfer.challan_no || 'Delivery Challan';
+    const style = d.createElement('style');
+    style.textContent = '@page{size:A4 portrait;margin:0}html,body{margin:0;padding:0;background:#fff}';
+    d.head.appendChild(style);
+    const meta = d.createElement('meta');
+    meta.setAttribute('charset', 'utf-8');
+    d.head.appendChild(meta);
+    d.body.appendChild(d.importNode(docRef.current, true));
     setTimeout(() => { win.focus(); win.print(); }, 400);
   };
 

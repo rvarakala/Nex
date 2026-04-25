@@ -65,12 +65,12 @@ function MiniMonth({ anchor, onPick }) {
             {d}
           </div>
         ))}
-        {cells.map((d, i) => {
+        {cells.map((d) => {
           const isSelected = isAnchor(d);
           const isT = isToday(d);
           return (
             <button
-              key={i}
+              key={d.toISOString()}
               type="button"
               onClick={() => onPick(d)}
               className={`h-7 w-7 mx-auto rounded-full text-[11px] flex items-center justify-center transition-colors ${

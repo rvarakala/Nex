@@ -197,7 +197,7 @@ function TimelineDrawer({ serialId, products, onClose, onChanged }) {
         <div className="flex-1 overflow-auto p-4" data-testid="ha-timeline-events">
           <div className="space-y-3">
             {data.events.map((e, i) => (
-              <div key={i} className="flex gap-3">
+              <div key={`${e.at || ''}-${e.from || ''}-${e.to || ''}-${i}`} className="flex gap-3">
                 <div className="flex flex-col items-center">
                   <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 mt-1.5" />
                   {i < data.events.length - 1 && <div className="w-px flex-1 bg-slate-200 my-1" />}

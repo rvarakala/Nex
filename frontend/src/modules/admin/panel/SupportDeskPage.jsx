@@ -116,7 +116,7 @@ const TicketDrawer = ({ ticket, statuses, priorities, onClose, onSaved }) => {
         <div className="flex-1 p-5 space-y-4">
           <div className="space-y-2">
             {(ticket.thread || []).map((m, i) => (
-              <div key={i} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+              <div key={`${m.at || ''}-${m.author || ''}-${i}`} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                 <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
                   <MessageCircle size={10} /> {m.kind || 'msg'} · {m.author} · {fmtDateTime(m.at)}
                 </div>
