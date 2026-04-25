@@ -18,6 +18,8 @@ class Clinic(BaseModel):
     email: Optional[str] = None
     gstin: Optional[str] = None
     mrd_prefix: str = "ACS"
+    # When true, audiologists can read-only view peers' appointments (avoids equipment double-booking).
+    appointment_peer_visibility: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -34,6 +36,8 @@ class User(BaseModel):
     # Branch scope: empty list = clinic-wide (super_admin / clinic_owner / accounts).
     # Non-empty = user can only see/modify data scoped to these branches.
     branch_ids: List[str] = Field(default_factory=list)
+    # Optional override of the auto-assigned calendar colour for this user's appointments.
+    appointment_color: Optional[str] = None
     active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -73,22 +77,73 @@ APPOINTMENT_SERVICES = [
 APPOINTMENT_PRIORITIES = ["normal", "urgent", "vip"]
 APPOINTMENT_STATUSES = ["scheduled", "confirmed", "checked_in", "in_progress", "completed", "no_show", "cancelled"]
 
+# Counterparty = the entity the appointment is *with* (extends beyond patients
+# so clinic owners / staff can also book vendor demos, sales-rep calls,
+# technician slots, internal meetings, etc.).
+COUNTERPARTY_TYPES = ["patient", "vendor", "sales_rep", "tech_staff", "internal", "other"]
+
+# High-level grouping used for filters & colour fall-backs in the calendar UI.
+APPOINTMENT_CATEGORIES = ["consultation", "diagnostic", "fitting", "meeting", "demo", "other"]
+
+# Deterministic palette used when a staff member has no explicit colour override.
+# Picked for AA contrast against white text and to read well as solid event blocks.
+STAFF_COLOR_PALETTE = [
+    "#F59E0B",  # amber
+    "#3B82F6",  # blue
+    "#8B5CF6",  # violet
+    "#EC4899",  # pink
+    "#10B981",  # emerald
+    "#EF4444",  # red
+    "#0EA5E9",  # sky
+    "#F97316",  # orange
+    "#14B8A6",  # teal
+    "#6366F1",  # indigo
+]
+
+
+def color_for_staff(staff_id: Optional[str]) -> str:
+    """Stable colour for a staff resource. Same id always maps to the same swatch."""
+    if not staff_id:
+        return "#6B7280"  # neutral grey for unassigned
+    h = 0
+    for ch in staff_id:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    return STAFF_COLOR_PALETTE[h % len(STAFF_COLOR_PALETTE)]
+
 
 class Appointment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     appointment_id: str = Field(default_factory=lambda: f"APT-{str(uuid4())[:10].upper()}")
     clinic_id: str
 
-    patient_id: str
-    patient_name: str                                 # Denormalised for fast list render
+    # ---- Counterparty (the "who is this appointment with") --------------
+    # For backward-compat, patient_id/patient_name remain present and act as
+    # the counterparty when counterparty_type == "patient".
+    patient_id: Optional[str] = None
+    patient_name: Optional[str] = None                # Denormalised for fast list render
     patient_mobile: Optional[str] = None
     mrd: Optional[str] = None
 
-    audiologist_id: str
-    audiologist_name: str                             # Denormalised
+    counterparty_type: Literal["patient", "vendor", "sales_rep", "tech_staff", "internal", "other"] = "patient"
+    counterparty_id: Optional[str] = None             # vendor_id / user_id / null for free-text
+    counterparty_name: Optional[str] = None           # always set; falls back to patient_name
+    counterparty_phone: Optional[str] = None
+    counterparty_company: Optional[str] = None        # e.g. brand a sales rep represents
+
+    # ---- Resource (the staff owner of this slot) ------------------------
+    # Legacy `audiologist_*` fields stay in sync with `staff_*` so existing
+    # consumers keep working. Both are written on create/update.
+    audiologist_id: Optional[str] = None
+    audiologist_name: Optional[str] = None            # Denormalised
+    staff_id: Optional[str] = None                    # Resource owner of the slot
+    staff_name: Optional[str] = None
+    staff_role: Optional[str] = None                  # cached at create-time
+    staff_color: Optional[str] = None                 # explicit override; else derived
+
     room: Optional[str] = None
 
-    service: str
+    service: Optional[str] = None
+    category: Literal["consultation", "diagnostic", "fitting", "meeting", "demo", "other"] = "consultation"
     priority: Literal["normal", "urgent", "vip"] = "normal"
 
     # Front-desk intake triage (front-desk marks what to perform)
@@ -111,9 +166,22 @@ class Appointment(BaseModel):
 
 
 class AppointmentCreate(BaseModel):
-    patient_id: str
-    audiologist_id: str
-    service: str
+    # Either `patient_id` (legacy patient booking) or counterparty_* fields are required.
+    patient_id: Optional[str] = None
+
+    # Resource: prefer `staff_id`; `audiologist_id` accepted for backward compatibility.
+    staff_id: Optional[str] = None
+    audiologist_id: Optional[str] = None
+
+    # Counterparty (non-patient bookings):
+    counterparty_type: Literal["patient", "vendor", "sales_rep", "tech_staff", "internal", "other"] = "patient"
+    counterparty_id: Optional[str] = None
+    counterparty_name: Optional[str] = None
+    counterparty_phone: Optional[str] = None
+    counterparty_company: Optional[str] = None
+
+    service: Optional[str] = None
+    category: Literal["consultation", "diagnostic", "fitting", "meeting", "demo", "other"] = "consultation"
     start_at: datetime
     duration_minutes: int = 30
     priority: Literal["normal", "urgent", "vip"] = "normal"

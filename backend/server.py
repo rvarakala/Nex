@@ -61,6 +61,8 @@ async def lifespan(_app: FastAPI):
         await db.appointments.create_index("appointment_id", unique=True)
         await db.appointments.create_index([("clinic_id", 1), ("start_at", 1)])
         await db.appointments.create_index([("clinic_id", 1), ("audiologist_id", 1), ("start_at", 1)])
+        await db.appointments.create_index([("clinic_id", 1), ("staff_id", 1), ("start_at", 1)])
+        await db.appointments.create_index([("clinic_id", 1), ("counterparty_type", 1), ("start_at", 1)])
         await db.waitlist.create_index("entry_id", unique=True)
         await db.waitlist.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.reminder_logs.create_index([("clinic_id", 1), ("sent_at", -1)])
@@ -192,6 +194,29 @@ async def lifespan(_app: FastAPI):
 
         # ---- seed defaults (clinic, users, services) — idempotent ----
         await _seed_defaults()
+
+        # ---- one-time backfill: extend existing appointments with the new
+        # counterparty + staff resource fields (Phase: Calendar v2). Idempotent
+        # — only touches rows missing the new fields. ------------------------
+        try:
+            res = await db.appointments.update_many(
+                {"staff_id": {"$exists": False}},
+                [{
+                    "$set": {
+                        "staff_id": "$audiologist_id",
+                        "staff_name": "$audiologist_name",
+                        "counterparty_type": "patient",
+                        "counterparty_id": "$patient_id",
+                        "counterparty_name": "$patient_name",
+                        "counterparty_phone": "$patient_mobile",
+                        "category": "consultation",
+                    },
+                }],
+            )
+            if res.modified_count:
+                _log.info(f"Appointments backfill: {res.modified_count} rows enriched with staff/counterparty fields")
+        except Exception as e:
+            _log.warning(f"Appointments backfill skipped: {e}")
 
         # ---- one-time cleanup of stale UTC-keyed token counters ----
         # After the IST migration, old `token:{clinic}:{YYYY-MM-DD}` counter docs keyed on UTC date
