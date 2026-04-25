@@ -5,6 +5,9 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import StaffRail from './components/StaffRail';
 import WeekGrid from './components/WeekGrid';
+import DayView from './components/DayView';
+import MonthView from './components/MonthView';
+import PersonsView from './components/PersonsView';
 import IntentChooser from './components/IntentChooser';
 import BookCounterpartyModal from './components/BookCounterpartyModal';
 import BookAppointmentModal from '../frontdesk/appointments/BookAppointmentModal';
@@ -44,6 +47,44 @@ export default function AppointmentsCalendarPage() {
   const weekStart = useMemo(() => startOfWeek(anchor), [anchor]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
 
+  // View-aware visible window. Month grid extends ±1 row to show leading/trailing
+  // days from neighbouring months so the data is already loaded if the user clicks
+  // a faded cell.
+  const { fromDate, toDate, rangeLabel } = useMemo(() => {
+    const ymd = (d) => {
+      const yy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    };
+    if (view === 'day' || view === 'persons') {
+      return {
+        fromDate: ymd(anchor),
+        toDate: ymd(anchor),
+        rangeLabel: anchor.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+      };
+    }
+    if (view === 'month') {
+      const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+      const startDow = first.getDay();
+      const winStart = new Date(first);
+      winStart.setDate(1 - startDow);
+      const winEnd = new Date(winStart);
+      winEnd.setDate(winStart.getDate() + 41);
+      return {
+        fromDate: ymd(winStart),
+        toDate: ymd(winEnd),
+        rangeLabel: anchor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+      };
+    }
+    // week
+    return {
+      fromDate: ymd(weekStart),
+      toDate: ymd(weekEnd),
+      rangeLabel: fmtRange(weekStart, weekEnd),
+    };
+  }, [anchor, view, weekStart, weekEnd]);
+
   // ---- Load staff resources once on mount + when clinic switches -----------
   const loadStaff = useCallback(async () => {
     try {
@@ -64,9 +105,9 @@ export default function AppointmentsCalendarPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        from_date: weekStart.toISOString().slice(0, 10),
-        to_date: weekEnd.toISOString().slice(0, 10),
-        limit: '500',
+        from_date: fromDate,
+        to_date: toDate,
+        limit: '1000',
       });
       if (selectedStaffIds.length > 0 && selectedStaffIds.length < staff.length) {
         params.set('staff_ids', selectedStaffIds.join(','));
@@ -79,7 +120,7 @@ export default function AppointmentsCalendarPage() {
     } finally {
       setLoading(false);
     }
-  }, [weekStart, weekEnd, selectedStaffIds, staff.length]);
+  }, [fromDate, toDate, selectedStaffIds, staff.length]);
 
   useEffect(() => {
     if (staff.length > 0) loadAppointments();
@@ -94,8 +135,24 @@ export default function AppointmentsCalendarPage() {
   }, [appointments, selectedStaffIds, staff.length]);
 
   // ---- Toolbar interactions ------------------------------------------------
-  const goPrev = () => setAnchor(addDays(anchor, view === 'day' ? -1 : -7));
-  const goNext = () => setAnchor(addDays(anchor, view === 'day' ? 1 : 7));
+  const goPrev = () => {
+    if (view === 'month') {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1));
+    } else if (view === 'day' || view === 'persons') {
+      setAnchor(addDays(anchor, -1));
+    } else {
+      setAnchor(addDays(anchor, -7));
+    }
+  };
+  const goNext = () => {
+    if (view === 'month') {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1));
+    } else if (view === 'day' || view === 'persons') {
+      setAnchor(addDays(anchor, 1));
+    } else {
+      setAnchor(addDays(anchor, 7));
+    }
+  };
   const goToday = () => setAnchor(new Date());
 
   const toggleStaff = (id) =>
@@ -225,14 +282,10 @@ export default function AppointmentsCalendarPage() {
                 key={v}
                 type="button"
                 onClick={() => setView(v)}
-                disabled={v !== 'week'}
-                title={v !== 'week' ? 'Coming soon' : undefined}
                 data-testid={`apt-view-${v}`}
                 className={`px-3 py-1 text-[11px] uppercase tracking-wider font-bold rounded transition-colors ${
                   view === v
                     ? 'bg-blue-600 text-white shadow-sm'
-                    : v !== 'week'
-                    ? 'text-slate-400 cursor-not-allowed'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -246,7 +299,7 @@ export default function AppointmentsCalendarPage() {
             className="text-[13px] font-semibold text-slate-700 tracking-wide"
             data-testid="apt-range-label"
           >
-            {fmtRange(weekStart, weekEnd)}
+            {rangeLabel}
           </div>
 
           {/* Right controls */}
@@ -287,7 +340,7 @@ export default function AppointmentsCalendarPage() {
         </div>
 
         {/* Body */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 flex flex-col">
           {view === 'week' && (
             <WeekGrid
               weekStart={weekStart}
@@ -297,14 +350,32 @@ export default function AppointmentsCalendarPage() {
               onEventDrop={handleEventDrop}
             />
           )}
-          {view !== 'week' && (
-            <div className="h-full flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <div className="text-3xl mb-2">📅</div>
-                <div className="text-sm font-semibold capitalize">{view} view coming soon</div>
-                <div className="text-xs mt-1">Phase 4 will land Day, Month and Persons views.</div>
-              </div>
-            </div>
+          {view === 'day' && (
+            <DayView
+              date={anchor}
+              appointments={visibleAppointments}
+              onEventClick={handleEventClick}
+              onSlotRightClick={handleSlotRightClick}
+              onEventDrop={handleEventDrop}
+            />
+          )}
+          {view === 'month' && (
+            <MonthView
+              anchor={anchor}
+              appointments={visibleAppointments}
+              onEventClick={handleEventClick}
+              onPickDate={(d) => { setAnchor(d); setView('day'); }}
+            />
+          )}
+          {view === 'persons' && (
+            <PersonsView
+              date={anchor}
+              staff={staff.filter((s) => selectedStaffIds.includes(s.user_id))}
+              appointments={visibleAppointments}
+              onEventClick={handleEventClick}
+              onSlotRightClick={(slot, staffMember) => handleSlotRightClick(slot, staffMember)}
+              onEventDrop={handleEventDrop}
+            />
           )}
         </div>
       </div>
