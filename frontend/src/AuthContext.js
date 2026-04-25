@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
+import { clearOfflineCache } from './connectivity/offlineCache';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -66,6 +67,9 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem('acs.activeTest');  // Prevent ghost-context leak between users on shared terminal
+    // Wipe the offline read-cache so the next user can't see this user's data
+    // (cached patient lists, appointments, etc.) on a shared terminal.
+    clearOfflineCache();
     setUser(null);
     setClinic(null);
   };
@@ -79,6 +83,9 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem(TOKEN_KEY, r.data.access_token);
     // Clear any tenant-scoped caches the user had on the old clinic.
     localStorage.removeItem('acs.activeTest');
+    // Wipe the IDB read-cache too — a fresh JWT means a fresh tenant scope,
+    // and yesterday's patient list from the old clinic must not leak through.
+    clearOfflineCache();
     const me = await axios.get(`${API}/auth/me`);
     setUser(me.data.user);
     setClinic(me.data.clinic);

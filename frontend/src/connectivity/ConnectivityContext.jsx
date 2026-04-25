@@ -16,13 +16,17 @@
  *   status: 'online' | 'slow' | 'offline'
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import { toast, Toaster } from 'sonner';
 import { installAxiosRetry } from './axiosRetry';
+import { installOfflineCache, onCacheServed } from './offlineCache';
 
-// Install the retry interceptor exactly once at module load.
-// Keeping it here (instead of inside the component) avoids re-installing
-// on every re-render and ensures it's active before any axios call fires.
+// Install the retry + offline-cache interceptors exactly once at module load.
+// Order rationale: retry handles writes (POST/PUT/etc), cache handles reads
+// (GET). They don't overlap, so install order doesn't change behavior — but
+// we register retry first by convention so its onReject runs before cache's.
 installAxiosRetry();
+installOfflineCache(axios);
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PING_INTERVAL_MS = 30_000;     // routine check
@@ -35,15 +39,29 @@ const Ctx = createContext({
   lastChecked: null,
   latencyMs: 0,
   retry: () => {},
+  cacheServedAt: null,
 });
 
 export function ConnectivityProvider({ children }) {
   const [status, setStatus] = useState(navigator.onLine ? 'online' : 'offline');
   const [lastChecked, setLastChecked] = useState(null);
   const [latencyMs, setLatencyMs] = useState(0);
+  // Bumped to a Date each time the cache layer serves a stale response.
+  // Auto-clears when we go back online so the indicator only shows during outages.
+  const [cacheServedAt, setCacheServedAt] = useState(null);
 
   // Hold latest status in a ref to compare without re-running effects on every change
   const prevStatusRef = useRef(status);
+
+  // Listen for cache fallbacks from the offline cache layer
+  useEffect(() => onCacheServed(({ cachedAt }) => {
+    setCacheServedAt(new Date(cachedAt));
+  }), []);
+
+  // Clear the "served from cache" hint as soon as we recover network
+  useEffect(() => {
+    if (status === 'online' && cacheServedAt) setCacheServedAt(null);
+  }, [status, cacheServedAt]);
 
   const checkNow = useCallback(async () => {
     if (!navigator.onLine) {
@@ -114,7 +132,7 @@ export function ConnectivityProvider({ children }) {
   }, [status]);
 
   return (
-    <Ctx.Provider value={{ status, lastChecked, latencyMs, retry: checkNow }}>
+    <Ctx.Provider value={{ status, lastChecked, latencyMs, retry: checkNow, cacheServedAt }}>
       <Toaster position="top-center" richColors closeButton />
       {children}
     </Ctx.Provider>
