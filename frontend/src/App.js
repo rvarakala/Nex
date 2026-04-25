@@ -23,6 +23,7 @@ import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
 import DataExportPage from './modules/data/DataExportPage';
 import ReportsModule from './modules/reports/ReportsModule';
+import AppointmentsCalendarPage from './modules/appointments/AppointmentsCalendarPage';
 import { usePageViewTracker } from './hooks/usePageViewTracker';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import TopProgressBar from './components/TopProgressBar';
@@ -94,6 +95,9 @@ function AppRoutes() {
 
               <Route path="/frontdesk/*" element={
                 <ShelledRoute><ModuleGate module="frontdesk"><FrontDeskModule /></ModuleGate></ShelledRoute>
+              } />
+              <Route path="/appointments" element={
+                <ShelledRoute><AppointmentsCalendarPage /></ShelledRoute>
               } />
               <Route path="/billing/*" element={<ShelledRoute><BillingModule /></ShelledRoute>} />
               <Route path="/test/*" element={

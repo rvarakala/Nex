@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
   BarChart3, HeartPulse, Handshake, FileText, ChevronLeft, LogOut,
-  Menu, Search as SearchIcon, Settings, Database,
+  Menu, Search as SearchIcon, Settings, Database, CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -160,6 +160,7 @@ export default function AppShell({ children }) {
       label: 'Clinic',
       items: [
         { to: '/frontdesk', Icon: Users, label: 'Front Desk', testid: 'nav-frontdesk' },
+        { to: '/appointments', Icon: CalendarDays, label: 'Appointments', testid: 'nav-appointments' },
         (user?.role !== 'audiologist') && { to: '/billing', Icon: Receipt, label: 'Billing', testid: 'nav-billing' },
         { to: '/test', Icon: Stethoscope, label: 'Diagnostics', testid: 'nav-test' },
       ].filter(Boolean),
