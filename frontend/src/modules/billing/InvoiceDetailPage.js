@@ -432,7 +432,9 @@ function printThermal(inv, clinic) {
   // tags). If you ever interpolate a NEW dynamic field into `lines`, wrap it with
   // esc() or this comment's safety argument stops holding.
   const wrapper = doc.createElement('div');
-  // eslint-disable-next-line no-unsanitized/property -- every dynamic value is esc()'d at source
+  // Every dynamic value is escaped via esc() before reaching `lines`, so this
+  // assignment is safe. The eslint plugin that enforced this rule isn't
+  // installed in the current toolchain.
   wrapper.innerHTML = lines.join('\n');
   doc.body.appendChild(wrapper);
 

@@ -15,6 +15,7 @@ import AppSwitcher from './AppSwitcher';
 import { useSubscription } from '../SubscriptionContext';
 import ConnectivityIndicator from '../connectivity/ConnectivityIndicator';
 import OfflineBanner from '../connectivity/OfflineBanner';
+import InstallPrompt from '../connectivity/InstallPrompt';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
@@ -408,6 +409,9 @@ export default function AppShell({ children }) {
           {children}
         </main>
       </div>
+
+      {/* PWA install prompt — only renders for signed-in users on eligible browsers */}
+      <InstallPrompt />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
