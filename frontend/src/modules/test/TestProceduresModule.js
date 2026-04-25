@@ -471,6 +471,7 @@ export default function TestProceduresModule() {
           preTestData={preTestData}
           sessionId={activeTest.sessionId}
           audiologistName={user?.name || 'Audiologist'}
+          audiologistUserId={user?.user_id}
           clinicalImpression=""
           recommendations={[]}
           audiogramMode={reportAudiogramMode}

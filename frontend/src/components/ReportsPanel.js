@@ -38,6 +38,7 @@ const ReportsPanel = ({
   tinnitusData,
   sessionId, // eslint-disable-line no-unused-vars
   audiologistName,
+  audiologistUserId,
   clinicalImpression,
   recommendations,
   audiogramMode = 'combined',
@@ -278,7 +279,7 @@ const ReportsPanel = ({
 
           {/* Signature on main page only when Tymp is inline */}
           {!useSeparatePage && (
-            <SignatureFooter audiologistName={audiologistName} license={license} />
+            <SignatureFooter audiologistName={audiologistName} audiologistUserId={audiologistUserId} license={license} />
           )}
 
           {/* Tympanometry (separate page) + deferred Results/Recs/Signature */}
@@ -305,7 +306,7 @@ const ReportsPanel = ({
                 </div>
               )}
 
-              <SignatureFooter audiologistName={audiologistName} license={license} />
+              <SignatureFooter audiologistName={audiologistName} audiologistUserId={audiologistUserId} license={license} />
             </div>
           )}
         </div>

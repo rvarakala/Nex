@@ -328,3 +328,109 @@ async def force_logout_staff(
          "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     return {"ok": True, "message": "User's active sessions invalidated"}
+
+
+
+# ============================================================================
+# Personal signature — every authenticated user can upload one.
+# Used by:
+#   • Audiogram report footer (auto-applied for the signing audiologist)
+#   • Delivery-challan receipt (legacy alternative to drawing on the receive modal)
+#
+# Bucket: `user_signatures`. We strip the `data:image/png;base64,` prefix when
+# the client sends a data-URL; raw uploads also work.
+# ============================================================================
+_SIG_BUCKET = "user_signatures"
+_MAX_SIG_BYTES = 1_500_000  # 1.5 MB — drawn PNGs are small; reject pasted photos
+
+
+class SignaturePayload(BaseModel):
+    """JSON body for canvas-drawn signatures. The client sends the base64 PNG
+    inline (data-URL or raw base64). We avoid multipart for this path because
+    the canvas-pad already produces a base64 string."""
+    image_base64: str
+    license_no: Optional[str] = None
+
+
+@router.post("/me/signature")
+async def upload_my_signature(payload: SignaturePayload,
+                              user=Depends(get_current_user), db=Depends(get_db)):
+    import base64
+    raw = payload.image_base64 or ""
+    # Strip data-URL prefix if present.
+    if "," in raw and raw.lower().startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    try:
+        blob = base64.b64decode(raw, validate=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 PNG: {e}")
+    if not blob:
+        raise HTTPException(status_code=400, detail="Empty signature")
+    if len(blob) > _MAX_SIG_BYTES:
+        raise HTTPException(status_code=413, detail="Signature too large (max 1.5 MB)")
+
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_SIG_BUCKET)
+    udoc = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "signature_image_fs_id": 1}) or {}
+    if udoc.get("signature_image_fs_id"):
+        try:
+            await bucket.delete(ObjectId(udoc["signature_image_fs_id"]))
+        except Exception:
+            pass
+    fs_id = await bucket.upload_from_stream(
+        f"sig-{user['user_id']}.png",
+        io.BytesIO(blob),
+        metadata={"user_id": user["user_id"], "kind": "user-signature"},
+    )
+    update = {
+        "signature_image_fs_id": str(fs_id),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if payload.license_no is not None:
+        update["license_no"] = payload.license_no.strip() or None
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
+    return {
+        "signature_image_fs_id": str(fs_id),
+        "license_no": update.get("license_no"),
+    }
+
+
+@router.delete("/me/signature")
+async def clear_my_signature(user=Depends(get_current_user), db=Depends(get_db)):
+    udoc = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "signature_image_fs_id": 1}) or {}
+    if udoc.get("signature_image_fs_id"):
+        bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_SIG_BUCKET)
+        try:
+            await bucket.delete(ObjectId(udoc["signature_image_fs_id"]))
+        except Exception:
+            pass
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"signature_image_fs_id": None, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
+
+
+@router.get("/users/{user_id}/signature")
+async def fetch_user_signature(user_id: str,
+                               user=Depends(get_current_user), db=Depends(get_db)):
+    """Same-tenant fetch — used by the audiogram footer to embed the signing
+    audiologist's signature. 404 cleanly when no signature is set so the UI
+    can fall back to the typed name."""
+    udoc = await db.users.find_one(
+        {"user_id": user_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "signature_image_fs_id": 1, "license_no": 1, "name": 1},
+    )
+    if not udoc or not udoc.get("signature_image_fs_id"):
+        raise HTTPException(status_code=404, detail="No signature on file")
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_SIG_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(udoc["signature_image_fs_id"]))
+        data = await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Signature blob missing")
+    from fastapi.responses import Response
+    return Response(content=data, media_type="image/png", headers={
+        "X-License-No": udoc.get("license_no") or "",
+        "X-Signed-By": udoc.get("name") or "",
+        "Cache-Control": "private, max-age=300",
+    })

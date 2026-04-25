@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Truck, Plus, ArrowDownLeft, ArrowUpRight, AlertCircle, Check } from 'lucide-react';
 import CreateTransferModal from './CreateTransferModal';
+import ReceiveTransferModal from './ReceiveTransferModal';
+import { useAuth } from '../../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -32,10 +34,12 @@ const fmtDateTime = (iso) => {
 };
 
 export default function StockTransfersPage() {
+  const { clinic } = useAuth();
   const [tab, setTab] = useState('outgoing');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [receiving, setReceiving] = useState(null);   // transfer doc when modal open
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState('');
 
@@ -140,9 +144,11 @@ export default function StockTransfersPage() {
             <TransferRow
               key={t.transfer_id}
               t={t}
+              currentClinicId={clinic?.clinic_id}
               busy={busyId === t.transfer_id}
               onDispatch={() => dispatch(t.transfer_id)}
               onCancel={() => cancel(t.transfer_id)}
+              onReceive={() => setReceiving(t)}
             />
           ))}
         </div>
@@ -154,6 +160,13 @@ export default function StockTransfersPage() {
           onCreated={() => { setCreating(false); load(); }}
         />
       )}
+      {receiving && (
+        <ReceiveTransferModal
+          transfer={receiving}
+          onClose={() => setReceiving(null)}
+          onReceived={() => { setReceiving(null); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -161,9 +174,11 @@ export default function StockTransfersPage() {
 // =============================================================================
 // TransferRow — single line item with status chip + line preview + actions
 // =============================================================================
-const TransferRow = ({ t, busy, onDispatch, onCancel }) => {
+const TransferRow = ({ t, busy, currentClinicId, onDispatch, onCancel, onReceive }) => {
   const sty = STATUS_STYLE[t.status] || STATUS_STYLE.draft;
   const lineCount = (t.lines?.length || 0) + (t.accessory_lines?.length || 0);
+  const isIncoming = t.to_clinic_id === currentClinicId;
+  const canReceive = t.status === 'dispatched' && isIncoming;
   return (
     <div
       className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
@@ -236,9 +251,21 @@ const TransferRow = ({ t, busy, onDispatch, onCancel }) => {
           )}
           {t.status === 'dispatched' && (
             <>
-              <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-1">
-                <Truck size={11} /> awaiting receipt
-              </span>
+              {canReceive ? (
+                <button
+                  type="button"
+                  onClick={onReceive}
+                  disabled={busy}
+                  data-testid={`transfer-receive-${t.transfer_id}`}
+                  className="text-[11px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-3 py-1 rounded transition-colors"
+                >
+                  Accept &amp; Sign
+                </button>
+              ) : (
+                <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-1">
+                  <Truck size={11} /> awaiting receipt
+                </span>
+              )}
               <button
                 type="button"
                 onClick={onCancel}

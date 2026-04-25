@@ -38,6 +38,11 @@ class User(BaseModel):
     branch_ids: List[str] = Field(default_factory=list)
     # Optional override of the auto-assigned calendar colour for this user's appointments.
     appointment_color: Optional[str] = None
+    # Drawn-signature PNG stored in GridFS bucket `user_signatures`. Auto-applied
+    # to audiogram reports + delivery-challan receipts when present.
+    signature_image_fs_id: Optional[str] = None
+    # Optional license / registration number printed under the signature.
+    license_no: Optional[str] = None
     active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

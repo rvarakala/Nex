@@ -11,12 +11,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom';
-import { Settings, Building2, Users, MapPin } from 'lucide-react';
+import { Settings, Building2, Users, MapPin, Pen } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
+import MySignatureTab from './MySignatureTab';
+import { useAuth } from '../../AuthContext';
 
 export default function SettingsModule() {
+  const { user } = useAuth();
+  const isAdmin = ['clinic_owner', 'super_admin'].includes(user?.role);
+
   return (
     <div className="h-full flex bg-slate-50" data-testid="settings-module">
       <aside className="w-56 bg-white border-r border-slate-200 p-3 flex flex-col">
@@ -24,16 +29,23 @@ export default function SettingsModule() {
           <Settings size={16} className="text-slate-500" />
           <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Settings</div>
         </div>
-        <SideLink to="/settings/clinic" icon={<Building2 size={14} />} label="Clinic Details" testid="settings-nav-clinic" />
-        <SideLink to="/settings/staff"  icon={<Users size={14} />}     label="Staff Settings" testid="settings-nav-staff" />
-        <SideLink to="/settings/branches" icon={<MapPin size={14} />}  label="Branches"       testid="settings-nav-branches" />
+        {isAdmin && (
+          <>
+            <SideLink to="/settings/clinic" icon={<Building2 size={14} />} label="Clinic Details" testid="settings-nav-clinic" />
+            <SideLink to="/settings/staff"  icon={<Users size={14} />}     label="Staff Settings" testid="settings-nav-staff" />
+            <SideLink to="/settings/branches" icon={<MapPin size={14} />}  label="Branches"       testid="settings-nav-branches" />
+            <div className="my-2 border-t border-slate-100" />
+          </>
+        )}
+        <SideLink to="/settings/signature" icon={<Pen size={14} />} label="My Signature" testid="settings-nav-signature" />
       </aside>
       <main className="flex-1 overflow-auto">
         <Routes>
-          <Route index element={<Navigate to="clinic" replace />} />
-          <Route path="clinic"   element={<ClinicDetailsTab />} />
-          <Route path="staff"    element={<StaffSettingsTab />} />
-          <Route path="branches" element={<BranchesTab />} />
+          <Route index element={<Navigate to={isAdmin ? 'clinic' : 'signature'} replace />} />
+          {isAdmin && <Route path="clinic"   element={<ClinicDetailsTab />} />}
+          {isAdmin && <Route path="staff"    element={<StaffSettingsTab />} />}
+          {isAdmin && <Route path="branches" element={<BranchesTab />} />}
+          <Route path="signature" element={<MySignatureTab />} />
         </Routes>
       </main>
     </div>
