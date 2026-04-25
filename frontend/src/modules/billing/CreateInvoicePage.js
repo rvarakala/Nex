@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API, fmtINR, PAYMENT_METHODS } from './billingUtils';
+import AddServiceInlineModal from './AddServiceInlineModal';
 
 // Compute totals client-side (mirrors backend logic) for live preview.
 function resolveDiscount(line, gross) {
@@ -54,6 +55,7 @@ export default function CreateInvoicePage() {
   const [payNow, setPayNow] = useState({ enabled: false, method: 'cash', amount: '', reference: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [showAddSvc, setShowAddSvc] = useState(false);
 
   useEffect(() => {
     axios.get(`${API}/billing/services`).then((r) => setServices(r.data || [])).catch(() => {});
@@ -90,6 +92,23 @@ export default function CreateInvoicePage() {
     setLines((ls) => [...ls, {
       key: Math.random().toString(36).slice(2),
       service_id,
+      description: svc.name,
+      quantity: 1,
+      unit_price: svc.price,
+      discount_type: 'flat',
+      discount_value: 0,
+      is_taxable: svc.is_taxable,
+      gst_rate: svc.gst_rate,
+    }]);
+  };
+
+  // Inline "Add Service" modal — service is already persisted by the modal,
+  // we just merge it into local catalog state and immediately add it as a line.
+  const handleServiceCreated = (svc) => {
+    setServices((prev) => [...prev, svc]);
+    setLines((ls) => [...ls, {
+      key: Math.random().toString(36).slice(2),
+      service_id: svc.service_id,
       description: svc.name,
       quantity: 1,
       unit_price: svc.price,
@@ -225,8 +244,14 @@ export default function CreateInvoicePage() {
         <div className="bg-white rounded-lg border border-slate-200 p-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Add Service</div>
-            <button onClick={addCustomLine} data-testid="ci-add-custom"
-              className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded">+ Custom line</button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setShowAddSvc(true)} data-testid="ci-new-service"
+                className="text-[10px] px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded shadow-sm">
+                + New service
+              </button>
+              <button onClick={addCustomLine} data-testid="ci-add-custom"
+                className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded">+ Custom line</button>
+            </div>
           </div>
           {services.length === 0 ? (
             <div
@@ -234,19 +259,21 @@ export default function CreateInvoicePage() {
               className="text-xs bg-amber-50 border border-amber-200 rounded px-2.5 py-2 text-amber-800 flex items-center justify-between gap-2"
             >
               <span>
-                <b>No services in your catalogue yet.</b> Add items in{' '}
-                <a href="/billing/catalog" className="underline font-semibold hover:text-amber-900">Service Catalogue</a>{' '}
-                or use <b>+ Custom line</b> above.
+                <b>No services in your catalogue yet.</b> Click <b>+ New service</b> above to add your first one — it will be saved permanently and reused on every future invoice.
               </span>
             </div>
           ) : (
             <select
-              onChange={(e) => { if (e.target.value) { addLine(e.target.value); e.target.value = ''; } }}
+              onChange={(e) => {
+                if (e.target.value === '__new__') { setShowAddSvc(true); e.target.value = ''; return; }
+                if (e.target.value) { addLine(e.target.value); e.target.value = ''; }
+              }}
               data-testid="ci-add-service"
               defaultValue=""
               className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
             >
               <option value="">— Pick a service from catalogue —</option>
+              <option value="__new__" className="font-semibold text-emerald-700">+ Add new service to catalogue…</option>
               {svcGroups.known.map(({ cat, items }) => (
                 <optgroup key={cat} label={cat}>
                   {items.map((s) => {
@@ -266,6 +293,12 @@ export default function CreateInvoicePage() {
             </select>
           )}
         </div>
+
+        <AddServiceInlineModal
+          open={showAddSvc}
+          onClose={() => setShowAddSvc(false)}
+          onCreated={handleServiceCreated}
+        />
 
         {/* Lines */}
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
