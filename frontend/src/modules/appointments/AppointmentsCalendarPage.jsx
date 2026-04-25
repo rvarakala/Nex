@@ -10,6 +10,7 @@ import MonthView from './components/MonthView';
 import PersonsView from './components/PersonsView';
 import IntentChooser from './components/IntentChooser';
 import BookCounterpartyModal from './components/BookCounterpartyModal';
+import CalendarClinicSwitcher from './components/CalendarClinicSwitcher';
 import BookAppointmentModal from '../frontdesk/appointments/BookAppointmentModal';
 import { startOfWeek, addDays, fmtRange } from './utils';
 
@@ -303,7 +304,8 @@ export default function AppointmentsCalendarPage() {
           </div>
 
           {/* Right controls */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
+            <CalendarClinicSwitcher />
             <button
               type="button"
               onClick={goToday}

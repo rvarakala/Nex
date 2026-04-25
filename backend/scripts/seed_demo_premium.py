@@ -224,6 +224,16 @@ async def seed():
     if user_docs:
         await db.users.insert_many(user_docs)
     owner_id = user_id_by_email["owner@thesoundclinic.in"]
+
+    # Grant the clinic owner read access to two more existing demo tenants so
+    # the multi-clinic switcher in the toolbar has something to show.
+    extra_clinics = ["tenant-kims-hearing", "tenant-apollo-audiology"]
+    existing_extra = await db.clinics.distinct("clinic_id", {"clinic_id": {"$in": extra_clinics}})
+    if existing_extra:
+        await db.users.update_one(
+            {"user_id": owner_id},
+            {"$set": {"additional_clinic_ids": existing_extra}},
+        )
     aud1_id = user_id_by_email["aditi@thesoundclinic.in"]
     aud2_id = user_id_by_email["vikram@thesoundclinic.in"]
     front_id = user_id_by_email["meera@thesoundclinic.in"]
