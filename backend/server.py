@@ -742,13 +742,17 @@ async def _seed_defaults():
         except Exception as e:
             logger.warning(f"Backfill skipped for {coll}: {e}")
 
-    # Seed default service catalogue for the default clinic (idempotent)
-    try:
-        inserted = await billing_module.seed_default_services(db, clinic_id)
-        if inserted:
-            logger.info(f"Seeded {inserted} default services for {clinic_id}")
-    except Exception as e:
-        logger.warning(f"Service seeding skipped: {e}")
+    # Seed default service catalogue for the default clinic.
+    # Disabled by default — clinics should curate their own catalogue from the
+    # Settings → Service Catalogue UI. Set SEED_DEFAULT_SERVICES=1 to opt back in
+    # (useful only for greenfield demo / dev environments).
+    if os.environ.get("SEED_DEFAULT_SERVICES") == "1":
+        try:
+            inserted = await billing_module.seed_default_services(db, clinic_id)
+            if inserted:
+                logger.info(f"Seeded {inserted} default services for {clinic_id}")
+        except Exception as e:
+            logger.warning(f"Service seeding skipped: {e}")
 
     # Seed the primary Mumbai HQ branch + backfill existing users to it.
     await _seed_primary_branch(clinic_id, "Mumbai HQ", "Mumbai", "Maharashtra")

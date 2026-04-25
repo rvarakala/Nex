@@ -276,7 +276,11 @@ async def seed():
         }
         services_docs.append(doc)
         service_by_code[code] = doc
-    await db.services.insert_many(services_docs)
+    # NOTE: We deliberately DO NOT insert these into `db.services` — clinics
+    # should curate their own Service Catalogue from Settings → Service Catalogue.
+    # The local `service_by_code` dict is still used to snapshot description /
+    # price / hsn on seeded invoice lines below (those lines carry no `service_id`
+    # so they remain valid even with an empty catalogue).
 
     # ---- 6. Patients --------------------------------------------------------
     patient_docs = []
@@ -801,7 +805,7 @@ async def seed():
             "patient_mobile": patient["mobile"], "mrd": patient["mrd"],
             "invoice_date": _iso(NOW - timedelta(days=random.randint(0, 30))),
             "lines": [{
-                "service_id": svc["service_id"], "description": svc["name"],
+                "service_id": None, "description": svc["name"],
                 "quantity": 1, "unit_price": gross,
                 "discount_amount": 0, "discount_type": "flat", "discount_value": 0,
                 "gst_rate": 0, "is_taxable": False, "hsn_sac": svc.get("hsn_sac"),
