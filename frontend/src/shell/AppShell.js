@@ -10,6 +10,7 @@ import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
+import SignatureNudgeBanner from './SignatureNudgeBanner';
 import AppSwitcher from './AppSwitcher';
 import { useSubscription } from '../SubscriptionContext';
 
@@ -399,6 +400,7 @@ export default function AppShell({ children }) {
 
         {/* Content */}
         <main className="flex-1 overflow-auto bg-slate-50" data-testid="app-main">
+          <SignatureNudgeBanner />
           {children}
         </main>
       </div>

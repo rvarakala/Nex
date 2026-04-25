@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Truck, Plus, ArrowDownLeft, ArrowUpRight, AlertCircle, Check } from 'lucide-react';
 import CreateTransferModal from './CreateTransferModal';
 import ReceiveTransferModal from './ReceiveTransferModal';
+import ChallanPrintModal from './ChallanPrintModal';
 import { useAuth } from '../../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -40,6 +41,7 @@ export default function StockTransfersPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [receiving, setReceiving] = useState(null);   // transfer doc when modal open
+  const [printing, setPrinting] = useState(null);     // transfer doc when challan modal open
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState('');
 
@@ -149,6 +151,7 @@ export default function StockTransfersPage() {
               onDispatch={() => dispatch(t.transfer_id)}
               onCancel={() => cancel(t.transfer_id)}
               onReceive={() => setReceiving(t)}
+              onPrint={() => setPrinting(t)}
             />
           ))}
         </div>
@@ -167,6 +170,12 @@ export default function StockTransfersPage() {
           onReceived={() => { setReceiving(null); load(); }}
         />
       )}
+      {printing && (
+        <ChallanPrintModal
+          transfer={printing}
+          onClose={() => setPrinting(null)}
+        />
+      )}
     </div>
   );
 }
@@ -174,11 +183,12 @@ export default function StockTransfersPage() {
 // =============================================================================
 // TransferRow — single line item with status chip + line preview + actions
 // =============================================================================
-const TransferRow = ({ t, busy, currentClinicId, onDispatch, onCancel, onReceive }) => {
+const TransferRow = ({ t, busy, currentClinicId, onDispatch, onCancel, onReceive, onPrint }) => {
   const sty = STATUS_STYLE[t.status] || STATUS_STYLE.draft;
   const lineCount = (t.lines?.length || 0) + (t.accessory_lines?.length || 0);
   const isIncoming = t.to_clinic_id === currentClinicId;
   const canReceive = t.status === 'dispatched' && isIncoming;
+  const hasChallan = !!t.challan_no && t.status !== 'cancelled';
   return (
     <div
       className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
@@ -280,6 +290,16 @@ const TransferRow = ({ t, busy, currentClinicId, onDispatch, onCancel, onReceive
             <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
               <Check size={11} strokeWidth={3} /> closed
             </span>
+          )}
+          {hasChallan && (
+            <button
+              type="button"
+              onClick={onPrint}
+              data-testid={`transfer-print-${t.transfer_id}`}
+              className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-800 hover:underline"
+            >
+              Print Challan
+            </button>
           )}
           {t.courier_name && (
             <span className="text-[9px] text-slate-400 font-mono">
