@@ -1,5 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🛡️ PENDING — Security Hardening (3 Phases) — postponed by user 2026-04-25
+
+**Phase 1 — Lock the Front Door (1 day, P0 before public launch)**
+- Login rate limiting + lockout (slowapi: 5 failures → 15-min lockout, IP throttle)
+- Disable demo seed in production via `DISABLE_DEMO_SEED=1` env flag
+- Force password change on first login for seeded admin/founder accounts
+- Lock CORS `allow_origins` to production domain (currently likely `*`)
+- Verify `JWT_SECRET` is ≥64 random bytes; rotate if weak
+
+**Phase 2 — Audit & Compliance (2-3 days, P1 before first paying clinic)**
+- Audit log table for sensitive admin actions (delete-tenant, role change, password reset, impersonation)
+- 2FA (TOTP) for `clinic_owner`, `super_admin`, `founder` roles
+- File-upload validation: MIME whitelist + size cap + clinic_id check on GridFS reads (signatures, logos)
+- Security headers middleware: CSP, X-Frame-Options, HSTS, X-Content-Type-Options
+- Endpoint sweep for NoSQL-injection via unsanitized query params (`?status[$ne]=`)
+
+**Phase 3 — Compliance & Resilience (1 week, P2 before scaling > 10 clinics)**
+- Encryption-at-rest for PHI fields (diagnoses, audiograms, complaints) — DPDP Act 2023 requirement
+- DPDP Act consent capture + data-subject-request workflow
+- Automated daily MongoDB backups (separate region) + tested restore procedure
+- Sentry error tracking + alerting on suspicious patterns (10+ failed logins from one IP, mass data export, off-hours admin actions)
+- Public share-link signing with 24–48hr expiry (WhatsApp report links)
+- Dependency scanning in CI (`pip-audit`, `npm audit`)
+
+**Context**: Audit performed 2026-04-25. Most realistic threat today = brute-force on weak/demo passwords. Phase 1 alone eliminates ~80% of practical risk.
+
 ## Recent Fixes (Feb 2026)
 - **2026-04-25 — Service Job page fix + GRN race-condition hardening**:
   - `GET /api/ha/service-tickets` was 500-ing for tenants whose seeded data used legacy field names (`issue_summary`, `assigned_to_user_id`, `estimate_amount`, `completed_at`) and lowercase status values (`received`/`estimated`/`approved`/`completed`), crashing Pydantic response validation.
