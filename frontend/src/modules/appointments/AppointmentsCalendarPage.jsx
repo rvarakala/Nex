@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import StaffRail from './components/StaffRail';
 import WeekGrid from './components/WeekGrid';
+import IntentChooser from './components/IntentChooser';
+import BookCounterpartyModal from './components/BookCounterpartyModal';
 import BookAppointmentModal from '../frontdesk/appointments/BookAppointmentModal';
 import { startOfWeek, addDays, fmtRange } from './utils';
 
@@ -32,6 +34,12 @@ export default function AppointmentsCalendarPage() {
   // Booking modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modalInitial, setModalInitial] = useState(null); // { initialDate, initialTime, existing }
+
+  // Intent chooser + non-patient modal state
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [pendingSlot, setPendingSlot] = useState(null); // { date, time }
+  const [cpModalState, setCpModalState] = useState(null);
+  // ^ { type, initialDate, initialTime, existing? } when open; null when closed
 
   const weekStart = useMemo(() => startOfWeek(anchor), [anchor]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
@@ -103,29 +111,87 @@ export default function AppointmentsCalendarPage() {
     [staff],
   );
 
-  const openNew = (initialDate = anchor, initialTime) => {
-    setModalInitial({ initialDate, initialTime });
-    setModalOpen(true);
+  // Open the intent chooser. The user picks Patient / Vendor / etc., and we
+  // route to the matching modal. If the slot was right-clicked, we skip the
+  // chooser entirely and default to Patient (>90% case).
+  const openNew = (initialDate = anchor, initialTime, skipChooser = false) => {
+    if (skipChooser) {
+      setModalInitial({ initialDate, initialTime });
+      setModalOpen(true);
+      return;
+    }
+    setPendingSlot({ initialDate, initialTime });
+    setChooserOpen(true);
+  };
+
+  const handleIntentPick = (type) => {
+    const slot = pendingSlot || { initialDate: anchor };
+    setChooserOpen(false);
+    setPendingSlot(null);
+    if (type === 'patient') {
+      setModalInitial(slot);
+      setModalOpen(true);
+    } else {
+      setCpModalState({ type, ...slot });
+    }
   };
 
   const handleSlotRightClick = (slotDate) => {
     const hh = String(slotDate.getHours()).padStart(2, '0');
     const mm = String(slotDate.getMinutes()).padStart(2, '0');
-    openNew(slotDate, `${hh}:${mm}`);
+    // Right-click is a power-user shortcut → assume Patient and skip the chooser.
+    openNew(slotDate, `${hh}:${mm}`, true);
   };
 
   const handleEventClick = (appt) => {
-    setModalInitial({
-      initialDate: new Date(appt.start_at),
-      initialTime: undefined,
-      existing: appt,
-    });
-    setModalOpen(true);
+    const isPatient = (appt.counterparty_type || 'patient') === 'patient';
+    if (isPatient) {
+      setModalInitial({
+        initialDate: new Date(appt.start_at),
+        initialTime: undefined,
+        existing: appt,
+      });
+      setModalOpen(true);
+    } else {
+      setCpModalState({
+        type: appt.counterparty_type,
+        initialDate: new Date(appt.start_at),
+        existing: appt,
+      });
+    }
   };
+
+  // Drag-to-reschedule — fired by WeekGrid once the user drops an event onto
+  // a new slot. We optimistically update the local list and revert on error.
+  const handleEventDrop = useCallback(async (appt, newStart) => {
+    const newIso = new Date(newStart).toISOString();
+    const prev = appointments;
+    setAppointments((cur) =>
+      cur.map((a) =>
+        a.appointment_id === appt.appointment_id
+          ? { ...a, start_at: newIso, end_at: new Date(new Date(newStart).getTime() + (appt.duration_minutes || 30) * 60000).toISOString() }
+          : a,
+      ),
+    );
+    try {
+      await axios.put(`${API}/appointments/${appt.appointment_id}`, {
+        start_at: newIso,
+        duration_minutes: appt.duration_minutes || 30,
+      });
+      loadAppointments();
+    } catch (err) {
+      // Roll back on failure.
+      setAppointments(prev);
+      const detail = err?.response?.data?.detail;
+      const msg = (detail && typeof detail === 'object') ? detail.message : (typeof detail === 'string' ? detail : 'Could not move appointment');
+      alert(msg);
+    }
+  }, [appointments, loadAppointments]);
 
   const handleSaved = () => {
     setModalOpen(false);
     setModalInitial(null);
+    setCpModalState(null);
     loadAppointments();
   };
 
@@ -228,6 +294,7 @@ export default function AppointmentsCalendarPage() {
               appointments={visibleAppointments}
               onEventClick={handleEventClick}
               onSlotRightClick={handleSlotRightClick}
+              onEventDrop={handleEventDrop}
             />
           )}
           {view !== 'week' && (
@@ -256,6 +323,25 @@ export default function AppointmentsCalendarPage() {
             setModalOpen(false);
             setModalInitial(null);
           }}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {chooserOpen && (
+        <IntentChooser
+          onPick={handleIntentPick}
+          onClose={() => { setChooserOpen(false); setPendingSlot(null); }}
+        />
+      )}
+
+      {cpModalState && (
+        <BookCounterpartyModal
+          counterpartyType={cpModalState.type}
+          staff={staff}
+          initialDate={cpModalState.initialDate}
+          initialTime={cpModalState.initialTime}
+          existing={cpModalState.existing}
+          onClose={() => setCpModalState(null)}
           onSaved={handleSaved}
         />
       )}

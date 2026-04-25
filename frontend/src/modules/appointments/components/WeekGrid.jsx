@@ -1,5 +1,5 @@
-import React, { useMemo, useRef } from 'react';
-import { addDays, sameDay, contrastOn, hexAlpha } from '../utils';
+import React, { useMemo, useRef, useState } from 'react';
+import { addDays, sameDay, contrastOn, hexAlpha, ymdLocal } from '../utils';
 
 // Layout constants — kept out of render for clarity.
 const HOUR_START = 8;
@@ -11,7 +11,7 @@ const TOTAL_HOURS = HOUR_END - HOUR_START;
 // =============================================================================
 // AppointmentEvent — single coloured card on the grid.
 // =============================================================================
-const AppointmentEvent = ({ appt, onClick }) => {
+const AppointmentEvent = ({ appt, onClick, onMouseDown, isDragging }) => {
   const start = new Date(appt.start_at);
   const end = new Date(appt.end_at);
   const minutesFromTop = (start.getHours() - HOUR_START) * 60 + start.getMinutes();
@@ -31,16 +31,19 @@ const AppointmentEvent = ({ appt, onClick }) => {
   const subtitle = appt.service || appt.category;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(appt);
       }}
+      onMouseDown={(e) => onMouseDown?.(e, appt)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(appt); } }}
       data-testid={`apt-event-${appt.appointment_id}`}
-      className={`absolute left-1 right-1 rounded-md text-left px-2 py-1 overflow-hidden transition-all hover:shadow-md hover:scale-[1.01] focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 ${
+      className={`absolute left-1 right-1 rounded-md text-left px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 select-none ${
         isCancelled ? 'opacity-50 line-through' : ''
-      }`}
+      } ${isDragging ? 'opacity-70 ring-2 ring-blue-400 shadow-lg' : ''}`}
       style={{
         top,
         height,
@@ -55,7 +58,7 @@ const AppointmentEvent = ({ appt, onClick }) => {
       {height > 38 && (
         <div className="text-[10px] opacity-90 truncate mt-0.5">{subtitle}</div>
       )}
-    </button>
+    </div>
   );
 };
 
@@ -69,8 +72,11 @@ export default function WeekGrid({
   appointments,
   onEventClick,
   onSlotRightClick,
+  onEventDrop,
 }) {
   const gridRef = useRef(null);
+  // dragState: { appt, originRect, currentDay, currentMins } | null
+  const [dragState, setDragState] = useState(null);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const hours = useMemo(
@@ -112,6 +118,78 @@ export default function WeekGrid({
     const start = new Date(day);
     start.setHours(h, m, 0, 0);
     onSlotRightClick?.(start);
+  };
+
+  // ---- Drag-to-reschedule -------------------------------------------------
+  const beginDrag = (e, appt) => {
+    // Only left mouse, and only if the appointment is movable.
+    if (e.button !== 0) return;
+    if (appt.status === 'cancelled' || appt.status === 'completed') return;
+    e.preventDefault();
+    setDragState({ appt, ghostX: e.clientX, ghostY: e.clientY, dropTarget: null });
+
+    const onMove = (ev) => {
+      // Identify which day-column we're hovering by walking up from the element.
+      let target = document.elementFromPoint(ev.clientX, ev.clientY);
+      let dayCol = null;
+      while (target && target !== document.body) {
+        if (target.dataset?.testid?.startsWith('apt-day-col-')) {
+          dayCol = target;
+          break;
+        }
+        target = target.parentElement;
+      }
+      let dropTarget = null;
+      if (dayCol) {
+        const rect = dayCol.getBoundingClientRect();
+        const y = ev.clientY - rect.top;
+        const totalMins = (y / HOUR_HEIGHT) * 60 + HOUR_START * 60;
+        const snapped = Math.round(totalMins / MIN_PER_SLOT) * MIN_PER_SLOT;
+        const h = Math.floor(snapped / 60);
+        const m = snapped % 60;
+        if (h >= HOUR_START && h < HOUR_END) {
+          const ymd = dayCol.dataset.testid.replace('apt-day-col-', '');
+          dropTarget = { ymd, h, m };
+        }
+      }
+      setDragState((cur) => (cur ? { ...cur, ghostX: ev.clientX, ghostY: ev.clientY, dropTarget } : cur));
+    };
+
+    const onUp = (ev) => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      // Read the final dropTarget from a fresh DOM probe to avoid stale state closure.
+      let target = document.elementFromPoint(ev.clientX, ev.clientY);
+      let dayCol = null;
+      while (target && target !== document.body) {
+        if (target.dataset?.testid?.startsWith('apt-day-col-')) {
+          dayCol = target;
+          break;
+        }
+        target = target.parentElement;
+      }
+      if (dayCol) {
+        const rect = dayCol.getBoundingClientRect();
+        const y = ev.clientY - rect.top;
+        const totalMins = (y / HOUR_HEIGHT) * 60 + HOUR_START * 60;
+        const snapped = Math.round(totalMins / MIN_PER_SLOT) * MIN_PER_SLOT;
+        const h = Math.floor(snapped / 60);
+        const m = snapped % 60;
+        if (h >= HOUR_START && h < HOUR_END) {
+          const ymd = dayCol.dataset.testid.replace('apt-day-col-', '');
+          const [yy, mm, dd] = ymd.split('-').map(Number);
+          const newStart = new Date(yy, mm - 1, dd, h, m, 0, 0);
+          const old = new Date(appt.start_at);
+          if (newStart.getTime() !== old.getTime()) {
+            onEventDrop?.(appt, newStart);
+          }
+        }
+      }
+      setDragState(null);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   return (
@@ -170,7 +248,7 @@ export default function WeekGrid({
                 key={d.toISOString()}
                 className={`relative border-l border-slate-100 ${isT ? 'bg-blue-50/30' : ''}`}
                 onContextMenu={(e) => handleColumnContextMenu(e, d)}
-                data-testid={`apt-day-col-${d.toISOString().slice(0, 10)}`}
+                data-testid={`apt-day-col-${ymdLocal(d)}`}
               >
                 {/* hour ruler */}
                 {hours.map((h) => (
@@ -182,8 +260,27 @@ export default function WeekGrid({
                 ))}
                 {/* events */}
                 {dayAppts.map((a) => (
-                  <AppointmentEvent key={a.appointment_id} appt={a} onClick={onEventClick} />
+                  <AppointmentEvent
+                    key={a.appointment_id}
+                    appt={a}
+                    onClick={onEventClick}
+                    onMouseDown={beginDrag}
+                    isDragging={dragState?.appt?.appointment_id === a.appointment_id}
+                  />
                 ))}
+                {/* drop preview */}
+                {dragState?.dropTarget && dragState.dropTarget.ymd === ymdLocal(d) && (
+                  <div
+                    className="absolute left-1 right-1 border-2 border-dashed border-blue-500 bg-blue-100/40 rounded-md pointer-events-none z-20 flex items-center justify-center text-[10px] font-bold text-blue-700"
+                    style={{
+                      top: ((dragState.dropTarget.h - HOUR_START) * 60 + dragState.dropTarget.m) / 60 * HOUR_HEIGHT,
+                      height: ((dragState.appt.duration_minutes || 30) / 60) * HOUR_HEIGHT - 2,
+                    }}
+                    data-testid="apt-drop-preview"
+                  >
+                    {String(dragState.dropTarget.h).padStart(2, '0')}:{String(dragState.dropTarget.m).padStart(2, '0')}
+                  </div>
+                )}
                 {/* now indicator */}
                 {isT && showNow && (
                   <div

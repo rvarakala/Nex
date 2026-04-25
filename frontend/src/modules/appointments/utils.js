@@ -61,7 +61,14 @@ export const contrastOn = (hex) => {
   return yiq >= 150 ? '#0F172A' : '#FFFFFF';
 };
 
-/** Add alpha to a hex color: hexAlpha("#3B82F6", 0.18) → "rgba(59,130,246,0.18)". */
+/** Format a Date as local YYYY-MM-DD (avoids UTC shift from toISOString). */
+export const ymdLocal = (d) => {
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+};
+
 export const hexAlpha = (hex, a = 0.15) => {
   if (!hex) return `rgba(15,23,42,${a})`;
   const c = hex.replace('#', '');
