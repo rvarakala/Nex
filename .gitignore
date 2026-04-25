@@ -139,3 +139,12 @@ frontend/node_modules/.cache/default-development/29.pack
 frontend/node_modules/.cache/default-development/26.pack
 frontend/node_modules/.cache/default-development/34.pack
 frontend/node_modules/.cache/default-development/35.pack
+-e 
+# Environment and credential files
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
