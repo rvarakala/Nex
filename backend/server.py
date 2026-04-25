@@ -168,6 +168,12 @@ async def lifespan(_app: FastAPI):
         await db.ha_amc_contracts.create_index([("clinic_id", 1), ("status", 1), ("amc_expiry_date", 1)])
         await db.ha_amc_contracts.create_index([("clinic_id", 1), ("patient_id", 1)])
         await db.ha_amc_contracts.create_index([("clinic_id", 1), ("serial_id", 1), ("status", 1)])
+
+        # M-Transfers (inter-clinic stock transfer + delivery challan)
+        await db.stock_transfers.create_index("transfer_id", unique=True)
+        await db.stock_transfers.create_index([("from_clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.stock_transfers.create_index([("to_clinic_id", 1), ("status", 1), ("created_at", -1)])
+        await db.stock_transfers.create_index([("challan_no", 1)])
         # Referral Partners (M12, Phase 13.C)
         await db.referral_partners.create_index("partner_id", unique=True)
         await db.referral_partners.create_index([("clinic_id", 1), ("referral_code", 1)], unique=True)
@@ -603,6 +609,7 @@ from routers import admin_panel_b as admin_panel_b_router     # noqa: E402
 from routers import export_data as export_data_router         # noqa: E402
 from routers import report_handover as report_handover_router # noqa: E402
 from routers import settings as settings_router                # noqa: E402
+from routers import stock_transfers as stock_transfers_router  # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -638,6 +645,7 @@ app.include_router(admin_panel_b_router.router)
 app.include_router(export_data_router.router)
 app.include_router(report_handover_router.router)
 app.include_router(settings_router.router)
+app.include_router(stock_transfers_router.router)
 
 app.add_middleware(
     CORSMiddleware,
