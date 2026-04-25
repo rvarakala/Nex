@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import OpenInAppLink from '../connectivity/OpenInAppLink';
 
 export default function LoginPage() {
   const { user, login } = useAuth();
@@ -92,8 +93,10 @@ const roleHome = (role) => {
           </button>
         </form>
 
-        <div className="text-center mt-4 text-[10px] text-slate-500">
-          v0.1 MVP · ACS Labs · Mumbai
+        <div className="text-center mt-4 text-[10px] text-slate-500 flex items-center justify-center gap-2">
+          <span>v0.1 MVP · ACS Labs · Mumbai</span>
+          <span className="text-slate-700" aria-hidden="true">·</span>
+          <OpenInAppLink />
         </div>
       </div>
     </div>
