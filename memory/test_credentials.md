@@ -56,9 +56,24 @@ Use these to verify 403 responses when a Delhi user tries to access Mumbai resou
 - `GET /api/auth/me` → requires `Authorization: Bearer <token>` → returns current user
 - Frontend stores token in `localStorage` key `acs.token`; axios interceptor attaches it on every request.
 
-## Role Routing Defaults
-- `audiologist` → lands on `/test`
-- everyone else → lands on `/frontdesk`
+## 🎬 DEMO PREMIUM TENANT — "The Sound Clinic — Bangaluru"
+**Use these for client screenshot sessions.** Tenant `tenant-sound-clinic-blr` is fully populated (25 patients, 58 appointments across patient/vendor/sales-rep/internal/tech-staff types, 11 HA sales, fittings, trials, AMC contracts, repair tickets, invoices, referral partners).
+
+Re-seed at any time:
+```bash
+cd /app/backend && set -a && source .env && set +a && python3 scripts/seed_demo_premium.py
+```
+
+| Role | Email | Password | Name |
+|---|---|---|---|
+| **Clinic Owner** | `owner@thesoundclinic.in` | `demo123` | Dr. Rajesh Iyer |
+| Audiologist | `aditi@thesoundclinic.in` | `demo123` | Dr. Aditi Krishnan |
+| Audiologist | `vikram@thesoundclinic.in` | `demo123` | Dr. Vikram Reddy |
+| Front Desk | `meera@thesoundclinic.in` | `demo123` | Meera Bhat |
+| Technician | `suresh@thesoundclinic.in` | `demo123` | Suresh Kumar |
+| Accounts | `priya@thesoundclinic.in` | `demo123` | Priya Nair |
+
+Log in as **owner@thesoundclinic.in** for the broadest screenshot tour (all modules unlocked, PREMIUM tier).
 
 ## Example curl
 
