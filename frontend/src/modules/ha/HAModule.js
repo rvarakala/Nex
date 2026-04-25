@@ -13,6 +13,7 @@ import SubscriptionsPage from './SubscriptionsPage';
 import OwnerAnalyticsPage from './OwnerAnalyticsPage';
 import UpgradeFunnelPage from './UpgradeFunnelPage';
 import AMCPage from './AMCPage';
+import StockTransfersPage from './transfers/StockTransfersPage';
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -37,6 +38,7 @@ export default function HAModule() {
       {/* Sub-nav for HA */}
       <div className="border-b border-slate-200 bg-slate-50 flex items-center gap-1 px-4 flex-shrink-0">
         <Tab to="/ha/inventory" label="Inventory Board" testid="ha-tab-inventory" />
+        <Tab to="/ha/transfers" label="Transfers" testid="ha-tab-transfers" />
         <Tab to="/ha/demo-stock" label="Demo Stock" testid="ha-tab-demo-stock" />
         <Tab to="/ha/quotations" label="Quotations" testid="ha-tab-quotations" />
         <Tab to="/ha/trials" label="Trials" testid="ha-tab-trials" />
@@ -55,6 +57,7 @@ export default function HAModule() {
         <Routes>
           <Route path="/" element={<Navigate to="inventory" replace />} />
           <Route path="inventory" element={<InventoryBoardPage />} />
+          <Route path="transfers" element={<StockTransfersPage />} />
           <Route path="demo-stock" element={<DemoStockPage />} />
           <Route path="quotations/*" element={<QuotationStudioPage />} />
           <Route path="trials" element={<TrialsPage />} />
