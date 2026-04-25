@@ -13,6 +13,8 @@ import CommandPalette from './CommandPalette';
 import SignatureNudgeBanner from './SignatureNudgeBanner';
 import AppSwitcher from './AppSwitcher';
 import { useSubscription } from '../SubscriptionContext';
+import ConnectivityIndicator from '../connectivity/ConnectivityIndicator';
+import OfflineBanner from '../connectivity/OfflineBanner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
@@ -394,12 +396,14 @@ export default function AppShell({ children }) {
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
               </button>
             )}
+            <ConnectivityIndicator />
             <AppSwitcher />
           </div>
         </header>
 
         {/* Content */}
         <main className="flex-1 overflow-auto bg-slate-50" data-testid="app-main">
+          <OfflineBanner />
           <SignatureNudgeBanner />
           {children}
         </main>

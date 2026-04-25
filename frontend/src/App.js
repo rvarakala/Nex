@@ -27,6 +27,7 @@ import AppointmentsCalendarPage from './modules/appointments/AppointmentsCalenda
 import { usePageViewTracker } from './hooks/usePageViewTracker';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import TopProgressBar from './components/TopProgressBar';
+import { ConnectivityProvider } from './connectivity/ConnectivityContext';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -60,9 +61,11 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <SubscriptionProvider>
-          <TestContextProvider>
-            <AppRoutes />
-          </TestContextProvider>
+          <ConnectivityProvider>
+            <TestContextProvider>
+              <AppRoutes />
+            </TestContextProvider>
+          </ConnectivityProvider>
         </SubscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
