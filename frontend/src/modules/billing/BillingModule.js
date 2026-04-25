@@ -31,7 +31,7 @@ const CatalogGate = ({ canManageCatalog, children }) =>
 
 export default function BillingModule() {
   const { user } = useAuth();
-  const canManageCatalog = user?.role === 'super_admin' || user?.role === 'accounts';
+  const canManageCatalog = ['super_admin', 'founder', 'clinic_owner', 'accounts'].includes(user?.role);
 
   return (
     <div className="h-full flex flex-col" data-testid="billing-module">
