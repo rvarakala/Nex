@@ -48,8 +48,35 @@ export default function ServiceTicketsPage() {
   const [openNo, setOpenNo] = useState(null);
   const [me, setMe] = useState(null);
   const [page, setPage] = useState(1);
-  const pagedRows = usePaginationSlice(rows, page, DEFAULT_PAGE_SIZE);
-  useEffect(() => { setPage(1); }, [status, rows.length]);
+  // Client-side filters (search across ticket_no/patient/mobile/complaint/serial; kind + technician dropdowns)
+  const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState('');
+  const [techFilter, setTechFilter] = useState('');
+
+  // Distinct technician + kind options derived from the currently-loaded rows
+  const techOptions = useMemo(() => {
+    const m = new Map();
+    rows.forEach(r => { if (r.technician_user_id && r.technician_name) m.set(r.technician_user_id, r.technician_name); });
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(t => {
+      if (kindFilter && t.kind !== kindFilter) return false;
+      if (techFilter && t.technician_user_id !== techFilter) return false;
+      if (!q) return true;
+      const hay = [
+        t.ticket_no, t.patient_name, t.patient_mobile, t.patient_id,
+        t.complaint, t.serial_no, t.diagnosis, t.resolution_notes,
+        t.technician_name,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, search, kindFilter, techFilter]);
+
+  const pagedRows = usePaginationSlice(filteredRows, page, DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [status, search, kindFilter, techFilter, rows.length]);
 
   useEffect(() => { (async () => {
     try { setMe((await axios.get(`${API}/auth/me`)).data?.user || null); } catch {/*noop*/}
@@ -69,6 +96,9 @@ export default function ServiceTicketsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const clearFilters = () => { setSearch(''); setKindFilter(''); setTechFilter(''); setStatus(''); };
+  const hasActiveFilters = !!(search || kindFilter || techFilter || status);
+
   return (
     <div className="p-5" data-testid="ha-tix-page">
       <div className="flex items-center justify-between mb-4">
@@ -77,10 +107,6 @@ export default function ServiceTicketsPage() {
           <p className="text-[11px] text-slate-500 mt-0.5">Repairs, cleaning, reprogramming, warranty claims — full ticket lifecycle with serial state tracking.</p>
         </div>
         <div className="flex items-center gap-2">
-          <select value={status} onChange={(e) => setStatus(e.target.value)} data-testid="ha-tix-status-filter" className="bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm">
-            <option value="">All statuses</option>
-            {Object.keys(STATUS_STYLE).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
           {canCreate && <button onClick={() => setCreating(true)} data-testid="ha-tix-new" className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm">+ New Ticket</button>}
         </div>
       </div>
@@ -94,6 +120,41 @@ export default function ServiceTicketsPage() {
           <Kpi label="Warranty"    value={kpis.warranty_covered}  color="bg-indigo-50 text-indigo-800 border-indigo-200"   testid="ha-tix-kpi-warranty" />
         </div>
       )}
+
+      {/* Search & Filter Bar — minimal, sticky-feeling toolbar */}
+      <div className="bg-white border border-slate-200 rounded-md p-3 mb-3 flex items-center gap-2 flex-wrap" data-testid="ha-tix-filter-bar">
+        <div className="relative flex-1 min-w-[220px]">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">⌕</span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search ticket #, patient, mobile, serial, complaint…"
+            data-testid="ha-tix-search"
+            className="w-full pl-7 pr-7 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} data-testid="ha-tix-search-clear" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs">✕</button>
+          )}
+        </div>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} data-testid="ha-tix-status-filter" className="bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+          <option value="">All statuses</option>
+          {Object.keys(STATUS_STYLE).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} data-testid="ha-tix-kind-filter" className="bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+          <option value="">All kinds</option>
+          {Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <select value={techFilter} onChange={(e) => setTechFilter(e.target.value)} data-testid="ha-tix-tech-filter" className="bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+          <option value="">All technicians</option>
+          {techOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {hasActiveFilters && (
+          <button onClick={clearFilters} data-testid="ha-tix-clear-filters" className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold px-2 py-1.5">Clear filters</button>
+        )}
+        <span className="text-[11px] text-slate-500 ml-auto" data-testid="ha-tix-result-count">
+          Showing <b className="text-slate-800">{filteredRows.length}</b>{filteredRows.length !== rows.length && <> of <b className="text-slate-800">{rows.length}</b></>}
+        </span>
+      </div>
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
         <table className="w-full text-sm">
@@ -111,7 +172,13 @@ export default function ServiceTicketsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={9} className="py-10 text-center text-slate-400 italic text-xs">No tickets yet.</td></tr>}
+            {filteredRows.length === 0 && (
+              <tr>
+                <td colSpan={9} className="py-10 text-center text-slate-400 italic text-xs" data-testid="ha-tix-empty">
+                  {rows.length === 0 ? 'No tickets yet.' : 'No tickets match your filters.'}
+                </td>
+              </tr>
+            )}
             {pagedRows.map(t => (
               <tr key={t.ticket_no} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`ha-tix-row-${t.ticket_no}`}>
                 <td className="px-3 py-2 font-mono text-[11px] font-bold text-indigo-700">{t.ticket_no}</td>
@@ -132,7 +199,7 @@ export default function ServiceTicketsPage() {
             ))}
           </tbody>
         </table>
-        <Pagination page={page} setPage={setPage} total={rows.length} testidPrefix="ha-tix-pagination" />
+        <Pagination page={page} setPage={setPage} total={filteredRows.length} testidPrefix="ha-tix-pagination" />
       </div>
 
       {creating && <NewTicketModal onClose={() => setCreating(false)} onCreated={(t) => { setCreating(false); load(); setOpenNo(t.ticket_no); }} />}
