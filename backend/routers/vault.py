@@ -32,11 +32,12 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from database import get_db
+from rate_limit import limiter
 
 
 router = APIRouter(prefix="/api/vault", tags=["vault"])
@@ -291,8 +292,10 @@ async def vault_unlock_params(user=Depends(get_current_user), db=Depends(get_db)
 
 
 @router.post("/unlock-verify")
+@limiter.limit("10/minute")
 async def vault_unlock_verify(
     proof: VaultUnlockProof,
+    request: Request,
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):
@@ -343,8 +346,10 @@ async def list_recovery_slots(user=Depends(get_current_user), db=Depends(get_db)
 
 
 @router.post("/recovery-redeem", response_model=VaultStatus)
+@limiter.limit("5/minute")
 async def recovery_redeem(
     payload: RecoveryRedeemRequest,
+    request: Request,
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):

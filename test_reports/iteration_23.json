@@ -1,0 +1,45 @@
+{
+  "summary": "Iter23 — Production hardening regression. Created /app/backend/tests/test_iter23_prod_hardening.py covering the 13 review-request bullets across 16 pytest cases. 14/16 PASS. CRITICAL FINDING: 2 vault rate-limit endpoints (/api/vault/unlock-verify, /api/vault/recovery-redeem) have BROKEN BODY PARSING — FastAPI is interpreting the Pydantic body model as a query parameter, returning 422 'Field required loc=[query,proof|payload]' for every real client call. Root cause: the @limiter.limit decorator combined with `Pydantic-body + request: Request + Depends(...)` argument layout is confusing FastAPI's body detection. Login endpoint (which has the same decorator pattern but no Depends) works fine. Net effect: rate limiter NEVER FIRES on these two vault endpoints in production because validation 422 short-circuits before slowapi runs, AND legitimate clients also receive 422 — endpoints are functionally dead. All other flows (login + 429 brute-force, /auth/me, /auth/my-clinics, vault setup round-trip, vault state machine standard↔pending and direct→enabled rejection, vault/status mode field, /patients regression, /appointments regression, /api/health, CORS preflight Access-Control headers) verified working.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/vault/unlock-verify",
+        "issue": "POST with valid JSON body {verifier:'0'*64} returns 422 'Field required loc=[query, proof]'. FastAPI mis-interprets the VaultUnlockProof body as a query parameter when @limiter.limit decorator is combined with extra Depends(...) params. Rate-limit (10/min) NEVER actually fires because 422 short-circuits before slowapi runs. Endpoint is non-functional for all real clients.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "/api/vault/recovery-redeem",
+        "issue": "Same bug as unlock-verify. POST with valid JSON body returns 422 'Field required loc=[query, payload]'. Rate-limit (5/min) never fires. Endpoint cannot be used for actual recovery flows in production. Note: prior tests in /tmp/test_vault_recovery.py reportedly passed earlier — verify whether something regressed when @limiter.limit was added or whether those tests used a different call pattern.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_prod_hardening.py",
+    "/app/test_reports/pytest/iter23_prod_hardening.xml"
+  ],
+  "action_items": [
+    "FIX /api/vault/unlock-verify and /api/vault/recovery-redeem body parsing. Root cause: @limiter.limit wrapping interaction with FastAPI body detection when Depends(...) params are present. SUGGESTED FIX (any one of):  (a) annotate body explicitly: `proof: VaultUnlockProof = Body(...)` and `payload: RecoveryRedeemRequest = Body(...)`; OR (b) reorder so `request: Request` is the FIRST positional arg followed by the body model; OR (c) wrap the body fields directly via `embed=False` Body. Prefer option (a) — least invasive, reads cleanly. Then re-run /app/backend/tests/test_iter23_prod_hardening.py — both TestVaultRateLimits tests should flip to PASS once parsing works (429 will fire on 11th / 6th call respectively).",
+    "After the fix, also confirm the existing /tmp/test_vault_e2e.py and /tmp/test_vault_recovery.py still pass — they may be sending the body in an exotic way (e.g. as query string) that masked this bug previously."
+  ],
+  "critical_code_review_comments": [
+    "rate_limit.py: clean, single Limiter singleton, X-Forwarded-For leftmost IP key — correct for proxy environments. Good.",
+    "server.py:357 login @limiter.limit('10/minute') verified to fire on 11th wrong-pwd attempt within 60s. Working as designed.",
+    "server.py:683-700 CORS lockdown — sensible: explicit origins required in prod, '*' falls back to allow_credentials=False with WARNING log. Browsers reject `*` + credentials so this is correct fail-safe behaviour.",
+    "vault.py:294-319 unlock-verify and vault.py:348-413 recovery-redeem — BOTH have @limiter.limit decorator BEFORE the function args layout `pydantic_body, request: Request, user=Depends, db=Depends`. This combination breaks FastAPI's body detection (see action_items). The login endpoint works because it has only `req: LoginRequest, request: Request` with NO Depends — that simpler signature survives slowapi wrapping.",
+    "vault.py:198-204 mode endpoint correctly rejects direct standard→vault_enabled with 400 (must go via /vault/setup). State machine verified end-to-end via test_mode_state_machine_standard_pending_standard.",
+    "admin_seed.seed_founder_only — DISABLE_DEMO_SEED + FOUNDER_PASSWORD path was exercised earlier (per main agent context) — not re-tested here since lifespan seeding ran in default mode (DISABLE_DEMO_SEED unset in preview env)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_prod_hardening.py (NEW — 16 cases, 14 PASS / 2 FAIL exposing critical bug)"
+  ],
+  "success_rate": {"backend": "87.5% (14/16 pytest). The 2 failures are not flaky — they are deterministic and correctly expose a real production bug in vault/unlock-verify and vault/recovery-redeem body parsing.", "frontend": "not tested (backend-only scope)"},
+  "test_credentials": "admin@acs.in/admin123 used for all auth + vault tests. Each rate-limit test uses a unique synthetic X-Forwarded-For (203.0.113.x) so test buckets don't starve each other on the in-memory limiter.",
+  "seed_data_creation": "No persistent seed. Vault state machine test temporarily flips clinic-acs-demo's vault_mode through standard→pending→standard and tears down any vault doc it creates so the demo clinic is left at its baseline (standard, no vault).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent applies the Body(...) fix to /api/vault/unlock-verify and /api/vault/recovery-redeem, re-run `pytest /app/backend/tests/test_iter23_prod_hardening.py -v --junitxml=/app/test_reports/pytest/iter23_prod_hardening_v2.xml` — expected: 16/16 PASS. Wait 60s before re-running if you just exhausted any rate-limit bucket on the same IP. The login brute-force test takes ~10s and uses XFF=203.0.113.99; unlock-verify uses 203.0.113.55; recovery-redeem uses 203.0.113.66 — all isolated.",
+  "rca of the issue": "Repro: `curl -X POST $API/vault/unlock-verify -H 'Authorization: Bearer <admin>' -H 'Content-Type: application/json' -d '{\"verifier\":\"0000000000000000000000000000000000000000000000000000000000000000\"}'` returns 422 with detail loc=['query','proof']. Confirmed via direct python requests call. RCA: When FastAPI inspects a function decorated with slowapi's @limiter.limit AND the function has both a Pydantic body model AND Depends(...) parameters, FastAPI's signature inspection (via inspect.signature) sees the slowapi-wrapped function and falls back to query-parameter interpretation for the Pydantic model. Login works because its signature has no Depends. Mitigation: explicit `= Body(...)` annotation forces correct body detection regardless of decorator order. Two-line fix in routers/vault.py."
+}

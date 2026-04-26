@@ -333,6 +333,17 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# ==================== Rate limiting (brute-force protection) ====================
+# Singleton Limiter lives in rate_limit.py so routers can import it without
+# circular dependency. Strict per-endpoint limits live next to each route via
+# @limiter.limit decorators. Default app-wide ceiling = 300/minute per IP.
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from rate_limit import limiter  # noqa: E402
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Expose db to dependency (used by auth.get_current_user)
 app.state.db = db
 
@@ -343,6 +354,7 @@ api_router = APIRouter(prefix="/api")
 # ==================== M01: AUTH ROUTES ====================
 
 @api_router.post("/auth/login")
+@limiter.limit("10/minute")
 async def login(req: LoginRequest, request: Request):
     email = req.email.strip().lower()
     user = await db.users.find_one({"email": email}, {"_id": 0})
@@ -664,10 +676,25 @@ app.include_router(report_handover_router.router)
 app.include_router(settings_router.router)
 app.include_router(stock_transfers_router.router)
 
+# ---- CORS lockdown ----
+# Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins
+# (e.g. "https://app.audinexa.com,https://www.audinexa.com"). A literal "*" is
+# permitted only for dev/preview where it pairs with allow_credentials=False.
+_cors_raw = os.environ.get('CORS_ORIGINS', '*').strip()
+if _cors_raw == '*' or _cors_raw == '':
+    logging.getLogger(__name__).warning(
+        "CORS_ORIGINS is '*' — acceptable for dev/preview only. Set explicit origins in production."
+    )
+    _allow_origins = ['*']
+    _allow_credentials = False  # browsers reject `*` + credentials anyway
+else:
+    _allow_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()]
+    _allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=_allow_credentials,
+    allow_origins=_allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
