@@ -1,5 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+# ACS Audiology Clinic — Product Requirements Document
+
+## ✅ COMPLETED — Production-Readiness Hardening (2026-04-26)
+**Closes the 4 hard blockers + brute-force protection. App is deploy-ready.**
+
+Fixes:
+- **`.gitignore` deployment unblock** — removed `.env` blocking patterns so Emergent's deploy can capture env files
+- **CORS lockdown** — explicit-origin allowlist via `CORS_ORIGINS` env var; falls back to `*` with a warning + `allow_credentials=False` (browsers reject `*` + creds anyway)
+- **Login rate-limiting** — slowapi @ `10/min` on `/api/auth/login` per real client IP (proxy-aware via X-Forwarded-For)
+- **Vault brute-force protection** — slowapi @ `10/min` on `/api/vault/unlock-verify`, `5/min` on `/api/vault/recovery-redeem`
+- **`DISABLE_DEMO_SEED=1`** + **`FOUNDER_PASSWORD`** env vars wired (verified earlier in P0-3)
+- **JWT_SECRET** — already 64-char hex, audited as strong, no change needed
+
+Files added:
+- `/app/backend/rate_limit.py` — singleton slowapi Limiter with proxy-aware key_func
+- `/app/memory/PRODUCTION_DEPLOY.md` — production env var checklist + smoke test commands + rollback plan
+
+Files modified:
+- `/app/backend/server.py` — slowapi setup, CORS lockdown, @limiter.limit on login
+- `/app/backend/routers/vault.py` — @limiter.limit on unlock-verify + recovery-redeem; body params converted to `Annotated[Model, Body()]` for slowapi compatibility (the `from __future__ import annotations` form was breaking FastAPI body resolution under decorator)
+
+Validated:
+- Iter24 testing agent: **16/16 backend tests PASS in 8.57s**
+- Manual curl confirmation: rate-limit fires at attempt 10 → 429 Too Many Requests
+- Body-parse regression from iter23 fully resolved (was 422, now returns semantic 404/401)
+
 ## ✅ COMPLETED — P1 Path A: Vault Mode Opt-In UX (2026-04-26)
 **Backs the "give clinics the choice" product decision. Clinics now consciously opt into Vault Mode — Standard remains default.**
 
