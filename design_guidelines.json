@@ -1,0 +1,98 @@
+{
+  "theme": "Light",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) + Healthcare Softness",
+  "typography": {
+    "headings": {
+      "font": "Manrope",
+      "classes": "font-extrabold tracking-tight text-[#111827]"
+    },
+    "body": {
+      "font": "Inter",
+      "classes": "font-normal leading-relaxed text-[#475569]"
+    },
+    "accents": {
+      "font": "Poppins",
+      "classes": "font-medium tracking-wide"
+    }
+  },
+  "colors": {
+    "primary": "#0B5FFF",
+    "accent": "#00C2A8",
+    "dark_text": "#111827",
+    "soft_gray": "#F8FAFC",
+    "success": "#16A34A",
+    "background": "#FFFFFF",
+    "border": "#E2E8F0"
+  },
+  "spacing": {
+    "section_padding": "py-24 md:py-32",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_gap": "gap-8 md:gap-12",
+    "card_padding": "p-8 md:p-10"
+  },
+  "components_strategy": {
+    "cards": "bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300",
+    "buttons_primary": "bg-[#0B5FFF] hover:bg-[#094acf] text-white px-8 py-4 rounded-xl font-medium transition-all shadow-md hover:shadow-lg focus:ring-4 focus:ring-blue-100 flex items-center justify-center gap-2",
+    "buttons_secondary": "bg-white text-[#111827] border border-slate-200 hover:border-slate-300 hover:bg-slate-50 px-8 py-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2",
+    "glass_panels": "bg-white/80 backdrop-blur-xl border border-white/40 shadow-[0_8px_32px_rgba(11,95,255,0.05)]",
+    "badges": "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-[#F8FAFC] border border-slate-200 text-[#0B5FFF]"
+  },
+  "animations": {
+    "strategy": "CSS-only via Tailwind and custom keyframes (no framer-motion). Heavy use of `group-hover` and `animate-*`.",
+    "tailwind_config_additions": {
+      "keyframes": {
+        "float": {
+          "0%, 100%": { "transform": "translateY(0)" },
+          "50%": { "transform": "translateY(-10px)" }
+        },
+        "pulse-glow": {
+          "0%, 100%": { "boxShadow": "0 0 20px rgba(0, 194, 168, 0.4)" },
+          "50%": { "boxShadow": "0 0 40px rgba(0, 194, 168, 0.6)" }
+        }
+      },
+      "animation": {
+        "float": "float 4s ease-in-out infinite",
+        "pulse-glow": "pulse-glow 2s infinite"
+      }
+    }
+  },
+  "image_urls": [
+    {
+      "category": "hero_background",
+      "url": "https://images.pexels.com/photos/12537427/pexels-photo-12537427.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Abstract high-tech network line background. Use with absolute positioning, -z-10, and an extremely high-opacity white overlay (e.g., bg-white/95 or bg-gradient-to-b from-white/90 to-white) so it creates just a very subtle tech texture without competing with text."
+    },
+    {
+      "category": "pain_points_background",
+      "url": "https://images.pexels.com/photos/7789620/pexels-photo-7789620.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Clean modern medical examination room. Use behind the 'Pain Points' section with a dark overlay (bg-slate-900/90) to contrast with the crisp white cards."
+    }
+  ],
+  "blueprint": {
+    "/app/frontend/src/modules/landing/v2/LandingPage.js": "Main orchestrator file. Replaces the old LandingPage entirely. Manages state for the DemoModal and is mobile-first responsive.",
+    "/app/frontend/src/modules/landing/v2/components/Navbar.js": "Sticky navbar (z-50) with glassmorphism. 'Book Free Demo' CTA, smooth scrolling anchor links.",
+    "/app/frontend/src/modules/landing/v2/components/Hero.js": "Left: Security-first headline, CTAs. Right: Stylized SVG Dashboard Mockup with lock/shield animations floating on top.",
+    "/app/frontend/src/modules/landing/v2/components/TrustSection.js": "3 premium cards (Key, Zero-Knowledge, Encrypted) using icons.",
+    "/app/frontend/src/modules/landing/v2/components/PainPoints.js": "Contrasting 'Unsafe Systems' vs 'Modern Encrypted'. Darker background or soft gray.",
+    "/app/frontend/src/modules/landing/v2/components/SecurityShowcase.js": "10-card bento grid highlighting security features. Hover-lift effects.",
+    "/app/frontend/src/modules/landing/v2/components/Features.js": "10-card grid showing product features. Clean, functional icons.",
+    "/app/frontend/src/modules/landing/v2/components/HowItWorks.js": "4-step visual flow showing the encryption key process.",
+    "/app/frontend/src/modules/landing/v2/components/Pricing.js": "3-tier pricing (Starter 4,999/yr, Growth 9,999/yr, Enterprise 15,999/yr). Growth highlighted. CTAs trigger demo modal.",
+    "/app/frontend/src/modules/landing/v2/components/FAQ.js": "Accordion using native HTML/Tailwind.",
+    "/app/frontend/src/modules/landing/v2/components/FinalCTA.js": "Deep blue background (#0B5FFF). Large bold text. Final push to book demo.",
+    "/app/frontend/src/modules/landing/v2/components/Footer.js": "Multi-column links. Brand tagline. Minimal.",
+    "/app/frontend/src/modules/landing/v2/components/DemoModal.js": "Fixed overlay (z-[100]). Form captures email, clinic_name, city, whatsapp, notes. Posts to `/api/public/waitlist-signup` with `source='landing_demo_request'`."
+  },
+  "instructions_to_main_agent": [
+    "COMPLETELY REPLACE `/app/frontend/src/modules/landing/LandingPage.js` with the new design. You can structure it in a `v2` folder or overwrite the existing file.",
+    "Do NOT use framer-motion. Rely strictly on Tailwind CSS classes (`group-hover`, `animate-*`, `transition-all`).",
+    "For the Hero Section, manually construct a premium SVG graphic mimicking a modern SaaS dashboard UI. Add a prominent lock/shield overlay indicating encryption.",
+    "Implement the Demo Modal form using native React state. Show inline success/error messages after `fetch()` to `/api/public/waitlist-signup`.",
+    "Ensure the Pricing section explicitly shows the prices requested: Starter (4,999/yr), Growth (9,999/yr), Enterprise (15,999/yr).",
+    "Add `data-testid` to all interactive elements (CTAs, form inputs, toggles).",
+    "Do not include the Social Proof/Testimonials section (user instructed to HIDE entirely).",
+    "Keep the login page reference in the navbar ('Open Dashboard' if logged in, else 'Login' / 'Book Demo').",
+    "Use Lucide-React icons extensively across feature and security grids.",
+    "For the 10-card grids (Security Showcase, Features), use a Bento-style layout (mix of col-span-1, col-span-2) to break visual monotony."
+  ]
+}
