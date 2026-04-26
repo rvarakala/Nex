@@ -1,5 +1,32 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 💾 PENDING — Storage Architecture Refactor (Hybrid PDF Model) — postponed by user 2026-04-26
+
+At 100 clinics × ~4,500 patients/year, current "store every PDF" model = ~3 GB/year/clinic = 1.5 TB across 5 years. Hybrid model recovers ~80% without losing legal fidelity.
+
+**Phase 1 — Hybrid PDF Model (2-3 days, P1 before scaling > 50 clinics)**
+- Audit every PDF archival point (audiograms, invoices, service tickets, delivery challans)
+- Switch routine views to **render-on-demand from MongoDB data** (no GridFS write)
+- Archive PDFs **only** when one of these "fixing" events occurs:
+  - Patient or audiologist signature embedded
+  - PDF shared externally (email/WhatsApp/insurance submission)
+  - Invoice settled / service ticket closed / challan dispatched
+- Store SHA-256 hash + timestamp + user_id alongside archived PDFs (tamper detection)
+- Expected result: 75-80% storage reduction; legal/clinical fidelity preserved
+
+**Phase 2 — Signature & Image Optimisations (1 day, P2)**
+- `SignaturePad.jsx` → save SVG point-array (~500B) instead of PNG (~10 KB) — 20× smaller
+- Don't bake rendered audiogram chart into archived PDFs — regenerate from PTA data at view time
+- Combined: extra 10-15% saving
+
+**Phase 3 — Per-Tenant Storage Quota & Lifecycle (1-2 days, P2)**
+- Storage usage meter in Settings → Clinic Details (warn at 80%, hard-cap by tier)
+- Tier limits: Free/Starter 1 GB · Premium 10 GB · Enterprise 100 GB
+- S3 Glacier lifecycle for PDFs > 1 year (regulatory 7-yr retention) — 80% cold-storage cost cut
+- Doubles as a revenue feature — biggest clinics naturally upgrade
+
+**Why deferred today:** premature for current scale (under 10 active tenants). Revisit when approaching 25-30 paying clinics.
+
 ## 🛡️ PENDING — Security Hardening (3 Phases) — postponed by user 2026-04-25
 
 **Phase 1 — Lock the Front Door (1 day, P0 before public launch)**
