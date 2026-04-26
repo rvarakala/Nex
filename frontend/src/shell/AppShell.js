@@ -16,6 +16,7 @@ import { useSubscription } from '../SubscriptionContext';
 import ConnectivityIndicator from '../connectivity/ConnectivityIndicator';
 import OfflineBanner from '../connectivity/OfflineBanner';
 import InstallPrompt from '../connectivity/InstallPrompt';
+import { SyncPill, SyncDrawer } from '../connectivity/SyncDashboard';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
@@ -68,6 +69,7 @@ export default function AppShell({ children }) {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch { return false; }
   });
@@ -397,6 +399,7 @@ export default function AppShell({ children }) {
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
               </button>
             )}
+            <SyncPill onClick={() => setSyncOpen(true)} />
             <ConnectivityIndicator />
             <AppSwitcher />
           </div>
@@ -412,6 +415,8 @@ export default function AppShell({ children }) {
 
       {/* PWA install prompt — only renders for signed-in users on eligible browsers */}
       <InstallPrompt />
+
+      <SyncDrawer open={syncOpen} onClose={() => setSyncOpen(false)} />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

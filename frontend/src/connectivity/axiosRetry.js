@@ -18,6 +18,7 @@
  */
 import axios from 'axios';
 import { toast } from 'sonner';
+import { addToOutbox } from './outbox';
 
 const RETRY_BACKOFF_MS = [400, 1200, 3000];
 const MAX_RETRIES = RETRY_BACKOFF_MS.length;
@@ -26,6 +27,49 @@ const RETRY_TOAST_ID = 'axios-retry-status';
 
 const RETRYABLE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+// Endpoints we can safely queue offline — kept tight on purpose. Anything not
+// on this list will surface the network error to the caller (because retrying
+// the wrong write later — say, a payment capture — is far worse than a UI error).
+const OUTBOX_ELIGIBLE_PATTERNS = [
+  /^\/api\/patients(\/|\?|$)/,                 // patient CRUD + notes
+  /^\/api\/appointments(\/|\?|$)/,             // bookings, reschedule, status
+  /^\/api\/ha\/service-tickets(\/|\?|$)/,      // service jobs
+  /^\/api\/billing\/services(\/|\?|$)/,        // service catalogue mgmt
+  /^\/api\/diagnostics\/sessions(\/|\?|$)/,    // audiogram saves
+];
+
+function pathFromConfig(config) {
+  try {
+    const u = new URL(config.url, window.location.origin);
+    return u.pathname + u.search;
+  } catch {
+    return config.url;
+  }
+}
+
+function isOutboxEligible(config) {
+  if (!config) return false;
+  const method = (config.method || 'get').toLowerCase();
+  if (!RETRYABLE_METHODS.has(method)) return false;
+  if (config.skipOutbox) return false; // explicit opt-out per call
+  const path = pathFromConfig(config);
+  return OUTBOX_ELIGIBLE_PATTERNS.some((re) => re.test(path));
+}
+
+function describeRequest(config) {
+  // Cheap human-readable label for the dashboard. Caller can override by
+  // setting `config.outboxDescription`. Otherwise we synthesise from the path.
+  if (config.outboxDescription) return config.outboxDescription;
+  const path = pathFromConfig(config);
+  const method = (config.method || 'get').toUpperCase();
+  if (path.includes('/patients') && method === 'POST') return 'Register new patient';
+  if (path.includes('/appointments') && method === 'POST') return 'Book appointment';
+  if (path.includes('/service-tickets') && method === 'POST') return 'Create service ticket';
+  if (path.includes('/billing/services') && method === 'POST') return 'Add service to catalogue';
+  if (method === 'PUT' || method === 'PATCH') return `Update ${path.split('/').slice(-2).join('/')}`;
+  return `${method} ${path}`;
+}
 
 const isNetworkError = (err) => {
   // Browser network failure (offline, DNS, CORS preflight blocked, etc.)
@@ -59,7 +103,41 @@ export function installAxiosRetry() {
     },
     async (error) => {
       const config = error.config;
-      if (!isRetryable(error, config)) return Promise.reject(error);
+      if (!isRetryable(error, config)) {
+        // Final fallback: if this is an outbox-eligible write that has truly
+        // failed (network down, server gone, retries exhausted), queue it for
+        // background replay instead of bubbling the error to the UI.
+        if (config && isOutboxEligible(config) && (!error.response || error.response.status >= 500)) {
+          try {
+            const queued = await addToOutbox({
+              method: (config.method || 'post').toUpperCase(),
+              url: config.url,
+              data: config.data,
+              headers: { ...(config.headers || {}) },
+              description: describeRequest(config),
+            });
+            toast.info(
+              "You're offline — we'll save this when you reconnect.",
+              { id: 'outbox-queued', duration: 5000 },
+            );
+            // Resolve with a synthetic 202-Accepted so the caller's success
+            // path runs (UI closes the modal, etc.) and the user isn't blocked.
+            return Promise.resolve({
+              data: { _queued: true, _outboxId: queued.id, ...(typeof config.data === 'string' ? {} : (config.data || {})) },
+              status: 202,
+              statusText: 'Accepted (queued offline)',
+              headers: {},
+              config,
+              request: null,
+              _queued: true,
+            });
+          } catch (e) {
+            // Fall through to normal rejection if queueing itself fails
+            console.warn('Outbox queueing failed, surfacing original error', e);
+          }
+        }
+        return Promise.reject(error);
+      }
 
       config[RETRY_FLAG] = (config[RETRY_FLAG] || 0) + 1;
       const attempt = config[RETRY_FLAG];

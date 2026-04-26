@@ -20,6 +20,7 @@ import axios from 'axios';
 import { toast, Toaster } from 'sonner';
 import { installAxiosRetry } from './axiosRetry';
 import { installOfflineCache, onCacheServed } from './offlineCache';
+import { drainOutbox } from './outboxReplay';
 
 // Install the retry + offline-cache interceptors exactly once at module load.
 // Order rationale: retry handles writes (POST/PUT/etc), cache handles reads
@@ -116,6 +117,14 @@ export function ConnectivityProvider({ children }) {
     return () => clearInterval(id);
   }, [status, checkNow]);
 
+  // App-boot drain: if the previous session left a queue behind, flush it
+  // once we have a confirmed online status. Subsequent drains are triggered
+  // by the offline→online transition handler above.
+  useEffect(() => {
+    if (status === 'online') drainOutbox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Notify the user on transitions (offline ⇄ online), not on slow→online flutter
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -127,6 +136,9 @@ export function ConnectivityProvider({ children }) {
       });
     } else if (prev === 'offline' && status !== 'offline') {
       toast.success('Connection restored.', { id: 'connectivity-status', duration: 4000 });
+      // Network is back — drain any writes that piled up while offline.
+      // Fire-and-forget; the outbox layer handles its own toasts on completion.
+      drainOutbox();
     }
     prevStatusRef.current = status;
   }, [status]);
