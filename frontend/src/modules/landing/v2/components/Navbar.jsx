@@ -41,11 +41,14 @@ export default function Navbar({ onBookDemo }) {
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <a href="#top" onClick={handleAnchor('#top')} className="flex items-center gap-2 group">
+        <a href="#top" onClick={handleAnchor('#top')} className="flex items-center gap-2.5 group">
           <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0B5FFF] to-[#00C2A8] flex items-center justify-center shadow-md shadow-[#0B5FFF]/30 group-hover:scale-105 transition">
             <Shield size={18} className="text-white" strokeWidth={2.5} />
           </span>
-          <span className="font-[Manrope,Inter,sans-serif] font-extrabold text-lg tracking-tight text-[#111827]">AUDINEXA</span>
+          <span className="leading-tight">
+            <span className="block font-[Manrope,Inter,sans-serif] font-extrabold text-lg tracking-tight text-[#111827]">AUDINEXA</span>
+            <span className="hidden sm:block text-[10px] text-slate-500 -mt-0.5 tracking-wide">Clinic. Secure. Simplified.</span>
+          </span>
         </a>
 
         <nav className="hidden md:flex items-center gap-1" aria-label="Primary">

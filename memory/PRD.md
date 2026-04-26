@@ -1,5 +1,20 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Landing Page v2 Visual Refinement (2026-04-26)
+Restyled all main landing sections to match the user-supplied reference image:
+- Navbar logo now shows "Clinic. Secure. Simplified." tagline below AUDINEXA
+- Hero headline split as "Your Data. Your Key." + gradient "Your Control."
+- Trust section: 3 soft pastel circular-icon cards (mint, sky, mint)
+- PainPoints rebuilt as side-by-side **Outdated (rose) vs Modern (emerald)** comparison cards joined by a center gradient arrow + inline SVG illustrations
+- Features grid: tight 5×2 of compact icon cards + blue **"Explore All Features →"** CTA
+- HowItWorks: 4 large circular icons connected by chevron arrows on desktop
+- Testimonials section added (3 quote cards with stars + initial avatars)
+- FAQ converted to **2-column accordion** with help-circle icons
+- FinalCTA replaced full-bleed gradient block with a **slim blue strip** carrying logo + headline + white "Book Free Demo" button
+- Fixed compile error: replaced removed `CloudLock` lucide icon with `Cloud`
+
+Files touched: `/app/frontend/src/modules/landing/v2/components/{Navbar,Hero,TrustSection,PainPoints,Features,HowItWorks,Testimonials,FAQ,FinalCTA}.jsx` and `LandingPage.jsx`
+
 ## 🔐 PENDING — Client-Controlled Encryption (BYOK / Zero-Knowledge) — discussed 2026-04-26
 
 Vision: *"The clinic software where even the platform cannot read your data."* Major strategic differentiator for premium tier.

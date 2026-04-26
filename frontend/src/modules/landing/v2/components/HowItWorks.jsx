@@ -1,50 +1,66 @@
+/**
+ * HowItWorks — 4 steps with chevron arrows in between.
+ * Each step is a circular icon + title + 1-line subtext.
+ * Stacks vertically on mobile with downward chevrons.
+ */
 import React from 'react';
-import { LogIn, KeyRound, Unlock, LogOut } from 'lucide-react';
-import SectionHeading from './SectionHeading';
+import { User, KeyRound, Unlock, ShieldCheck, ChevronRight, ChevronDown } from 'lucide-react';
 
 const STEPS = [
-  { num: '01', icon: LogIn,    title: 'User logs in',                      body: 'Standard email + password authentication. Multi-factor optional.' },
-  { num: '02', icon: KeyRound, title: 'Authorized clinic enters secret key', body: 'Your master key is derived in the browser — never sent to our servers in plaintext.' },
-  { num: '03', icon: Unlock,   title: 'Data unlocks for this session only',  body: 'Patient records, audiograms, billing — decrypted client-side, in memory.' },
-  { num: '04', icon: LogOut,   title: 'Logout = data locked again',          body: 'The session key is destroyed. Local cache is cleared. Disk cipher becomes unreadable.' },
+  { icon: User,         iconBg: 'bg-slate-100 text-slate-600',           title: 'User Logs In',         body: 'Enter your username and password' },
+  { icon: KeyRound,     iconBg: 'bg-emerald-100 text-emerald-600',       title: 'Enter Clinic Key',     body: 'Authorized user enters clinic secret key' },
+  { icon: Unlock,       iconBg: 'bg-emerald-100 text-emerald-600',       title: 'Data Unlocked',        body: 'Data decrypts securely for this session' },
+  { icon: ShieldCheck,  iconBg: 'bg-[#0B5FFF]/10 text-[#0B5FFF]',        title: 'Auto Lock on Logout',  body: 'When you logout, data locks automatically' },
 ];
 
 export default function HowItWorks() {
   return (
-    <section id="how-it-works" className="relative py-24 md:py-32 overflow-hidden" data-testid="landing-how">
-      <div aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-b from-[#F8FAFC] via-white to-white" />
+    <section id="how-it-works" className="relative py-20 md:py-24 bg-[#F8FAFC]" data-testid="landing-how">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          kicker="How It Works"
-          title="How clinic-controlled security works"
-          subtitle="Four steps. No security degree required. Built so the front desk just signs in and gets to work."
-        />
+        <h2 className="text-center font-[Manrope,Inter,sans-serif] font-extrabold tracking-tight text-[#0F172A] text-3xl sm:text-4xl lg:text-[40px] leading-tight">
+          How Clinic-Controlled Security Works
+        </h2>
 
-        <div className="mt-16 grid md:grid-cols-2 lg:grid-cols-4 gap-5 relative">
-          {/* Connecting line for large screens */}
-          <div aria-hidden className="hidden lg:block absolute top-9 left-[calc(12.5%+30px)] right-[calc(12.5%+30px)] h-[2px] bg-gradient-to-r from-[#0B5FFF]/20 via-[#00C2A8]/30 to-[#0B5FFF]/20" />
-
-          {STEPS.map(({ num, icon: Icon, title, body }, i) => (
-            <div key={num} className="relative bg-white rounded-2xl border border-slate-100 p-6 lg:p-7 shadow-sm hover:shadow-xl transition-shadow">
-              <div className="relative w-12 h-12 mx-auto rounded-2xl bg-gradient-to-br from-[#0B5FFF] to-[#00C2A8] text-white flex items-center justify-center shadow-md shadow-[#0B5FFF]/30">
-                <Icon size={20} strokeWidth={2.4} />
-                <span className="absolute -top-2 -right-2 bg-white text-[#0B5FFF] text-[10px] font-bold rounded-full px-1.5 py-0.5 border border-slate-100 shadow">
-                  {num}
-                </span>
-              </div>
-              <h3 className="mt-5 text-center font-[Manrope,Inter,sans-serif] font-extrabold text-[15px] text-[#111827]">{title}</h3>
-              <p className="mt-2 text-center text-[12.5px] text-[#475569] leading-relaxed">{body}</p>
+        {/* Desktop: row with chevron arrows between cards */}
+        <div className="mt-14 hidden lg:flex items-start justify-between gap-2">
+          {STEPS.map((s, i) => (
+            <React.Fragment key={s.title}>
+              <Step {...s} />
               {i < STEPS.length - 1 && (
-                <div className="lg:hidden mt-5 h-6 w-[2px] mx-auto bg-gradient-to-b from-[#0B5FFF]/30 to-[#00C2A8]/30 rounded" aria-hidden />
+                <div className="pt-9 shrink-0" aria-hidden>
+                  <ChevronRight size={28} className="text-slate-300" strokeWidth={2.4} />
+                </div>
               )}
-            </div>
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Mobile / tablet: stacked with downward chevrons */}
+        <div className="mt-12 lg:hidden grid sm:grid-cols-2 gap-6">
+          {STEPS.map((s) => (
+            <Step key={s.title} {...s} centered />
           ))}
         </div>
 
         <p className="mt-12 text-center text-sm text-[#475569]">
-          <span className="font-semibold text-[#111827]">Simple for staff. Powerful for owners.</span>
+          <span className="inline-flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span><span className="font-semibold text-[#111827]">Simple for your staff.</span> Powerful for your privacy.</span>
+          </span>
         </p>
       </div>
     </section>
+  );
+}
+
+function Step({ icon: Icon, iconBg, title, body, centered }) {
+  return (
+    <div className={`flex flex-col items-center text-center ${centered ? '' : 'flex-1 max-w-[230px]'}`}>
+      <div className={`w-20 h-20 rounded-full flex items-center justify-center ${iconBg}`}>
+        <Icon size={30} strokeWidth={2} />
+      </div>
+      <h3 className="mt-5 font-[Manrope,Inter,sans-serif] font-extrabold text-[16px] text-[#0F172A]">{title}</h3>
+      <p className="mt-1.5 text-[12.5px] text-[#64748B] leading-relaxed max-w-[200px]">{body}</p>
+    </div>
   );
 }

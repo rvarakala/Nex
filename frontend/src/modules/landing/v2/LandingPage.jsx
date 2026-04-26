@@ -15,6 +15,7 @@ import PainPoints from './components/PainPoints';
 import SecurityShowcase from './components/SecurityShowcase';
 import Features from './components/Features';
 import HowItWorks from './components/HowItWorks';
+import Testimonials from './components/Testimonials';
 import Pricing from './components/Pricing';
 import FAQ from './components/FAQ';
 import FinalCTA from './components/FinalCTA';
@@ -34,11 +35,12 @@ export default function LandingPage() {
         <Hero onBookDemo={() => openDemo()} />
         <TrustSection />
         <PainPoints />
-        <SecurityShowcase />
-        <Features />
+        <Features onBookDemo={() => openDemo()} />
         <HowItWorks />
+        <Testimonials />
         <Pricing onBookDemo={openDemo} />
         <FAQ />
+        <SecurityShowcase />
         <FinalCTA onBookDemo={() => openDemo()} />
       </main>
       <Footer />

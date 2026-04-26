@@ -6,12 +6,12 @@
  * All visuals are pure inline SVG/CSS — no images, no external libs.
  */
 import React from 'react';
-import { ArrowRight, ShieldCheck, Check, Award, HeartPulse, CloudLock, Activity } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Check, Award, HeartPulse, Cloud, Activity } from 'lucide-react';
 
 const TRUST_SEALS = [
   { icon: Award,       title: 'ISO 27001',      sub: 'Aligned' },
   { icon: HeartPulse,  title: 'HIPAA',          sub: 'Aligned' },
-  { icon: CloudLock,   title: 'Secure Cloud',   sub: 'AES-256' },
+  { icon: Cloud,       title: 'Secure Cloud',   sub: 'AES-256' },
   { icon: Activity,    title: '99.9%',          sub: 'Uptime SLA' },
 ];
 
@@ -39,8 +39,8 @@ export default function Hero({ onBookDemo }) {
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-[#0B5FFF]/8 border border-[#0B5FFF]/15 text-[#0B5FFF]">
             <ShieldCheck size={13} /> Client-Controlled Encryption
           </span>
-          <h1 className="mt-5 font-[Manrope,Inter,sans-serif] font-extrabold tracking-tight text-[#111827] text-4xl sm:text-5xl lg:text-[64px] leading-[1.04]">
-            Your Data. Your Key.<br />
+          <h1 className="mt-5 font-[Manrope,Inter,sans-serif] font-extrabold tracking-tight text-[#111827] text-4xl sm:text-5xl lg:text-[56px] xl:text-[60px] leading-[1.05]">
+            <span className="whitespace-nowrap">Your Data. Your Key.</span><br />
             <span className="bg-gradient-to-r from-[#0B5FFF] to-[#00C2A8] bg-clip-text text-transparent">Your Control.</span>
           </h1>
           <p className="mt-6 text-base sm:text-lg text-[#475569] leading-relaxed max-w-xl">
