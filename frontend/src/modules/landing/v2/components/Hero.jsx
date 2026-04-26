@@ -6,7 +6,7 @@
  * All visuals are pure inline SVG/CSS — no images, no external libs.
  */
 import React from 'react';
-import { ArrowRight, ShieldCheck, Check, Award, HeartPulse, Cloud, Activity } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Check, Award, HeartPulse, Cloud, Activity, PlayCircle } from 'lucide-react';
 
 const TRUST_SEALS = [
   { icon: Award,       title: 'ISO 27001',      sub: 'Aligned' },
@@ -21,7 +21,7 @@ const QUICK_WINS = [
   'Clinic-controlled keys',
 ];
 
-export default function Hero({ onBookDemo }) {
+export default function Hero({ onBookDemo, onWatchTour }) {
   return (
     <section
       id="top"
@@ -55,7 +55,7 @@ export default function Hero({ onBookDemo }) {
             ))}
           </ul>
 
-          <div className="mt-8 flex flex-col sm:flex-row gap-3">
+          <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
             <button
               onClick={onBookDemo}
               data-testid="hero-book-demo"
@@ -71,6 +71,15 @@ export default function Hero({ onBookDemo }) {
             >
               See Security Architecture
             </a>
+            <button
+              type="button"
+              onClick={onWatchTour}
+              data-testid="hero-watch-tour"
+              className="group inline-flex items-center justify-center gap-2 text-[#0B5FFF] hover:text-[#094acf] px-2 py-3 sm:py-4 font-semibold text-[14px] transition-colors"
+            >
+              <PlayCircle size={20} className="group-hover:scale-110 transition-transform" />
+              <span>Watch <span className="font-extrabold">60-sec</span> product tour</span>
+            </button>
           </div>
 
           <div className="mt-10 pt-6 border-t border-slate-200/70">

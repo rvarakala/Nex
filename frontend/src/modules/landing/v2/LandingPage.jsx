@@ -21,18 +21,22 @@ import FAQ from './components/FAQ';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
 import DemoModal from './components/DemoModal';
+import ProductTourModal from './components/ProductTourModal';
 
 export default function LandingPage() {
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoTier, setDemoTier] = useState(null);
+  const [tourOpen, setTourOpen] = useState(false);
   const openDemo = useCallback((tier = null) => { setDemoTier(tier); setDemoOpen(true); }, []);
   const closeDemo = useCallback(() => setDemoOpen(false), []);
+  const openTour = useCallback(() => setTourOpen(true), []);
+  const closeTour = useCallback(() => setTourOpen(false), []);
 
   return (
     <div className="bg-white text-[#111827] font-[Inter,system-ui,sans-serif] antialiased selection:bg-[#0B5FFF] selection:text-white" data-testid="landing-page">
       <Navbar onBookDemo={() => openDemo()} />
       <main>
-        <Hero onBookDemo={() => openDemo()} />
+        <Hero onBookDemo={() => openDemo()} onWatchTour={openTour} />
         <TrustSection />
         <PainPoints />
         <Features onBookDemo={() => openDemo()} />
@@ -56,6 +60,7 @@ export default function LandingPage() {
       </div>
 
       <DemoModal open={demoOpen} onClose={closeDemo} initialTier={demoTier} />
+      <ProductTourModal open={tourOpen} onClose={closeTour} onBookDemo={() => openDemo()} />
     </div>
   );
 }
