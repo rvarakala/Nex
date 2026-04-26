@@ -73,6 +73,8 @@ export const AuthProvider = ({ children }) => {
     clearOfflineCache();
     // Wipe any pending writes — they belong to this user's session, not the next user's
     clearOutbox();
+    // Wipe the in-memory clinic vault DEK (BYOK Phase 1)
+    try { window.dispatchEvent(new Event('audinexa:wipe-vault')); } catch { /* noop */ }
     setUser(null);
     setClinic(null);
   };

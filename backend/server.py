@@ -207,6 +207,10 @@ async def lifespan(_app: FastAPI):
         await db.admin_audit_logs.create_index([("at", -1)])
         await db.admin_audit_logs.create_index([("actor_user_id", 1), ("at", -1)])
         await db.admin_audit_logs.create_index("log_id", unique=True)
+        # BYOK Phase 1 — Clinic Vault PoC
+        await db.clinic_vaults.create_index("clinic_id", unique=True)
+        await db.vault_test_records.create_index([("clinic_id", 1), ("created_at", -1)])
+        await db.vault_test_records.create_index("record_id", unique=True)
         _log.info("MongoDB indexes ensured")
 
         # ---- seed defaults (clinic, users, services) — idempotent ----
@@ -589,6 +593,7 @@ app.include_router(billing_module.billing_router)
 from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402
 from routers import patients as patients_router       # noqa: E402
+from routers import vault as vault_router              # noqa: E402
 from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
 from routers import sessions as sessions_router       # noqa: E402
@@ -625,6 +630,7 @@ from routers import stock_transfers as stock_transfers_router  # noqa: E402
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
 app.include_router(patients_router.router)
+app.include_router(vault_router.router)
 app.include_router(appointments_router.router)
 app.include_router(tokens_router.router)
 app.include_router(sessions_router.router)

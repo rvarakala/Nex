@@ -1,5 +1,47 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — P0-3 Disable Demo Seed in Production (2026-04-26)
+- New env flag `DISABLE_DEMO_SEED=1` skips ACS demo clinic, 4 demo users, second Delhi test clinic, 4 demo tenants, sample leads.
+- Founder account always seeded via new `seed_founder_only()` helper. `FOUNDER_EMAIL` + `FOUNDER_PASSWORD` env vars override defaults.
+- Verified via `/tmp/test_disable_seed.py` against an isolated Mongo db: only `founder@audinexa.com` user + `audinexa-platform` clinic seeded; password matches env override.
+- Files: `/app/backend/server.py`, `/app/backend/admin_seed.py`, `/app/memory/test_credentials.md`
+
+## ✅ COMPLETED — P0-1 BYOK Phase 1 Clinic Vault PoC (2026-04-26)
+**Backs landing page promise: "Your Data. Your Key. Your Control. — even we cannot read."**
+
+Architecture:
+- **PBKDF2-SHA-256 @ 600k iterations** → 256-bit MasterKey derived in browser only
+- **AES-GCM 256-bit DEK** generated client-side, wrapped with MasterKey, server stores only ciphertext + verifier hash + KDF salt
+- **12 one-time recovery codes** generated at setup (each independently wraps the DEK; codes shown to owner once, hashed copies stored server-side)
+- DEK held in `useRef` memory only — no localStorage / IDB / sessionStorage
+- Auto-wiped on logout, idle-logout event, manual lock
+
+Endpoints (`/api/vault/*`):
+- `GET  /status`            — frontend decides setup vs unlock
+- `POST /setup`             — owner-only, idempotent (409 on double-init)
+- `GET  /unlock-params`     — public KDF params + wrapped DEK + verifier
+- `POST /unlock-verify`     — server-side verifier check (returns 401 on wrong pass)
+- `POST /test-records`      — encrypted blob CRUD (PoC demo)
+- `GET  /test-records`
+- `DELETE /test-records/{id}`
+
+Files added:
+- `/app/backend/routers/vault.py`
+- `/app/frontend/src/crypto/clinicVault.js` (WebCrypto helpers)
+- `/app/frontend/src/crypto/VaultContext.jsx` (DEK lifecycle)
+- `/app/frontend/src/crypto/VaultGate.jsx` (Setup + Unlock + Recovery codes UI)
+- `/app/frontend/src/modules/settings/VaultDemoPage.jsx` (`/vault/demo` route)
+
+End-to-end validation:
+- `/tmp/test_vault_e2e.py` simulates browser crypto in Python, verifies: setup→encrypt→store→fetch→decrypt round-trip, double-init blocked, wrong-pass→401, recovery codes stored.
+- UI smoke test confirmed setup, unlock, encrypt-on-add, lock-wipes-key, re-unlock flows.
+
+PoC limitations (queued for next PR):
+- Recovery codes are stored but not yet usable for unlock — **next P0 work item**
+- Multi-admin Shamir recovery — deferred to Phase 2
+- Time-locked emergency reset — deferred to Phase 2
+- No real-table encryption yet (intentional PoC pattern; expand after 1-clinic validation)
+
 ## ✅ COMPLETED — Landing Page v2 Visual Refinement (2026-04-26)
 Restyled all main landing sections to match the user-supplied reference image:
 - Navbar logo now shows "Clinic. Secure. Simplified." tagline below AUDINEXA

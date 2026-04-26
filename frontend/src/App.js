@@ -28,6 +28,8 @@ import { usePageViewTracker } from './hooks/usePageViewTracker';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import TopProgressBar from './components/TopProgressBar';
 import { ConnectivityProvider } from './connectivity/ConnectivityContext';
+import { VaultProvider } from './crypto/VaultContext';
+import VaultDemoPage from './modules/settings/VaultDemoPage';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -63,12 +65,24 @@ function App() {
         <SubscriptionProvider>
           <ConnectivityProvider>
             <TestContextProvider>
-              <AppRoutes />
+              <VaultGuardedRoutes />
             </TestContextProvider>
           </ConnectivityProvider>
         </SubscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
+  );
+}
+
+// Wraps routes in VaultProvider once auth state is known. Vault hydration
+// only fires for authenticated users to avoid a status-check storm on the
+// public landing page.
+function VaultGuardedRoutes() {
+  const { user } = useAuth();
+  return (
+    <VaultProvider isAuthed={!!user}>
+      <AppRoutes />
+    </VaultProvider>
   );
 }
 
@@ -130,6 +144,11 @@ function AppRoutes() {
               } />
               <Route path="/settings/*" element={
                 <ShelledRoute><SettingsModule /></ShelledRoute>
+              } />
+
+              {/* BYOK Phase 1 PoC — Clinic Vault demo (any authed user) */}
+              <Route path="/vault/demo" element={
+                <ShelledRoute><VaultDemoPage /></ShelledRoute>
               } />
 
               {/* SUPER-ADMIN PANEL (founder / super_admin only — own shell) */}
