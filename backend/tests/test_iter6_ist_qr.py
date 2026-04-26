@@ -151,7 +151,7 @@ class TestBillingCollectionsIST:
         # The response should reference today's IST date in some way
         from server import ist_today_ymd
         today = ist_today_ymd()
-        body = str(d)
+        str(d)
         # Tolerate either explicit "date":today or implicit (just verify returns)
         assert isinstance(d, (list, dict))
         # If 'from' or 'date' field exists, it must be today's IST

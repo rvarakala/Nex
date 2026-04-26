@@ -245,7 +245,6 @@ async def seed():
     front_id = user_id_by_email["meera@thesoundclinic.in"]
     tech_id = user_id_by_email["suresh@thesoundclinic.in"]
     audiologist_ids = [aud1_id, aud2_id]
-    audiologist_names = {aud1_id: "Dr. Aditi Krishnan", aud2_id: "Dr. Vikram Reddy"}
 
     # ---- 5. Service catalogue ---------------------------------------------
     service_catalog = [
@@ -593,7 +592,6 @@ async def seed():
     # ---- 13. HA Sales (12) + linked invoices -------------------------------
     sale_docs = []
     invoice_docs = []
-    payment_docs = []
     fitting_docs = []
     inv_seq = 1
     sale_seq = 1

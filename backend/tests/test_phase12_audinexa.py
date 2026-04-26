@@ -261,7 +261,7 @@ class TestEstimatesApprovals:
                    "IN_TRANSIT", "DELIVERED_TO_COMPANY"):
             requests.post(f"{API}/ha/service-tickets/{t_no}/transition",
                           headers=h(fd), json={"to_status": st}, timeout=10)
-        est = requests.post(f"{API}/ha/service-estimates", headers=h(fd), json={
+        requests.post(f"{API}/ha/service-estimates", headers=h(fd), json={
             "ticket_no": t_no, "amount": 8000, "warranty_covered": False,
         }, timeout=10).json()
         pipe = requests.get(f"{API}/ha/service-jobs/{t_no}/pipeline",
