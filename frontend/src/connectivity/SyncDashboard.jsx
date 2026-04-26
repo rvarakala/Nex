@@ -24,17 +24,23 @@ function useOutboxItems() {
   }, []);
   const pending = items.filter((i) => i.status === 'pending').length;
   const failed = items.filter((i) => i.status === 'failed').length;
-  return { items, pending, failed };
+  const conflicts = items.filter((i) => i.status === 'conflict').length;
+  return { items, pending, failed, conflicts };
 }
 
 export function SyncPill({ onClick }) {
-  const { pending, failed } = useOutboxItems();
-  const total = pending + failed;
+  const { pending, failed, conflicts } = useOutboxItems();
+  const total = pending + failed + conflicts;
   if (total === 0) return null; // hide when nothing's queued — keeps the topbar quiet
 
-  const config = failed > 0
-    ? { color: 'text-rose-700 bg-rose-50 border-rose-300',     dot: 'bg-rose-500', icon: AlertTriangle, label: `${failed} failed` }
-    : { color: 'text-amber-800 bg-amber-50 border-amber-200',  dot: 'bg-amber-500', icon: CloudUpload,  label: `${pending} pending` };
+  let config;
+  if (conflicts > 0) {
+    config = { color: 'text-amber-900 bg-amber-100 border-amber-300', dot: 'bg-amber-600', icon: AlertTriangle, label: `${conflicts} conflict${conflicts === 1 ? '' : 's'}` };
+  } else if (failed > 0) {
+    config = { color: 'text-rose-700 bg-rose-50 border-rose-300', dot: 'bg-rose-500', icon: AlertTriangle, label: `${failed} failed` };
+  } else {
+    config = { color: 'text-amber-800 bg-amber-50 border-amber-200', dot: 'bg-amber-500', icon: CloudUpload, label: `${pending} pending` };
+  }
   const Icon = config.icon;
 
   return (
@@ -45,6 +51,7 @@ export function SyncPill({ onClick }) {
       data-testid="sync-pill"
       data-pending={pending}
       data-failed={failed}
+      data-conflicts={conflicts}
       className={`flex items-center gap-1.5 text-[10px] font-bold border rounded-full px-2 py-0.5 transition ${config.color} hover:brightness-95`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${config.dot} animate-pulse`} />
@@ -55,7 +62,7 @@ export function SyncPill({ onClick }) {
 }
 
 export function SyncDrawer({ open, onClose }) {
-  const { items, pending, failed } = useOutboxItems();
+  const { items, pending, failed, conflicts } = useOutboxItems();
   const { status: connStatus } = useConnectivity();
 
   if (!open) return null;
@@ -82,9 +89,14 @@ export function SyncDrawer({ open, onClose }) {
         </div>
 
         {/* Status summary */}
-        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-3 text-[11px]">
+        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-3 text-[11px] flex-wrap">
           <span className="inline-flex items-center gap-1 text-emerald-700"><CircleCheck size={12} /> Synced</span>
           <span className="inline-flex items-center gap-1 text-amber-700" data-testid="sync-pending-count"><CloudUpload size={12} /> {pending} pending</span>
+          {conflicts > 0 && (
+            <span className="inline-flex items-center gap-1 text-amber-900 font-semibold" data-testid="sync-conflict-count">
+              <AlertTriangle size={12} /> {conflicts} conflict{conflicts === 1 ? '' : 's'}
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 text-rose-700" data-testid="sync-failed-count"><AlertTriangle size={12} /> {failed} failed</span>
           <button
             onClick={() => drainOutbox()}
@@ -95,6 +107,16 @@ export function SyncDrawer({ open, onClose }) {
             Sync now
           </button>
         </div>
+
+        {/* Conflict-resolution policy hint — only visible when there's a conflict */}
+        {conflicts > 0 && (
+          <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-[11px] text-amber-900 leading-snug" data-testid="sync-conflict-hint">
+            <div className="font-bold mb-0.5">Conflict resolution rule</div>
+            Someone else edited the same record while your change was offline.
+            <b> "Force overwrite" </b> sends your version anyway (last-write-wins).
+            <b> "Discard"</b> drops your change and keeps the server version. When in doubt, refresh the record on screen first to compare.
+          </div>
+        )}
 
         {/* List */}
         <div className="flex-1 overflow-auto" data-testid="sync-list">
@@ -122,20 +144,33 @@ export function SyncDrawer({ open, onClose }) {
                     <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
                       it.status === 'failed'
                         ? 'bg-rose-100 text-rose-700'
+                        : it.status === 'conflict'
+                        ? 'bg-amber-200 text-amber-900'
                         : 'bg-amber-100 text-amber-800'
                     }`}>
                       {it.status}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
-                    <button
-                      onClick={() => retryOutboxItem(it.id)}
-                      disabled={connStatus === 'offline'}
-                      data-testid={`sync-retry-${it.id}`}
-                      className="text-[10px] inline-flex items-center gap-1 text-indigo-700 hover:text-indigo-900 disabled:text-slate-400 font-semibold"
-                    >
-                      <RefreshCw size={10} /> Retry
-                    </button>
+                    {it.status === 'conflict' ? (
+                      <button
+                        onClick={() => retryOutboxItem(it.id)}
+                        disabled={connStatus === 'offline'}
+                        data-testid={`sync-force-${it.id}`}
+                        className="text-[10px] inline-flex items-center gap-1 text-amber-800 hover:text-amber-950 disabled:text-slate-400 font-semibold"
+                      >
+                        <RefreshCw size={10} /> Force overwrite
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => retryOutboxItem(it.id)}
+                        disabled={connStatus === 'offline'}
+                        data-testid={`sync-retry-${it.id}`}
+                        className="text-[10px] inline-flex items-center gap-1 text-indigo-700 hover:text-indigo-900 disabled:text-slate-400 font-semibold"
+                      >
+                        <RefreshCw size={10} /> Retry
+                      </button>
+                    )}
                     <button
                       onClick={() => { if (confirm('Discard this change permanently?')) removeOutbox(it.id); }}
                       data-testid={`sync-discard-${it.id}`}

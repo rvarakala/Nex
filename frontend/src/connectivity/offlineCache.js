@@ -11,14 +11,12 @@
  *   clinic logins on the same device cannot ever cross-read each other's data.
  *   On logout we just call `clearOfflineCache()` to wipe everything.
  *
- * Cache key:
- *   `${method}:${path}?${sortedQuery}` — strips the host so preview URL changes
- *   don't invalidate yesterday's cache.
- *
- * TTL:
- *   24h. Stale entries are served only when we're offline; if the network is
- *   reachable we always go to origin.
+ * Encryption (Item 4):
+ *   Every entry is encrypted with AES-GCM using a key derived from the JWT
+ *   signature + a per-session salt. Plaintext PHI never lands on disk.
  */
+
+import { encryptValue, decryptValue, clearCacheCrypto } from './cacheCrypto';
 
 const DB_VERSION = 1;
 const STORE = 'gets';
@@ -98,13 +96,23 @@ async function idbPut(key, value) {
 // ---- Allowlist of cacheable GETs ------------------------------------------
 // Add a path here only if a) it's stable per-day and b) showing slightly stale
 // data offline is genuinely better than a blank page.
+//
+// Item 2 from expert feedback — these endpoints must work offline-first:
+//   • Registration metadata, Appointments, Patient lookup
+//   • Hearing-aid service logs (tickets, products, serials)
+//   • Notes, billing temp-receipt reference data
 const CACHEABLE_PATHS = [
-  /^\/api\/appointments(\/|\?|$)/,        // calendar — today + week
-  /^\/api\/patients(\/|\?|$)/,            // list, search, individual
-  /^\/api\/billing\/services(\/|\?|$)/,   // service catalogue
-  /^\/api\/branches(\/|\?|$)/,            // clinic branches
-  /^\/api\/settings\/clinic(\/|\?|$)/,    // clinic profile
-  /^\/api\/auth\/me(\/|\?|$)/,            // current user
+  /^\/api\/appointments(\/|\?|$)/,            // calendar — today + week
+  /^\/api\/patients(\/|\?|$)/,                // list, search, individual, notes
+  /^\/api\/billing\/services(\/|\?|$)/,       // service catalogue (read-only ref while offline)
+  /^\/api\/branches(\/|\?|$)/,                // clinic branches
+  /^\/api\/settings\/clinic(\/|\?|$)/,        // clinic profile
+  /^\/api\/auth\/me(\/|\?|$)/,                // current user
+  /^\/api\/ha\/service-tickets(\/|\?|$)/,     // hearing aid service tickets
+  /^\/api\/ha\/products(\/|\?|$)/,            // HA catalogue (offline reference)
+  /^\/api\/ha\/serial-items(\/|\?|$)/,        // serial inventory
+  /^\/api\/ha\/service-tickets-kpis(\/|\?|$)/,
+  /^\/api\/diagnostics\/sessions(\/|\?|$)/,   // recent audiograms (read)
 ];
 
 function isCacheable(config) {
@@ -150,6 +158,9 @@ export async function clearOfflineCache() {
     indexedDB.deleteDatabase(dbName());
     _dbPromise = null;
     _dbOwner = null;
+    // Also tear down the AES key + salt so freshly written cache (e.g. for
+    // a new login) cannot be decrypted with the previous user's key material.
+    clearCacheCrypto();
   } catch {
     /* ignore */
   }
@@ -159,7 +170,7 @@ let _installed = false;
 
 /**
  * Wires axios so:
- *   - Successful cacheable GETs persist their response to IDB.
+ *   - Successful cacheable GETs persist their response to IDB (encrypted).
  *   - Failed cacheable GETs (network error / 5xx) fall back to the cached body.
  *
  * Idempotent — safe to call multiple times.
@@ -168,18 +179,21 @@ export function installOfflineCache(axios) {
   if (_installed) return;
   _installed = true;
 
-  // Persist successful responses
+  // Persist successful responses (encrypted with per-session AES-GCM key)
   axios.interceptors.response.use(
     async (response) => {
       const config = response.config;
       if (config && isCacheable(config) && response.status >= 200 && response.status < 300) {
         const key = buildKey(config);
-        await idbPut(key, {
+        const envelope = await encryptValue({
           data: response.data,
           status: response.status,
           headers: response.headers,
           cachedAt: Date.now(),
         });
+        // We always wrap the envelope with a top-level cachedAt for TTL
+        // checks without having to decrypt every entry just to expire it.
+        await idbPut(key, { ...envelope, cachedAt: Date.now() });
       }
       return response;
     },
@@ -197,13 +211,18 @@ export function installOfflineCache(axios) {
       // Honour TTL — stale-but-still-useful is fine offline; expired isn't
       if (Date.now() - hit.cachedAt > TTL_MS) return Promise.reject(error);
 
-      if (_onCacheServed) _onCacheServed({ key, cachedAt: hit.cachedAt });
+      // Decrypt before returning. If the key has rotated (new login on same
+      // device) decryption returns null — treat as cache miss.
+      const decrypted = await decryptValue(hit);
+      if (!decrypted) return Promise.reject(error);
+
+      if (_onCacheServed) _onCacheServed({ key, cachedAt: decrypted.cachedAt });
 
       // Return a synthetic axios response. Mark with `_fromCache: true` so
       // callers that care can render a "showing cached" indicator.
       return Promise.resolve({
-        data: hit.data,
-        status: hit.status || 200,
+        data: decrypted.data,
+        status: decrypted.status || 200,
         statusText: 'OK (cached)',
         headers: hit.headers || {},
         config,

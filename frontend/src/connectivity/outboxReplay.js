@@ -29,6 +29,7 @@ export async function drainOutbox() {
 
     let okCount = 0;
     let failCount = 0;
+    let conflictCount = 0;
     for (const item of replayable) {
       try {
         await axios({
@@ -45,22 +46,43 @@ export async function drainOutbox() {
         okCount += 1;
       } catch (err) {
         const attempts = (item.attempts || 0) + 1;
-        const isFinal = attempts >= MAX_ATTEMPTS;
+        const httpStatus = err?.response?.status;
+        // Conflict resolution rule: server-side version mismatch (409) is a
+        // genuine concurrent-edit conflict — never overwrite blindly. Mark
+        // separately so the user reviews it from the dashboard. 4xx errors
+        // (400/422/etc.) generally mean the request itself is wrong; flip to
+        // 'failed' so they don't burn through retries.
+        let nextStatus = 'pending';
+        if (httpStatus === 409) {
+          nextStatus = 'conflict';
+          conflictCount += 1;
+        } else if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+          nextStatus = 'failed';
+          failCount += 1;
+        } else if (attempts >= MAX_ATTEMPTS) {
+          nextStatus = 'failed';
+          failCount += 1;
+        } else {
+          failCount += 1;
+        }
         await updateOutbox(item.id, {
           attempts,
-          status: isFinal ? 'failed' : 'pending',
+          status: nextStatus,
           lastError: err?.response?.data?.detail || err?.message || 'Unknown error',
         });
-        failCount += 1;
-        // If a single replay failed because we're offline again, stop the
-        // drain so we don't burn through attempts in a still-broken state.
+        // If we lost connectivity again mid-drain, bail out so the rest of
+        // the queue isn't burned unnecessarily.
         if (!err?.response) break;
       }
     }
 
-    if (okCount > 0 && failCount === 0) {
+    if (okCount > 0 && failCount === 0 && conflictCount === 0) {
       toast.success(`Synced ${okCount} pending ${okCount === 1 ? 'change' : 'changes'}.`, {
         id: 'outbox-drain', duration: 4000,
+      });
+    } else if (conflictCount > 0) {
+      toast.warning(`${conflictCount} change${conflictCount === 1 ? '' : 's'} need review (someone else edited the same record). Open Sync to resolve.`, {
+        id: 'outbox-drain', duration: 8000,
       });
     } else if (okCount > 0 && failCount > 0) {
       toast.warning(`Synced ${okCount}, but ${failCount} failed. Open Sync to review.`, {

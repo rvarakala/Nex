@@ -16,6 +16,7 @@ import { useSubscription } from '../SubscriptionContext';
 import ConnectivityIndicator from '../connectivity/ConnectivityIndicator';
 import OfflineBanner from '../connectivity/OfflineBanner';
 import InstallPrompt from '../connectivity/InstallPrompt';
+import IdleLogout from '../connectivity/IdleLogout';
 import { SyncPill, SyncDrawer } from '../connectivity/SyncDashboard';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -415,6 +416,9 @@ export default function AppShell({ children }) {
 
       {/* PWA install prompt — only renders for signed-in users on eligible browsers */}
       <InstallPrompt />
+
+      {/* Idle auto-logout — invisible component, signs out after role-based timeout */}
+      <IdleLogout />
 
       <SyncDrawer open={syncOpen} onClose={() => setSyncOpen(false)} />
 
