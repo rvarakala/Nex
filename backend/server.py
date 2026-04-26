@@ -678,7 +678,25 @@ async def _seed_defaults():
     """Idempotently creates the default clinic + 4 demo users (super_admin, front_desk, audiologist, accounts).
 
     Also: backfill existing patients/referring_doctors that lack `clinic_id` so legacy records remain accessible.
+
+    PRODUCTION SAFETY: when env var `DISABLE_DEMO_SEED=1` is set, the demo
+    clinic + demo users + second test clinic + admin panel demo tenants are
+    all skipped. The founder account (founder@audinexa.com) is still seeded
+    via `admin_seed.seed_founder_only()` so the platform owner can sign in.
+    Set `FOUNDER_PASSWORD` to override the default password in production.
     """
+    disable_demo = os.environ.get("DISABLE_DEMO_SEED") == "1"
+
+    if disable_demo:
+        # Production path — only seed the founder, nothing else.
+        logger.info("DISABLE_DEMO_SEED=1 — skipping demo data seed")
+        try:
+            from admin_seed import seed_founder_only
+            await seed_founder_only(db)
+        except Exception as e:
+            logger.warning(f"Founder seed skipped: {e}")
+        return
+
     clinic_id = os.environ.get("DEFAULT_CLINIC_ID", "clinic-acs-demo")
     clinic_name = os.environ.get("DEFAULT_CLINIC_NAME", "ACS Audiology Clinic")
 

@@ -1,5 +1,12 @@
 # ACS Audiology Clinic — Test Credentials
 
+## ⚠️ Production Mode (`DISABLE_DEMO_SEED=1`)
+When this env var is set on the backend (recommended in production):
+- The 4 ACS demo users (`admin@acs.in`, etc.), the second Delhi test clinic, the 4 admin-panel demo tenants, and the sample leads are **NOT** seeded.
+- Only the **founder** account is seeded into the platform clinic so the platform owner can sign in.
+- Override the founder password by setting `FOUNDER_PASSWORD=<strong-pass>` (also `FOUNDER_EMAIL=<email>` if needed).
+- Test credentials below apply to **dev / staging / preview** environments only (where `DISABLE_DEMO_SEED` is unset).
+
 ## Default Clinic (Mumbai)
 - **clinic_id**: `clinic-acs-demo`
 - **name**: ACS Audiology Clinic

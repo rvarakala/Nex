@@ -91,11 +91,18 @@ _INTERNAL_USERS: list[tuple[str, str, str, str]] = [
 ]
 
 
-async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
-    """Idempotent. Safe on every boot."""
+async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
+    """Production-safe seed: only creates the platform clinic + founder user.
+
+    Runs even when `DISABLE_DEMO_SEED=1` is set so the platform owner can
+    sign in. Honours `FOUNDER_PASSWORD` env var (recommended in production).
+    Idempotent: keeps the password in sync on every boot if it changed in env.
+    """
+    import os
+
     now: datetime = datetime.now(timezone.utc)
 
-    # ---- 1. Platform clinic (for founder user) ----
+    # ---- 1. Platform clinic ----
     if not await db.clinics.find_one({"clinic_id": PLATFORM_CLINIC_ID}):
         await db.clinics.insert_one(serialize_datetime({
             "clinic_id": PLATFORM_CLINIC_ID,
@@ -111,8 +118,8 @@ async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
         logger.info(f"Seeded platform tenant: {PLATFORM_CLINIC_ID}")
 
     # ---- 2. Founder user ----
-    founder_email = "founder@audinexa.com"
-    founder_pw = "founder123"
+    founder_email = os.environ.get("FOUNDER_EMAIL", "founder@audinexa.com")
+    founder_pw = os.environ.get("FOUNDER_PASSWORD", "founder123")
     found = await db.users.find_one({"email": founder_email})
     if not found:
         await db.users.insert_one(serialize_datetime({
@@ -128,12 +135,31 @@ async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
         }))
         logger.info(f"Seeded founder user: {founder_email}")
     else:
-        # Keep password in sync
+        # Keep password in sync if env changed
         if not verify_password(founder_pw, found.get("password_hash", "")):
             await db.users.update_one(
                 {"email": founder_email},
-                {"$set": {"password_hash": hash_password(founder_pw), "role": "founder", "clinic_id": PLATFORM_CLINIC_ID}},
+                {"$set": {"password_hash": hash_password(founder_pw), "role": "founder",
+                          "clinic_id": PLATFORM_CLINIC_ID}},
             )
+            logger.info(f"Founder password synced from env: {founder_email}")
+
+
+async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
+    """Idempotent. Safe on every boot.
+
+    PRODUCTION SAFETY: when `DISABLE_DEMO_SEED=1`, this becomes a no-op
+    (founder is seeded separately via `seed_founder_only`).
+    """
+    import os
+    if os.environ.get("DISABLE_DEMO_SEED") == "1":
+        logger.info("DISABLE_DEMO_SEED=1 — admin panel demo tenants/leads skipped")
+        return
+
+    now: datetime = datetime.now(timezone.utc)
+
+    # ---- 1. Platform clinic + founder (also covered by seed_founder_only) ----
+    await seed_founder_only(db)
 
     # ---- 3. Demo tenants ----
     for t in _DEMO_TENANTS:
