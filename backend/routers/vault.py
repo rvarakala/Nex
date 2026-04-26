@@ -25,14 +25,13 @@ PoC limitations (P0-1 ships these only):
     flow ships in the Recovery Codes PR)
   - No multi-admin (Shamir) yet — also next PR
 """
-from __future__ import annotations
+from datetime import datetime, timezone
+from typing import Annotated, Any, Optional
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
@@ -294,8 +293,8 @@ async def vault_unlock_params(user=Depends(get_current_user), db=Depends(get_db)
 @router.post("/unlock-verify")
 @limiter.limit("10/minute")
 async def vault_unlock_verify(
-    proof: VaultUnlockProof,
     request: Request,
+    proof: Annotated[VaultUnlockProof, Body()],
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):
@@ -348,8 +347,8 @@ async def list_recovery_slots(user=Depends(get_current_user), db=Depends(get_db)
 @router.post("/recovery-redeem", response_model=VaultStatus)
 @limiter.limit("5/minute")
 async def recovery_redeem(
-    payload: RecoveryRedeemRequest,
     request: Request,
+    payload: Annotated[RecoveryRedeemRequest, Body()],
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):

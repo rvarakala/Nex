@@ -1,0 +1,35 @@
+{
+  "summary": "Iter24 — Re-test of production-hardening suite after iter23's body-parse fix. Reused existing /app/backend/tests/test_iter23_prod_hardening.py (16 cases). Result: 16/16 PASS in 8.57s. Both previously-broken endpoints (POST /api/vault/unlock-verify, POST /api/vault/recovery-redeem) now correctly parse their JSON bodies — they return semantic 404 'Vault not initialised' / 'Recovery code not recognised' instead of the 422 query-param error seen in iter23, AND the slowapi rate limiter correctly fires (429 on 11th unlock-verify call and 6th recovery-redeem call). All other regression items also green: login 200 with admin@acs.in/admin123, login 429 brute-force at 11th wrong-password attempt within 60s, /auth/me with token, /auth/my-clinics, /vault/status returns mode field, vault mode state machine (standard↔vault_pending; direct→vault_enabled rejected with 400), /vault/setup round-trip + 409 idempotency, /patients regression, /appointments regression, /api/health 200, CORS preflight headers present.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_prod_hardening.py",
+    "/app/test_reports/pytest/iter24_prod_hardening_v2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vault.py fix is clean: removed `from __future__ import annotations` and switched body params to `Annotated[Model, Body()]` form. This is the canonical FastAPI pattern when stacking external decorators (slowapi @limiter.limit) on top of routes that also use Depends(...). Manually re-verified via curl: both endpoints now return semantic 404s instead of 422 parse errors.",
+    "rate_limit.py proxy_aware_key still uses leftmost X-Forwarded-For — correct for ingress-fronted prod. In-memory store is fine for single-process; if backend ever scales to multiple workers, swap to Redis storage_uri so 10/min budgets are shared across pods (current code allows N×limit in a multi-worker deploy).",
+    "server.py login @limiter.limit('10/minute') verified firing at 11th attempt — works as designed.",
+    "Test file uses dedicated synthetic XFFs (203.0.113.{10,11,12,55,66,99}) so rate-limit buckets don't bleed across tests — good practice; preserve this pattern for future limit-related tests.",
+    "Suggestion (non-blocking): consider adding /tmp/test_vault_e2e.py + /tmp/test_vault_recovery.py into /app/backend/tests/ so the encrypted round-trip + recovery flows are part of CI rather than ad-hoc scripts."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (16/16 pytest cases PASS, 8.57s)",
+    "frontend": "not tested (backend-only scope per request)"
+  },
+  "test_credentials": "admin@acs.in / admin123 (super_admin on clinic-acs-demo). All XFF buckets isolated; no demo data mutated (vault state machine test tears itself down).",
+  "seed_data_creation": "None. Vault state-machine + setup round-trip tests tear down any artefacts they create so the demo clinic is left at vault_mode=standard, no clinic_vaults doc.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter23 regression is fully closed. /app/backend/tests/test_iter23_prod_hardening.py is the canonical production-hardening regression suite — re-run it with `pytest /app/backend/tests/test_iter23_prod_hardening.py -v --junitxml=/app/test_reports/pytest/<name>.xml` whenever auth, rate-limit, or vault routers change. Always wait 60s+ between back-to-back full runs so the in-memory slowapi window resets cleanly; the test file already uses dedicated XFFs (203.0.113.55 / .66 / .99) to isolate buckets.",
+  "rca of the issue": "RCA from iter23 confirmed and resolved. Original bug: vault.py had `from __future__ import annotations` AND used bare `proof: VaultUnlockProof` body params. With PEP 563 stringified annotations + slowapi's @limiter.limit decorator wrapping the function, FastAPI's signature inspection fell back to query-parameter interpretation for the Pydantic body, yielding 422 'Field required loc=[query, proof|payload]'. Fix applied by main agent: removed the future-annotations import and switched both bodies to `Annotated[Model, Body()]` to force explicit body resolution. Verification: curl POST /api/vault/unlock-verify with valid auth + JSON body now returns 404 'Vault not initialised' (semantic), and 11th call within 60s from same X-Forwarded-For returns 429. Same for /api/vault/recovery-redeem at 6th call. Pytest 16/16 PASS."
+}
