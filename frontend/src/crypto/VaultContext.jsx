@@ -14,7 +14,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { encryptValue, decryptValue, unlockVaultWithPassphrase, buildVaultSetupPayload } from './clinicVault';
+import { encryptValue, decryptValue, unlockVaultWithPassphrase, buildVaultSetupPayload, unwrapDEKWithRecoveryCode, buildMasterRotationPayload } from './clinicVault';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND}/api/vault`;
@@ -69,6 +69,39 @@ export const VaultProvider = ({ children, isAuthed }) => {
     setStatus((s) => ({ ...s, locked: false }));
   }, []);
 
+  /* ------------------------ recovery code redemption ----------------------- *
+   * 2-step API:
+   *   1) loadRecoverySlots() — fetches public slot params from server
+   *   2) redeemRecoveryCode(code, newPassphrase) — derives DEK locally with
+   *      the code, builds a fresh master payload from the new passphrase,
+   *      sends rotation request to server. On success, vault is unlocked
+   *      with the freshly-derived DEK in memory.
+   */
+  const loadRecoverySlots = useCallback(async () => {
+    const r = await axios.get(`${API}/recovery-slots`);
+    return r.data || [];
+  }, []);
+
+  const redeemRecoveryCode = useCallback(async (code, newPassphrase) => {
+    if (!newPassphrase || newPassphrase.length < 12) {
+      const err = new Error('New passphrase must be at least 12 characters');
+      err.code = 'WEAK_PASSPHRASE';
+      throw err;
+    }
+    const slots = await loadRecoverySlots();
+    if (slots.length === 0) {
+      const err = new Error('No recovery codes remain — contact support');
+      err.code = 'NO_SLOTS';
+      throw err;
+    }
+    const { dek, codeHash } = await unwrapDEKWithRecoveryCode(code, slots);
+    const rotation = await buildMasterRotationPayload(newPassphrase, dek);
+    await axios.post(`${API}/recovery-redeem`, { code_hash: codeHash, ...rotation });
+    dekRef.current = dek;
+    await refreshStatus();
+    setStatus((s) => ({ ...s, locked: false }));
+  }, [loadRecoverySlots, refreshStatus]);
+
   /* ------------------------ lock / wipe ------------------------------------ */
   const lock = useCallback(() => {
     dekRef.current = null;
@@ -101,12 +134,13 @@ export const VaultProvider = ({ children, isAuthed }) => {
     ...status,
     setupVault,
     unlockVault,
+    redeemRecoveryCode,
     lock,
     refreshStatus,
     encrypt,
     decrypt,
     hasDEK: !!dekRef.current,
-  }), [status, setupVault, unlockVault, lock, refreshStatus, encrypt, decrypt]);
+  }), [status, setupVault, unlockVault, redeemRecoveryCode, lock, refreshStatus, encrypt, decrypt]);
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;
 };

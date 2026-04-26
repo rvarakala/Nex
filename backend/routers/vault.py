@@ -70,6 +70,35 @@ class VaultStatus(BaseModel):
     recovery_slots_remaining: int = 0
 
 
+class RecoverySlotPublic(BaseModel):
+    """Subset of a recovery slot returned to the client during redemption.
+    `code_hash` is safe to expose — it's a one-way hash of the code itself.
+    """
+    code_hash: str
+    kdf_salt: str
+    encrypted_dek: str
+    dek_iv: str
+
+
+class RecoveryRedeemRequest(BaseModel):
+    """Used by the client to consume a recovery code and atomically rotate
+    the master passphrase. The client has already (a) found the slot whose
+    code_hash matches the code they typed, (b) derived a code-key, (c)
+    unwrapped the DEK, (d) collected a NEW passphrase from the user, and (e)
+    re-wrapped the same DEK with the new master key.
+
+    The server's job is just to swap the master payload and mark the used
+    slot as consumed — atomically so a parallel redemption can't double-use.
+    """
+    code_hash: str = Field(..., min_length=64, max_length=64)
+    new_kdf_salt: str = Field(..., min_length=10, max_length=64)
+    new_kdf_iterations: int = Field(default=600_000, ge=100_000, le=1_500_000)
+    new_kdf_algo: str = Field(default="pbkdf2-sha256-aesgcm-v1")
+    new_verifier: str = Field(..., min_length=64, max_length=64)
+    new_encrypted_dek: str = Field(..., min_length=10)
+    new_dek_iv: str = Field(..., min_length=10)
+
+
 class VaultUnlockProof(BaseModel):
     """Client proves it has the master key by sending verifier hash. No-op
     server-side beyond logging — the *real* unlock happens in the browser."""
@@ -111,11 +140,12 @@ async def vault_status(user=Depends(get_current_user), db=Depends(get_db)):
     v = await _get_vault(db, user["clinic_id"])
     if not v:
         return VaultStatus(enabled=False)
+    unused = [s for s in v.get("recovery_slots", []) if not s.get("used_at")]
     return VaultStatus(
         enabled=True,
         setup_at=v.get("setup_at"),
         kdf_iterations=v.get("kdf_iterations"),
-        recovery_slots_remaining=len(v.get("recovery_slots", [])),
+        recovery_slots_remaining=len(unused),
     )
 
 
@@ -199,6 +229,94 @@ async def vault_unlock_verify(
         "at": datetime.now(timezone.utc),
     })
     return {"ok": True}
+
+
+# --------------------------- Recovery flow ---------------------------------
+
+@router.get("/recovery-slots", response_model=list[RecoverySlotPublic])
+async def list_recovery_slots(user=Depends(get_current_user), db=Depends(get_db)):
+    """Returns the public params of every UNUSED recovery slot.
+
+    Safe to expose to any authenticated user of the clinic — a slot's
+    `code_hash` is a one-way SHA-256 of the recovery code; without the code
+    itself, the hash and ciphertext are useless.
+    """
+    v = await _get_vault(db, user["clinic_id"])
+    if not v:
+        raise HTTPException(status_code=404, detail="Vault not initialised")
+    slots = [
+        RecoverySlotPublic(
+            code_hash=s["code_hash"],
+            kdf_salt=s["kdf_salt"],
+            encrypted_dek=s["encrypted_dek"],
+            dek_iv=s["dek_iv"],
+        )
+        for s in v.get("recovery_slots", [])
+        if not s.get("used_at")
+    ]
+    return slots
+
+
+@router.post("/recovery-redeem", response_model=VaultStatus)
+async def recovery_redeem(
+    payload: RecoveryRedeemRequest,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Atomic recovery: marks one unused slot as consumed AND swaps the
+    master payload (verifier + encrypted_dek + KDF params) with values
+    derived from the user's NEW passphrase.
+
+    Race-safe: the `recovery_slots.used_at` filter in the update guarantees
+    only one of two parallel redemptions wins; the other gets 404/409.
+    """
+    now = datetime.now(timezone.utc)
+    res = await db.clinic_vaults.update_one(
+        {
+            "clinic_id": user["clinic_id"],
+            "recovery_slots": {
+                "$elemMatch": {
+                    "code_hash": payload.code_hash,
+                    "used_at": {"$in": [None, False]},
+                },
+            },
+        },
+        {
+            "$set": {
+                "kdf_salt": payload.new_kdf_salt,
+                "kdf_iterations": payload.new_kdf_iterations,
+                "kdf_algo": payload.new_kdf_algo,
+                "verifier": payload.new_verifier,
+                "encrypted_dek": payload.new_encrypted_dek,
+                "dek_iv": payload.new_dek_iv,
+                "recovery_slots.$.used_at": now,
+                "recovery_slots.$.used_by": user["user_id"],
+            },
+        },
+    )
+    if res.modified_count == 0:
+        # Either the code hash didn't match anything, or the slot was already
+        # consumed by a parallel redemption.
+        raise HTTPException(
+            status_code=404,
+            detail="Recovery code not recognised or already used",
+        )
+
+    await db.activity_logs.insert_one({
+        "clinic_id": user["clinic_id"],
+        "user_id": user["user_id"],
+        "action": "vault.recovery_redeem",
+        "at": now,
+    })
+
+    v = await _get_vault(db, user["clinic_id"])
+    unused = [s for s in v.get("recovery_slots", []) if not s.get("used_at")]
+    return VaultStatus(
+        enabled=True,
+        setup_at=v.get("setup_at"),
+        kdf_iterations=v.get("kdf_iterations"),
+        recovery_slots_remaining=len(unused),
+    )
 
 
 # --------------------------- Test records (PoC demo) -----------------------

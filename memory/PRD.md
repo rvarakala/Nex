@@ -1,5 +1,22 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — P0-1b Recovery-Code Unlock Flow (2026-04-26)
+**Closes the FAQ promise: "What if we forget our clinic key?"**
+
+Backend (`/api/vault/*` additions):
+- `GET  /recovery-slots` — returns public params (code_hash + KDF salt + wrapped DEK + IV) for **unused** slots only. Used slots filtered server-side.
+- `POST /recovery-redeem` — atomic: marks one unused slot as `used_at` AND swaps the master payload (verifier + KDF salt + wrapped DEK) with values derived from the user's NEW passphrase. Race-safe via Mongo `$elemMatch + arrayFilters` ($+positional). Wrong/already-used hash → 404.
+
+Frontend:
+- `clinicVault.js` — `unwrapDEKWithRecoveryCode()` + `buildMasterRotationPayload()` helpers
+- `VaultContext.redeemRecoveryCode(code, newPass)` — full client-side flow: derive code key → unwrap DEK → derive new master key → re-wrap DEK → POST rotation
+- `VaultGate.RecoveryFlow` — single form with code + new passphrase + confirm. Whitespace stripping & case-normalisation on the code input.
+- "Use a recovery code" link on UnlockForm now active (was "coming soon")
+
+Validated:
+- `/tmp/test_vault_recovery.py` — 7-step Python E2E suite: 12 unused → redeem → 11 unused, reuse blocked, old passphrase dead, new passphrase works, DEK preserved, encrypted records still readable post-rotation. **All assertions pass.**
+- UI smoke test: drove the recovery form in a real browser end-to-end and confirmed the post-recovery vault unlocked + new record encrypts/decrypts correctly with the rotated DEK.
+
 ## ✅ COMPLETED — P0-3 Disable Demo Seed in Production (2026-04-26)
 - New env flag `DISABLE_DEMO_SEED=1` skips ACS demo clinic, 4 demo users, second Delhi test clinic, 4 demo tenants, sample leads.
 - Founder account always seeded via new `seed_founder_only()` helper. `FOUNDER_EMAIL` + `FOUNDER_PASSWORD` env vars override defaults.

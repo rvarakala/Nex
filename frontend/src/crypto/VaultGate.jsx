@@ -147,6 +147,12 @@ function RecoveryCodesScreen({ codes }) {
 /* ============================== Unlock ==================================== */
 
 function UnlockForm() {
+  const [mode, setMode] = useState('passphrase'); // 'passphrase' | 'recovery'
+  if (mode === 'recovery') return <RecoveryFlow onCancel={() => setMode('passphrase')} />;
+  return <PassphraseUnlock onUseRecovery={() => setMode('recovery')} />;
+}
+
+function PassphraseUnlock({ onUseRecovery }) {
   const v = useVault();
   const [pass, setPass] = useState('');
   const [show, setShow] = useState(false);
@@ -184,7 +190,112 @@ function UnlockForm() {
           {busy ? 'Deriving key…' : 'Unlock'}
         </button>
         <div className="text-center text-[12.5px] text-slate-500">
-          Forgot it? <button type="button" className="text-[#0B5FFF] font-semibold hover:underline">Use a recovery code</button> (coming soon)
+          Forgot it?{' '}
+          <button
+            type="button"
+            onClick={onUseRecovery}
+            data-testid="vault-use-recovery"
+            className="text-[#0B5FFF] font-semibold hover:underline"
+          >
+            Use a recovery code
+          </button>
+        </div>
+      </form>
+    </Shell>
+  );
+}
+
+/* ============================== Recovery ================================== */
+
+function RecoveryFlow({ onCancel }) {
+  const v = useVault();
+  // step 1: enter recovery code → step 2: choose new passphrase
+  const [code, setCode] = useState('');
+  const [pass1, setPass1] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const codeOk = code.replace(/\s+/g, '').length >= 20;
+  const tooShort = pass1.length > 0 && pass1.length < 12;
+  const mismatch = pass2.length > 0 && pass1 !== pass2;
+  const canSubmit = codeOk && pass1.length >= 12 && pass1 === pass2 && !busy;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setBusy(true); setErr('');
+    try {
+      await v.redeemRecoveryCode(code, pass1);
+    } catch (ex) {
+      const map = {
+        CODE_NOT_FOUND: 'That recovery code is not recognised or has already been used.',
+        EMPTY_CODE: 'Please enter a recovery code.',
+        WEAK_PASSPHRASE: 'New passphrase must be at least 12 characters.',
+        NO_SLOTS: 'No recovery codes remain on this vault. Contact AUDINEXA support.',
+      };
+      setErr(map[ex?.code] || ex?.message || 'Recovery failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Shell
+      title="Recover with a one-time code"
+      subtitle="Enter one of your 12 recovery codes and choose a new master passphrase."
+      Icon={KeyRound}
+      iconBg="bg-amber-100 text-amber-700"
+    >
+      <form onSubmit={submit} className="space-y-4" data-testid="vault-recovery-form">
+        <Field label="Recovery code" hint="The 24-character code from your printed sheet — dashes optional.">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            data-testid="vault-recovery-code"
+            placeholder="ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2"
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full rounded-xl border border-slate-200 px-4 py-3 font-mono uppercase tracking-wider focus:ring-4 focus:ring-blue-100 focus:border-[#0B5FFF] outline-none transition"
+          />
+        </Field>
+
+        <Field label="New master passphrase" hint="Minimum 12 characters. Will replace the forgotten one.">
+          <PasswordInput value={pass1} onChange={setPass1} show={show} setShow={setShow} testid="vault-recovery-pass1" />
+        </Field>
+        {tooShort && <Hint kind="warn">Use at least 12 characters.</Hint>}
+
+        <Field label="Confirm new passphrase">
+          <PasswordInput value={pass2} onChange={setPass2} show={show} setShow={setShow} testid="vault-recovery-pass2" />
+        </Field>
+        {mismatch && <Hint kind="warn">Passphrases don&apos;t match.</Hint>}
+
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[12.5px] text-amber-900 flex gap-2">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+          <div>This recovery code will be permanently consumed. Your other unused codes remain valid.</div>
+        </div>
+
+        {err && <Hint kind="err">{err}</Hint>}
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            data-testid="vault-recovery-cancel"
+            className="flex-1 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 py-3 rounded-xl font-medium transition"
+          >
+            Back
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            data-testid="vault-recovery-submit"
+            className="flex-1 bg-[#0B5FFF] hover:bg-[#094acf] disabled:bg-slate-300 text-white py-3 rounded-xl font-semibold shadow-md transition"
+          >
+            {busy ? 'Recovering…' : 'Recover & set new passphrase'}
+          </button>
         </div>
       </form>
     </Shell>

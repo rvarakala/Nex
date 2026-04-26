@@ -208,4 +208,59 @@ export async function unlockVaultWithPassphrase(passphrase, params) {
   return { dek, verifierHex };
 }
 
+/* ----------------------------- recovery flow ------------------------------ */
+
+async function sha256Hex(str) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(str));
+  return hex(new Uint8Array(buf));
+}
+
+/**
+ * Identifies which recovery slot matches the typed code, derives the code's
+ * key, and unwraps the DEK. Returns { dek, slot } if found, throws otherwise.
+ *
+ * Codes are normalised (uppercased, whitespace stripped) before hashing so
+ * a user typing 'aaaa-bbbb-...' with extra spaces still matches.
+ */
+export async function unwrapDEKWithRecoveryCode(rawCode, slots) {
+  const code = (rawCode || '').replace(/\s+/g, '').toUpperCase();
+  if (!code) {
+    const err = new Error('Empty recovery code');
+    err.code = 'EMPTY_CODE';
+    throw err;
+  }
+  const codeHash = await sha256Hex(code);
+  const slot = (slots || []).find((s) => s.code_hash === codeHash);
+  if (!slot) {
+    const err = new Error('Recovery code not recognised');
+    err.code = 'CODE_NOT_FOUND';
+    throw err;
+  }
+  const codeKey = await deriveCodeKey(code, b64dec(slot.kdf_salt));
+  const dek = await unwrapDEK(slot.encrypted_dek, slot.dek_iv, codeKey);
+  return { dek, slot, codeHash };
+}
+
+/**
+ * Wraps an EXISTING (already-unwrapped) DEK with a new master key derived
+ * from a new passphrase. Used right after a successful recovery to atomically
+ * rotate the master + invalidate the consumed code on the server.
+ */
+export async function buildMasterRotationPayload(newPassphrase, dek, iterations = KDF_ITERATIONS_DEFAULT) {
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const { wrappingKey, verifierHex } = await deriveMasterKey(
+    newPassphrase, saltBytes, iterations,
+  );
+  const { encryptedDekB64, ivB64 } = await wrapDEK(dek, wrappingKey);
+  return {
+    new_kdf_salt: b64enc(saltBytes),
+    new_kdf_iterations: iterations,
+    new_kdf_algo: 'pbkdf2-sha256-aesgcm-v1',
+    new_verifier: verifierHex,
+    new_encrypted_dek: encryptedDekB64,
+    new_dek_iv: ivB64,
+  };
+}
+
 export const VAULT_KDF_ITERATIONS_DEFAULT = KDF_ITERATIONS_DEFAULT;
