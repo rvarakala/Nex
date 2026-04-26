@@ -8,7 +8,7 @@ import AppShell from './shell/AppShell';
 import LoginPage from './pages/LoginPage';
 import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
-import LandingPage from './modules/landing/LandingPage';
+import LandingPage from './modules/landing/v2/LandingPage';
 import SignupPage from './modules/landing/SignupPage';
 import FrontDeskModule from './modules/frontdesk/FrontDeskModule';
 import BillingModule from './modules/billing/BillingModule';

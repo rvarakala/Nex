@@ -69,11 +69,18 @@ class WaitlistCreate(BaseModel):
     referrer: Optional[str] = None
     whatsapp: Optional[str] = None
     notes: Optional[str] = None
+    source: Optional[str] = Field(default=None, description="Free-form provenance tag — e.g. 'landing_demo_request'")
+    contact_name: Optional[str] = None
 
 
 @router.post("/public/waitlist-signup", status_code=201)
 async def join_waitlist(payload: WaitlistCreate, db=Depends(get_db)):
-    """Public waitlist signup — idempotent on email (upsert)."""
+    """Public waitlist signup — idempotent on email (upsert).
+
+    All landing-page demo requests funnel through here, then surface in the
+    Founder Command Centre's Leads Kanban (`stage='Lead'`). The optional
+    `source` field lets us slice traffic later (landing vs. organic vs. partner).
+    """
     doc = {
         **payload.model_dump(exclude_unset=True),
         "email": payload.email.lower().strip(),
@@ -81,8 +88,13 @@ async def join_waitlist(payload: WaitlistCreate, db=Depends(get_db)):
     }
     await db.waitlist_signups.update_one(
         {"email": doc["email"]},
-        {"$setOnInsert": {"created_at": doc["created_at"]},
-         "$set": {k: v for k, v in doc.items() if k != "created_at"}},
+        {
+            "$setOnInsert": {
+                "created_at": doc["created_at"],
+                "stage": "Lead",  # so it lands in the founder kanban's first column
+            },
+            "$set": {k: v for k, v in doc.items() if k != "created_at"},
+        },
         upsert=True,
     )
     return {"ok": True, "email": doc["email"],
