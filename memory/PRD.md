@@ -1,5 +1,36 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔐 PENDING — Client-Controlled Encryption (BYOK / Zero-Knowledge) — discussed 2026-04-26
+
+Vision: *"The clinic software where even the platform cannot read your data."* Major strategic differentiator for premium tier.
+
+**Phase 1 — Server-Side Per-Tenant Encryption (BYOK-lite, Level 2) — 2-3 weeks, P2**
+- Clinic owner sets master passphrase at onboarding → browser derives Master Key (Argon2id, 600k iters)
+- Random Data Encryption Key (DEK) generated client-side, encrypted with Master Key, sent to server
+- Server stores: encrypted_dek + salts + verifier hash; **never sees plaintext key**
+- All PHI fields (names, mobiles, audiogram values, complaints, notes, files) encrypted with DEK
+- Plaintext kept for: IDs, timestamps, status flags, counts, totals, blind-index hashes (for exact-match search)
+- Trade-offs: no fuzzy search (only exact-match via blind index), no server-side analytics on PHI, no AI summarisation server-side
+
+**Phase 2 — Recovery & Multi-Admin Flow — 1 week, P2**
+- 12 one-time recovery codes printed on first login (each can decrypt DEK once)
+- Shamir Secret Sharing for multi-admin recovery (e.g. owner + 2-of-3 admins)
+- Time-locked emergency reset: 7-day cool-off + email/SMS to all admins + audit trail
+
+**Phase 3 — True Zero-Knowledge — 4-6 weeks, P3 (premium tier only)**
+- Move all search to blind indexes (no plaintext shortcut anywhere)
+- Refactor every list endpoint to return ciphertext
+- Background jobs operate on consent-tokens only
+- Browser "Vault" view holds DEK in memory exclusively
+
+**Honest trade-offs documented:**
+- Lost passphrase + lost recovery codes = data permanently inaccessible
+- Lose: fuzzy search, server-side reports, push notifications with PHI, cloud LLM features
+- Gain: industry-leading trust story, premium-tier upsell justification, defensible against insider threats
+- Average clinic owner is NOT security-savvy → onboarding UX must hand-hold heavily
+
+**Recommendation:** validate demand with 1-day proof-of-concept before committing to full sprint. Build only when ≥3 prospects explicitly ask, or as part of premium-tier go-to-market.
+
 ## 💾 PENDING — Storage Architecture Refactor (Hybrid PDF Model) — postponed by user 2026-04-26
 
 At 100 clinics × ~4,500 patients/year, current "store every PDF" model = ~3 GB/year/clinic = 1.5 TB across 5 years. Hybrid model recovers ~80% without losing legal fidelity.
