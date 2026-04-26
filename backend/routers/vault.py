@@ -65,6 +65,7 @@ class VaultUnlockResponse(BaseModel):
 
 class VaultStatus(BaseModel):
     enabled: bool
+    mode: str = "standard"  # one of _VALID_MODES
     setup_at: datetime | None = None
     kdf_iterations: int | None = None
     recovery_slots_remaining: int = 0
@@ -105,6 +106,25 @@ class VaultUnlockProof(BaseModel):
     verifier: str = Field(..., min_length=64, max_length=64)
 
 
+# vault_mode lifecycle (Path A opt-in flow):
+#   "standard"           — default. No vault; clinic uses normal at-rest encryption.
+#   "vault_pending"      — owner clicked "Upgrade to Vault" but hasn't completed setup.
+#   "vault_enabled"      — vault is fully initialised + DEK has been generated.
+_VALID_MODES = {"standard", "vault_pending", "vault_enabled"}
+
+
+class VaultModeChange(BaseModel):
+    mode: str = Field(..., pattern=r"^(standard|vault_pending|vault_enabled)$")
+    confirm_disable: bool = Field(default=False, description="Required when downgrading from vault_enabled to standard")
+
+
+class VaultModeResponse(BaseModel):
+    mode: str
+    enabled: bool
+    setup_at: datetime | None = None
+    recovery_slots_remaining: int = 0
+
+
 class TestRecordCreate(BaseModel):
     label: str = Field(..., max_length=80)
     encrypted_payload: str = Field(..., description="AES-GCM ciphertext base64")
@@ -137,14 +157,78 @@ def _require_super_or_owner(user: dict[str, Any]) -> None:
 @router.get("/status", response_model=VaultStatus)
 async def vault_status(user=Depends(get_current_user), db=Depends(get_db)):
     """Tells the frontend whether to show the setup modal or the unlock modal."""
+    clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0}) or {}
+    mode = clinic.get("vault_mode", "standard")
     v = await _get_vault(db, user["clinic_id"])
     if not v:
-        return VaultStatus(enabled=False)
+        return VaultStatus(enabled=False, mode=mode)
     unused = [s for s in v.get("recovery_slots", []) if not s.get("used_at")]
     return VaultStatus(
         enabled=True,
+        mode=mode,
         setup_at=v.get("setup_at"),
         kdf_iterations=v.get("kdf_iterations"),
+        recovery_slots_remaining=len(unused),
+    )
+
+
+@router.post("/mode", response_model=VaultModeResponse)
+async def set_vault_mode(
+    payload: VaultModeChange,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Lets the clinic owner opt into / out of vault mode (Path A opt-in).
+
+    State machine:
+      standard       → vault_pending   ✅ (owner intent registered; setup screen now appears)
+      vault_pending  → vault_enabled   ❌ — happens automatically when /vault/setup completes
+      vault_pending  → standard        ✅ (owner cancelled before completing setup)
+      vault_enabled  → standard        ✅ requires confirm_disable=True; deletes vault doc
+    """
+    _require_super_or_owner(user)
+    clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0}) or {}
+    current = clinic.get("vault_mode", "standard")
+    target = payload.mode
+
+    if target not in _VALID_MODES:
+        raise HTTPException(status_code=400, detail="Invalid vault_mode")
+
+    if target == "vault_enabled":
+        # Owners can't directly flip to enabled — must go via /vault/setup which
+        # promotes vault_pending → vault_enabled atomically.
+        raise HTTPException(
+            status_code=400,
+            detail="Use POST /vault/setup with a passphrase — that flips vault_pending → vault_enabled.",
+        )
+
+    if current == "vault_enabled" and target == "standard":
+        if not payload.confirm_disable:
+            raise HTTPException(
+                status_code=400,
+                detail="Disabling vault destroys all encrypted records for this clinic. Pass confirm_disable=true.",
+            )
+        # Tear down: delete the vault doc + any encrypted demo records
+        await db.clinic_vaults.delete_one({"clinic_id": user["clinic_id"]})
+        await db.vault_test_records.delete_many({"clinic_id": user["clinic_id"]})
+
+    await db.clinics.update_one(
+        {"clinic_id": user["clinic_id"]},
+        {"$set": {"vault_mode": target}},
+    )
+    await db.activity_logs.insert_one({
+        "clinic_id": user["clinic_id"],
+        "user_id": user["user_id"],
+        "action": f"vault.mode_change.{current}→{target}",
+        "at": datetime.now(timezone.utc),
+    })
+
+    v = await _get_vault(db, user["clinic_id"])
+    unused = [s for s in v.get("recovery_slots", []) if not s.get("used_at")] if v else []
+    return VaultModeResponse(
+        mode=target,
+        enabled=bool(v),
+        setup_at=v.get("setup_at") if v else None,
         recovery_slots_remaining=len(unused),
     )
 
@@ -178,10 +262,11 @@ async def vault_setup(
     await db.clinic_vaults.insert_one(doc)
     await db.clinics.update_one(
         {"clinic_id": user["clinic_id"]},
-        {"$set": {"vault_enabled": True, "vault_setup_at": doc["setup_at"]}},
+        {"$set": {"vault_enabled": True, "vault_setup_at": doc["setup_at"], "vault_mode": "vault_enabled"}},
     )
     return VaultStatus(
         enabled=True,
+        mode="vault_enabled",
         setup_at=doc["setup_at"],
         kdf_iterations=doc["kdf_iterations"],
         recovery_slots_remaining=len(doc["recovery_slots"]),

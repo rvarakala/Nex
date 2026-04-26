@@ -1,5 +1,36 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — P1 Path A: Vault Mode Opt-In UX (2026-04-26)
+**Backs the "give clinics the choice" product decision. Clinics now consciously opt into Vault Mode — Standard remains default.**
+
+State machine (`clinic.vault_mode`):
+- `standard` (default) — no vault prompts anywhere; clinic uses normal at-rest encryption
+- `vault_pending` — owner clicked "Upgrade" but hasn't completed setup yet
+- `vault_enabled` — vault initialised + DEK live; auto-set when `/vault/setup` completes
+
+Backend:
+- `POST /api/vault/mode` — owner-only state-machine endpoint with state-transition guards (e.g., direct `→ vault_enabled` rejected, `vault_enabled → standard` requires `confirm_disable=true` and tears down vault doc + encrypted records)
+- `GET /api/vault/status` now returns `mode` so the UI can show the right card state
+- `/vault/setup` flips `vault_mode` to `vault_enabled` automatically on success
+
+Frontend:
+- New `Settings → Security & Privacy` tab (admin-only sidebar entry)
+- Two cards: **Standard (Recommended)** vs **Vault Mode (Premium upgrade)** with full feature lists
+- Inline passphrase setup form for `vault_pending` (no modal hop)
+- Inline 12-recovery-codes display with Copy / Download / Finish actions
+- Enabled state: lock-status + recovery-count tiles + Lock-Now + Refresh + nuclear "Disable Vault Mode" with double-confirm
+
+Validated:
+- Backend curl: status → `vault_pending` → status → `standard` → reject direct `vault_enabled` (HTTP 400) ✅
+- Browser smoke test: 4 distinct states (standard / pending / recovery / enabled) all render correctly with correct copy and controls ✅
+
+**Pilot rollout playbook** (provided to user separately):
+1. Pick 1 friendly clinic from BETA_TESTERS.md
+2. Onboard them via Settings → Security & Privacy (no migration needed)
+3. 7-day usage window with daily WhatsApp check-ins
+4. Day-7 wrap-up interview (5 questions)
+5. Score against go/no-go matrix → if ≥5/6 pass → expand Phase 2 (encrypt Patient.name + mobile)
+
 ## ✅ COMPLETED — P0-1b Recovery-Code Unlock Flow (2026-04-26)
 **Closes the FAQ promise: "What if we forget our clinic key?"**
 

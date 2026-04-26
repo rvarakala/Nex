@@ -11,11 +11,12 @@
  */
 import React from 'react';
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom';
-import { Settings, Building2, Users, MapPin, Pen, ListChecks } from 'lucide-react';
+import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
 import MySignatureTab from './MySignatureTab';
+import SecurityPrivacyTab from './SecurityPrivacyTab';
 import ServiceCatalogPage from '../billing/ServiceCatalogPage';
 import { useAuth } from '../../AuthContext';
 
@@ -36,6 +37,7 @@ export default function SettingsModule() {
             <SideLink to="/settings/clinic" icon={<Building2 size={14} />} label="Clinic Details" testid="settings-nav-clinic" />
             <SideLink to="/settings/staff"  icon={<Users size={14} />}     label="Staff Settings" testid="settings-nav-staff" />
             <SideLink to="/settings/branches" icon={<MapPin size={14} />}  label="Branches"       testid="settings-nav-branches" />
+            <SideLink to="/settings/security" icon={<ShieldCheck size={14} />} label="Security & Privacy" testid="settings-nav-security" />
           </>
         )}
         {canManageCatalog && (
@@ -50,6 +52,7 @@ export default function SettingsModule() {
           {isAdmin && <Route path="clinic"   element={<ClinicDetailsTab />} />}
           {isAdmin && <Route path="staff"    element={<StaffSettingsTab />} />}
           {isAdmin && <Route path="branches" element={<BranchesTab />} />}
+          {isAdmin && <Route path="security" element={<SecurityPrivacyTab />} />}
           {canManageCatalog && <Route path="services" element={<ServiceCatalogPage />} />}
           <Route path="signature" element={<MySignatureTab />} />
         </Routes>
