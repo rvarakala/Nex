@@ -18,6 +18,56 @@ import ConflictResolutionModal from '../../components/ConflictResolutionModal';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
+/**
+ * Extract a human-friendly error message from an axios error.
+ * Always logs the full error to the console for forensic debugging.
+ * Surfacing real HTTP status + body fragment beats a generic "Failed".
+ */
+function describeError(e, fallback = 'Request failed') {
+  // Always log so the developer can grep DevTools when end-users complain
+  // eslint-disable-next-line no-console
+  console.error('[audinexa]', fallback, e?.response?.status, e?.response?.data, e);
+  if (!e?.response) {
+    // Network-level error (CORS preflight, DNS, server gone) — not a 4xx/5xx
+    return `${fallback} — connection problem (check internet, then retry).`;
+  }
+  const status = e.response.status;
+  const detail = e.response.data?.detail;
+  if (status === 401) return 'Session expired — please sign in again.';
+  if (status === 403) return 'You do not have permission to do this.';
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object' && detail.detail) return detail.detail;
+  if (detail) return JSON.stringify(detail);
+  return `${fallback} (HTTP ${status})`;
+}
+
+/**
+ * Download the Job Card / Service Report PDF using axios so the JWT travels
+ * with the request. Browser-level <a href="…/job-card.pdf"> doesn't carry the
+ * Authorization header → server returns 401 "Not authenticated".
+ */
+async function downloadJobCard(ticketNo, setErr) {
+  try {
+    const r = await axios.get(`${API}/ha/service-tickets/${ticketNo}/job-card.pdf`, {
+      responseType: 'blob',
+    });
+    const blobUrl = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+    // Open in a new tab; revoke later so the browser keeps the URL alive
+    // long enough to render the PDF preview.
+    const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      // Pop-up blocked — fall back to a hidden download link
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `service-${ticketNo}.pdf`;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  } catch (e) {
+    setErr && setErr(describeError(e, 'Failed to download Job Card PDF'));
+  }
+}
+
 const PIPELINE_ORDER = [
   'RECEIVED', 'INSPECTED', 'AWAITING_DISPATCH', 'DISPATCHED', 'IN_TRANSIT',
   'DELIVERED_TO_COMPANY', 'ESTIMATE_PENDING', 'CLIENT_APPROVED',
@@ -72,7 +122,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
     try {
       const r = await axios.get(`${API}/ha/service-jobs/${ticketNo}/pipeline`);
       setPipe(r.data);
-    } catch (e) { setErr(e?.response?.data?.detail || 'Failed to load pipeline'); }
+    } catch (e) { setErr(describeError(e, 'Failed to load pipeline')); }
     finally { setLoading(false); }
   }, [ticketNo]);
 
@@ -107,7 +157,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
           intent: { kind: 'transition', to_status, note: opts.note },
         });
       } else {
-        setErr(typeof detail === 'string' ? detail : (detail?.detail || 'Transition failed'));
+        setErr(describeError(e, 'Transition failed'));
       }
     } finally { setBusy(false); }
   };
@@ -139,7 +189,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
         params: forceStatus ? { status: forceStatus } : {},
       });
       setWaMessage(r.data);
-    } catch (e) { setErr(e?.response?.data?.detail || 'WhatsApp render failed'); }
+    } catch (e) { setErr(describeError(e, 'WhatsApp render failed')); }
   };
 
   if (loading && !pipe) return <DrawerShell onClose={onClose}><Skel /></DrawerShell>;
@@ -172,12 +222,11 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
           <div className="text-xs text-slate-500 font-mono">{t.serial_no || t.serial_id || 'No device linked'}</div>
         </div>
         <div className="flex gap-2">
-          <a href={`${API}/ha/service-tickets/${ticketNo}/job-card.pdf`}
-             target="_blank" rel="noreferrer"
-             data-testid="audinexa-job-card-pdf"
-             className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded hover:bg-slate-100">
+          <button onClick={() => downloadJobCard(ticketNo, setErr)}
+                  data-testid="audinexa-job-card-pdf"
+                  className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded hover:bg-slate-100">
             📄 Job Card PDF
-          </a>
+          </button>
           <button onClick={() => loadWhatsApp()}
                   data-testid="audinexa-whatsapp-btn"
                   className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded">
@@ -276,12 +325,11 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
             <div className="text-xs font-bold text-emerald-900">Service complete</div>
             <div className="text-[11px] text-emerald-800">Print the full Service Report with timeline, shipments, estimates &amp; resolution.</div>
           </div>
-          <a href={`${API}/ha/service-tickets/${ticketNo}/job-card.pdf`}
-             target="_blank" rel="noreferrer"
-             data-testid="audinexa-print-service-report"
-             className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow">
+          <button onClick={() => downloadJobCard(ticketNo, setErr)}
+                  data-testid="audinexa-print-service-report"
+                  className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow">
             🖨️ Print Service Report
-          </a>
+          </button>
         </div>
       )}
 
@@ -526,7 +574,7 @@ function InspectionNotesForm({ ticketNo, onDone, existing }) {
         to_status: toStatus, note: note.trim() || undefined,
       });
       onDone();
-    } catch (e) { setErr(e?.response?.data?.detail || 'Failed'); }
+    } catch (e) { setErr(describeError(e, 'Failed to save inspection notes')); }
     finally { setBusy(false); }
   };
 
@@ -594,8 +642,7 @@ function CourierForm({ ticketNo, curStatus, onDone }) {
         // Brief delay to let the user see the confirmation, then close + reload
         setTimeout(() => onDone(), 900);
       } catch (e) {
-        const detail = e?.response?.data?.detail;
-        setErr(typeof detail === 'string' ? detail : (detail ? JSON.stringify(detail) : 'Failed to book shipment'));
+        setErr(describeError(e, 'Failed to book shipment'));
       } finally { setBusy(false); }
   };
 
@@ -685,8 +732,7 @@ function EstimateForm({ ticketNo, onDone }) {
       await axios.post(`${API}/ha/service-estimates`, body);
       onDone();
     } catch (e) {
-      const detail = e?.response?.data?.detail;
-      setErr(typeof detail === 'string' ? detail : (detail ? JSON.stringify(detail) : 'Failed to record estimate'));
+      setErr(describeError(e, 'Failed to record estimate'));
     } finally { setBusy(false); }
   };
 
@@ -786,8 +832,7 @@ function ApprovalRow({ approval, onChanged }) {
       });
       onChanged();
     } catch (e) {
-      const detail = e?.response?.data?.detail;
-      setErr(typeof detail === 'string' ? detail : 'Failed to save decision');
+      setErr(describeError(e, 'Failed to save decision'));
     } finally { setBusy(false); }
   };
   const colors = {
