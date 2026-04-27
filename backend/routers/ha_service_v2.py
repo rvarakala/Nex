@@ -344,6 +344,11 @@ async def record_estimate(
 
     eid = await next_number(db, "estimate", user["clinic_id"])
     received_on = payload.received_on or datetime.now(timezone.utc).date().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    has_conveyed = (
+        payload.conveyed_amount is not None
+        or payload.discount is not None
+    )
     est = ServiceEstimate(
         estimate_id=eid,
         clinic_id=user["clinic_id"],
@@ -353,6 +358,14 @@ async def record_estimate(
         received_on=received_on,
         warranty_covered=payload.warranty_covered,
         amount=float(payload.amount or 0),
+        conveyed_amount=(float(payload.conveyed_amount)
+                         if payload.conveyed_amount is not None else None),
+        discount=(float(payload.discount)
+                  if payload.discount is not None else None),
+        # Stamp who conveyed the price the moment the estimate is created
+        conveyed_by_user_id=user["user_id"] if has_conveyed else None,
+        conveyed_by_name=user.get("name") if has_conveyed else None,
+        conveyed_at=now_iso if has_conveyed else None,
         repair_notes=payload.repair_notes,
         eta_days=payload.eta_days,
         created_by_user_id=user["user_id"],
@@ -372,7 +385,6 @@ async def record_estimate(
 
     # Advance job → ESTIMATE_PENDING (legal from DELIVERED_TO_COMPANY;
     # from ESTIMATE_PENDING itself it's a no-op).
-    now_iso = datetime.now(timezone.utc).isoformat()
     if cur == "DELIVERED_TO_COMPANY":
         await db.service_tickets.update_one(
             {"clinic_id": user["clinic_id"], "ticket_no": payload.ticket_no},
@@ -420,12 +432,17 @@ async def decide_approval(
         raise HTTPException(status_code=409,
                             detail=f"Approval already {row['decision']}")
     now_iso = datetime.now(timezone.utc).isoformat()
+    decision_set = {
+        "decision": payload.decision,
+        "notes": payload.notes,
+        "contact_number": payload.contact_number,
+        "decided_by_user_id": user["user_id"],
+        "decided_by_name": user.get("name"),
+        "decided_at": now_iso,
+    }
     await db.ha_customer_approvals.update_one(
         {"clinic_id": user["clinic_id"], "approval_id": approval_id},
-        {"$set": {"decision": payload.decision, "notes": payload.notes,
-                  "decided_by_user_id": user["user_id"],
-                  "decided_by_name": user.get("name"),
-                  "decided_at": now_iso}},
+        {"$set": decision_set},
     )
     # Advance linked service-job
     t = await _ticket(db, user["clinic_id"], row["ticket_no"])
@@ -438,12 +455,7 @@ async def decide_approval(
                       "client_decided_at": now_iso,
                       "updated_at": now_iso}},
         )
-    row.update({
-        "decision": payload.decision, "notes": payload.notes,
-        "decided_by_user_id": user["user_id"],
-        "decided_by_name": user.get("name"),
-        "decided_at": now_iso,
-    })
+    row.update(decision_set)
     return deserialize_datetime(row)
 
 

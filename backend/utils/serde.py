@@ -45,6 +45,7 @@ def deserialize_datetime(obj):
         "dispatched_at", "delivered_to_company_at", "estimate_received_at",
         "client_decided_at", "return_shipped_at", "ready_at",
         "delivered_to_client_at", "decided_at", "delivered_at",
+        "conveyed_at",
         # AUDINEXA Couriers + Estimates (Phase 12.B)
         "dispatch_date", "eta_date", "received_on",
         # AMC (Phase 13.A)

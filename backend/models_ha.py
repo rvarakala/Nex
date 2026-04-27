@@ -750,7 +750,13 @@ class ServiceEstimate(BaseModel):
     vendor_name: Optional[str] = None
     received_on: str                                            # ISO date
     warranty_covered: bool = False
-    amount: float = 0.0                                         # ₹0 if warranty
+    amount: float = 0.0                                         # Vendor quoted ₹
+    # ---- Patient-facing pricing ----
+    conveyed_amount: Optional[float] = None                     # ₹ told to patient (may differ from vendor)
+    discount: Optional[float] = None                            # ₹ discount applied
+    conveyed_by_user_id: Optional[str] = None
+    conveyed_by_name: Optional[str] = None
+    conveyed_at: Optional[str] = None                           # ISO datetime
     repair_notes: Optional[str] = None
     eta_days: Optional[int] = None
     created_by_user_id: str
@@ -764,6 +770,8 @@ class ServiceEstimateCreate(BaseModel):
     received_on: Optional[str] = None                           # defaults to today
     warranty_covered: bool = False
     amount: float = 0.0
+    conveyed_amount: Optional[float] = None
+    discount: Optional[float] = None
     repair_notes: Optional[str] = None
     eta_days: Optional[int] = None
 
@@ -775,15 +783,17 @@ class CustomerApproval(BaseModel):
     ticket_no: str
     estimate_id: str
     decision: ApprovalDecision = "PENDING"
-    decided_by_user_id: Optional[str] = None                    # front-desk who logged it
+    decided_by_user_id: Optional[str] = None                    # who logged the decision (front-desk / audiologist)
     decided_by_name: Optional[str] = None
     decided_at: Optional[str] = None
-    notes: Optional[str] = None                                 # reason if rejected
+    contact_number: Optional[str] = None                        # patient's phone reached during decision
+    notes: Optional[str] = None                                 # reason / context
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class CustomerApprovalPayload(BaseModel):
     decision: ApprovalDecision                                  # APPROVED|REJECTED
+    contact_number: Optional[str] = None
     notes: Optional[str] = None
 
 

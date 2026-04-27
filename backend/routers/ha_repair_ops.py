@@ -338,20 +338,28 @@ async def job_card_pdf(
     # ----- ESTIMATES + APPROVALS -----
     if estimates or approvals:
         story.append(Paragraph("<b>Vendor Estimates &amp; Customer Approval</b>", styles["Normal"]))
-        e_rows = [["Estimate", "Vendor", "Amount", "Warranty", "Decision", "Decided at"]]
+        e_rows = [["Estimate", "Vendor", "Vendor Est.", "Conveyed", "Discount", "Final"]]
         # Index approvals by estimate_id for join
         appr_by_est = {a.get("estimate_id"): a for a in approvals}
         for e in estimates:
-            a = appr_by_est.get(e.get("estimate_id"), {})
+            warranty = bool(e.get("warranty_covered"))
+            conveyed = e.get("conveyed_amount")
+            disc = e.get("discount") or 0
+            if warranty:
+                final_amt = "Warranty"
+            elif conveyed is not None:
+                final_amt = f"₹{int(max(0, float(conveyed) - float(disc))):,}"
+            else:
+                final_amt = f"₹{int(e.get('amount') or 0):,}"
             e_rows.append([
                 e.get("estimate_id", "—"),
-                (e.get("vendor_name") or "—")[:18],
+                (e.get("vendor_name") or "—")[:22],
                 f"₹{int(e.get('amount') or 0):,}",
-                "Yes" if e.get("warranty_covered") else "No",
-                a.get("decision", "—") if a else "—",
-                fmt_dt(a.get("decided_at")) if a else "—",
+                "—" if conveyed is None else f"₹{int(conveyed):,}",
+                f"₹{int(disc):,}" if disc else "—",
+                final_amt,
             ])
-        et = Table(e_rows, colWidths=[28*mm, 38*mm, 26*mm, 22*mm, 28*mm, 44*mm])
+        et = Table(e_rows, colWidths=[28*mm, 38*mm, 26*mm, 26*mm, 24*mm, 32*mm])
         et.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -361,8 +369,47 @@ async def job_card_pdf(
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("TOPPADDING", (0, 0), (-1, -1), 3),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
         ]))
         story.append(et)
+
+        # Conveyed-by + decision details
+        for e in estimates:
+            if e.get("conveyed_by_name") or e.get("conveyed_at"):
+                conv_dt = e.get("conveyed_at", "")
+                conv_str = ""
+                if conv_dt:
+                    try:
+                        conv_str = " on " + datetime.fromisoformat(
+                            conv_dt.replace("Z", "+00:00")
+                        ).strftime("%d %b %Y, %H:%M")
+                    except Exception:
+                        pass
+                story.append(Paragraph(
+                    f"<font size=8 color='#475569'><b>{e.get('estimate_id')}</b> — "
+                    f"price conveyed by <b>{e.get('conveyed_by_name', '—')}</b>{conv_str}</font>",
+                    styles["Normal"],
+                ))
+            a = appr_by_est.get(e.get("estimate_id"), {})
+            if a and a.get("decision") in ("APPROVED", "REJECTED"):
+                dec_dt = a.get("decided_at", "")
+                dec_str = ""
+                if dec_dt:
+                    try:
+                        dec_str = " on " + datetime.fromisoformat(
+                            dec_dt.replace("Z", "+00:00")
+                        ).strftime("%d %b %Y, %H:%M")
+                    except Exception:
+                        pass
+                contact_html = (f" · contact <b>{a.get('contact_number')}</b>"
+                                if a.get("contact_number") else "")
+                notes_html = (f"<br/><i>Notes:</i> {a.get('notes')}"
+                              if a.get("notes") else "")
+                story.append(Paragraph(
+                    f"<font size=8 color='#475569'><b>{a.get('decision')}</b> by "
+                    f"<b>{a.get('decided_by_name', '—')}</b>{dec_str}{contact_html}{notes_html}</font>",
+                    styles["Normal"],
+                ))
         story.append(Spacer(1, 3*mm))
 
     # ----- RESOLUTION & COST -----

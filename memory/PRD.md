@@ -1,5 +1,32 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Estimate Pending Pricing & Approval Audit Fields (2026-04-27)
+**User report**: At Estimate Pending stage, asked for these fields:
+- **Estimated amount** (vendor) · **Conveyed amount** (to patient) · **Any Discount** · **Conveyed by** · **Conveyed date**
+- On Approve: **Approved By** · **Contact Number** · **Notes**
+Plus "Booking Failed & Vendor Estimate Failed — Fix" — the form was showing a useless generic "Failed" instead of the real API error.
+
+**Backend** (`models_ha.py`, `routers/ha_service_v2.py`, `utils/serde.py`):
+- `ServiceEstimate` model gained 5 new fields: `conveyed_amount`, `discount`, `conveyed_by_user_id`, `conveyed_by_name`, `conveyed_at` (auto-stamped on POST when conveyed_amount or discount is supplied).
+- `CustomerApproval` model + `CustomerApprovalPayload` gained `contact_number`.
+- `POST /api/ha/service-estimates` now accepts `conveyed_amount` + `discount`, auto-stamps `conveyed_by_*` from the JWT user, persists `conveyed_at` as ISO string.
+- `POST /api/ha/customer-approvals/{id}/decide` now accepts `contact_number`. Backward compatible.
+- `utils/serde.py` STRING_DATE_KEYS extended with `conveyed_at` to keep the ISO-string contract on read.
+
+**Frontend** (`AudinexaPipelineDrawer.jsx`):
+- **Estimate form** redesigned: separate "Estimated amount (vendor)" and "Conveyed amount (to patient)" inputs, "Discount (₹)", ETA, warranty, repair notes — with a live preview card showing **Conveyed − Discount = Final to patient**. Real API errors now surface as "⚠ {detail}" instead of a useless "Failed".
+- **Estimate row** redesigned: prominent Final-to-patient, 3-column pricing grid (Vendor Est · Conveyed · Discount), metadata strip "Conveyed by **Name** on **dd Mon, HH:MM** · ETA: 5d · Received".
+- **Approval form** collects "Contact number reached" + multi-line "Notes (rejection reason / approval context)".
+- **Approval row (decided)** displays "**APPROVED BY:** Name", date+time, "Contact reached: +91…", and italic notes — exactly per spec.
+- **+ Book shipment toggle** hidden at irrelevant stages with inline "Not applicable at this stage" hint.
+- **+ Record estimate toggle** also visible at ESTIMATE_PENDING (revised quotes welcome).
+- **Service Report PDF** grew to a 6-column estimates table (Vendor Est · Conveyed · Discount · Final) plus per-estimate "price conveyed by …" + per-approval "APPROVED by … on … · contact …" sublines.
+
+**Validated**:
+- New pytest suite `tests/test_estimate_pending_fields.py` (4 cases): conveyed/discount persisted + auto stamp, no-conveyed skips stamps, contact_number persisted on decide, decide without contact still works (backcompat).
+- Combined regression: **29/29 PASS** (4 new + 5 pipeline auto-flow + 20 Phase 12 AUDINEXA).
+- UI smoke: live drawer at ESTIMATE_PENDING shows all new fields rendering correctly; CLIENT_APPROVED decision card shows contact + notes + Approved-by stamp.
+
 ## ✅ COMPLETED — Service Pipeline Auto-Flow + End-of-Pipeline Service Report (2026-04-27)
 **User report**: "New Service Job Created > Received > Inspection > Awaiting Dispatch > book shipment (Failed). Print Job Card at the End." — and follow-up: "check entire pipeline -- all the 13 steps in the Pipeline & at the end print report".
 

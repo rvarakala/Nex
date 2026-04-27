@@ -248,11 +248,19 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
       {/* ===== COURIER SECTION ===== */}
       <Section title="Couriers" count={pipe.shipments.length}
                action={!pipe.is_terminal && (
-                 <button onClick={() => setShowCourier(s => !s)}
-                         data-testid="audinexa-book-courier-toggle"
-                         className="text-[11px] font-semibold text-indigo-600 hover:underline">
-                   + Book shipment
-                 </button>
+                 (curStatus === 'AWAITING_DISPATCH' ||
+                  curStatus === 'REPAIR_IN_PROGRESS' ||
+                  curStatus === 'CLIENT_REJECTED' ||
+                  curStatus === 'DISPATCHED' ||
+                  curStatus === 'IN_TRANSIT') ? (
+                   <button onClick={() => setShowCourier(s => !s)}
+                           data-testid="audinexa-book-courier-toggle"
+                           className="text-[11px] font-semibold text-indigo-600 hover:underline">
+                     + Book shipment
+                   </button>
+                 ) : (
+                   <span className="text-[10px] italic text-slate-400">Not applicable at this stage</span>
+                 )
                )}>
         {pipe.shipments.length === 0 ? <Empty label="No shipments yet." /> : (
           <table className="w-full text-xs">
@@ -280,7 +288,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
 
       {/* ===== ESTIMATES ===== */}
       <Section title="Vendor Estimates" count={pipe.estimates.length}
-               action={curStatus === 'DELIVERED_TO_COMPANY' && (
+               action={(curStatus === 'DELIVERED_TO_COMPANY' || curStatus === 'ESTIMATE_PENDING') && (
                  <button onClick={() => setShowEstimate(s => !s)}
                          data-testid="audinexa-record-estimate-toggle"
                          className="text-[11px] font-semibold text-indigo-600 hover:underline">
@@ -289,22 +297,72 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
                )}>
         {pipe.estimates.length === 0 ? <Empty label="No estimates received yet." /> : (
           <div className="space-y-2">
-            {pipe.estimates.map(e => (
-              <div key={e.estimate_id}
-                   className="border border-slate-200 rounded p-2 text-xs"
-                   data-testid={`audinexa-estimate-${e.estimate_id}`}>
-                <div className="flex justify-between mb-1">
-                  <div className="font-mono text-[10px] font-bold">{e.estimate_id}</div>
-                  <div>
-                    {e.warranty_covered
-                      ? <span className="bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded text-[10px] font-bold">WARRANTY</span>
-                      : <span className="font-mono font-bold text-slate-800">{fmtINR(e.amount)}</span>}
+            {pipe.estimates.map(e => {
+              const conveyed = e.conveyed_amount;
+              const disc = e.discount;
+              const finalAmt = e.warranty_covered ? 0 :
+                (conveyed != null ? Math.max(0, Number(conveyed) - Number(disc || 0)) : null);
+              return (
+                <div key={e.estimate_id}
+                     className="border border-slate-200 rounded p-2.5 text-xs space-y-1"
+                     data-testid={`audinexa-estimate-${e.estimate_id}`}>
+                  <div className="flex justify-between items-start mb-1">
+                    <div>
+                      <div className="font-mono text-[10px] font-bold text-slate-700">{e.estimate_id}</div>
+                      <div className="text-[11px] font-semibold mt-0.5">{e.vendor_name || '—'}</div>
+                    </div>
+                    <div className="text-right">
+                      {e.warranty_covered ? (
+                        <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-bold">WARRANTY</span>
+                      ) : (
+                        <div>
+                          {conveyed != null ? (
+                            <>
+                              <div className="font-mono font-bold text-slate-800 text-[13px]">{fmtINR(finalAmt)}</div>
+                              <div className="text-[9px] text-slate-500">final to patient</div>
+                            </>
+                          ) : (
+                            <div className="font-mono font-bold text-slate-800">{fmtINR(e.amount)}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Pricing breakdown grid */}
+                  {!e.warranty_covered && (
+                    <div className="bg-slate-50 rounded p-1.5 grid grid-cols-3 gap-1 text-[10px]">
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold">Vendor est.</div>
+                        <div className="font-mono font-bold">{fmtINR(e.amount)}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold">Conveyed</div>
+                        <div className="font-mono font-bold">{conveyed != null ? fmtINR(conveyed) : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold">Discount</div>
+                        <div className="font-mono font-bold text-emerald-700">{disc ? `- ${fmtINR(disc)}` : '—'}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conveyed-by / received-on / ETA strip */}
+                  <div className="text-[10px] text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {e.conveyed_by_name && (
+                      <span><span className="text-slate-400">Conveyed by:</span> <b>{e.conveyed_by_name}</b></span>
+                    )}
+                    {e.conveyed_at && (
+                      <span><span className="text-slate-400">on</span> {new Date(e.conveyed_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    )}
+                    {e.eta_days != null && <span><span className="text-slate-400">ETA:</span> {e.eta_days}d</span>}
+                    {e.received_on && <span><span className="text-slate-400">Received:</span> {e.received_on}</span>}
+                  </div>
+
+                  {e.repair_notes && <div className="text-[11px] text-slate-700 italic border-t border-slate-100 pt-1 mt-1">{e.repair_notes}</div>}
                 </div>
-                <div className="text-[11px]">{e.vendor_name || '—'} · ETA {e.eta_days || '?'}d</div>
-                {e.repair_notes && <div className="text-[10px] text-slate-600 italic mt-0.5">{e.repair_notes}</div>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {showEstimate && <EstimateForm ticketNo={ticketNo} onDone={() => { setShowEstimate(false); load(); }} />}
@@ -462,19 +520,21 @@ function CourierForm({ ticketNo, curStatus, onDone }) {
     setErr(''); setSuccess(null);
     if (!awb || awb.trim().length < 4) { setErr('AWB number is required (min 4 chars)'); return; }
     setBusy(true);
-    try {
-      const body = {
-        ticket_no: ticketNo, direction, courier_partner: partner,
-        awb_number: awb.trim(), dispatch_date: dispatchDate || undefined,
-        to_address: toAddr || undefined,
-      };
-      if (etaDate) body.eta_date = etaDate;
-      const r = await axios.post(`${API}/ha/couriers`, body);
-      setSuccess({ shipment_id: r.data.shipment_id, advanced: !!autoNext, advancedTo: autoNext });
-      // Brief delay to let the user see the confirmation, then close + reload
-      setTimeout(() => onDone(), 900);
-    } catch (e) { setErr(e?.response?.data?.detail || 'Failed to book shipment'); }
-    finally { setBusy(false); }
+      try {
+        const body = {
+          ticket_no: ticketNo, direction, courier_partner: partner,
+          awb_number: awb.trim(), dispatch_date: dispatchDate || undefined,
+          to_address: toAddr || undefined,
+        };
+        if (etaDate) body.eta_date = etaDate;
+        const r = await axios.post(`${API}/ha/couriers`, body);
+        setSuccess({ shipment_id: r.data.shipment_id, advanced: !!autoNext, advancedTo: autoNext });
+        // Brief delay to let the user see the confirmation, then close + reload
+        setTimeout(() => onDone(), 900);
+      } catch (e) {
+        const detail = e?.response?.data?.detail;
+        setErr(typeof detail === 'string' ? detail : (detail ? JSON.stringify(detail) : 'Failed to book shipment'));
+      } finally { setBusy(false); }
   };
 
   return (
@@ -530,55 +590,118 @@ function CourierForm({ ticketNo, curStatus, onDone }) {
 
 function EstimateForm({ ticketNo, onDone }) {
   const [vendor, setVendor] = useState('');
-  const [amount, setAmount] = useState(0);
+  const [amount, setAmount] = useState('');
+  const [conveyedAmount, setConveyedAmount] = useState('');
+  const [discount, setDiscount] = useState('');
   const [warranty, setWarranty] = useState(false);
   const [eta, setEta] = useState(4);
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Live patient-facing total preview
+  const conveyedNum = Number(conveyedAmount) || 0;
+  const discountNum = Number(discount) || 0;
+  const finalToPatient = warranty ? 0 : Math.max(0, conveyedNum - discountNum);
+
   const submit = async () => {
-    setErr(''); setBusy(true);
+    setErr('');
+    if (!vendor || vendor.trim().length < 2) { setErr('Vendor / service centre name is required'); return; }
+    if (!warranty && (!amount || Number(amount) <= 0)) { setErr('Vendor amount must be greater than zero (or tick Warranty covered)'); return; }
+    setBusy(true);
     try {
-      await axios.post(`${API}/ha/service-estimates`, {
-        ticket_no: ticketNo, vendor_name: vendor,
-        amount: Number(amount), warranty_covered: warranty,
-        eta_days: Number(eta), repair_notes: notes,
-      });
+      const body = {
+        ticket_no: ticketNo,
+        vendor_name: vendor.trim(),
+        amount: Number(amount) || 0,
+        warranty_covered: warranty,
+        eta_days: Number(eta) || null,
+        repair_notes: notes || null,
+      };
+      if (conveyedAmount !== '' && !Number.isNaN(conveyedNum)) body.conveyed_amount = conveyedNum;
+      if (discount !== '' && !Number.isNaN(discountNum)) body.discount = discountNum;
+      await axios.post(`${API}/ha/service-estimates`, body);
       onDone();
-    } catch (e) { setErr(e?.response?.data?.detail || 'Failed'); }
-    finally { setBusy(false); }
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      setErr(typeof detail === 'string' ? detail : (detail ? JSON.stringify(detail) : 'Failed to record estimate'));
+    } finally { setBusy(false); }
   };
 
   return (
     <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-3 text-xs space-y-2"
          data-testid="audinexa-estimate-form">
-      {err && <div className="bg-rose-100 text-rose-800 p-1.5 rounded text-[11px]">{err}</div>}
-      <input value={vendor} onChange={(e) => setVendor(e.target.value)}
-             placeholder="Vendor / Service centre name"
-             data-testid="audinexa-estimate-vendor"
-             className="w-full border border-slate-300 rounded px-2 py-1 text-xs" />
-      <div className="grid grid-cols-2 gap-2">
-        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-               disabled={warranty}
-               placeholder="Amount (₹)"
-               data-testid="audinexa-estimate-amount"
-               className="border border-slate-300 rounded px-2 py-1 text-xs" />
-        <label className="inline-flex items-center gap-1 text-[11px]">
-          <input type="checkbox" checked={warranty} onChange={(e) => setWarranty(e.target.checked)}
-                 data-testid="audinexa-estimate-warranty" />
-          Warranty covered
-        </label>
+      {err && <div className="bg-rose-100 text-rose-800 p-2 rounded text-[11px] font-semibold" data-testid="audinexa-estimate-err">⚠ {err}</div>}
+      <div>
+        <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">Vendor / service centre *</label>
+        <input value={vendor} onChange={(e) => setVendor(e.target.value)}
+               placeholder="e.g. Phonak Service Mumbai"
+               data-testid="audinexa-estimate-vendor"
+               className="w-full border border-slate-300 rounded px-2 py-1 text-xs" />
       </div>
-      <input type="number" value={eta} onChange={(e) => setEta(e.target.value)}
-             placeholder="ETA days" className="w-full border border-slate-300 rounded px-2 py-1 text-xs" />
-      <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder="Repair notes"
-                className="w-full border border-slate-300 rounded px-2 py-1 text-xs" />
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">Estimated amount (vendor) *</label>
+          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
+                 disabled={warranty} placeholder="₹"
+                 data-testid="audinexa-estimate-amount"
+                 className="w-full border border-slate-300 rounded px-2 py-1 text-xs disabled:bg-slate-100" />
+        </div>
+        <div>
+          <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">Conveyed amount (to patient)</label>
+          <input type="number" value={conveyedAmount} onChange={(e) => setConveyedAmount(e.target.value)}
+                 disabled={warranty} placeholder="₹ (defaults to vendor amt)"
+                 data-testid="audinexa-estimate-conveyed"
+                 className="w-full border border-slate-300 rounded px-2 py-1 text-xs disabled:bg-slate-100" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">Discount (₹)</label>
+          <input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)}
+                 disabled={warranty} placeholder="0"
+                 data-testid="audinexa-estimate-discount"
+                 className="w-full border border-slate-300 rounded px-2 py-1 text-xs disabled:bg-slate-100" />
+        </div>
+        <div>
+          <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">ETA (days)</label>
+          <input type="number" value={eta} onChange={(e) => setEta(e.target.value)}
+                 placeholder="4" min={0}
+                 className="w-full border border-slate-300 rounded px-2 py-1 text-xs" />
+        </div>
+      </div>
+
+      <label className="inline-flex items-center gap-1 text-[11px]">
+        <input type="checkbox" checked={warranty} onChange={(e) => setWarranty(e.target.checked)}
+               data-testid="audinexa-estimate-warranty" />
+        Warranty covered (₹0 to patient)
+      </label>
+
+      <div>
+        <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">Repair notes</label>
+        <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
+                  placeholder="What's the vendor proposing? Parts to be replaced, sound check details…"
+                  className="w-full border border-slate-300 rounded px-2 py-1 text-xs" />
+      </div>
+
+      {/* Live preview */}
+      {!warranty && (conveyedNum > 0 || discountNum > 0) && (
+        <div className="bg-white border border-amber-300 rounded p-2 text-[11px]"
+             data-testid="audinexa-estimate-preview">
+          <div className="flex justify-between"><span>Conveyed</span><span className="font-mono">{fmtINR(conveyedNum)}</span></div>
+          {discountNum > 0 && <div className="flex justify-between text-emerald-700"><span>Less discount</span><span className="font-mono">- {fmtINR(discountNum)}</span></div>}
+          <div className="flex justify-between border-t border-amber-200 pt-1 mt-1 font-bold">
+            <span>Final to patient</span><span className="font-mono">{fmtINR(finalToPatient)}</span>
+          </div>
+        </div>
+      )}
+
       <button onClick={submit} disabled={busy}
               data-testid="audinexa-estimate-submit"
               className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white font-bold py-1.5 rounded text-xs">
-        Record estimate + request patient approval
+        {busy ? 'Saving…' : 'Record estimate + request patient approval'}
       </button>
     </div>
   );
@@ -587,14 +710,22 @@ function EstimateForm({ ticketNo, onDone }) {
 function ApprovalRow({ approval, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState('');
+  const [contact, setContact] = useState('');
+  const [err, setErr] = useState('');
+
   const decide = async (decision) => {
     if (!window.confirm(`Confirm ${decision}?`)) return;
-    setBusy(true);
+    setBusy(true); setErr('');
     try {
       await axios.post(`${API}/ha/customer-approvals/${approval.approval_id}/decide`, {
-        decision, notes: notes || undefined,
+        decision,
+        contact_number: contact.trim() || undefined,
+        notes: notes.trim() || undefined,
       });
       onChanged();
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      setErr(typeof detail === 'string' ? detail : 'Failed to save decision');
     } finally { setBusy(false); }
   };
   const colors = {
@@ -603,33 +734,54 @@ function ApprovalRow({ approval, onChanged }) {
     REJECTED: 'bg-rose-100 text-rose-900',
   };
   return (
-    <div className={`rounded p-2 text-xs ${colors[approval.decision]}`}
+    <div className={`rounded p-2.5 text-xs ${colors[approval.decision]}`}
          data-testid={`audinexa-approval-${approval.approval_id}`}>
       <div className="flex justify-between items-center mb-1">
         <div className="font-mono text-[10px] font-bold">{approval.approval_id}</div>
         <div className="text-[10px] font-bold">{approval.decision}</div>
       </div>
+      {err && <div className="bg-rose-200 text-rose-900 p-1.5 rounded text-[11px] font-semibold mb-1">⚠ {err}</div>}
       {approval.decision === 'PENDING' ? (
-        <div className="space-y-1 mt-2">
-          <input value={notes} onChange={(e) => setNotes(e.target.value)}
-                 placeholder="Reason (rejections only)" className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] bg-white" />
+        <div className="space-y-1.5 mt-2">
+          <div>
+            <label className="block text-[10px] uppercase font-bold mb-0.5">Contact number reached</label>
+            <input value={contact} onChange={(e) => setContact(e.target.value)}
+                   placeholder="e.g. patient mobile / attendant number"
+                   data-testid={`audinexa-approval-contact-${approval.approval_id}`}
+                   className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] bg-white" />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase font-bold mb-0.5">Notes (rejection reason / approval context)</label>
+            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
+                   placeholder="What did the patient say?"
+                   data-testid={`audinexa-approval-notes-${approval.approval_id}`}
+                   className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] bg-white" />
+          </div>
           <div className="flex gap-1">
             <button onClick={() => decide('APPROVED')} disabled={busy}
                     data-testid={`audinexa-approve-${approval.approval_id}`}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 rounded text-[11px]">
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold py-1 rounded text-[11px]">
               ✓ Patient Approved
             </button>
             <button onClick={() => decide('REJECTED')} disabled={busy}
                     data-testid={`audinexa-reject-${approval.approval_id}`}
-                    className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-1 rounded text-[11px]">
+                    className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold py-1 rounded text-[11px]">
               ✗ Rejected
             </button>
           </div>
         </div>
       ) : (
-        <div className="text-[10px] mt-1">
-          {approval.decided_by_name && <>by {approval.decided_by_name} · </>}
-          {approval.decided_at && new Date(approval.decided_at).toLocaleString('en-GB').slice(0, -3)}
+        <div className="text-[11px] mt-1 space-y-0.5">
+          <div>
+            <span className="text-[10px] uppercase font-bold">{approval.decision === 'APPROVED' ? 'Approved by' : 'Rejected by'}:</span>{' '}
+            <span className="font-bold">{approval.decided_by_name || '—'}</span>
+          </div>
+          {approval.decided_at && (
+            <div className="text-[10px] opacity-70">on {new Date(approval.decided_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+          )}
+          {approval.contact_number && (
+            <div className="text-[10px]"><span className="opacity-70">Contact reached:</span> <span className="font-mono">{approval.contact_number}</span></div>
+          )}
           {approval.notes && <div className="italic mt-0.5">"{approval.notes}"</div>}
         </div>
       )}
