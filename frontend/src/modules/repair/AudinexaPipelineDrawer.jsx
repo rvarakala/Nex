@@ -78,11 +78,15 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
   const curStatus = pipe?.normalised_status;
   const legalNext = useMemo(() => NEXT_STATES[curStatus] || [], [curStatus]);
 
-  const transition = async (to_status) => {
-    if (!window.confirm(`Move Job ${ticketNo} → ${PIPELINE_LABELS[to_status] || to_status}?`)) return;
+  const transition = async (to_status, opts = {}) => {
+    if (!opts.skipConfirm) {
+      if (!window.confirm(`Move Job ${ticketNo} → ${PIPELINE_LABELS[to_status] || to_status}?`)) return;
+    }
     setBusy(true);
     try {
-      await axios.post(`${API}/ha/service-tickets/${ticketNo}/transition`, { to_status });
+      await axios.post(`${API}/ha/service-tickets/${ticketNo}/transition`, {
+        to_status, note: opts.note || undefined,
+      });
       await load();
       onChanged && onChanged();
     } catch (e) { setErr(e?.response?.data?.detail || 'Transition failed'); }
@@ -199,6 +203,45 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
       {pipe.is_terminal && (
         <div className="bg-slate-50 border border-slate-200 rounded p-3 mb-4 text-center text-sm text-slate-600">
           Job is in a terminal state. No further transitions allowed.
+        </div>
+      )}
+
+      {/* ===== INSPECTION NOTES (shown at RECEIVED) ===== */}
+      {curStatus === 'RECEIVED' && (
+        <InspectionNotesForm
+          ticketNo={ticketNo}
+          onDone={() => { load(); onChanged && onChanged(); }}
+          existing={t.inspection_notes}
+        />
+      )}
+
+      {/* ===== INSPECTION SUMMARY (read-only, after RECEIVED) ===== */}
+      {curStatus !== 'RECEIVED' && t.inspection_notes && (
+        <div className="mb-5 bg-blue-50 border border-blue-200 rounded p-3 text-xs"
+             data-testid="audinexa-inspection-summary">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-blue-900 mb-1">
+            Inspection Notes
+          </div>
+          <div className="text-slate-700 whitespace-pre-wrap">{t.inspection_notes}</div>
+        </div>
+      )}
+
+      {/* ===== END-OF-PIPELINE: Print Service Report ===== */}
+      {(curStatus === 'READY_FOR_PICKUP' ||
+        curStatus === 'DELIVERED_TO_CLIENT' ||
+        curStatus === 'CLOSED') && (
+        <div className="mb-5 bg-emerald-50 border border-emerald-200 rounded p-3 flex items-center justify-between"
+             data-testid="audinexa-final-report-banner">
+          <div>
+            <div className="text-xs font-bold text-emerald-900">Service complete</div>
+            <div className="text-[11px] text-emerald-800">Print the full Service Report with timeline, shipments, estimates &amp; resolution.</div>
+          </div>
+          <a href={`${API}/ha/service-tickets/${ticketNo}/job-card.pdf`}
+             target="_blank" rel="noreferrer"
+             data-testid="audinexa-print-service-report"
+             className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow">
+            🖨️ Print Service Report
+          </a>
         </div>
       )}
 
@@ -347,6 +390,56 @@ const Skel = () => <div className="space-y-3 p-4"><div className="h-8 bg-slate-1
 const Empty = ({ label }) => <div className="text-[11px] italic text-slate-400 text-center py-3">{label}</div>;
 
 
+function InspectionNotesForm({ ticketNo, onDone, existing }) {
+  const [note, setNote] = useState(existing || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async (toStatus) => {
+    if (toStatus === 'INSPECTED' && (!note || note.trim().length < 5)) {
+      setErr('Add inspection notes (at least 5 characters) before marking inspected.');
+      return;
+    }
+    setBusy(true); setErr('');
+    try {
+      await axios.post(`${API}/ha/service-tickets/${ticketNo}/transition`, {
+        to_status: toStatus, note: note.trim() || undefined,
+      });
+      onDone();
+    } catch (e) { setErr(e?.response?.data?.detail || 'Failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mb-5 bg-blue-50 border border-blue-200 rounded p-3"
+         data-testid="audinexa-inspection-form">
+      <div className="text-[10px] uppercase tracking-wider font-bold text-blue-900 mb-2">
+        Inspection notes
+      </div>
+      {err && <div className="bg-rose-100 text-rose-800 p-1.5 rounded text-[11px] mb-2">{err}</div>}
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={3}
+        placeholder="What did you find? (e.g., receiver crackling, mic dead, water damage to shell, no power on battery swap…)"
+        data-testid="audinexa-inspection-input"
+        className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs"
+      />
+      <div className="flex gap-2 mt-2">
+        <button onClick={() => submit('INSPECTED')} disabled={busy}
+                data-testid="audinexa-inspection-save"
+                className="px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded">
+          Save &amp; mark Inspected →
+        </button>
+        <span className="text-[10px] text-slate-500 self-center italic">
+          You can also pick a state directly above; notes will be attached to this job.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+
 function CourierForm({ ticketNo, curStatus, onDone }) {
   const [partner, setPartner] = useState('Bluedart');
   const [awb, setAwb] = useState('');
@@ -356,24 +449,50 @@ function CourierForm({ ticketNo, curStatus, onDone }) {
   const [direction, setDirection] = useState(curStatus === 'RETURN_SHIPPED' || curStatus === 'CLIENT_APPROVED' ? 'INBOUND' : 'OUTBOUND');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [success, setSuccess] = useState(null);
+
+  const willAutoAdvance =
+    (direction === 'OUTBOUND' && curStatus === 'AWAITING_DISPATCH') ||
+    (direction === 'INBOUND' && (curStatus === 'REPAIR_IN_PROGRESS' || curStatus === 'CLIENT_REJECTED'));
+  const autoNext = willAutoAdvance
+    ? (direction === 'OUTBOUND' ? 'Dispatched' : 'Return Shipped')
+    : null;
 
   const submit = async () => {
-    setErr(''); setBusy(true);
+    setErr(''); setSuccess(null);
+    if (!awb || awb.trim().length < 4) { setErr('AWB number is required (min 4 chars)'); return; }
+    setBusy(true);
     try {
-      await axios.post(`${API}/ha/couriers`, {
+      const body = {
         ticket_no: ticketNo, direction, courier_partner: partner,
-        awb_number: awb, dispatch_date: dispatchDate, eta_date: etaDate,
-        to_address: toAddr,
-      });
-      onDone();
-    } catch (e) { setErr(e?.response?.data?.detail || 'Failed'); }
+        awb_number: awb.trim(), dispatch_date: dispatchDate || undefined,
+        to_address: toAddr || undefined,
+      };
+      if (etaDate) body.eta_date = etaDate;
+      const r = await axios.post(`${API}/ha/couriers`, body);
+      setSuccess({ shipment_id: r.data.shipment_id, advanced: !!autoNext, advancedTo: autoNext });
+      // Brief delay to let the user see the confirmation, then close + reload
+      setTimeout(() => onDone(), 900);
+    } catch (e) { setErr(e?.response?.data?.detail || 'Failed to book shipment'); }
     finally { setBusy(false); }
   };
 
   return (
     <div className="mt-2 bg-slate-50 border border-slate-200 rounded p-3 text-xs space-y-2"
          data-testid="audinexa-courier-form">
-      {err && <div className="bg-rose-100 text-rose-800 p-1.5 rounded text-[11px]">{err}</div>}
+      {err && <div className="bg-rose-100 text-rose-800 p-1.5 rounded text-[11px]" data-testid="audinexa-courier-err">{err}</div>}
+      {success && (
+        <div className="bg-emerald-100 text-emerald-900 p-2 rounded text-[11px] font-bold"
+             data-testid="audinexa-courier-success">
+          ✓ Shipment {success.shipment_id} booked.
+          {success.advanced && <> Pipeline auto-advanced to <b>{success.advancedTo}</b>.</>}
+        </div>
+      )}
+      {autoNext && !success && (
+        <div className="bg-amber-50 text-amber-800 p-1.5 rounded text-[10px] italic" data-testid="audinexa-courier-hint">
+          Booking this shipment will move the job to <b>{autoNext}</b>.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <select value={direction} onChange={(e) => setDirection(e.target.value)}
                 data-testid="audinexa-courier-direction"

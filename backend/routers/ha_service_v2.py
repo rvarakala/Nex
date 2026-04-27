@@ -117,6 +117,17 @@ async def transition_service_job(
         elif payload.to_status in ("RETURN_SHIPPED", "READY_FOR_PICKUP"):
             upd["inbound_shipment_id"] = payload.shipment_id
 
+    # Persist inspection / resolution notes alongside the audit trail so the
+    # Service Report PDF can render them as first-class fields.
+    if payload.note:
+        if payload.to_status == "INSPECTED":
+            upd["inspection_notes"] = payload.note
+        elif payload.to_status == "DELIVERED_TO_CLIENT":
+            upd["handover_notes"] = payload.note
+        elif payload.to_status in ("READY_FOR_PICKUP", "CLOSED"):
+            # Append-or-set for resolution summary
+            upd.setdefault("resolution_notes", payload.note)
+
     await db.service_tickets.update_one(
         {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
         {"$set": upd,
@@ -174,10 +185,41 @@ async def create_shipment(
     await db.ha_courier_shipments.insert_one(serialize_datetime(doc.model_dump()))
     # Attach onto ticket right away for quick drill-down
     link_key = "outbound_shipment_id" if payload.direction == "OUTBOUND" else "inbound_shipment_id"
-    await db.service_tickets.update_one(
-        {"clinic_id": user["clinic_id"], "ticket_no": payload.ticket_no},
-        {"$set": {link_key: shid}},
-    )
+    upd: dict = {link_key: shid}
+
+    # ---- Auto-advance the linked job's pipeline state ----
+    # Booking a shipment is the natural trigger for the next state.
+    cur_job = normalise_status(t["status"])
+    auto_to: Optional[str] = None
+    if payload.direction == "OUTBOUND" and cur_job == "AWAITING_DISPATCH":
+        auto_to = "DISPATCHED"
+    elif payload.direction == "INBOUND" and cur_job in (
+        "REPAIR_IN_PROGRESS", "CLIENT_REJECTED",
+    ):
+        auto_to = "RETURN_SHIPPED"
+
+    if auto_to:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        upd["status"] = auto_to
+        upd["updated_at"] = now_iso
+        if auto_to == "DISPATCHED":
+            upd["dispatched_at"] = now_iso
+        elif auto_to == "RETURN_SHIPPED":
+            upd["return_shipped_at"] = now_iso
+        await db.service_tickets.update_one(
+            {"clinic_id": user["clinic_id"], "ticket_no": payload.ticket_no},
+            {"$set": upd,
+             "$push": {"audit_trail": {
+                 "from": cur_job, "to": auto_to,
+                 "at": now_iso, "by_user_id": user["user_id"],
+                 "note": f"Auto-advanced on shipment {shid} booking",
+             }}},
+        )
+    else:
+        await db.service_tickets.update_one(
+            {"clinic_id": user["clinic_id"], "ticket_no": payload.ticket_no},
+            {"$set": upd},
+        )
     return deserialize_datetime(doc.model_dump())
 
 

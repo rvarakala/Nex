@@ -1,10 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
-# ACS Audiology Clinic — Product Requirements Document
+## ✅ COMPLETED — Service Pipeline Auto-Flow + End-of-Pipeline Service Report (2026-04-27)
+**User report**: "New Service Job Created > Received > Inspection > Awaiting Dispatch > book shipment (Failed). Print Job Card at the End." — and follow-up: "check entire pipeline -- all the 13 steps in the Pipeline & at the end print report".
 
-# ACS Audiology Clinic — Product Requirements Document
+**Root cause**: Booking a courier shipment at AWAITING_DISPATCH succeeded server-side (HTTP 201) but did NOT auto-advance the ticket status from AWAITING_DISPATCH → DISPATCHED. Users saw the same status pill afterwards and concluded "Book Shipment failed". Same UX trap on the inbound side at REPAIR_IN_PROGRESS → RETURN_SHIPPED. Additionally, the `note` field on `/transition` was only stored in `audit_trail` and never surfaced as a first-class field — so the UI had no way to capture "Inspection Notes" the user expected. Finally, the `/job-card.pdf` endpoint emitted a basic A5 intake card, not a full-pipeline service report.
 
-# ACS Audiology Clinic — Product Requirements Document
+**Fix (3 surgical changes)**:
+1. **Backend `/api/ha/couriers` POST** (`routers/ha_service_v2.py`): on shipment create, evaluate the linked job's current state and atomically auto-advance:
+   - OUTBOUND + AWAITING_DISPATCH → **DISPATCHED** (stamps `dispatched_at`, links `outbound_shipment_id`, pushes audit_trail row).
+   - INBOUND + (REPAIR_IN_PROGRESS | CLIENT_REJECTED) → **RETURN_SHIPPED** (stamps `return_shipped_at`).
+   - Other states: unchanged (no surprise advancement).
+2. **Backend transition endpoint** persists `note` as a first-class field per state: `inspection_notes` (INSPECTED), `handover_notes` (DELIVERED_TO_CLIENT), `resolution_notes` (READY_FOR_PICKUP/CLOSED, only if not already set). Added the 2 new fields to the `ServiceTicket` Pydantic response model so they survive serialisation.
+3. **Backend `/job-card.pdf`** rewritten from a basic A5 intake card to a comprehensive A4 **Service Report** containing: clinic header, patient/device box, complaint, inspection/diagnosis, full pipeline timeline with stamped timestamps, courier shipments table (AWB / partner / direction / status), vendor estimates joined with customer approvals, resolution + cost, and signature block. PDF auto-titled "JOB CARD" at non-terminal states and "SERVICE REPORT" at READY_FOR_PICKUP/DELIVERED/CLOSED — filename also flips to `service-report-{ticket_no}.pdf`.
+
+**Frontend (`AudinexaPipelineDrawer.jsx`)**:
+- New `InspectionNotesForm` block surfaces at the RECEIVED state with a textarea + "Save & mark Inspected →" button (min 5 chars).
+- After RECEIVED, the saved notes render as a sticky read-only **Inspection Notes** card so they stay visible through the rest of the pipeline.
+- `CourierForm` now shows an amber pre-flight hint ("Booking this shipment will move the job to <Dispatched>") and an emerald success toast confirming auto-advance ("Pipeline auto-advanced to **Dispatched**.") before closing.
+- New emerald **"🖨️ Print Service Report"** banner appears at READY_FOR_PICKUP / DELIVERED_TO_CLIENT / CLOSED states with a prominent download CTA.
+- Added validation: AWB now requires ≥ 4 chars before submit (was unbounded empty-string accepted).
+
+**Validated**:
+- New regression `tests/test_pipeline_autoflow_and_report.py` — 5 cases all green: inspection notes persisted, OUTBOUND auto-advance to DISPATCHED, INBOUND auto-advance to RETURN_SHIPPED, no-advance-when-state-mismatched, terminal-state Service Report PDF returned.
+- Full happy-path walk: 20 transitions across 13 stages → all green (Created → Received → Inspected → Awaiting Dispatch → Dispatched [auto] → In Transit → Delivered to Centre [auto on courier DELIVERED] → Estimate Pending [auto on POST] → Client Approved [auto on decide] → Repair → Return Shipped [auto] → Ready for Pickup → Delivered to Client → Closed → PDF download).
+- Combined regression: 41/41 (20 Phase 12 AUDINEXA + 5 new + 16 production hardening) PASS in 78s.
+- UI smoke: drawer for closed ticket renders pipeline timeline (1 Received · 27 Apr), Inspection Notes card, **🖨️ Print Service Report** banner all visible. Auto-advance hint + success toast confirmed in courier form.
 
 # ACS Audiology Clinic — Product Requirements Document
 

@@ -181,8 +181,19 @@ async def job_card_pdf(
         {"_id": 0, "mrd": 1, "mobile": 1, "name": 1},
     ) or {}
 
+    # Pull related rows for full Service Report
+    shipments = await db.ha_courier_shipments.find(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no}, {"_id": 0},
+    ).sort("created_at", 1).to_list(50)
+    estimates = await db.ha_service_estimates.find(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no}, {"_id": 0},
+    ).sort("created_at", 1).to_list(50)
+    approvals = await db.ha_customer_approvals.find(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no}, {"_id": 0},
+    ).sort("created_at", 1).to_list(50)
+
     # ----- Build PDF -----
-    from reportlab.lib.pagesizes import A5
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import mm
@@ -190,102 +201,220 @@ async def job_card_pdf(
         SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
     )
 
+    cur_status = normalise_status(t.get("status", "RECEIVED"))
+    is_terminal = cur_status in TERMINAL_STATES or cur_status in ("DELIVERED_TO_CLIENT", "CLOSED")
+    doc_label = "SERVICE REPORT" if is_terminal else "JOB CARD"
+
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A5,
-                             leftMargin=10*mm, rightMargin=10*mm,
-                             topMargin=10*mm, bottomMargin=10*mm,
-                             title=f"Job Card {ticket_no}")
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                             leftMargin=12*mm, rightMargin=12*mm,
+                             topMargin=12*mm, bottomMargin=12*mm,
+                             title=f"{doc_label} {ticket_no}")
     styles = getSampleStyleSheet()
     story = []
 
-    # Header
+    def fmt_dt(v):
+        if not v:
+            return "—"
+        try:
+            s = v if isinstance(v, str) else v.isoformat()
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).strftime("%d %b %Y, %H:%M")
+        except Exception:
+            return str(v)[:16]
+
+    # ----- HEADER -----
     h_table = Table([[
-        Paragraph(f"<b>{clinic.get('name', 'ACS Audiology Clinic')}</b><br/>"
-                  f"<font size=8>{clinic.get('city', '')} · "
+        Paragraph(f"<b>{clinic.get('name', 'AUDINEXA Clinic')}</b><br/>"
+                  f"<font size=8 color='#64748b'>{clinic.get('city', '')} · "
                   f"{clinic.get('phone', '')}</font>", styles["Normal"]),
-        Paragraph(f"<para align='right'><b>JOB CARD</b><br/>"
-                  f"<font size=9>{ticket_no}</font><br/>"
+        Paragraph(f"<para align='right'><b><font size=11>{doc_label}</font></b><br/>"
+                  f"<font size=10 color='#1e293b'>{ticket_no}</font><br/>"
                   f"<font size=7 color='#64748b'>"
-                  f"{datetime.now().strftime('%d %b %Y, %H:%M')}</font></para>",
+                  f"Printed {datetime.now().strftime('%d %b %Y, %H:%M')}</font></para>",
                   styles["Normal"]),
-    ]], colWidths=[80*mm, 55*mm])
+    ]], colWidths=[110*mm, 76*mm])
     h_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(h_table)
-    story.append(Spacer(1, 5*mm))
+    story.append(Spacer(1, 4*mm))
 
-    # Patient + Device box
+    # ----- PATIENT + DEVICE -----
     pd_rows = [
         ["Patient", patient.get("name") or t.get("patient_name") or "—"],
         ["MRD / Mobile", f"{patient.get('mrd') or '—'} · {patient.get('mobile') or t.get('patient_mobile') or '—'}"],
         ["Device", f"{t.get('serial_no') or '—'}"],
         ["Complaint type", t.get("kind", "repair").replace("_", " ").title()],
-        ["Status", normalise_status(t.get("status", "RECEIVED"))],
+        ["Current status", cur_status.replace("_", " ").title()],
         ["Warranty", "Yes · covered" if t.get("warranty_covered") else "Out of warranty / paid"],
+        ["Created at", fmt_dt(t.get("created_at"))],
     ]
-    pd = Table(pd_rows, colWidths=[35*mm, 100*mm])
+    pd = Table(pd_rows, colWidths=[42*mm, 144*mm])
     pd.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#e2e8f0")),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#475569")),
         ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(pd)
     story.append(Spacer(1, 4*mm))
 
-    # Complaint description
+    # ----- COMPLAINT -----
     story.append(Paragraph("<b>Complaint Description</b>", styles["Normal"]))
-    story.append(Paragraph(
-        t.get("complaint") or "—",
-        styles["Normal"],
-    ))
-    story.append(Spacer(1, 4*mm))
+    story.append(Paragraph(t.get("complaint") or "—", styles["Normal"]))
+    story.append(Spacer(1, 3*mm))
 
-    if t.get("diagnosis"):
-        story.append(Paragraph("<b>Diagnosis / Notes</b>", styles["Normal"]))
-        story.append(Paragraph(t["diagnosis"], styles["Normal"]))
-        story.append(Spacer(1, 4*mm))
+    # ----- INSPECTION NOTES -----
+    if t.get("inspection_notes") or t.get("diagnosis"):
+        story.append(Paragraph("<b>Inspection / Diagnosis</b>", styles["Normal"]))
+        story.append(Paragraph(
+            t.get("inspection_notes") or t.get("diagnosis") or "—",
+            styles["Normal"],
+        ))
+        story.append(Spacer(1, 3*mm))
 
-    # Accessories checklist
-    story.append(Paragraph("<b>Accessories Received at Intake</b>", styles["Normal"]))
-    acc = Table([
-        ["☐ Battery", "☐ Charger", "☐ Dome / tip", "☐ Receiver"],
-        ["☐ Case / pouch", "☐ Cleaning tool", "☐ Wax filter", "☐ Mould"],
-    ], colWidths=[34*mm, 34*mm, 34*mm, 34*mm])
-    acc.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-    ]))
-    story.append(acc)
-    story.append(Spacer(1, 6*mm))
+    # ----- PIPELINE TIMELINE -----
+    timeline = [
+        ("Received",             t.get("created_at")),
+        ("Inspected",            None),
+        ("Awaiting Dispatch",    None),
+        ("Dispatched",           t.get("dispatched_at")),
+        ("Delivered to Centre",  t.get("delivered_to_company_at")),
+        ("Estimate Pending",     t.get("estimate_received_at")),
+        ("Client Decided",       t.get("client_decided_at")),
+        ("Return Shipped",       t.get("return_shipped_at")),
+        ("Ready for Pickup",     t.get("ready_at")),
+        ("Delivered to Client",  t.get("delivered_to_client_at")),
+        ("Closed",               t.get("closed_at")),
+    ]
+    tl_rows = [["Stage", "Stamped at"]] + [
+        [stage, fmt_dt(ts)] for stage, ts in timeline if ts
+    ]
+    if len(tl_rows) > 1:
+        story.append(Paragraph("<b>Pipeline Timeline</b>", styles["Normal"]))
+        tl = Table(tl_rows, colWidths=[60*mm, 126*mm])
+        tl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#e2e8f0")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(tl)
+        story.append(Spacer(1, 3*mm))
 
-    # Sign area
+    # ----- COURIER SHIPMENTS -----
+    if shipments:
+        story.append(Paragraph("<b>Courier Shipments</b>", styles["Normal"]))
+        s_rows = [["ID", "Direction", "Partner", "AWB", "Dispatch", "Status"]]
+        for s in shipments:
+            s_rows.append([
+                s.get("shipment_id", "—"),
+                s.get("direction", "—"),
+                s.get("courier_partner", "—"),
+                s.get("awb_number") or "—",
+                str(s.get("dispatch_date") or "—"),
+                s.get("status", "—"),
+            ])
+        st = Table(s_rows, colWidths=[28*mm, 22*mm, 28*mm, 35*mm, 28*mm, 45*mm])
+        st.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#e2e8f0")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(st)
+        story.append(Spacer(1, 3*mm))
+
+    # ----- ESTIMATES + APPROVALS -----
+    if estimates or approvals:
+        story.append(Paragraph("<b>Vendor Estimates &amp; Customer Approval</b>", styles["Normal"]))
+        e_rows = [["Estimate", "Vendor", "Amount", "Warranty", "Decision", "Decided at"]]
+        # Index approvals by estimate_id for join
+        appr_by_est = {a.get("estimate_id"): a for a in approvals}
+        for e in estimates:
+            a = appr_by_est.get(e.get("estimate_id"), {})
+            e_rows.append([
+                e.get("estimate_id", "—"),
+                (e.get("vendor_name") or "—")[:18],
+                f"₹{int(e.get('amount') or 0):,}",
+                "Yes" if e.get("warranty_covered") else "No",
+                a.get("decision", "—") if a else "—",
+                fmt_dt(a.get("decided_at")) if a else "—",
+            ])
+        et = Table(e_rows, colWidths=[28*mm, 38*mm, 26*mm, 22*mm, 28*mm, 44*mm])
+        et.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#e2e8f0")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(et)
+        story.append(Spacer(1, 3*mm))
+
+    # ----- RESOLUTION & COST -----
+    if t.get("resolution_notes") or t.get("cost_to_patient"):
+        story.append(Paragraph("<b>Resolution &amp; Cost</b>", styles["Normal"]))
+        if t.get("resolution_notes"):
+            story.append(Paragraph(t["resolution_notes"], styles["Normal"]))
+        if t.get("cost_to_patient"):
+            story.append(Paragraph(
+                f"<b>Cost to patient: ₹{int(t.get('cost_to_patient') or 0):,}</b>",
+                styles["Normal"],
+            ))
+        story.append(Spacer(1, 3*mm))
+
+    # ----- ACCESSORIES (only on intake / Job Card) -----
+    if not is_terminal:
+        story.append(Paragraph("<b>Accessories Received at Intake</b>", styles["Normal"]))
+        acc = Table([
+            ["☐ Battery", "☐ Charger", "☐ Dome / tip", "☐ Receiver"],
+            ["☐ Case / pouch", "☐ Cleaning tool", "☐ Wax filter", "☐ Mould"],
+        ], colWidths=[46*mm, 46*mm, 46*mm, 46*mm])
+        acc.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        story.append(acc)
+        story.append(Spacer(1, 5*mm))
+
+    # ----- SIGNATURE -----
     sign = Table([
-        [Paragraph("<font size=8 color='#64748b'>Front Desk / Audiologist</font><br/><br/>_________________",
+        [Paragraph("<font size=8 color='#64748b'>Audiologist / Front Desk</font><br/><br/>_____________________",
                    styles["Normal"]),
-         Paragraph("<font size=8 color='#64748b'>Patient / Attendant Signature</font><br/><br/>_________________",
+         Paragraph("<font size=8 color='#64748b'>Patient / Attendant Signature</font><br/><br/>_____________________",
                    styles["Normal"])],
-    ], colWidths=[65*mm, 65*mm])
+    ], colWidths=[93*mm, 93*mm])
+    story.append(Spacer(1, 6*mm))
     story.append(sign)
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 3*mm))
     story.append(Paragraph(
-        "<font size=7 color='#64748b'>Track your repair anytime at "
-        f"<b>{clinic.get('name', 'the clinic')}</b> · "
-        "by sharing this Job Card number with our front desk.</font>",
+        "<font size=7 color='#64748b'>"
+        f"Track this {doc_label.lower()} anytime at <b>{clinic.get('name', 'the clinic')}</b> "
+        f"by quoting the job number above."
+        "</font>",
         styles["Normal"],
     ))
 
     doc.build(story)
     buf.seek(0)
+    fname = f"service-report-{ticket_no}.pdf" if is_terminal else f"job-card-{ticket_no}.pdf"
     return StreamingResponse(
         buf, media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="job-card-{ticket_no}.pdf"',
-        },
+        headers={"Content-Disposition": f'inline; filename="{fname}"'},
     )
 
 

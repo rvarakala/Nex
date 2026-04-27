@@ -665,6 +665,8 @@ class ServiceTicket(BaseModel):
     technician_user_id: Optional[str] = None
     technician_name: Optional[str] = None
     diagnosis: Optional[str] = None
+    inspection_notes: Optional[str] = None
+    handover_notes: Optional[str] = None
     resolution_notes: Optional[str] = None
     cost_to_patient: float = 0.0
     warranty_covered: bool = False
