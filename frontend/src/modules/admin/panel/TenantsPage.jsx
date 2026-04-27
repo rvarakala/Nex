@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader, Card, Pill, tierTone, fmtDate, fmtInt, Empty } from './shared';
-import { MoreVertical, UserCog, PauseCircle, PlayCircle, Trash2, Eye } from 'lucide-react';
+import { MoreVertical, UserCog, PauseCircle, PlayCircle, Trash2, Eye, Plus } from 'lucide-react';
 import { useAuth } from '../../../AuthContext';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
+import InviteSuccessModal from './InviteSuccessModal';
+import AddTenantModal from './AddTenantModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -15,6 +17,8 @@ export default function TenantsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [busy, setBusy] = useState('');
   const [page, setPage] = useState(1);
+  const [addOpen, setAddOpen] = useState(false);
+  const [inviteResult, setInviteResult] = useState(null);
   const navigate = useNavigate();
   const { user, loginWithToken } = useAuth();
 
@@ -74,6 +78,13 @@ export default function TenantsPage() {
           <option value="active">Active</option>
           <option value="suspended">Suspended</option>
         </select>
+        <button
+          onClick={() => setAddOpen(true)}
+          data-testid="tenants-add-btn"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
+        >
+          <Plus size={14} /> Add Tenant
+        </button>
       </PageHeader>
 
       <Card testid="tenants-table-card">
@@ -142,6 +153,16 @@ export default function TenantsPage() {
         </div>
         <Pagination page={page} setPage={setPage} total={tenants.length} testidPrefix="tenants-pagination" />
       </Card>
+
+      {addOpen && (
+        <AddTenantModal
+          onClose={() => setAddOpen(false)}
+          onCreated={(result) => { setAddOpen(false); setInviteResult(result); load(); }}
+        />
+      )}
+      {inviteResult && (
+        <InviteSuccessModal result={inviteResult} onClose={() => setInviteResult(null)} />
+      )}
     </div>
   );
 }

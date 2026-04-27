@@ -4,6 +4,37 @@
 
 # ACS Audiology Clinic — Product Requirements Document
 
+# ACS Audiology Clinic — Product Requirements Document
+
+## ✅ COMPLETED — Lead-to-Tenant + Add Tenant + Auto-Invite (2026-04-26)
+**Closes the gap reported by user: "Add Tenant didn't exist; lead never received an invite."**
+
+### Backend (`/app/backend/routers/admin_panel.py`)
+Two new endpoints under `/api/admin/v2`:
+- `POST /leads/{email}/convert` — atomic lead → clinic + primary branch + invitation. Marks lead as `Converted` with backlink to clinic_id. 409 on double-convert.
+- `POST /tenants` — manual founder-side clinic creation (for prospects who didn't go through the website). Same end-state.
+
+Both share `_create_clinic_with_invite()` which:
+1. Creates clinic doc (with auto slug, MRD prefix, trial expiry)
+2. Creates primary branch
+3. Mints invitation token (7-day TTL, single-use)
+4. (If lead) updates `waitlist_signups.stage = 'Converted'`
+5. Logs to admin_audit_logs
+6. Returns `{ accept_url, invite_token, invite_expires_at, ... }`
+
+### Frontend
+- `/app/frontend/src/modules/admin/panel/InviteSuccessModal.jsx` — shared post-create modal with **Copy link / WhatsApp / Email** shortcuts
+- `/app/frontend/src/modules/admin/panel/AddTenantModal.jsx` — full clinic + owner + tier + trial-days form
+- `LeadsPage.jsx` — every non-converted lead card now shows a green "⚡ Convert & Send Invite" button
+- `TenantsPage.jsx` — new indigo "+ Add Tenant" button in the page header
+
+### Validated
+- ✅ Curl smoke (4 cases): add-tenant → 200 with accept_url, lead-convert → 200 with `converted_from_lead:true`, double-convert → 409, lead.stage flips to `Converted`
+- ✅ UI smoke: 4 screenshots confirm Add Tenant button, modal, success modal with copy/WhatsApp/email, and Leads page with Convert buttons on every non-converted card
+
+### What this changes operationally
+Founder workflow used to be: see lead → 9 form fields across 2 modules → 5+ minutes per onboarding. Now: see lead → click "Convert & Send Invite" → confirm → copy link → done. **~30 seconds**.
+
 ## ✅ COMPLETED — Email-Token Invitation Flow (2026-04-26)
 **Replaces "owner sets a temp password and WhatsApps it" with "owner generates a single-use invitation link, invitee chooses their own password."**
 

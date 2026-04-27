@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { Sparkles } from 'lucide-react';
 import { PageHeader, Card, fmtDate, Empty } from './shared';
+import InviteSuccessModal from './InviteSuccessModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PER_STAGE_LIMIT = 25;
@@ -18,6 +20,8 @@ export default function LeadsPage() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [expanded, setExpanded] = useState({}); // stage → bool
+  const [inviteResult, setInviteResult] = useState(null);
+  const [convertBusy, setConvertBusy] = useState({}); // email → bool
 
   const load = async () => {
     try {
@@ -30,6 +34,25 @@ export default function LeadsPage() {
   const moveLead = async (email, stage) => {
     await axios.patch(`${API}/admin/v2/leads/${encodeURIComponent(email)}`, { stage });
     load();
+  };
+
+  const convertLead = async (lead) => {
+    if (convertBusy[lead.email]) return;
+    if (!window.confirm(`Convert ${lead.clinic_name || lead.email} to a clinic and send invite to ${lead.email}?`)) return;
+    setConvertBusy((b) => ({ ...b, [lead.email]: true }));
+    try {
+      const r = await axios.post(
+        `${API}/admin/v2/leads/${encodeURIComponent(lead.email)}/convert`,
+        { trial_days: 30 },
+      );
+      setInviteResult(r.data);
+      load();
+    } catch (e) {
+      const msg = e?.response?.data?.detail || 'Conversion failed';
+      alert(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setConvertBusy((b) => ({ ...b, [lead.email]: false }));
+    }
   };
 
   const toggleStage = (s) => setExpanded((prev) => ({ ...prev, [s]: !prev[s] }));
@@ -65,6 +88,22 @@ export default function LeadsPage() {
                     {r.source && <div className="text-[9px] mt-1 text-indigo-600 font-semibold uppercase tracking-wider">{r.source}</div>}
                     {r.notes && <div className="text-[10px] text-slate-500 mt-1 italic line-clamp-2">{r.notes}</div>}
                     <div className="text-[9px] text-slate-400 mt-2">{fmtDate(r.created_at)}</div>
+                    {(r.stage || 'Lead') !== 'Converted' && (
+                      <button
+                        onClick={() => convertLead(r)}
+                        disabled={!!convertBusy[r.email]}
+                        data-testid={`convert-lead-${r.email}`}
+                        className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1.5 rounded text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-300 disabled:to-slate-300 shadow-sm transition-all"
+                      >
+                        <Sparkles size={11} />
+                        {convertBusy[r.email] ? 'Converting…' : 'Convert & Send Invite'}
+                      </button>
+                    )}
+                    {r.converted_clinic_id && (
+                      <div className="mt-1.5 text-[9px] text-emerald-700 font-mono truncate" title={r.converted_clinic_id}>
+                        ✓ {r.converted_clinic_id.slice(0, 28)}…
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1 mt-2">
                       {d.stages.filter((x) => x !== s).map((to) => (
                         <button key={to} onClick={() => moveLead(r.email, to)}
@@ -99,6 +138,9 @@ export default function LeadsPage() {
           );
         })}
       </div>
+      {inviteResult && (
+        <InviteSuccessModal result={inviteResult} onClose={() => setInviteResult(null)} />
+      )}
     </div>
   );
 }

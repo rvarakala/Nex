@@ -673,6 +673,208 @@ async def update_lead(
     return deserialize_datetime(r)
 
 
+# ---------- Convert Lead → Clinic + Invitation -----------------------------
+
+class ConvertLeadRequest(BaseModel):
+    """Founder confirms / overrides the lead's submitted details before
+    creating the clinic. All fields are optional; missing fields fall back
+    to the lead's original values."""
+    clinic_name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    city: Optional[str] = None
+    state: Optional[str] = None
+    phone: Optional[str] = None
+    owner_name: Optional[str] = Field(default=None, min_length=2, max_length=80)
+    owner_email: Optional[EmailStr] = None
+    tier: Optional[Literal["BASIC", "STANDARD", "PREMIUM"]] = None
+    trial_days: int = Field(default=30, ge=0, le=180)
+
+
+class CreateTenantRequest(BaseModel):
+    """For the manual 'Add Tenant' flow — founder onboards a clinic that
+    didn't come through the website."""
+    clinic_name: str = Field(min_length=2, max_length=120)
+    owner_name: str = Field(min_length=2, max_length=80)
+    owner_email: EmailStr
+    city: Optional[str] = None
+    state: Optional[str] = None
+    phone: Optional[str] = None
+    tier: Literal["BASIC", "STANDARD", "PREMIUM"] = "STANDARD"
+    trial_days: int = Field(default=30, ge=0, le=180)
+
+
+class TenantCreatedResponse(BaseModel):
+    """Returned to the founder after a successful conversion / creation.
+    `accept_url` is the WhatsApp/email-shareable invite link."""
+    clinic_id: str
+    clinic_name: str
+    owner_email: str
+    accept_url: str
+    invite_token: str
+    invite_expires_at: datetime
+    converted_from_lead: bool = False
+
+
+async def _create_clinic_with_invite(
+    *, db, request: Request, actor: dict,
+    clinic_name: str, owner_name: str, owner_email: str,
+    city: str, state: str, phone: str,
+    tier: str, trial_days: int,
+    converted_from_lead: bool = False, lead_email: Optional[str] = None,
+) -> TenantCreatedResponse:
+    """Shared helper used by both 'Convert Lead' and 'Add Tenant'.
+    Creates clinic + primary branch + invitation token. NO user is created
+    here — the user is materialised when the invitee accepts the invite,
+    so the password is chosen by the new owner, never the founder."""
+    import re
+    import secrets
+    from datetime import timedelta as _td
+    from routers.invitations import _build_accept_url, INVITE_TTL_DAYS
+
+    email = owner_email.lower().strip()
+
+    # Conflict guard — someone might already own a clinic on this email
+    if await db.users.find_one({"email": email}, {"_id": 0, "user_id": 1}):
+        raise HTTPException(409, detail="A user with this email already exists. Use the existing tenant or invite to a different email.")
+
+    # Unique slug
+    slug = re.sub(r"[^a-z0-9]+", "-", clinic_name.lower()).strip("-")[:40] or "clinic"
+    clinic_id = f"clinic-{slug}-{uuid.uuid4().hex[:6]}"
+    branch_id = f"BR-{uuid.uuid4().hex[:8].upper()}"
+
+    now = datetime.now(timezone.utc)
+    trial_end = now + _td(days=trial_days) if trial_days > 0 else None
+
+    clinic_doc = {
+        "clinic_id": clinic_id,
+        "name": clinic_name.strip(),
+        "city": city or "",
+        "state": state or "",
+        "phone": phone or "",
+        "email": email,
+        "mrd_prefix": slug.upper()[:3] or "CLN",
+        "subscription_tier": tier,
+        "signup_source": "founder-converted" if converted_from_lead else "founder-direct",
+        "created_at": now,
+    }
+    if trial_end:
+        clinic_doc["trial_ends_at"] = trial_end
+    await db.clinics.insert_one(serialize_datetime(clinic_doc))
+
+    await db.branches.insert_one(serialize_datetime({
+        "branch_id": branch_id,
+        "clinic_id": clinic_id,
+        "name": clinic_name.strip(),
+        "city": city or "",
+        "is_primary": True,
+        "active": True,
+        "created_at": now,
+    }))
+
+    # ----- Mint invitation token -----
+    token = secrets.token_urlsafe(32)
+    expires_at = now + _td(days=INVITE_TTL_DAYS)
+    invite_doc = {
+        "invite_id": f"INV-{uuid.uuid4().hex[:10].upper()}",
+        "token": token,
+        "clinic_id": clinic_id,
+        "email": email,
+        "name": owner_name.strip(),
+        "role": "clinic_owner",
+        "branch_ids": [branch_id],
+        "phone": phone,
+        "status": "pending",
+        "created_at": now,
+        "created_by": actor["user_id"],
+        "expires_at": expires_at,
+    }
+    await db.invitations.insert_one(invite_doc)
+
+    accept_url = _build_accept_url(request, token)
+
+    # ----- Update lead → converted -----
+    if converted_from_lead and lead_email:
+        await db.waitlist_signups.update_one(
+            {"email": lead_email.lower()},
+            {"$set": {
+                "stage": "Converted",
+                "converted_clinic_id": clinic_id,
+                "converted_at": now,
+                "converted_by": actor["user_id"],
+                "updated_at": now.isoformat(),
+            }},
+        )
+
+    await _log_audit(db, actor,
+                     "tenant.create_via_invite" if not converted_from_lead else "lead.convert",
+                     clinic_id,
+                     after={"email": email, "tier": tier, "lead_email": lead_email},
+                     request=request)
+
+    return TenantCreatedResponse(
+        clinic_id=clinic_id,
+        clinic_name=clinic_name.strip(),
+        owner_email=email,
+        accept_url=accept_url,
+        invite_token=token,
+        invite_expires_at=expires_at,
+        converted_from_lead=converted_from_lead,
+    )
+
+
+@router.post("/leads/{email}/convert", response_model=TenantCreatedResponse)
+async def convert_lead_to_tenant(
+    email: str, payload: ConvertLeadRequest, request: Request,
+    user=Depends(require_permission("leads:write")),
+    db=Depends(get_db),
+):
+    """One-click convert: lead → clinic + primary branch + owner invitation.
+    Founder shares the returned `accept_url` with the prospect (WhatsApp
+    today; auto-emailed once SendGrid lands)."""
+    lead = await db.waitlist_signups.find_one({"email": email.lower()}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, detail="Lead not found")
+    if lead.get("stage") == "Converted" and lead.get("converted_clinic_id"):
+        # Idempotent guard — return the existing clinic (no duplicate creation)
+        raise HTTPException(409, detail=f"Lead already converted to clinic {lead['converted_clinic_id']}")
+
+    return await _create_clinic_with_invite(
+        db=db, request=request, actor=user,
+        clinic_name=payload.clinic_name or lead.get("clinic_name") or f"{lead.get('name', 'New')} Clinic",
+        owner_name=payload.owner_name or lead.get("name") or "Clinic Owner",
+        owner_email=str(payload.owner_email or email).lower(),
+        city=payload.city or lead.get("city", ""),
+        state=payload.state or lead.get("state", ""),
+        phone=payload.phone or lead.get("phone", ""),
+        tier=payload.tier or lead.get("tier") or "STANDARD",
+        trial_days=payload.trial_days,
+        converted_from_lead=True,
+        lead_email=email.lower(),
+    )
+
+
+@router.post("/tenants", response_model=TenantCreatedResponse)
+async def create_tenant_with_invite(
+    payload: CreateTenantRequest, request: Request,
+    user=Depends(require_permission("tenants:write")),
+    db=Depends(get_db),
+):
+    """Manual 'Add Tenant' — founder onboards a clinic that didn't come
+    through the website. Same end-state as convert_lead, just no lead
+    record to update."""
+    return await _create_clinic_with_invite(
+        db=db, request=request, actor=user,
+        clinic_name=payload.clinic_name,
+        owner_name=payload.owner_name,
+        owner_email=payload.owner_email,
+        city=payload.city or "",
+        state=payload.state or "",
+        phone=payload.phone or "",
+        tier=payload.tier,
+        trial_days=payload.trial_days,
+        converted_from_lead=False,
+    )
+
+
 # ==================== 6. FEATURE FLAGS (per-tenant additive) ====================
 # A tenant's effective modules = TIER_MODULES[tier] ∪ extra_modules − disabled_modules
 
