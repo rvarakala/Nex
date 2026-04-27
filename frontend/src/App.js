@@ -33,6 +33,7 @@ import VaultDemoPage from './modules/settings/VaultDemoPage';
 import InviteAcceptPage from './modules/auth/InviteAcceptPage';
 import AudinexaCarePage from './modules/care/AudinexaCarePage';
 import LegalPage from './modules/legal/LegalPage';
+import PatientsModule from './modules/patients/PatientsModule';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -122,6 +123,9 @@ function AppRoutes() {
 
               <Route path="/frontdesk/*" element={
                 <ShelledRoute><ModuleGate module="frontdesk"><FrontDeskModule /></ModuleGate></ShelledRoute>
+              } />
+              <Route path="/patients/*" element={
+                <ShelledRoute><PatientsModule /></ShelledRoute>
               } />
               <Route path="/appointments" element={
                 <ShelledRoute><AppointmentsCalendarPage /></ShelledRoute>

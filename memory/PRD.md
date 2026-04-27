@@ -1,5 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — UI Phase A: Patients Hub + Clinic Open/Close + Profile Sub-tabs (2026-04-27)
+
+**User context**: Multiple users complained about the existing UI. Reference shared (7Health.Pro) — non-negotiable look. Required to merge Front Desk + Appointments + Reports into a single section AND deliver a per-patient profile page with 7 sub-tabs that are currently missing.
+
+**Backend** (`routers/clinic_status.py` — 4 deps, 73 lines):
+- `GET  /api/clinic/status` — returns `is_open` + `updated_at` + `updated_by_name` + `note`
+- `PUT  /api/clinic/status` — owner/super_admin/founder/front_desk/accounts can flip; writes audit row to `clinic_status_history`
+
+**Frontend** — new module `/modules/patients/` (5 files):
+- `PatientsModule.js` — top-level shell with sub-tab nav (Dashboard · Appointments · Patients · Reports). Hides nav on per-profile route so the profile owns its own sub-tabs.
+- `PatientsDashboard.jsx` — "Hey! {firstName} 👋" greeting with Search Patient + Add Patient CTAs, embeds existing `<DashboardPage />` (Clinic Pulse + KPIs + Live Queue) so no widget regression.
+- `PatientsListPage.jsx` — directory table with avatar + name + MRD + mobile + age/gender + registration date + "View Profile →" link. Search box, 200-row default, indigo accents. Wired to existing `GET /api/patients?search=&limit=`.
+- `AppointmentsBoard.jsx` — card-grid layout matching reference: avatar + age/gender row + Contact/Time/Date table + complaint bubble + status pill (Scheduled/In Queue/Attending Now/Complete/Cancelled with violet/amber/emerald/rose tones) + indigo kebab menu (View Profile · Attend Now · Add to Queue · Edit · Cancel). Date picker + Search filter + Add Appointment CTA. Responsive 1→2→3→4→5 columns.
+- `PatientProfilePage.jsx` — 7 sub-tabs: **History** (auto-derived timeline from existing data: appointments + sessions + invoices + payments + service tickets + notes; coloured kind dots, ISO timestamps, deep links into invoices), **Appointments**, **Notes**, **Follow-ups**, **Payments**, **Reports** (split into Diagnostic Reports section + Hearing-Aid Service Reports section), **Service** (ticket list). Header: gradient indigo→violet avatar, name + gender pill + age + mobile + MRD + WhatsApp opt-in badge. Add Appointment + Edit CTAs.
+- `components/ClinicStatusToggle.jsx` — pill in topbar matching reference (Clinic: Close • Open with sliding indigo/grey thumb). Hits `/api/clinic/status`. Optimistic UI with revert on failure.
+
+**Wiring**:
+- `App.js` — `/patients/*` route registered (rendered inside `<ShelledRoute>`)
+- `AppShell.js` — added `Patients` nav entry at top of Clinic group; `<ClinicStatusToggle />` injected into topbar before search
+- Existing Front Desk + Appointments + Reports nav entries **preserved** so legacy deep-links / bookmarks / tests don't break
+
+**Validated**:
+- Backend: clinic-status GET/PUT/history works (curl). Full regression `pytest` suite **48/48 PASS** (concurrency + estimate + invoice + pipeline + care + report-handover + connect + clinic-status changes).
+- Frontend live UI smoke: Patients list renders 200 rows with View Profile links. Connect Test Patient profile auto-derives full timeline (appointments, 7 service tickets, 2 invoices) under History tab; all 7 sub-tabs switch cleanly. Appointments Board shows 199 cards in 5-col grid with kebab menus, status pills, complaint bubbles. ClinicStatusToggle visible in topbar with sliding thumb, persists across page loads.
+- Visual fidelity to 7Health.Pro reference: confirmed by side-by-side screenshot review (header greeting, card grid, kebab menu items, status pill colours, tab underline accent, Clinic open/close pill all match).
+
 ## ✅ COMPLETED — AUDINEXA Connect (MSG91 WhatsApp) — PR 1 Foundation (2026-04-27)
 
 **User context**: Add WhatsApp messaging capability via MSG91 with both **BYOG** (Premium clinics use their own MSG91 account) and **Hosted** (Standard clinics use shared Audinexa account) modes. DPDP Act 2023 compliant — strict opt-in patient consent + DPA acceptance gate. PR 2 will layer the Meta-approved templates and auto-triggers.

@@ -18,6 +18,7 @@ import OfflineBanner from '../connectivity/OfflineBanner';
 import InstallPrompt from '../connectivity/InstallPrompt';
 import IdleLogout from '../connectivity/IdleLogout';
 import { SyncPill, SyncDrawer } from '../connectivity/SyncDashboard';
+import ClinicStatusToggle from '../components/ClinicStatusToggle';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
@@ -186,6 +187,7 @@ export default function AppShell({ children }) {
     {
       label: 'Clinic',
       items: [
+        { to: '/patients', Icon: Users, label: 'Patients', testid: 'nav-patients' },
         { to: '/frontdesk', Icon: Users, label: 'Front Desk', testid: 'nav-frontdesk' },
         { to: '/appointments', Icon: CalendarDays, label: 'Appointments', testid: 'nav-appointments' },
         (user?.role !== 'audiologist') && { to: '/billing', Icon: Receipt, label: 'Billing', testid: 'nav-billing' },
@@ -406,6 +408,7 @@ export default function AppShell({ children }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <ClinicStatusToggle />
             <button
               onClick={() => setPaletteOpen(true)}
               data-testid="cmdk-trigger"
