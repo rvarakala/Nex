@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
+import ErrorToast, { describeError } from '../../../components/ErrorToast';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -193,7 +194,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
         setQuickRegOpen(false);
         setQrErr('');
       } else {
-        setQrErr(typeof d === 'string' ? d : (e?.message || 'Registration failed'));
+        setQrErr(describeError(e, 'Quick registration failed'));
       }
     } finally {
       setQrBusy(false);
@@ -287,7 +288,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
       if (d && typeof d === 'object' && d.conflict_with) {
         setErr(`Conflict with ${d.conflict_with.patient_name} at ${new Date(d.conflict_with.start_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`);
       } else {
-        setErr(typeof d === 'string' ? d : (e?.message || 'Save failed'));
+        setErr(describeError(e, 'Failed to save appointment'));
       }
     } finally {
       setBusy(false);
@@ -377,7 +378,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
                     <option value="Other">Other</option>
                   </select>
                 </div>
-                {qrErr && <div className="text-[10px] text-rose-700" data-testid="bk-qr-error">{qrErr}</div>}
+                {qrErr && <ErrorToast err={qrErr} testid="bk-qr-error" className="text-[10px] !p-1.5" />}
                 <div className="flex items-center justify-end gap-1.5 pt-0.5">
                   <button type="button" onClick={() => setQuickRegOpen(false)}
                     className="px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
@@ -636,7 +637,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             </div>
           )}
 
-          {err && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1" data-testid="bk-error">{err}</div>}
+          {err && <ErrorToast err={err} testid="bk-error" />}
         </div>
 
         <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2">

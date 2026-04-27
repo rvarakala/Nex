@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API, fmtINR, PAYMENT_METHODS } from './billingUtils';
 import AddServiceInlineModal from './AddServiceInlineModal';
+import ErrorToast, { describeError } from '../../components/ErrorToast';
 
 // Compute totals client-side (mirrors backend logic) for live preview.
 function resolveDiscount(line, gross) {
@@ -188,8 +189,7 @@ export default function CreateInvoicePage() {
       const r = await axios.post(`${API}/billing/invoices`, body);
       navigate(`/billing/invoice/${r.data.invoice_id}`);
     } catch (e) {
-      const d = e?.response?.data?.detail;
-      setError(typeof d === 'string' ? d : (e?.message || 'Failed to create invoice'));
+      setError(describeError(e, 'Failed to create invoice'));
     } finally { setSaving(false); }
   };
 
@@ -435,11 +435,7 @@ export default function CreateInvoicePage() {
           )}
         </div>
 
-        {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 text-[11px] rounded px-2 py-1.5" data-testid="ci-error">
-            {error}
-          </div>
-        )}
+        {error && <ErrorToast err={error} testid="ci-error" />}
 
         <button onClick={submit} disabled={!valid || saving} data-testid="ci-submit"
           className="w-full py-2 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded shadow-sm">

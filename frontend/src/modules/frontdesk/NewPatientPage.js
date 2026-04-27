@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
+import ErrorToast, { describeError } from '../../components/ErrorToast';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -137,8 +138,7 @@ export default function NewPatientPage() {
         navigate('/frontdesk');
       }
     } catch (e) {
-      const d = e?.response?.data?.detail;
-      setErr(typeof d === 'string' ? d : (e?.message || 'Registration failed'));
+      setErr(describeError(e, 'Registration failed'));
     } finally {
       setBusy(false);
     }
@@ -279,7 +279,7 @@ export default function NewPatientPage() {
             </Field>
           </div>
 
-          {err && <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2" data-testid="form-error">{err}</div>}
+          {err && <div className="mt-3"><ErrorToast err={err} testid="form-error" /></div>}
         </div>
 
         {/* Sticky action bar */}

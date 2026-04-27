@@ -1,5 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — ErrorToast pattern rolled out across modules (2026-04-27)
+
+**User ask**: "Apply ErrorToast everywhere — pattern is now in the drawer; Front Desk / Diagnostics / Billing modules can all opt-in."
+
+**Why**: same root cause as last week — every module had its own copy-paste of `setErr(e?.response?.data?.detail || 'Failed')` that masked the real error and offered no way for clinicians to ship the failure context to support. Now there's exactly one helper, one component, and one consistent pattern.
+
+**Shared module** — new `frontend/src/components/ErrorToast.jsx`:
+- `describeError(e, fallback)` → `{display, diagnostic}`. The `display` handles real detail string, 401 → "Session expired", 403 → "No permission", network errors, Pydantic-422 array unrolled to "field: msg; field: msg". The `diagnostic` blob carries ISO timestamp + action + message + HTTP method+URL + status + body fragment.
+- `<ErrorToast err={err} testid="…" />` renders the rose-tinted banner with a "📋 Copy" button. Click writes the full diagnostic blob to clipboard (textarea fallback for older browsers); flashes "✓ Copied".
+- Accepts both `string` and `{display, diagnostic}` shapes for back-compat.
+
+**Rolled out to 7 high-traffic files** (replaces 13 ad-hoc error renderings):
+1. `modules/repair/AudinexaPipelineDrawer.jsx` — local copies extracted to shared module.
+2. `modules/frontdesk/appointments/BookAppointmentModal.js` — quick-reg + main book.
+3. `modules/frontdesk/NewPatientPage.js` — registration form.
+4. `modules/billing/CreateInvoicePage.js` — invoice creation.
+5. `modules/billing/InvoiceDetailPage.js` — replaced old `alert(...)` cancel popup with top-of-page toast + payment recording errors.
+6. `modules/billing/AddServiceInlineModal.jsx` — service catalogue save.
+7. `modules/test/DiagnosticsQueueBoard.js` — queue load + start session + mark complete.
+
+**Validated**:
+- Lint clean across all 8 touched files (7 modules + new shared component).
+- Backend regression: **26/26 PASS** (5 auto-invoice + 5 recurring errors + 7 concurrency + 4 estimate + 5 pipeline).
+- Live UI smoke (real conflict): duplicate-AWB triggered → rose banner reading "⚠ AWB AWB-DUP-1777293885537 already booked (CSH-2026-0233)" with the **📋 Copy** button rendered on the right.
+
 ## ✅ COMPLETED — Auto GST Invoice + Copy-error-to-clipboard (2026-04-27)
 
 **User asks**: (1) tiny "Copy error to clipboard" button next to every red error toast, (2) Service & Repairs attract 18% GST → invoice should auto-raise upon job completion.

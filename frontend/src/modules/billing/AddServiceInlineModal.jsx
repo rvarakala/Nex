@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { API } from './billingUtils';
+import ErrorToast, { describeError } from '../../components/ErrorToast';
 
 const CATEGORIES = ['Consultation', 'Audiology', 'Hearing Aid', 'Accessory', 'Service'];
 
@@ -56,7 +57,7 @@ export default function AddServiceInlineModal({ open, onClose, onCreated, defaul
       onCreated?.(r.data);
       onClose?.();
     } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Save failed — try again');
+      setErr(describeError(e2, 'Failed to save service'));
     } finally {
       setSaving(false);
     }
@@ -80,11 +81,7 @@ export default function AddServiceInlineModal({ open, onClose, onCreated, defaul
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-rose-600 text-lg leading-none" data-testid="add-svc-close">×</button>
         </div>
 
-        {err && (
-          <div className="mx-3 mt-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded px-2 py-1.5" data-testid="add-svc-error">
-            {err}
-          </div>
-        )}
+        {err && <div className="mx-3 mt-3"><ErrorToast err={err} testid="add-svc-error" /></div>}
 
         <div className="p-3 space-y-2">
           <Field label="Service Name *">

@@ -14,83 +14,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import ConflictResolutionModal from '../../components/ConflictResolutionModal';
+import ErrorToast, { describeError } from '../../components/ErrorToast';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-
-/**
- * Extract a human-friendly error message from an axios error.
- * Always logs the full error to the console for forensic debugging.
- * Surfacing real HTTP status + body fragment beats a generic "Failed".
- *
- * Returns an object so callers can render a "Copy" button alongside the
- * displayed message that copies the FULL diagnostic context (url, status,
- * timestamp, raw body) to the clipboard for support tickets.
- */
-function describeError(e, fallback = 'Request failed') {
-  // Always log so the developer can grep DevTools when end-users complain
-  // eslint-disable-next-line no-console
-  console.error('[audinexa]', fallback, e?.response?.status, e?.response?.data, e);
-  let display;
-  if (!e?.response) {
-    // Network-level error (CORS preflight, DNS, server gone)
-    display = `${fallback} — connection problem (check internet, then retry).`;
-  } else {
-    const status = e.response.status;
-    const detail = e.response.data?.detail;
-    if (status === 401) display = 'Session expired — please sign in again.';
-    else if (status === 403) display = 'You do not have permission to do this.';
-    else if (typeof detail === 'string') display = detail;
-    else if (detail && typeof detail === 'object' && detail.detail) display = detail.detail;
-    else if (detail) display = JSON.stringify(detail);
-    else display = `${fallback} (HTTP ${status})`;
-  }
-  // Build a richer diagnostic blob for the clipboard
-  const diagnostic = [
-    `[AUDINEXA error] ${new Date().toISOString()}`,
-    `Action: ${fallback}`,
-    `Display: ${display}`,
-    e?.config?.method && `${e.config.method.toUpperCase()} ${e.config.url || ''}`.trim(),
-    e?.response?.status && `HTTP ${e.response.status}`,
-    e?.response?.data && `Body: ${JSON.stringify(e.response.data).slice(0, 500)}`,
-  ].filter(Boolean).join('\n');
-  return { display, diagnostic };
-}
-
-/** Render-friendly toast: shows the message + a tiny "Copy" button. */
-function ErrorToast({ err, testid }) {
-  if (!err) return null;
-  const { display, diagnostic } = typeof err === 'string'
-    ? { display: err, diagnostic: err } : err;
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(diagnostic || display);
-      // toast lives outside this module — keep this lightweight to avoid coupling
-      // eslint-disable-next-line no-console
-      console.info('[audinexa] error copied to clipboard');
-    } catch {
-      // Fallback for older browsers
-      const ta = document.createElement('textarea');
-      ta.value = diagnostic || display;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch (_) { /* noop */ }
-      document.body.removeChild(ta);
-    }
-  };
-  return (
-    <div className="bg-rose-100 text-rose-800 p-2 rounded text-[11px] font-semibold flex items-start gap-2"
-         data-testid={testid}>
-      <span className="flex-1">⚠ {display}</span>
-      <button onClick={onCopy}
-              data-testid={testid ? `${testid}-copy` : 'audinexa-error-copy'}
-              title="Copy full error to clipboard"
-              className="px-1.5 py-0.5 text-[10px] bg-rose-200 hover:bg-rose-300 text-rose-900 rounded font-bold">
-        📋 Copy
-      </button>
-    </div>
-  );
-}
 
 /**
  * Download the Job Card / Service Report PDF using axios so the JWT travels

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { API, fmtINR, fmtDate, fmtDateTime, PAYMENT_METHODS, StatusPill } from './billingUtils';
 import { useAuth } from '../../AuthContext';
+import ErrorToast, { describeError } from '../../components/ErrorToast';
 
 export default function InvoiceDetailPage() {
   const { invoiceId } = useParams();
@@ -36,14 +37,16 @@ export default function InvoiceDetailPage() {
     window.open(`https://wa.me/${mobile}?text=${msg}`, '_blank');
   };
 
+  const [actionErr, setActionErr] = useState(null);
   const cancelInvoice = async () => {
     const reason = window.prompt('Reason for cancellation:');
     if (!reason) return;
+    setActionErr(null);
     try {
       const r = await axios.post(`${API}/billing/invoices/${inv.invoice_id}/cancel`, { reason });
       setInv(r.data);
     } catch (e) {
-      alert(e?.response?.data?.detail || 'Cancel failed');
+      setActionErr(describeError(e, 'Failed to cancel invoice'));
     }
   };
 
@@ -56,6 +59,8 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="p-3 md:p-4 space-y-3" data-testid={`invoice-detail-${inv.invoice_id}`}>
+      {/* Action errors (cancel / etc.) */}
+      {actionErr && <ErrorToast err={actionErr} testid="inv-action-err" />}
       {/* Non-print toolbar */}
       <div className="bg-white rounded-lg border border-slate-200 p-2 flex items-center gap-2 flex-wrap print:hidden">
         <Link to="/billing" className="text-xs text-slate-600 hover:text-emerald-700">← Back</Link>
@@ -283,7 +288,7 @@ const PaymentDialog = ({ invoice, onClose, onSaved }) => {
       });
       onSaved(r.data);
     } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || 'Payment failed');
+      setErr(describeError(e, 'Payment failed'));
     } finally { setBusy(false); }
   };
 
@@ -327,7 +332,7 @@ const PaymentDialog = ({ invoice, onClose, onSaved }) => {
               data-testid="pay-reference"
               className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono" />
           </div>
-          {err && <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1" data-testid="pay-error">{err}</div>}
+          {err && <ErrorToast err={err} testid="pay-error" />}
         </div>
         <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded">Cancel</button>

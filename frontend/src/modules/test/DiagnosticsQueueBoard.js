@@ -16,6 +16,7 @@ import { useTestContext } from '../../TestContext';
 import {
   Clock, ClipboardList, Activity, CheckCircle2, RefreshCw, AlertCircle, UserPlus,
 } from 'lucide-react';
+import ErrorToast, { describeError } from '../../components/ErrorToast';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -50,7 +51,7 @@ export default function DiagnosticsQueueBoard() {
       setData(r.data);
       setErr('');
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Failed to load queue');
+      setErr(describeError(e, 'Failed to load queue'));
     }
   }, []);
 
@@ -74,7 +75,7 @@ export default function DiagnosticsQueueBoard() {
       setActiveTest({ patient: r.data.patient, sessionId: r.data.session_id });
       navigate('/test');
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Could not start session');
+      setErr(describeError(e, 'Could not start session'));
     } finally {
       setStarting(null);
     }
@@ -99,7 +100,7 @@ export default function DiagnosticsQueueBoard() {
       await axios.post(`${API}/diagnostics/queue/complete`, { session_id: sessionId });
       await load();
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Could not mark complete');
+      setErr(describeError(e, 'Could not mark complete'));
     } finally {
       setStarting(null);
     }
@@ -198,11 +199,7 @@ export default function DiagnosticsQueueBoard() {
         </div>
       </div>
 
-      {err && (
-        <div className="px-4 py-2 text-[11px] text-rose-700 bg-rose-50 border-b border-rose-200 flex items-center gap-2">
-          <AlertCircle size={12} /> {err}
-        </div>
-      )}
+      {err && <div className="px-4 py-2 border-b border-rose-200"><ErrorToast err={err} testid="diag-queue-err" /></div>}
 
       {/* 4-column board */}
       <div className="flex-1 overflow-auto p-3">
