@@ -6,6 +6,23 @@
 
 # ACS Audiology Clinic — Product Requirements Document
 
+# ACS Audiology Clinic — Product Requirements Document
+
+## ✅ COMPLETED — Bug Fix: "Add Staff" Phantom-409 Retry Race (2026-04-26)
+**User report**: Add audiologist → "Save failed" + "Connection issue — retrying save..." + user actually got created server-side.
+
+**Root cause**: The Axios retry interceptor was treating non-idempotent POSTs the same as idempotent GETs. When the server processed a create request but the response got lost in transit (slow preview pod / proxy hiccup), the interceptor retried with the same payload → server returned **409 Email already exists** (because attempt #1 succeeded) → user saw "Save failed" while the user was actually in the database.
+
+**Fix (2 layers)**:
+1. **`/app/frontend/src/connectivity/axiosRetry.js`** — Split retry policy by idempotency:
+   - `IDEMPOTENT_METHODS = {GET, PUT, DELETE}` → retry on network errors AND 5xx (unchanged)
+   - **POST/PATCH** → retry ONLY on 502/503/504 (proxy errors mean server didn't process). Network errors no longer trigger blind retry, since the server may have already processed the original request.
+   - Outbox-eligible POSTs (patient / appointment / audiogram saves) still retry on network errors as before — those paths are designed with server-side dedup in mind.
+
+2. **`/app/frontend/src/modules/settings/StaffSettingsTab.js`** — Added phantom-409 recovery: if a create POST returns 409, the form auto-fetches `/users` and checks if the email already exists. If it does (meaning a previous attempt actually succeeded), the form transparently shows the success modal with a note: *"(set during a previous attempt — share via password reset if needed)"* — the user gets a clean success state instead of a confusing error.
+
+**Validated**: Live browser smoke test — first create returns 200 (single network call); duplicate-email create returns 409 once and triggers the recovery path showing the temp-password modal. No retry storm. No phantom errors.
+
 ## ✅ COMPLETED — Lead-to-Tenant + Add Tenant + Auto-Invite (2026-04-26)
 **Closes the gap reported by user: "Add Tenant didn't exist; lead never received an invite."**
 

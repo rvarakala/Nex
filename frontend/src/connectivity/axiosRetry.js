@@ -25,7 +25,14 @@ const MAX_RETRIES = RETRY_BACKOFF_MS.length;
 const RETRY_FLAG = '__audinexa_retry_count';
 const RETRY_TOAST_ID = 'axios-retry-status';
 
-const RETRYABLE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+// Idempotent methods are always safe to retry — server processes the same way
+// regardless of how many times the request arrives.
+const IDEMPOTENT_METHODS = new Set(['get', 'put', 'delete']);
+// POST is non-idempotent: a retry can create a duplicate if the original
+// actually succeeded but the response was lost in transit. We retry POST
+// ONLY on 5xx (proxy errors → server didn't process) AND for outbox-eligible
+// flows (which expect server-side dedup).
+const RETRYABLE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete']);
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
 // Endpoints we can safely queue offline — kept tight on purpose. Anything not
@@ -83,8 +90,23 @@ const isRetryable = (err, config) => {
   if (config[RETRY_FLAG] >= MAX_RETRIES) return false;
   // Caller can opt out by setting `noRetry: true` on the axios config
   if (config.noRetry) return false;
-  if (isNetworkError(err)) return true;
+
+  // Idempotent methods (GET/PUT/DELETE) are always safe to retry on either
+  // a raw network error or a 502/503/504.
+  if (IDEMPOTENT_METHODS.has(method)) {
+    if (isNetworkError(err)) return true;
+    if (err.response && RETRYABLE_STATUSES.has(err.response.status)) return true;
+    return false;
+  }
+
+  // For POST/PATCH (non-idempotent): a retry on a raw network error is
+  // dangerous because the server may have processed the original request and
+  // we just lost the response (the user sees a duplicate-key 409 from
+  // attempt #2 even though attempt #1 succeeded). Two safe paths:
+  //   1) Retry only on explicit 5xx proxy errors (server *didn't* process)
+  //   2) Or if the route is outbox-eligible (caller expects server-side dedup)
   if (err.response && RETRYABLE_STATUSES.has(err.response.status)) return true;
+  if (isNetworkError(err) && isOutboxEligible(config)) return true;
   return false;
 };
 

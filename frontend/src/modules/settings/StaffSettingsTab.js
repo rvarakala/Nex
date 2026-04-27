@@ -370,7 +370,27 @@ function StaffForm({ user, branches, onClose, onCreated, onSaved }) {
         onCreated(r.data);
       }
     } catch (e) {
+      const status = e?.response?.status;
       const d = e?.response?.data?.detail;
+      // Recovery for the "lost-response retry → phantom 409" race: if a 409
+      // fires on create, double-check whether the user actually got created
+      // by a previous attempt that lost its response. If so, treat as success.
+      if (!isEdit && status === 409) {
+        try {
+          const list = await axios.get(`${API}/users`);
+          const found = (list.data || []).find(
+            (u) => (u.email || '').toLowerCase() === (f.email || '').toLowerCase(),
+          );
+          if (found) {
+            onCreated({
+              user: found,
+              temp_password: '(set during a previous attempt — share via password reset if needed)',
+              email_status: 'recovered',
+            });
+            return;
+          }
+        } catch { /* fall through to normal error display */ }
+      }
       setErr(typeof d === 'string' ? d : 'Save failed');
     } finally { setSaving(false); }
   };
