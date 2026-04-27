@@ -611,6 +611,7 @@ from routers import reports as reports_router         # noqa: E402
 from routers import patients as patients_router       # noqa: E402
 from routers import vault as vault_router              # noqa: E402
 from routers import invitations as invitations_router  # noqa: E402
+from routers import care_support as care_support_router  # noqa: E402
 from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
 from routers import sessions as sessions_router       # noqa: E402
@@ -648,6 +649,7 @@ app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
 app.include_router(patients_router.router)
 app.include_router(vault_router.router)
+app.include_router(care_support_router.router)
 # Invitations router mounts at /api (paths inside the router include /settings/*
 # for owner endpoints and /public/* for invitee endpoints)
 app.include_router(invitations_router.router, prefix="/api")

@@ -62,7 +62,7 @@ export function describeError(e, fallback = 'Request failed') {
   return { display, diagnostic };
 }
 
-export default function ErrorToast({ err, testid, className = '' }) {
+export default function ErrorToast({ err, testid, className = '', allowReport = true }) {
   if (!err) return null;
   const { display, diagnostic } = typeof err === 'string'
     ? { display: err, diagnostic: err } : err;
@@ -90,16 +90,38 @@ export default function ErrorToast({ err, testid, className = '' }) {
     }
   };
 
+  // "🛟 Report" — pre-fill an AUDINEXA Care ticket with the diagnostic blob.
+  // Routes via query string so we don't need a global event bus.
+  const onReport = (ev) => {
+    ev.stopPropagation();
+    const subj = `Error: ${display.slice(0, 100)}`;
+    const params = new URLSearchParams({
+      prefill_diag: encodeURIComponent(diagnostic || display),
+      prefill_subject: encodeURIComponent(subj),
+    });
+    window.location.assign(`/care?${params.toString()}`);
+  };
+
   return (
     <div className={`bg-rose-100 text-rose-800 p-2 rounded text-[12px] font-semibold flex items-start gap-2 ${className}`}
          data-testid={testid}>
       <span className="flex-1 leading-snug">⚠ {display}</span>
-      <button onClick={onCopy}
-              data-testid={testid ? `${testid}-copy` : 'audinexa-error-copy'}
-              title="Copy full error to clipboard"
-              className="px-1.5 py-0.5 text-[10px] bg-rose-200 hover:bg-rose-300 text-rose-900 rounded font-bold whitespace-nowrap">
-        📋 Copy
-      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={onCopy}
+                data-testid={testid ? `${testid}-copy` : 'audinexa-error-copy'}
+                title="Copy full error to clipboard"
+                className="px-1.5 py-0.5 text-[10px] bg-rose-200 hover:bg-rose-300 text-rose-900 rounded font-bold whitespace-nowrap">
+          📋 Copy
+        </button>
+        {allowReport && (
+          <button onClick={onReport}
+                  data-testid={testid ? `${testid}-report` : 'audinexa-error-report'}
+                  title="Report this to AUDINEXA Care (opens a pre-filled support ticket)"
+                  className="px-1.5 py-0.5 text-[10px] bg-rose-600 hover:bg-rose-700 text-white rounded font-bold whitespace-nowrap">
+            🛟 Report
+          </button>
+        )}
+      </div>
     </div>
   );
 }

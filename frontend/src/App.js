@@ -31,6 +31,7 @@ import { ConnectivityProvider } from './connectivity/ConnectivityContext';
 import { VaultProvider } from './crypto/VaultContext';
 import VaultDemoPage from './modules/settings/VaultDemoPage';
 import InviteAcceptPage from './modules/auth/InviteAcceptPage';
+import AudinexaCarePage from './modules/care/AudinexaCarePage';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -146,6 +147,9 @@ function AppRoutes() {
               } />
               <Route path="/settings/*" element={
                 <ShelledRoute><SettingsModule /></ShelledRoute>
+              } />
+              <Route path="/care" element={
+                <ShelledRoute><AudinexaCarePage /></ShelledRoute>
               } />
 
               {/* BYOK Phase 1 PoC — Clinic Vault demo (any authed user) */}

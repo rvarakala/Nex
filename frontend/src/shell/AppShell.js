@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
   BarChart3, HeartPulse, Handshake, FileText, ChevronLeft, LogOut,
-  Menu, Search as SearchIcon, Settings, Database, CalendarDays,
+  Menu, Search as SearchIcon, Settings, Database, CalendarDays, LifeBuoy,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -21,6 +21,7 @@ import { SyncPill, SyncDrawer } from '../connectivity/SyncDashboard';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
+const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
 
 // ================= Nav item =================
 const NavItem = ({ to, Icon, label, testid, collapsed, onNavigate, badge }) => (
@@ -76,6 +77,7 @@ export default function AppShell({ children }) {
   });
   const [unreadCloseout, setUnreadCloseout] = useState(null);
   const [pendingReports, setPendingReports] = useState(0);
+  const [careOpenCount, setCareOpenCount] = useState(0);
 
   useEffect(() => {
     try { localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
@@ -114,6 +116,24 @@ export default function AppShell({ children }) {
     const iv = setInterval(fetchPendingReports, 60000);
     return () => clearInterval(iv);
   }, [fetchPendingReports, user]);
+
+  // AUDINEXA Care badge — open ticket count for the clinic side.
+  const showCareBadge = user && !INTERNAL_ADMIN_ROLES.includes(user?.role) && user?.role !== 'referral_partner';
+  const fetchCareCount = useCallback(async () => {
+    if (!showCareBadge) { setCareOpenCount(0); return; }
+    try {
+      const r = await axios.get(`${API}/care/tickets`);
+      setCareOpenCount(Number(r.data?.open_count) || 0);
+    } catch (err) {
+      if (err?.response?.status !== 404) console.warn('[AppShell] care-count failed:', err?.message);
+    }
+  }, [showCareBadge]);
+  useEffect(() => {
+    if (!user) return;
+    fetchCareCount();
+    const iv = setInterval(fetchCareCount, 90000);
+    return () => clearInterval(iv);
+  }, [fetchCareCount, user]);
 
   // Auto-clear the global "Active test" badge if the session has already moved past
   // the audiologist (test_completed / printed / handed_over / completed). Guards against
@@ -212,6 +232,14 @@ export default function AppShell({ children }) {
       label: 'Settings',
       items: [
         { to: '/settings/clinic', Icon: Settings, label: 'Settings', testid: 'nav-settings' },
+      ],
+    },
+    // AUDINEXA Care — visible to ALL clinic users (the support inbox).
+    user && !INTERNAL_ADMIN_ROLES.includes(user?.role) && user?.role !== 'referral_partner' && {
+      label: 'Help',
+      items: [
+        { to: '/care', Icon: LifeBuoy, label: 'AUDINEXA Care', testid: 'nav-care',
+          badge: careOpenCount > 0 ? careOpenCount : null },
       ],
     },
   ].filter(Boolean);
