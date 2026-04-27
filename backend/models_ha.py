@@ -689,6 +689,8 @@ class ServiceTicket(BaseModel):
     inbound_shipment_id: Optional[str] = None
     estimate_id: Optional[str] = None
     approval_id: Optional[str] = None
+    invoice_id: Optional[str] = None                            # Linked invoice (auto-generated at handover)
+    invoice_no: Optional[str] = None                            # Human-facing invoice number
     vendor_id: Optional[str] = None                             # company service centre
 
     # ---- Optimistic concurrency control (Phase 14: 3-way merge) ----

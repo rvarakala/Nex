@@ -22,23 +22,74 @@ const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFrac
  * Extract a human-friendly error message from an axios error.
  * Always logs the full error to the console for forensic debugging.
  * Surfacing real HTTP status + body fragment beats a generic "Failed".
+ *
+ * Returns an object so callers can render a "Copy" button alongside the
+ * displayed message that copies the FULL diagnostic context (url, status,
+ * timestamp, raw body) to the clipboard for support tickets.
  */
 function describeError(e, fallback = 'Request failed') {
   // Always log so the developer can grep DevTools when end-users complain
   // eslint-disable-next-line no-console
   console.error('[audinexa]', fallback, e?.response?.status, e?.response?.data, e);
+  let display;
   if (!e?.response) {
-    // Network-level error (CORS preflight, DNS, server gone) — not a 4xx/5xx
-    return `${fallback} — connection problem (check internet, then retry).`;
+    // Network-level error (CORS preflight, DNS, server gone)
+    display = `${fallback} — connection problem (check internet, then retry).`;
+  } else {
+    const status = e.response.status;
+    const detail = e.response.data?.detail;
+    if (status === 401) display = 'Session expired — please sign in again.';
+    else if (status === 403) display = 'You do not have permission to do this.';
+    else if (typeof detail === 'string') display = detail;
+    else if (detail && typeof detail === 'object' && detail.detail) display = detail.detail;
+    else if (detail) display = JSON.stringify(detail);
+    else display = `${fallback} (HTTP ${status})`;
   }
-  const status = e.response.status;
-  const detail = e.response.data?.detail;
-  if (status === 401) return 'Session expired — please sign in again.';
-  if (status === 403) return 'You do not have permission to do this.';
-  if (typeof detail === 'string') return detail;
-  if (detail && typeof detail === 'object' && detail.detail) return detail.detail;
-  if (detail) return JSON.stringify(detail);
-  return `${fallback} (HTTP ${status})`;
+  // Build a richer diagnostic blob for the clipboard
+  const diagnostic = [
+    `[AUDINEXA error] ${new Date().toISOString()}`,
+    `Action: ${fallback}`,
+    `Display: ${display}`,
+    e?.config?.method && `${e.config.method.toUpperCase()} ${e.config.url || ''}`.trim(),
+    e?.response?.status && `HTTP ${e.response.status}`,
+    e?.response?.data && `Body: ${JSON.stringify(e.response.data).slice(0, 500)}`,
+  ].filter(Boolean).join('\n');
+  return { display, diagnostic };
+}
+
+/** Render-friendly toast: shows the message + a tiny "Copy" button. */
+function ErrorToast({ err, testid }) {
+  if (!err) return null;
+  const { display, diagnostic } = typeof err === 'string'
+    ? { display: err, diagnostic: err } : err;
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(diagnostic || display);
+      // toast lives outside this module — keep this lightweight to avoid coupling
+      // eslint-disable-next-line no-console
+      console.info('[audinexa] error copied to clipboard');
+    } catch {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = diagnostic || display;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (_) { /* noop */ }
+      document.body.removeChild(ta);
+    }
+  };
+  return (
+    <div className="bg-rose-100 text-rose-800 p-2 rounded text-[11px] font-semibold flex items-start gap-2"
+         data-testid={testid}>
+      <span className="flex-1">⚠ {display}</span>
+      <button onClick={onCopy}
+              data-testid={testid ? `${testid}-copy` : 'audinexa-error-copy'}
+              title="Copy full error to clipboard"
+              className="px-1.5 py-0.5 text-[10px] bg-rose-200 hover:bg-rose-300 text-rose-900 rounded font-bold">
+        📋 Copy
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -210,7 +261,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
 
   return (
     <DrawerShell onClose={onClose} title={`Service Job · ${ticketNo}`}>
-      {err && <div className="bg-rose-50 text-rose-800 text-xs p-2 rounded mb-3">{err}</div>}
+      {err && <ErrorToast err={err} testid="audinexa-pipeline-err" />}
 
       {/* ===== HEADER ===== */}
       <div className="flex items-start justify-between mb-5 pb-4 border-b border-slate-200">
@@ -315,21 +366,34 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
         </div>
       )}
 
-      {/* ===== END-OF-PIPELINE: Print Service Report ===== */}
+      {/* ===== END-OF-PIPELINE: Print Service Report + Auto-Invoice ===== */}
       {(curStatus === 'READY_FOR_PICKUP' ||
         curStatus === 'DELIVERED_TO_CLIENT' ||
         curStatus === 'CLOSED') && (
-        <div className="mb-5 bg-emerald-50 border border-emerald-200 rounded p-3 flex items-center justify-between"
+        <div className="mb-5 bg-emerald-50 border border-emerald-200 rounded p-3 space-y-2"
              data-testid="audinexa-final-report-banner">
-          <div>
-            <div className="text-xs font-bold text-emerald-900">Service complete</div>
-            <div className="text-[11px] text-emerald-800">Print the full Service Report with timeline, shipments, estimates &amp; resolution.</div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-bold text-emerald-900">Service complete</div>
+              <div className="text-[11px] text-emerald-800">Print the Service Report &amp; raise the GST invoice (18%, SAC 9985).</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => downloadJobCard(ticketNo, setErr)}
+                      data-testid="audinexa-print-service-report"
+                      className="px-3 py-2 text-xs font-bold bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-900 rounded shadow-sm">
+                🖨️ Print Service Report
+              </button>
+              <ServiceInvoiceButton
+                ticketNo={ticketNo}
+                existingInvoice={pipe?.ticket?.invoice_id ? {
+                  invoice_id: pipe.ticket.invoice_id,
+                  invoice_no: pipe.ticket.invoice_no,
+                } : null}
+                onError={setErr}
+                onGenerated={() => { load(); onChanged && onChanged(); }}
+              />
+            </div>
           </div>
-          <button onClick={() => downloadJobCard(ticketNo, setErr)}
-                  data-testid="audinexa-print-service-report"
-                  className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow">
-            🖨️ Print Service Report
-          </button>
         </div>
       )}
 
@@ -558,6 +622,48 @@ const Skel = () => <div className="space-y-3 p-4"><div className="h-8 bg-slate-1
 const Empty = ({ label }) => <div className="text-[11px] italic text-slate-400 text-center py-3">{label}</div>;
 
 
+function ServiceInvoiceButton({ ticketNo, existingInvoice, onError, onGenerated }) {
+  const [busy, setBusy] = useState(false);
+  const [invoice, setInvoice] = useState(existingInvoice || null);
+
+  // Sync if pipe.ticket.invoice_id changes (e.g. on reload)
+  useEffect(() => { setInvoice(existingInvoice || null); }, [existingInvoice]);
+
+  const generate = async () => {
+    if (!window.confirm(
+      `Raise the GST invoice for ${ticketNo}?\n\n` +
+      `• 18% GST will be added to the patient-conveyed amount\n` +
+      `• Warranty-covered jobs → ₹0 invoice (paper trail only)`
+    )) return;
+    setBusy(true);
+    try {
+      const r = await axios.post(`${API}/ha/service-tickets/${ticketNo}/invoice`);
+      setInvoice({ invoice_id: r.data.invoice_id, invoice_no: r.data.invoice_no });
+      onGenerated && onGenerated();
+    } catch (e) {
+      onError && onError(describeError(e, 'Failed to raise invoice'));
+    } finally { setBusy(false); }
+  };
+
+  if (invoice && invoice.invoice_id) {
+    return (
+      <a href={`/billing/invoice/${invoice.invoice_id}`}
+         data-testid="audinexa-view-invoice"
+         className="px-3 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow inline-flex items-center gap-1.5">
+        ✓ Invoice {invoice.invoice_no || ''}
+      </a>
+    );
+  }
+  return (
+    <button onClick={generate} disabled={busy}
+            data-testid="audinexa-generate-invoice"
+            className="px-3 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow inline-flex items-center gap-1.5">
+      {busy ? 'Raising…' : '💰 Raise Invoice (18% GST)'}
+    </button>
+  );
+}
+
+
 function InspectionNotesForm({ ticketNo, onDone, existing }) {
   const [note, setNote] = useState(existing || '');
   const [busy, setBusy] = useState(false);
@@ -584,7 +690,7 @@ function InspectionNotesForm({ ticketNo, onDone, existing }) {
       <div className="text-[10px] uppercase tracking-wider font-bold text-blue-900 mb-2">
         Inspection notes
       </div>
-      {err && <div className="bg-rose-100 text-rose-800 p-1.5 rounded text-[11px] mb-2">{err}</div>}
+      {err && <ErrorToast err={err} testid="audinexa-inspection-err" />}
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -649,7 +755,7 @@ function CourierForm({ ticketNo, curStatus, onDone }) {
   return (
     <div className="mt-2 bg-slate-50 border border-slate-200 rounded p-3 text-xs space-y-2"
          data-testid="audinexa-courier-form">
-      {err && <div className="bg-rose-100 text-rose-800 p-1.5 rounded text-[11px]" data-testid="audinexa-courier-err">{err}</div>}
+      {err && <ErrorToast err={err} testid="audinexa-courier-err" />}
       {success && (
         <div className="bg-emerald-100 text-emerald-900 p-2 rounded text-[11px] font-bold"
              data-testid="audinexa-courier-success">
@@ -739,7 +845,7 @@ function EstimateForm({ ticketNo, onDone }) {
   return (
     <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-3 text-xs space-y-2"
          data-testid="audinexa-estimate-form">
-      {err && <div className="bg-rose-100 text-rose-800 p-2 rounded text-[11px] font-semibold" data-testid="audinexa-estimate-err">⚠ {err}</div>}
+      {err && <ErrorToast err={err} testid="audinexa-estimate-err" />}
       <div>
         <label className="block text-[10px] uppercase tracking-wider text-amber-900 font-bold mb-0.5">Vendor / service centre *</label>
         <input value={vendor} onChange={(e) => setVendor(e.target.value)}
@@ -847,7 +953,7 @@ function ApprovalRow({ approval, onChanged }) {
         <div className="font-mono text-[10px] font-bold">{approval.approval_id}</div>
         <div className="text-[10px] font-bold">{approval.decision}</div>
       </div>
-      {err && <div className="bg-rose-200 text-rose-900 p-1.5 rounded text-[11px] font-semibold mb-1">⚠ {err}</div>}
+      {err && <div className="mb-1"><ErrorToast err={err} testid={`audinexa-approval-err-${approval.approval_id}`} /></div>}
       {approval.decision === 'PENDING' ? (
         <div className="space-y-1.5 mt-2">
           <div>

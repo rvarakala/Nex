@@ -1,5 +1,34 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Auto GST Invoice + Copy-error-to-clipboard (2026-04-27)
+
+**User asks**: (1) tiny "Copy error to clipboard" button next to every red error toast, (2) Service & Repairs attract 18% GST → invoice should auto-raise upon job completion.
+
+**Auto Invoice (18% GST, SAC 9985)** — `routers/ha_service_v2.py` + `models.py` + `models_ha.py`:
+- New endpoint `POST /api/ha/service-tickets/{ticket_no}/invoice`
+  - **Idempotent**: ticket with existing `invoice_id` returns the cached invoice (safe for double-clicks / reloads).
+  - Allowed only at READY_FOR_PICKUP / DELIVERED_TO_CLIENT / CLOSED. Earlier states → 409 with helpful detail.
+  - Resolves final amount from the latest **APPROVED** estimate's `(conveyed_amount − discount)`, falling back to `ticket.cost_to_patient`.
+  - Single invoice line `"Hearing-aid Service & Repair · {ticket_no}"`, `gst_rate=18.0`, `hsn_sac="9985"`.
+  - Reuses billing's `_compute_line` + `_apply_tax_split` for proper intra-state CGST+SGST vs inter-state IGST.
+  - Warranty-covered → ₹0 grand total → status `paid`. Still creates the paper trail.
+  - Stamps `invoice_id` + `invoice_no` on the ticket; bumps `version` (concurrent editors get a fresh 409).
+- `ServiceTicket` model gained `invoice_id` + `invoice_no`. `Invoice` model gained `ticket_no` (back-link for billing-list filters).
+
+**Frontend** — `modules/repair/AudinexaPipelineDrawer.jsx`:
+- New `ServiceInvoiceButton` inside the Service-Complete banner. Confirm-prompt explains "18% GST will be added… warranty-covered → ₹0 invoice". After click, button flips to "✓ Invoice INV/2026/00xxxx" linking to the billing page.
+- Service-Complete banner restyled with two side-by-side buttons (🖨️ Print Service Report, 💰 Raise Invoice (18% GST)) + subhead "Print the Service Report & raise the GST invoice (18%, SAC 9985)".
+
+**Copy-error-to-clipboard + better error UX** — same file:
+- `describeError(e, fallback)` upgraded to return `{display, diagnostic}` — `diagnostic` carries ISO timestamp, action, message, HTTP method+URL, status, response-body fragment.
+- New `<ErrorToast err={err} testid="…" />` renders message + "📋 Copy" button writing the diagnostic blob to clipboard (textarea fallback for older browsers).
+- Wired into all 5 error points in the drawer: pipeline load, inspection notes, courier, estimate, approval. Plus the Job Card 401 cure (axios + blob URL).
+
+**Validated**:
+- New `tests/test_service_invoice_gst.py` (5 cases): 18% GST math (₹4000→₹720→₹4720), idempotency, warranty=₹0 paid, blocked-state detail, listing visibility.
+- Combined regression: **46/46 PASS** (5 new + 5 recurring errors + 7 concurrency + 4 estimate fields + 5 pipeline + 20 Phase 12).
+- UI smoke (live JOB-2026-0660): button transforms from "💰 Raise Invoice (18% GST)" → "✓ Invoice INV/2026/000236". Ticket stamped: `invoice_id=INV-108ADEF2-1`, `invoice_no=INV/2026/000236`.
+
 ## ✅ COMPLETED — Server-side Version Columns + 3-Way Diff Conflict UI (2026-04-27)
 **User report**: "Server-side version columns + 3-way diff conflict UI (P2). - explain this what is this Task" → "(a) implement it now anyway".
 

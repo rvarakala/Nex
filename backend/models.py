@@ -339,6 +339,7 @@ class Invoice(BaseModel):
 
     appointment_id: Optional[str] = None
     session_id: Optional[str] = None                             # Linked M02 test session (for handover)
+    ticket_no: Optional[str] = None                              # Linked HA service-ticket (auto-billed at handover)
 
     invoice_date: datetime = Field(default_factory=datetime.utcnow)
 

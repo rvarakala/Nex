@@ -500,3 +500,174 @@ async def pipeline_view(
         "estimates": [deserialize_datetime(r) for r in estimates],
         "approvals": [deserialize_datetime(r) for r in approvals],
     }
+
+
+# ============================================================================
+# AUTO-INVOICE — generate a GST invoice for the service job at handover.
+# ============================================================================
+SERVICE_GST_RATE = 18.0     # India: hearing-aid service & repair classified
+                            # under HSN/SAC 9985 → 18% IGST
+SERVICE_HSN_SAC = "9985"    # Standard SAC for "Other support services"
+
+
+@router.post("/service-tickets/{ticket_no}/invoice")
+async def generate_service_invoice(
+    ticket_no: str,
+    user=Depends(require_roles(*WRITE_ROLES)),
+    db=Depends(get_db),
+):
+    """Auto-generate a GST invoice for the completed service job.
+
+    Behaviour:
+      • Idempotent: if the ticket already has `invoice_id`, returns the
+        existing invoice (callers don't need to know about state).
+      • Allowed only at terminal-customer states: READY_FOR_PICKUP /
+        DELIVERED_TO_CLIENT / CLOSED.
+      • Creates ONE invoice line:
+          description = "Hearing-aid Service & Repair · {ticket_no}"
+          unit_price  = approved estimate's (conveyed_amount − discount), or
+                        fallback to ticket.cost_to_patient
+          gst_rate    = 18% (SAC 9985)
+      • Warranty-covered jobs → unit_price=0 → tax-exempt invoice (₹0 grand
+        total) which still serves as a paper trail for the patient.
+      • Stamps the new invoice_id + invoice_no on the ticket so the drawer
+        can render "View Invoice" instead of "Generate Invoice" on reopen.
+    """
+    from billing import _next_invoice_no, _compute_line, _apply_tax_split
+    from models import (
+        Invoice, InvoiceLineCreate, InvoiceLine,
+    )
+
+    t = await _ticket(db, user["clinic_id"], ticket_no)
+    if not user_can_see_branch(user, t["branch_id"]):
+        raise HTTPException(status_code=403, detail="Ticket not in your branch")
+
+    cur = normalise_status(t["status"])
+    if cur not in {"READY_FOR_PICKUP", "DELIVERED_TO_CLIENT", "CLOSED"}:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Invoice can be generated only after the job reaches "
+                "Ready-for-pickup / Delivered / Closed (current: "
+                f"{cur}). Approve the estimate and complete the repair first."
+            ),
+        )
+
+    # Idempotent: return existing invoice
+    if t.get("invoice_id"):
+        existing = await db.invoices.find_one(
+            {"invoice_id": t["invoice_id"], "clinic_id": user["clinic_id"]},
+            {"_id": 0},
+        )
+        if existing:
+            return deserialize_datetime(existing)
+        # Stale linkage — fall through and regenerate
+
+    # Resolve final amount: approved estimate first, then ticket cost
+    estimates = await db.ha_service_estimates.find(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(10)
+    approvals = {a["estimate_id"]: a for a in await db.ha_customer_approvals.find(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no, "decision": "APPROVED"},
+        {"_id": 0},
+    ).to_list(10)}
+
+    final_amount = 0.0
+    warranty_covered = bool(t.get("warranty_covered"))
+    chosen_est = None
+    for e in estimates:
+        if e.get("estimate_id") in approvals:
+            chosen_est = e
+            break
+    if chosen_est:
+        warranty_covered = bool(chosen_est.get("warranty_covered"))
+        if warranty_covered:
+            final_amount = 0.0
+        else:
+            conveyed = chosen_est.get("conveyed_amount")
+            base = float(conveyed) if conveyed is not None else float(chosen_est.get("amount") or 0)
+            final_amount = max(0.0, base - float(chosen_est.get("discount") or 0))
+    else:
+        final_amount = float(t.get("cost_to_patient") or 0)
+
+    # Patient + clinic for header/state-split
+    patient = await db.patients.find_one(
+        {"patient_id": t["patient_id"], "clinic_id": user["clinic_id"]}, {"_id": 0},
+    ) or {}
+    clinic = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]}, {"_id": 0},
+    ) or {}
+
+    # Build the single line
+    line_in = InvoiceLineCreate(
+        description=f"Hearing-aid Service & Repair · {ticket_no}",
+        quantity=1.0,
+        unit_price=final_amount,
+        is_taxable=(not warranty_covered),
+        gst_rate=(SERVICE_GST_RATE if not warranty_covered else 0.0),
+        hsn_sac=SERVICE_HSN_SAC,
+    )
+    # Service-aware shape — _compute_line wants a dict with `gst_inclusive`,
+    # we want exclusive (line_total = base + GST)
+    pseudo_service = {
+        "name": line_in.description,
+        "price": final_amount,
+        "is_taxable": line_in.is_taxable,
+        "gst_rate": line_in.gst_rate,
+        "hsn_sac": line_in.hsn_sac,
+        "gst_inclusive": False,
+    }
+    resolved_line: InvoiceLine = _compute_line(line_in, pseudo_service)
+
+    # Intra vs inter-state split
+    clinic_state = (clinic.get("state") or "").strip().lower()
+    pat_state = (patient.get("state") or "").strip().lower()
+    inter_state = bool(clinic_state and pat_state and clinic_state != pat_state)
+    _apply_tax_split([resolved_line], inter_state)
+
+    invoice_no = await _next_invoice_no(db, user["clinic_id"])
+    inv = Invoice(
+        clinic_id=user["clinic_id"],
+        invoice_no=invoice_no,
+        patient_id=patient.get("patient_id", t["patient_id"]),
+        patient_name=patient.get("name", t.get("patient_name", "")),
+        patient_mobile=patient.get("mobile") or patient.get("phone") or t.get("patient_mobile"),
+        mrd=patient.get("mrd"),
+        ticket_no=ticket_no,
+        lines=[resolved_line],
+        notes=(
+            f"Auto-generated from Service Job {ticket_no}."
+            + (" Warranty-covered." if warranty_covered else "")
+        ),
+        created_by_user_id=user["user_id"],
+    )
+    # Roll-up totals (mirror billing.create_invoice)
+    inv.subtotal = round(sum(ln.taxable_value for ln in inv.lines), 2)
+    inv.discount_total = round(sum(ln.discount_amount for ln in inv.lines), 2)
+    inv.cgst_total = round(sum(ln.cgst_amount for ln in inv.lines), 2)
+    inv.sgst_total = round(sum(ln.sgst_amount for ln in inv.lines), 2)
+    inv.igst_total = round(sum(ln.igst_amount for ln in inv.lines), 2)
+    inv.tax_total = round(inv.cgst_total + inv.sgst_total + inv.igst_total, 2)
+    inv.grand_total = round(inv.subtotal + inv.tax_total, 2)
+    inv.rounded_total = round(inv.grand_total)
+    inv.round_off = round(inv.rounded_total - inv.grand_total, 2)
+    inv.due_total = inv.rounded_total
+    inv.paid_total = 0.0
+    if inv.rounded_total <= 0:
+        inv.status = "paid"
+        inv.due_total = 0.0
+
+    from billing import _serialize
+    await db.invoices.insert_one(_serialize(inv.model_dump()))
+    # Stamp on ticket so future calls are idempotent
+    await db.service_tickets.update_one(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
+        {"$set": {
+            "invoice_id": inv.invoice_id,
+            "invoice_no": inv.invoice_no,
+            "cost_to_patient": final_amount,
+            "version_updated_at": datetime.now(timezone.utc).isoformat(),
+        }, "$inc": {"version": 1}},
+    )
+    return deserialize_datetime(inv.model_dump())
