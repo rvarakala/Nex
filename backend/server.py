@@ -308,6 +308,20 @@ async def lifespan(_app: FastAPI):
                 logging.getLogger(__name__).info("APScheduler job added: amc_expiry_sweep_0230_ist (02:30 IST)")
             except Exception as e:
                 logging.getLogger(__name__).warning(f"AMC sweep scheduler skipped: {e}")
+            # Birthday + anniversary greeting scan — 09:00 IST daily
+            try:
+                from routers.greetings import run_daily_greeting_scan
+                scheduler.add_job(
+                    run_daily_greeting_scan,
+                    trigger=CronTrigger(hour=9, minute=0, timezone=IST),
+                    args=[db],
+                    id="daily_greeting_scan_0900_ist",
+                    replace_existing=True,
+                    misfire_grace_time=3600,
+                )
+                logging.getLogger(__name__).info("APScheduler job added: daily_greeting_scan_0900_ist (09:00 IST)")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Greeting scan scheduler skipped: {e}")
         except Exception as e:
             logging.getLogger(__name__).warning(f"FollowUp scheduler job skipped: {e}")
     except Exception as e:
@@ -646,6 +660,7 @@ from routers import settings as settings_router                # noqa: E402
 from routers import stock_transfers as stock_transfers_router  # noqa: E402
 from routers import connect as connect_router                  # noqa: E402
 from routers import clinic_status as clinic_status_router      # noqa: E402
+from routers import greetings as greetings_router               # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -689,6 +704,7 @@ app.include_router(settings_router.router)
 app.include_router(stock_transfers_router.router)
 app.include_router(connect_router.router)
 app.include_router(clinic_status_router.router)
+app.include_router(greetings_router.router)
 
 # ---- CORS lockdown ----
 # Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins

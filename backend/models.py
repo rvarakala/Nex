@@ -436,6 +436,9 @@ class Patient(BaseModel):
     # Identity
     aadhaar_last4: Optional[str] = None
 
+    # Special occasions (used by birthday / anniversary auto-greetings)
+    anniversary_date: Optional[str] = None      # ISO YYYY-MM-DD
+
     # Clinical triage at registration (one-liner — full case history lives in M02 Pre-Test)
     chief_complaint: Optional[str] = None
     complaint_duration: Optional[str] = None
@@ -480,6 +483,9 @@ class PatientCreate(BaseModel):
     pincode: Optional[str] = None
 
     aadhaar_last4: Optional[str] = None
+
+    # Special occasions
+    anniversary_date: Optional[str] = None
 
     chief_complaint: Optional[str] = None
     complaint_duration: Optional[str] = None

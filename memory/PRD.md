@@ -1,5 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Birthday & Anniversary Auto-Greetings (2026-04-27)
+
+**User context**: Surface birthdays + wedding anniversaries on the new Patient Hub so clinics can personalise patient relationships. Build it now (PR 1, wa.me deep link); flip to MSG91 send when Connect PR 2 lands.
+
+**Backend** (`routers/greetings.py` — 250 lines):
+- `Patient.anniversary_date: Optional[str]` (ISO YYYY-MM-DD) added to both `Patient` and `PatientCreate` models.
+- `GET  /api/greetings/today?days=7` — returns `{today, upcoming}` buckets. Each item: patient_id/name/mobile/kind ("birthday"|"anniversary")/days_until/occasion_date (MM-DD)/age_years OR years_together/already_sent_today/whatsapp_consent. Window capped at 60 days. Server-side date in IST so birthdays don't drift around UTC midnight. Pre-fetches today's `greeting_log` rows in one query (no n+1).
+- `POST /api/greetings/{patient_id}/send` — composes a personalised template with first name + ordinal year ("28th") + clinic name; returns `wa.me` deep link with phone normalised to country-code format. Custom message override accepted. Idempotent — repeated send same day upserts the same `greeting_log` row.
+- `GET  /api/greetings/log` — last 100 sends for audit.
+- Daily cron at 09:00 IST (`run_daily_greeting_scan`) walks every clinic, pre-stages today's greetings into `greeting_log` with `channel="queued"` so the dashboard widget shows celebrations the moment staff log in.
+
+**Frontend** (`components/CelebrationsWidget.jsx` + Patient Profile + NewPatientPage):
+- `CelebrationsWidget.jsx` — gradient indigo→white→amber card with Sparkles icon header, "X today · Y this week" stats, expandable "Show upcoming" section. Each row: avatar + name + 🎂/💍 icon + occasion phrase + indigo "Send" button. Auto-hides when there are no celebrations.
+- Mounted on `PatientsDashboard` above the existing Clinic Pulse tile.
+- `PatientProfilePage` — fetches patient's pending celebrations (today + 30 days) on mount. Renders gradient banners (amber-rose for birthday, rose-pink for anniversary) between header and sub-tabs with **Send Greeting** button. Banner flips to "✓ Greeting sent" pill after click.
+- `NewPatientPage` — Anniversary date field added next to DOB with hint "Optional · used for auto-greetings".
+- Send action opens wa.me deep link in new tab. `axios.post` records the send to `greeting_log` for idempotency.
+
+**Validated**:
+- New pytest `tests/test_greetings.py` — 8/8 PASS: empty case, today's birthday + anniversary with correct year math (age 30, anniv 7), upcoming-window cap (days=1 vs days=7), wa.me link composition with country-code prefix + ordinal "28th" + first-name personalisation, idempotent already_sent_today flag, 400 on missing mobile, 404 on unknown patient, custom_message override respected verbatim.
+- Combined regression: **56/56 PASS** across all suites — no regressions.
+- Live UI smoke (browser): created Priya Mehra (DOB + anniv = today). Patients Dashboard widget rendered with 2 rows + Send buttons. Patient Profile shows both gradient banners with working Send Greeting CTAs. Visual confirmed against reference: greeting sub-system feels native to the new 7Health-inspired UI.
+
+**Pending PR 2 (when MSG91 keys arrive)**:
+- `POST /api/greetings/{id}/send` will detect `whatsapp_configs.enabled` and route through MSG91 template send instead of `wa.me`. Same UI, no change required client-side.
+
 ## ✅ COMPLETED — UI Phase A: Patients Hub + Clinic Open/Close + Profile Sub-tabs (2026-04-27)
 
 **User context**: Multiple users complained about the existing UI. Reference shared (7Health.Pro) — non-negotiable look. Required to merge Front Desk + Appointments + Reports into a single section AND deliver a per-patient profile page with 7 sub-tabs that are currently missing.

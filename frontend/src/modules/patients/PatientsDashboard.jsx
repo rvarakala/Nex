@@ -8,6 +8,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { UserPlus, Search } from 'lucide-react';
 import DashboardPage from '../frontdesk/DashboardPage';
+import CelebrationsWidget from '../../components/CelebrationsWidget';
 import { useAuth } from '../../AuthContext';
 
 export default function PatientsDashboard() {
@@ -35,6 +36,8 @@ export default function PatientsDashboard() {
           </Link>
         </div>
       </header>
+      {/* Today's birthday + anniversary celebrations — auto-hides when empty */}
+      <CelebrationsWidget />
       {/* Reuse existing dashboard widget (Clinic Pulse + KPIs + Live Queue) */}
       <DashboardPage />
     </div>

@@ -14,6 +14,7 @@ import axios from 'axios';
 import {
   ArrowLeft, ArrowRight, Phone, Calendar, Edit, Plus, Activity,
   CalendarDays, StickyNote, Repeat, Receipt, FileText, Wrench,
+  Cake, Heart, Send,
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -51,18 +52,24 @@ export default function PatientProfilePage() {
   const [invoices, setInvoices]         = useState([]);
   const [tickets, setTickets]           = useState([]);
   const [notes, setNotes]               = useState([]);
+  const [greetings, setGreetings]       = useState([]); // pending birthday/anniversary
   const [loading, setLoading]           = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, ap, ses, inv, tk, nt] = await Promise.all([
+      const [p, ap, ses, inv, tk, nt, gr] = await Promise.all([
         axios.get(`${API}/patients/${patientId}`).then(r => r.data).catch(() => null),
         axios.get(`${API}/appointments?patient_id=${patientId}`).then(r => r.data).catch(() => []),
         axios.get(`${API}/sessions?patient_id=${patientId}`).then(r => r.data).catch(() => []),
         axios.get(`${API}/billing/invoices?patient_id=${patientId}`).then(r => r.data).catch(() => []),
         axios.get(`${API}/ha/service-tickets?patient_id=${patientId}`).then(r => r.data?.items || r.data || []).catch(() => []),
         axios.get(`${API}/patients/${patientId}/notes`).then(r => r.data).catch(() => []),
+        axios.get(`${API}/greetings/today?days=30`).then(r => {
+          // filter to just this patient (any kind, today or upcoming)
+          const all = [...(r.data?.today || []), ...(r.data?.upcoming || [])];
+          return all.filter(g => g.patient_id === patientId);
+        }).catch(() => []),
       ]);
       setPatient(p);
       setAppointments(Array.isArray(ap) ? ap : []);
@@ -70,9 +77,21 @@ export default function PatientProfilePage() {
       setInvoices(Array.isArray(inv) ? inv : (inv?.items || []));
       setTickets(Array.isArray(tk) ? tk : []);
       setNotes(Array.isArray(nt) ? nt : []);
+      setGreetings(gr);
     } finally { setLoading(false); }
   }, [patientId]);
   useEffect(() => { load(); }, [load]);
+
+  const sendGreeting = useCallback(async (kind) => {
+    try {
+      const r = await axios.post(`${API}/greetings/${patientId}/send`, { kind });
+      if (r.data?.wa_link) window.open(r.data.wa_link, '_blank', 'noopener');
+      setGreetings((arr) => arr.map(g => g.kind === kind ? { ...g, already_sent_today: true } : g));
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert('Could not send greeting: ' + (e?.response?.data?.detail || e.message));
+    }
+  }, [patientId]);
 
   // Auto-derived timeline — newest first
   const timeline = useMemo(() => {
@@ -170,6 +189,47 @@ export default function PatientProfilePage() {
           </Link>
         </div>
       </header>
+
+      {/* Birthday / Anniversary banner — only when there's a pending occasion */}
+      {greetings.length > 0 && (
+        <div className="px-4 sm:px-6 pt-4">
+          <div className="space-y-2">
+            {greetings.map((g) => {
+              const isBday = g.kind === 'birthday';
+              const Icon = isBday ? Cake : Heart;
+              const heading = g.days_until === 0
+                ? (isBday
+                    ? `🎂 Birthday today${g.age_years ? ` — turning ${g.age_years}` : ''}!`
+                    : `💍 Anniversary today${g.years_together ? ` — ${g.years_together} years together` : ''}!`)
+                : `${isBday ? '🎂 Birthday' : '💍 Anniversary'} in ${g.days_until} day${g.days_until === 1 ? '' : 's'}`;
+              const tone = isBday
+                ? 'from-amber-50 to-rose-50 border-amber-200 text-amber-900'
+                : 'from-rose-50 to-pink-50 border-rose-200 text-rose-900';
+              return (
+                <div
+                  key={g.kind}
+                  data-testid={`profile-greeting-${g.kind}`}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border bg-gradient-to-r ${tone}`}>
+                  <Icon size={16} className="flex-shrink-0" />
+                  <div className="flex-1 text-[12.5px] font-semibold">{heading}</div>
+                  {g.already_sent_today ? (
+                    <span className="text-[11px] font-bold text-emerald-700 px-2 py-0.5 bg-white border border-emerald-200 rounded-full">✓ Greeting sent</span>
+                  ) : (
+                    <button
+                      onClick={() => sendGreeting(g.kind)}
+                      disabled={!patient.mobile}
+                      data-testid={`profile-send-greeting-${g.kind}`}
+                      title={patient.mobile ? 'Open WhatsApp with greeting' : 'No mobile on file'}
+                      className="inline-flex items-center gap-1 text-[11.5px] px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded-md shadow-sm">
+                      <Send size={11} /> Send Greeting
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Sub tabs */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center gap-1 overflow-x-auto">

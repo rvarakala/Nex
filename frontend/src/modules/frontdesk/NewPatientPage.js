@@ -43,7 +43,7 @@ const SectionHeader = ({ children }) => (
 );
 
 const INITIAL = {
-  name: '', age: '', gender: 'Male', dob: '', occupation: '',
+  name: '', age: '', gender: 'Male', dob: '', anniversary_date: '', occupation: '',
   mobile: '', alternate_mobile: '', email: '',
   whatsapp_consent: false,
   address: '', city: '', state: '', pincode: '',
@@ -189,6 +189,9 @@ export default function NewPatientPage() {
             </Field>
             <Field label="DOB" testid="f-dob">
               <Input type="date" value={form.dob} onChange={(e) => set({ dob: e.target.value })} data-testid="in-dob" />
+            </Field>
+            <Field label="Anniversary" testid="f-anniversary" hint="Optional · used for auto-greetings">
+              <Input type="date" value={form.anniversary_date} onChange={(e) => set({ anniversary_date: e.target.value })} data-testid="in-anniversary" />
             </Field>
             <Field label="Age" required testid="f-age" hint="Auto from DOB">
               <Input type="number" min="0" max="120" value={form.age} onChange={(e) => set({ age: e.target.value })} data-testid="in-age" />
