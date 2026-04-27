@@ -45,6 +45,7 @@ const SectionHeader = ({ children }) => (
 const INITIAL = {
   name: '', age: '', gender: 'Male', dob: '', occupation: '',
   mobile: '', alternate_mobile: '', email: '',
+  whatsapp_consent: false,
   address: '', city: '', state: '', pincode: '',
   aadhaar_last4: '',
   chief_complaint: '', complaint_duration: '', ear_side: '',
@@ -208,6 +209,22 @@ export default function NewPatientPage() {
             </Field>
             <Field label="Email" testid="f-email">
               <Input type="email" value={form.email} onChange={(e) => set({ email: e.target.value })} data-testid="in-email" />
+            </Field>
+            <Field label="WhatsApp updates" full testid="f-whatsapp-consent" hint="DPDP Act 2023 — patient must explicitly opt in">
+              <label className="flex items-start gap-2 text-[12px] text-slate-700 leading-snug px-2 py-1.5 rounded border border-slate-200 bg-emerald-50/30 hover:bg-emerald-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!form.whatsapp_consent}
+                  onChange={(e) => set({ whatsapp_consent: e.target.checked })}
+                  data-testid="in-whatsapp-consent"
+                  className="mt-0.5"
+                />
+                <span>
+                  Patient agrees to receive appointment reminders, invoices and reports
+                  on WhatsApp at the mobile number above. They can withdraw this
+                  consent any time from their patient profile.
+                </span>
+              </label>
             </Field>
             <Field label="Aadhaar last 4" testid="f-aadhaar" hint="Optional — privacy">
               <Input inputMode="numeric" maxLength={4}

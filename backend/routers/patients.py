@@ -32,7 +32,15 @@ async def create_patient(patient: PatientCreate, user=Depends(get_current_user),
     """Create patient. Tenant-scoped. Auto-generates MRD."""
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0}) or {}
     mrd = await _next_mrd(db, user["clinic_id"], clinic.get("mrd_prefix", "ACS"))
-    patient_obj = Patient(**patient.model_dump(), clinic_id=user["clinic_id"], mrd=mrd)
+    payload = patient.model_dump()
+    # Stamp WhatsApp consent timestamp on the very first opt-in (DPDP audit).
+    consent_at = datetime.utcnow().isoformat() if payload.get("whatsapp_consent") else None
+    patient_obj = Patient(
+        **payload,
+        clinic_id=user["clinic_id"],
+        mrd=mrd,
+        whatsapp_consent_at=consent_at,
+    )
     doc = serialize_datetime(patient_obj.model_dump())
     await db.patients.insert_one(doc)
     await db.activity_logs.insert_one(serialize_datetime({
@@ -43,6 +51,44 @@ async def create_patient(patient: PatientCreate, user=Depends(get_current_user),
         "at": datetime.utcnow(),
     }))
     return patient_obj
+
+
+@router.post("/patients/{patient_id}/whatsapp-consent")
+async def update_whatsapp_consent(
+    patient_id: str,
+    payload: dict,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Toggle WhatsApp consent (DPDP Act 2023). Body: {grant: bool}."""
+    grant = bool(payload.get("grant"))
+    existing = await db.patients.find_one(
+        {"patient_id": patient_id, "clinic_id": user["clinic_id"]}, {"_id": 0}
+    )
+    if not existing:
+        raise HTTPException(404, "Patient not found")
+    now = datetime.utcnow().isoformat()
+    update = {
+        "whatsapp_consent": grant,
+        "updated_at": now,
+    }
+    if grant:
+        update["whatsapp_consent_at"] = now
+        update["whatsapp_consent_withdrawn_at"] = None
+    else:
+        update["whatsapp_consent_withdrawn_at"] = now
+    await db.patients.update_one(
+        {"patient_id": patient_id, "clinic_id": user["clinic_id"]},
+        {"$set": update},
+    )
+    await db.activity_logs.insert_one(serialize_datetime({
+        "clinic_id": user["clinic_id"],
+        "user_id": user["user_id"],
+        "action": "patient.whatsapp_consent" + (".grant" if grant else ".withdraw"),
+        "patient_id": patient_id,
+        "at": datetime.utcnow(),
+    }))
+    return {"patient_id": patient_id, "whatsapp_consent": grant, "at": now}
 
 
 @router.get("/patients/check-duplicate")

@@ -644,6 +644,7 @@ from routers import export_data as export_data_router         # noqa: E402
 from routers import report_handover as report_handover_router # noqa: E402
 from routers import settings as settings_router                # noqa: E402
 from routers import stock_transfers as stock_transfers_router  # noqa: E402
+from routers import connect as connect_router                  # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -685,6 +686,7 @@ app.include_router(export_data_router.router)
 app.include_router(report_handover_router.router)
 app.include_router(settings_router.router)
 app.include_router(stock_transfers_router.router)
+app.include_router(connect_router.router)
 
 # ---- CORS lockdown ----
 # Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins

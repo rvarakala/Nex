@@ -1,5 +1,38 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — AUDINEXA Connect (MSG91 WhatsApp) — PR 1 Foundation (2026-04-27)
+
+**User context**: Add WhatsApp messaging capability via MSG91 with both **BYOG** (Premium clinics use their own MSG91 account) and **Hosted** (Standard clinics use shared Audinexa account) modes. DPDP Act 2023 compliant — strict opt-in patient consent + DPA acceptance gate. PR 2 will layer the Meta-approved templates and auto-triggers.
+
+**Backend** (`utils/msg91.py` + `routers/connect.py` + `models.py` + `routers/patients.py` + `utils/serde.py`):
+- New `utils/msg91.py` — Fernet-symmetric encryption for BYOG auth keys (master key in `MSG91_ENCRYPTION_KEY` env var, auto-generated), `normalise_phone()` accepts every common Indian format and returns `+91XXXXXXXXXX`, `mask_key()` reveals only last 4 chars, `resolve_credentials()` returns BYOG vs Hosted creds with 412 if not configured / DPA missing, `send_template()` POSTs to MSG91 bulk endpoint with full error-code mapping, `log_message()` writes to `whatsapp_message_logs`.
+- New `routers/connect.py` exposes:
+  * `GET    /api/connect/whatsapp` — current config (returns masked key, never raw)
+  * `PUT    /api/connect/whatsapp` — owner upserts BYOG (auth_key+number) or Hosted; auth_key omittable on PUT to keep the saved one
+  * `DELETE /api/connect/whatsapp` — soft-disable (preserves DPA history)
+  * `POST   /api/connect/whatsapp/dpa` — owner accepts the DPA, server stamps `dpa_accepted_by_*` from JWT
+  * `POST   /api/connect/whatsapp/test` — fires probe template, persists attempt to `whatsapp_message_logs`, surfaces real MSG91 error codes (e.g. 132001 still proves auth_key works)
+  * `GET    /api/connect/whatsapp/logs` — last 50 attempts
+- All write endpoints gated to `clinic_owner` / `super_admin` / `founder`. Every response is tenant-scoped via `clinic_id` from JWT.
+- `Patient` + `PatientCreate` gained `whatsapp_consent: bool` + `whatsapp_consent_at` + `whatsapp_consent_withdrawn_at` (ISO-string stamps, default false). New `POST /api/patients/{id}/whatsapp-consent` endpoint flips consent and writes activity log entries.
+- `utils/serde.py` STRING_DATE_KEYS extended with the 4 new ISO fields so they round-trip as strings (not auto-coerced datetimes).
+
+**Frontend** (`modules/settings/ConnectWhatsAppTab.jsx` + `SettingsModule.js` + `frontdesk/NewPatientPage.js`):
+- New `Settings → Connect (WhatsApp)` tab — owner-only. Renders an ENABLED/DISABLED pill, DPA card (review-and-accept modal with 7-clause DPDP-aligned text + sub-processor disclosure), Mode selector cards (BYOG vs Hosted), BYOG form (number + auth_key with placeholder showing the saved mask, never the secret), Hosted info banner, Save / Disable buttons with DPA gating, and a Test Ping section with structured success/failure result rendering and last-test timestamp.
+- `NewPatientPage.js` — added "WhatsApp updates" Field with a single-checkbox opt-in (default false) wired to `whatsapp_consent`. Caption explains DPDP Act 2023 + withdrawal path.
+
+**Validated**:
+- New pytest `tests/test_connect_whatsapp.py` — 6/6 PASS: encryption round-trip + mask leak-check, full lifecycle (GET/POST DPA/PUT BYOG/PUT keep-key/PUT bad-phone-400/Hosted-clears-fields/DELETE soft-disable), test-send blocked when disabled (412), test-send blocked when Hosted creds absent (412), patient consent grant→withdraw→re-grant lifecycle with timestamp stamps, default-consent-false when omitted.
+- Combined regression: **42/42 PASS** (concurrency + estimate + invoice + pipeline + care + report-handover) — no regressions from new fields on Patient model or serde changes.
+- Live UI smoke (browser): `/settings/connect` renders DPA accept stamp, Mode selector with Hosted active, Test Ping form. `/frontdesk/new` renders "WhatsApp updates" consent checkbox under Email field with DPDP helper text.
+
+**Pending PR 2**:
+- User completes MSG91 + Meta Business Account setup → provides `MSG91_HOSTED_AUTH_KEY` + `MSG91_HOSTED_NUMBER` for hosted-tier clinics
+- 5 Meta-approved templates registered: `audinexa_appt_reminder_24h`, `audinexa_invoice_notify`, `audinexa_report_ready`, `audinexa_pickup_ready`, `audinexa_test_ping`. Need name + namespace + variable order from MSG91 dashboard.
+- Auto-triggers wire to: appointment-reminder cron (24h before), invoice-paid notify, session.handover (report ready), service-ticket → READY_FOR_PICKUP transition.
+- Smart fallback in existing `wa.me` deep-link sites: real send if Connect enabled, else current `wa.me` flow preserved.
+- Cost-tracking dashboard tile in admin panel.
+
 ## ✅ COMPLETED — Razorpay KYC Unblocker: Legal Pages + Pay Placeholder (2026-04-27)
 
 **User context**: Razorpay's automated KYC scanner rejects merchant sites that don't expose 4 legal pages (Terms / Privacy / Refund / Contact) plus a visible payment-checkout flow. User does not yet have Razorpay credentials.

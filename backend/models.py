@@ -455,6 +455,11 @@ class Patient(BaseModel):
     notes: Optional[str] = None
     phone: Optional[str] = None  # Legacy compatibility
 
+    # AUDINEXA Connect — DPDP-compliant explicit opt-in for WhatsApp messaging.
+    whatsapp_consent: bool = False
+    whatsapp_consent_at: Optional[str] = None           # ISO timestamp when granted
+    whatsapp_consent_withdrawn_at: Optional[str] = None # ISO timestamp when revoked
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -492,6 +497,10 @@ class PatientCreate(BaseModel):
 
     notes: Optional[str] = None
     phone: Optional[str] = None  # Legacy
+
+    # AUDINEXA Connect opt-in (DPDP Act 2023). False until patient ticks the
+    # consent box at registration.
+    whatsapp_consent: bool = False
 
 
 # ==================== REFERRING DOCTOR MODELS ====================
