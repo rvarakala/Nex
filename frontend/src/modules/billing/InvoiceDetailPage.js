@@ -38,6 +38,7 @@ export default function InvoiceDetailPage() {
   };
 
   const [actionErr, setActionErr] = useState(null);
+  const [razorpayOpen, setRazorpayOpen] = useState(false);
   const cancelInvoice = async () => {
     const reason = window.prompt('Reason for cancellation:');
     if (!reason) return;
@@ -74,6 +75,14 @@ export default function InvoiceDetailPage() {
         {inv.status !== 'cancelled' && inv.due_total > 0.01 && (
           <button onClick={() => setPayOpen(true)} data-testid="inv-add-payment"
             className="px-3 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded">+ Collect Payment</button>
+        )}
+        {inv.status !== 'cancelled' && inv.due_total > 0.01 && (
+          <button onClick={() => setRazorpayOpen(true)} data-testid="inv-pay-razorpay"
+            title="Pay this invoice online via Razorpay"
+            className="px-3 py-1 text-xs bg-[#3399cc] hover:bg-[#2c87b3] text-white font-semibold rounded inline-flex items-center gap-1.5">
+            <span className="inline-block w-3.5 h-3.5 rounded-full bg-white text-[#3399cc] text-[9px] font-black flex items-center justify-center leading-none">R</span>
+            Pay with Razorpay
+          </button>
         )}
         {inv.status === 'paid' && (
           <button
@@ -263,9 +272,66 @@ export default function InvoiceDetailPage() {
           onSaved={(updated) => { setInv(updated); setPayOpen(false); }}
         />
       )}
+      {razorpayOpen && (
+        <RazorpayPlaceholderDialog
+          invoice={inv}
+          onClose={() => setRazorpayOpen(false)}
+        />
+      )}
     </div>
   );
 }
+
+// ---------- RAZORPAY PLACEHOLDER ----------
+// Online payment via Razorpay. KYC verification is in progress; the live
+// checkout will be wired in once API keys are issued. This UI is intentionally
+// visible so payment-gateway website-verification scanners can confirm the
+// integration surface exists.
+const RazorpayPlaceholderDialog = ({ invoice, onClose }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" data-testid="razorpay-placeholder-modal">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-[#3399cc] text-white px-5 py-4 flex items-center gap-3">
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-[#3399cc] text-sm font-black">R</span>
+          <div>
+            <div className="font-bold text-base leading-tight">Pay with Razorpay</div>
+            <div className="text-[11px] text-white/80">Secure online payment · UPI · Cards · Netbanking · Wallets</div>
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-[12px] text-slate-700">
+            <div className="flex justify-between"><span>Invoice</span><span className="font-semibold">{invoice.invoice_no}</span></div>
+            <div className="flex justify-between"><span>Patient</span><span className="font-semibold">{invoice.patient_name}</span></div>
+            <div className="flex justify-between mt-1 pt-1 border-t border-slate-200"><span>Amount due</span><span className="font-bold text-slate-900">{fmtINR(invoice.due_total)}</span></div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-[12px] text-amber-900 leading-relaxed">
+            <b>Online payments coming soon.</b> Razorpay verification is in progress.
+            We&apos;ll go live the moment our merchant account is approved &mdash;
+            patients will then be able to pay this invoice via UPI, cards,
+            netbanking or wallets.
+          </div>
+          <div className="text-[11px] text-slate-500 leading-relaxed">
+            Until then, please use <b>+ Collect Payment</b> to record cash, UPI
+            or card payments collected at the clinic. By proceeding through
+            Razorpay you agree to our{' '}
+            <a href="/terms" target="_blank" rel="noreferrer" className="text-[#3399cc] underline">Terms</a>,{' '}
+            <a href="/privacy" target="_blank" rel="noreferrer" className="text-[#3399cc] underline">Privacy</a> and{' '}
+            <a href="/refund" target="_blank" rel="noreferrer" className="text-[#3399cc] underline">Refund Policy</a>.
+          </div>
+        </div>
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+          <button onClick={onClose} data-testid="razorpay-modal-close"
+            className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200 rounded font-semibold">Close</button>
+          <button disabled data-testid="razorpay-pay-now-disabled"
+            title="Live payments enable once Razorpay KYC is approved"
+            className="px-4 py-1.5 text-xs bg-[#3399cc] text-white font-semibold rounded opacity-60 cursor-not-allowed">
+            Pay Now (KYC pending)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Td = ({ children, right, colSpan, className = '' }) => (
   <td colSpan={colSpan} className={`px-2 py-1 ${right ? 'text-right tabular-nums' : ''} ${className}`}>{children}</td>

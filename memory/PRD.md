@@ -1,5 +1,22 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Razorpay KYC Unblocker: Legal Pages + Pay Placeholder (2026-04-27)
+
+**User context**: Razorpay's automated KYC scanner rejects merchant sites that don't expose 4 legal pages (Terms / Privacy / Refund / Contact) plus a visible payment-checkout flow. User does not yet have Razorpay credentials.
+
+**Frontend changes**:
+- `modules/legal/LegalPage.jsx` — single component renders all 4 pages (slug from `useParams` OR `useLocation.pathname`). Content: Acceptance, Service description, Subscription/Payments calling out Razorpay by name, Acceptable Use (DPDP Act 2023 / HIPAA-equivalent), Data Protection (BYOK Vault), IP, Termination, Liability, Governing Law (Mumbai). Privacy includes DPO contact + 30-day SAR window. Refund covers subscription cancellation, patient-invoice refund flow via Razorpay Refund API, dispute window. Contact lists support, sales, phone, address, DPDP Grievance Officer.
+- `App.js` — registered 4 public routes: `/terms`, `/privacy`, `/refund`, `/contact` (no auth required, scanner-friendly).
+- `modules/landing/v2/components/Footer.jsx` — replaced 4 dead `href="#"` links with real anchors to `/privacy`, `/terms`, `/refund`, `/contact`. Contact email link replaced with `/contact` page route.
+- `modules/billing/InvoiceDetailPage.js` — added "Pay with Razorpay" toolbar button (only when invoice has due > 0 and not cancelled) → opens `RazorpayPlaceholderDialog` showing invoice summary, amount due, "Online payments coming soon. Razorpay verification is in progress." amber notice, and disabled "Pay Now (KYC pending)" CTA. Modal links to /terms, /privacy, /refund.
+
+**Validated**:
+- Live UI smoke (4 routes): `/terms` page renders headline + nav links + 10 numbered sections.
+- Live UI smoke (footer): all 4 footer links resolve to correct internal routes.
+- Live UI smoke (Razorpay placeholder): logged in as accounts user, opened DRAFT invoice INV/2026/000248 (₹1,180 due), clicked Pay with Razorpay → modal opens with invoice summary, amber KYC notice, disabled Pay Now button, working Terms/Privacy/Refund links.
+
+**Next**: User completes Razorpay KYC → receives `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` → main agent calls `integration_playbook_expert_v2` for the real implementation (Razorpay Orders API on backend, Checkout.js on frontend, signature verification, Refund webhook).
+
 ## ✅ COMPLETED — ErrorToast pattern rolled out across modules (2026-04-27)
 
 **User ask**: "Apply ErrorToast everywhere — pattern is now in the drawer; Front Desk / Diagnostics / Billing modules can all opt-in."

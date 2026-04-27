@@ -6,7 +6,7 @@
  * Routed via `/terms`, `/privacy`, `/refund`, `/contact`.
  */
 import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 
 const COMPANY = 'AUDINEXA';
 const COMPANY_FULL = 'Audinexa Technologies (audinexa.com)';
@@ -75,7 +75,9 @@ const PAGES = {
 };
 
 export default function LegalPage() {
-  const { slug } = useParams();
+  const { slug: paramSlug } = useParams();
+  const location = useLocation();
+  const slug = paramSlug || (location.pathname.replace(/^\//, '').split('/')[0] || '').toLowerCase();
   const page = PAGES[slug];
   if (!page) {
     return (

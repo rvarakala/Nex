@@ -32,6 +32,7 @@ import { VaultProvider } from './crypto/VaultContext';
 import VaultDemoPage from './modules/settings/VaultDemoPage';
 import InviteAcceptPage from './modules/auth/InviteAcceptPage';
 import AudinexaCarePage from './modules/care/AudinexaCarePage';
+import LegalPage from './modules/legal/LegalPage';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -105,6 +106,12 @@ function AppRoutes() {
               <Route path="/queue/:clinicId" element={<QueueTVPage />} />
               <Route path="/patient-portal" element={<PatientPortal />} />
               <Route path="/patient-portal/:clinicId" element={<PatientPortal />} />
+
+              {/* PUBLIC LEGAL — required for Razorpay / payment gateway KYC */}
+              <Route path="/terms" element={<LegalPage />} />
+              <Route path="/privacy" element={<LegalPage />} />
+              <Route path="/refund" element={<LegalPage />} />
+              <Route path="/contact" element={<LegalPage />} />
 
               {/* AUTHENTICATED */}
               <Route path="/app" element={<PostLoginRedirect />} />

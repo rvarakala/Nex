@@ -9,15 +9,15 @@ const COLUMNS = [
     { label: 'FAQ',       href: '#faq' },
   ] },
   { title: 'Company', links: [
-    { label: 'Contact',  href: 'mailto:hello@audinexa.com' },
+    { label: 'Contact',  href: '/contact' },
     { label: 'Careers',  href: '#' },
     { label: 'Blog',     href: '#' },
   ] },
   { title: 'Legal & Trust', links: [
-    { label: 'Privacy Policy',     href: '#' },
-    { label: 'Terms of Service',   href: '#' },
-    { label: 'DPDP Compliance',    href: '#' },
-    { label: 'Security Whitepaper',href: '#' },
+    { label: 'Privacy Policy',          href: '/privacy' },
+    { label: 'Terms of Service',        href: '/terms' },
+    { label: 'Refund & Cancellation',   href: '/refund' },
+    { label: 'DPDP Compliance',         href: '/privacy' },
   ] },
 ];
 
