@@ -211,6 +211,10 @@ async def lifespan(_app: FastAPI):
         await db.clinic_vaults.create_index("clinic_id", unique=True)
         await db.vault_test_records.create_index([("clinic_id", 1), ("created_at", -1)])
         await db.vault_test_records.create_index("record_id", unique=True)
+        # Email-token invitations (P1 onboarding)
+        await db.invitations.create_index("token", unique=True)
+        await db.invitations.create_index("invite_id", unique=True)
+        await db.invitations.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         _log.info("MongoDB indexes ensured")
 
         # ---- seed defaults (clinic, users, services) — idempotent ----
@@ -606,6 +610,7 @@ from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402
 from routers import patients as patients_router       # noqa: E402
 from routers import vault as vault_router              # noqa: E402
+from routers import invitations as invitations_router  # noqa: E402
 from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
 from routers import sessions as sessions_router       # noqa: E402
@@ -643,6 +648,9 @@ app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
 app.include_router(patients_router.router)
 app.include_router(vault_router.router)
+# Invitations router mounts at /api (paths inside the router include /settings/*
+# for owner endpoints and /public/* for invitee endpoints)
+app.include_router(invitations_router.router, prefix="/api")
 app.include_router(appointments_router.router)
 app.include_router(tokens_router.router)
 app.include_router(sessions_router.router)

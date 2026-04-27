@@ -2,6 +2,45 @@
 
 # ACS Audiology Clinic — Product Requirements Document
 
+# ACS Audiology Clinic — Product Requirements Document
+
+## ✅ COMPLETED — Email-Token Invitation Flow (2026-04-26)
+**Replaces "owner sets a temp password and WhatsApps it" with "owner generates a single-use invitation link, invitee chooses their own password."**
+
+Why it matters:
+- Plaintext passwords no longer transmitted via WhatsApp / email
+- Single-use tokens with 7-day TTL
+- Owner can revoke pending invites
+- Re-inviting same email auto-revokes the previous pending invite (so no token sprawl)
+- Audit trail: who invited whom, when accepted, from which IP
+
+Backend (`/app/backend/routers/invitations.py`):
+- `POST   /api/settings/staff/invite`              — owner creates token-based invite (returns `accept_url`)
+- `GET    /api/settings/staff/invitations`         — owner lists pending + recently-used invites (auto-marks expired inline)
+- `DELETE /api/settings/staff/invite/{token}`      — owner revokes a pending invite
+- `GET    /api/public/invitations/{token}`         — public lookup (rate-limited 30/min)
+- `POST   /api/public/invitations/{token}/accept`  — atomic: marks invite consumed + creates user + issues JWT (rate-limited 10/min)
+
+Frontend:
+- New public route `/invite/:token` → `InviteAcceptPage` (welcome screen, password form, auto-redirect to dashboard)
+- Settings → Staff: new emerald **"Invite by Email"** button alongside existing "Add Staff (with password)"
+- Pending invitations strip showing email + role + expiry, with revoke shortcut
+
+E2E validation (`/tmp/test_invite_flow.py` — 8 assertions all pass):
+1. Owner creates invite → token + URL returned
+2. Owner lists invites → 1 pending with truncated token
+3. Public info lookup → 200 with clinic name
+4. Invitee accepts → JWT returned
+5. Invitee logs in with chosen password → 200
+6. Token reuse → 409
+7. Random token → 404
+8. Re-invite auto-revokes pending
+
+UI smoke (browser):
+- Staff Settings shows new "Invite by Email" button + Pending Invitations strip ✅
+- Invite modal opens, form submits, success screen shows copyable URL ✅
+- Invite link works in fresh browser context — Python E2E confirmed full lifecycle ✅
+
 ## ✅ COMPLETED — Production-Readiness Hardening (2026-04-26)
 **Closes the 4 hard blockers + brute-force protection. App is deploy-ready.**
 

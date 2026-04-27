@@ -30,6 +30,7 @@ import TopProgressBar from './components/TopProgressBar';
 import { ConnectivityProvider } from './connectivity/ConnectivityContext';
 import { VaultProvider } from './crypto/VaultContext';
 import VaultDemoPage from './modules/settings/VaultDemoPage';
+import InviteAcceptPage from './modules/auth/InviteAcceptPage';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -99,6 +100,7 @@ function AppRoutes() {
               <Route path="/" element={<LandingPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/invite/:token" element={<InviteAcceptPage />} />
               <Route path="/queue/:clinicId" element={<QueueTVPage />} />
               <Route path="/patient-portal" element={<PatientPortal />} />
               <Route path="/patient-portal/:clinicId" element={<PatientPortal />} />
