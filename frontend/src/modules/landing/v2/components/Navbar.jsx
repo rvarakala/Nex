@@ -66,9 +66,21 @@ export default function Navbar({ onBookDemo }) {
 
         <div className="hidden md:flex items-center gap-2">
           {isAuthed ? (
-            <a href="/dashboard" className="text-sm text-[#475569] hover:text-[#0B5FFF] font-medium px-3 py-2">Open Dashboard</a>
+            <a
+              href="/dashboard"
+              data-testid="navbar-open-dashboard"
+              className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg font-semibold text-sm transition"
+            >
+              Open Dashboard
+            </a>
           ) : (
-            <a href="/login" className="text-sm text-[#475569] hover:text-[#0B5FFF] font-medium px-3 py-2" data-testid="navbar-login">Sign in</a>
+            <a
+              href="/login"
+              data-testid="navbar-login"
+              className="inline-flex items-center gap-1.5 text-[#0B5FFF] hover:bg-[#0B5FFF]/8 border border-[#0B5FFF]/30 hover:border-[#0B5FFF]/50 px-4 py-2 rounded-lg font-semibold text-sm transition"
+            >
+              Sign in
+            </a>
           )}
           <button
             onClick={onBookDemo}
@@ -102,11 +114,32 @@ export default function Navbar({ onBookDemo }) {
                 {l.label}
               </a>
             ))}
-            {isAuthed ? (
-              <a href="/dashboard" className="px-3 py-2 text-[#475569] hover:bg-slate-50 rounded-md text-sm font-medium">Open Dashboard</a>
-            ) : (
-              <a href="/login" className="px-3 py-2 text-[#475569] hover:bg-slate-50 rounded-md text-sm font-medium">Sign in</a>
-            )}
+            <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+              {isAuthed ? (
+                <a
+                  href="/dashboard"
+                  data-testid="navbar-mobile-dashboard"
+                  className="text-center bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2.5 rounded-lg font-semibold text-sm"
+                >
+                  Open Dashboard
+                </a>
+              ) : (
+                <a
+                  href="/login"
+                  data-testid="navbar-mobile-login"
+                  className="text-center text-[#0B5FFF] border border-[#0B5FFF]/30 px-3 py-2.5 rounded-lg font-semibold text-sm"
+                >
+                  Sign in
+                </a>
+              )}
+              <button
+                onClick={() => { setMobileOpen(false); onBookDemo?.(); }}
+                data-testid="navbar-mobile-book-demo"
+                className="bg-[#0B5FFF] text-white px-3 py-2.5 rounded-lg font-semibold text-sm"
+              >
+                Book Demo
+              </button>
+            </div>
           </nav>
         </div>
       )}
