@@ -137,7 +137,7 @@ class SerialItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
     serial_id: str = Field(default_factory=lambda: f"SI-{str(uuid4())[:10].upper()}")
     clinic_id: str
-    branch_id: str
+    branch_id: Optional[str] = None    # Legacy rows (pre branch enforcement) may be null
     product_id: str
     serial_no: str                                             # manufacturer sticker
     state: SerialState = "IN_STOCK"
@@ -162,7 +162,7 @@ class AccessoryStock(BaseModel):
     model_config = ConfigDict(extra="ignore")
     sku_id: str = Field(default_factory=lambda: f"SKU-{str(uuid4())[:8].upper()}")
     clinic_id: str
-    branch_id: str
+    branch_id: Optional[str] = None    # Legacy rows (pre branch enforcement) may be null
     product_id: str
     variant: Optional[str] = None                              # e.g. "small", "size-8", "L-power"
     qty_on_hand: int = 0
