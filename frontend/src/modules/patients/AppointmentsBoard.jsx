@@ -5,15 +5,19 @@
  *
  * Loads today's appointments from /api/appointments?date=today.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Plus, Search, MoreVertical, ArrowRight, X, Edit2, ListPlus, User } from 'lucide-react';
+import { Plus, Search, MoreVertical, ArrowRight, X, Edit2, ListPlus, User, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const offsetISO = (delta) => {
+  const d = new Date(); d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+};
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); } catch { return iso; } };
 const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return iso; } };
 const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
@@ -31,6 +35,27 @@ const STATUS_STYLES = {
   no_show:   { bg: 'bg-rose-100',    text: 'text-rose-700',    label: 'No-show' },
 };
 
+const STATUS_FILTERS = [
+  { id: 'all',       label: 'All' },
+  { id: 'scheduled', label: 'Scheduled' },
+  { id: 'in_queue',  label: 'In Queue' },
+  { id: 'attending', label: 'Attending Now' },
+  { id: 'complete',  label: 'Complete' },
+  { id: 'cancelled', label: 'Cancelled' },
+];
+
+// Map a row's raw status to a filter bucket so synonyms collapse together
+// (e.g. "in_progress" → "attending", "booked" → "scheduled").
+const filterBucket = (raw) => {
+  const k = String(raw || '').toLowerCase();
+  if (['booked', 'scheduled'].includes(k)) return 'scheduled';
+  if (['in_queue', 'checked_in'].includes(k)) return 'in_queue';
+  if (['attending', 'in_progress'].includes(k)) return 'attending';
+  if (['complete', 'completed'].includes(k)) return 'complete';
+  if (['cancelled', 'no_show'].includes(k)) return 'cancelled';
+  return k;
+};
+
 export default function AppointmentsBoard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -40,6 +65,10 @@ export default function AppointmentsBoard() {
   const [q, setQ]         = useState('');
   const [rows, setRows]   = useState([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView]   = useState(() => localStorage.getItem('audinexa.appts.view') || 'board');
+  const [status, setStatus] = useState('all');
+
+  useEffect(() => { try { localStorage.setItem('audinexa.appts.view', view); } catch { /* ignore */ } }, [view]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,12 +80,38 @@ export default function AppointmentsBoard() {
   }, [date]);
   useEffect(() => { load(); }, [load]);
 
-  const filtered = rows.filter((a) => {
-    if (!q.trim()) return true;
-    const term = q.toLowerCase();
-    return (a.patient_name || '').toLowerCase().includes(term)
-      || (a.mobile || '').includes(term);
-  });
+  // Counts per status bucket — drives the chip badges
+  const counts = useMemo(() => {
+    const c = { all: rows.length };
+    for (const r of rows) {
+      const b = filterBucket(r.status);
+      c[b] = (c[b] || 0) + 1;
+    }
+    return c;
+  }, [rows]);
+
+  const filtered = useMemo(() => rows.filter((a) => {
+    if (status !== 'all' && filterBucket(a.status) !== status) return false;
+    if (q.trim()) {
+      const term = q.toLowerCase();
+      if (!(a.patient_name || '').toLowerCase().includes(term)
+          && !(a.mobile || '').includes(term)) return false;
+    }
+    return true;
+  }), [rows, status, q]);
+
+  const datePreset = (label, iso) => (
+    <button
+      key={label}
+      onClick={() => setDate(iso)}
+      data-testid={`appts-preset-${label.toLowerCase().replace(/\s/g, '-')}`}
+      className={`text-[11px] px-2.5 py-1 rounded-md font-semibold border transition ${
+        date === iso
+          ? 'bg-indigo-600 text-white border-indigo-600'
+          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+      {label}
+    </button>
+  );
 
   return (
     <div className="p-4 sm:p-6 space-y-4" data-testid="appointments-board">
@@ -92,15 +147,66 @@ export default function AppointmentsBoard() {
         </div>
       </header>
 
+      {/* Date presets + view toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {datePreset('Yesterday',  offsetISO(-1))}
+          {datePreset('Today',      todayISO())}
+          {datePreset('Tomorrow',   offsetISO(1))}
+          {datePreset('In 7 days',  offsetISO(7))}
+        </div>
+        <div className="inline-flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
+          <button
+            onClick={() => setView('board')}
+            data-testid="appts-view-board"
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded ${view === 'board' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+            <LayoutGrid size={12} /> Board
+          </button>
+          <button
+            onClick={() => setView('list')}
+            data-testid="appts-view-list"
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded ${view === 'list' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+            <ListIcon size={12} /> List
+          </button>
+        </div>
+      </div>
+
+      {/* Status filter chips */}
+      <div className="flex flex-wrap items-center gap-1.5" data-testid="appts-status-chips">
+        {STATUS_FILTERS.map((f) => {
+          const active = status === f.id;
+          const n = counts[f.id] || 0;
+          return (
+            <button
+              key={f.id}
+              onClick={() => setStatus(f.id)}
+              data-testid={`appts-chip-${f.id}`}
+              className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full font-semibold border transition ${
+                active
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+              {f.label}
+              <span className={`tabular-nums px-1.5 rounded-full text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
         <div className="py-16 text-center italic text-slate-400 text-sm">Loading appointments…</div>
       ) : filtered.length === 0 ? (
         <div className="bg-white border border-dashed border-slate-200 rounded-xl py-16 text-center">
-          <div className="text-sm font-semibold text-slate-700">No appointments {q ? 'match this filter' : 'on this date'}.</div>
+          <div className="text-sm font-semibold text-slate-700">
+            No appointments {q ? 'match this filter' : (status !== 'all' ? `with status "${status.replace(/_/g, ' ')}"` : 'on this date')}.
+          </div>
           <Link to="/frontdesk/appointments" className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">
             <Plus size={13} /> Book Appointment
           </Link>
         </div>
+      ) : view === 'list' ? (
+        <ListView rows={filtered} onView={(pid) => navigate(`/patients/${pid}`)} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
           {filtered.map((a) => (
@@ -108,6 +214,52 @@ export default function AppointmentsBoard() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ListView({ rows, onView }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" data-testid="appts-list-view">
+      <table className="w-full text-[12.5px]">
+        <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+          <tr>
+            <th className="text-left px-4 py-2.5">Patient</th>
+            <th className="text-left px-4 py-2.5">Contact</th>
+            <th className="text-left px-4 py-2.5">Time</th>
+            <th className="text-left px-4 py-2.5">Service / Note</th>
+            <th className="text-left px-4 py-2.5">Status</th>
+            <th className="px-4 py-2.5"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => {
+            const s = STATUS_STYLES[String(a.status || '').toLowerCase()] || { bg: 'bg-slate-100', text: 'text-slate-700', label: a.status || '—' };
+            return (
+              <tr key={a.appointment_id} className="border-t border-slate-100 hover:bg-indigo-50/30 transition" data-testid={`appts-list-row-${a.appointment_id}`}>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px] flex-shrink-0">
+                      {initials(a.patient_name)}
+                    </span>
+                    <button onClick={() => onView(a.patient_id)} className="font-semibold text-slate-900 hover:text-indigo-700 text-left">
+                      {a.patient_name || '—'}
+                      <span className="block text-[10.5px] text-slate-500 font-normal mt-0.5">{a.age ? `${a.age} y` : '—'} · {a.gender || '—'}</span>
+                    </button>
+                  </div>
+                </td>
+                <td className="px-4 py-2.5 text-slate-600">{a.mobile || a.patient_mobile || '—'}</td>
+                <td className="px-4 py-2.5 text-slate-700 tabular-nums">{fmtTime(a.start_at)}<span className="block text-[10.5px] text-slate-500">{fmtDate(a.start_at)}</span></td>
+                <td className="px-4 py-2.5 text-slate-700 max-w-md truncate">{a.complaint || a.notes || a.service || '—'}</td>
+                <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${s.bg} ${s.text}`}>{s.label}</span></td>
+                <td className="px-4 py-2.5 text-right">
+                  <button onClick={() => onView(a.patient_id)} className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold">View →</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

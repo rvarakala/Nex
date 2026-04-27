@@ -1,5 +1,22 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — UI Phase B: Legacy nav retired + Appointments polish (2026-04-27)
+
+**Backend**: no changes.
+
+**Frontend**:
+- `AppShell.js` — removed three duplicate nav entries (Front Desk, Appointments, Reports). The single **Patients** entry now owns the merged hub. The pending-reports badge moved from `nav-reports` → `nav-patients`. Unused `FileText` and `CalendarDays` icon imports cleaned up. Routes for `/frontdesk/*`, `/appointments`, `/reports` are intentionally **kept alive** so all in-app `Link to=` references (e.g. "+ New Patient" → `/frontdesk/new`) keep working without modification.
+- `AppointmentsBoard.jsx` — polished:
+  * **Date presets row**: Yesterday · Today · Tomorrow · In 7 days (active state highlighted indigo). Sits below the header.
+  * **View toggle** Board ⇄ List (icon buttons inside a pill container, indigo when active). Persists user choice in `localStorage` (`audinexa.appts.view`).
+  * **List view** — dense table with avatar + name + age/gender, contact, time + date stacked, service/note, status pill, View → action.
+  * **Status filter chips** — All / Scheduled / In Queue / Attending Now / Complete / Cancelled. Each chip carries a live count badge. Synonym buckets collapse correctly (e.g. `in_progress` → "Attending Now", `booked` → "Scheduled", `no_show` → "Cancelled") so chip counts always sum to the All total.
+  * Empty-state message now reflects active filter (`No appointments with status "cancelled"`).
+
+**Validated**:
+- Live UI smoke (browser): old nav entries 0 / 0 / 0, only "Patients" remains in Clinic group. Date presets switch active state correctly. Cancelled chip filtered grid from 201 → 79 cards. List-view toggle rendered table with all rows. View persistence across page-loads via localStorage.
+- Backend regression: **56/56 PASS** (no backend changes; sanity sweep across concurrency / estimates / GST invoice / pipeline / care / handover / connect / greetings).
+
 ## ✅ COMPLETED — Birthday & Anniversary Auto-Greetings (2026-04-27)
 
 **User context**: Surface birthdays + wedding anniversaries on the new Patient Hub so clinics can personalise patient relationships. Build it now (PR 1, wa.me deep link); flip to MSG91 send when Connect PR 2 lands.

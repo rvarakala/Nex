@@ -3,8 +3,8 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
-  BarChart3, HeartPulse, Handshake, FileText, ChevronLeft, LogOut,
-  Menu, Search as SearchIcon, Settings, Database, CalendarDays, LifeBuoy,
+  BarChart3, HeartPulse, Handshake, ChevronLeft, LogOut,
+  Menu, Search as SearchIcon, Settings, Database, LifeBuoy,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -187,9 +187,7 @@ export default function AppShell({ children }) {
     {
       label: 'Clinic',
       items: [
-        { to: '/patients', Icon: Users, label: 'Patients', testid: 'nav-patients' },
-        { to: '/frontdesk', Icon: Users, label: 'Front Desk', testid: 'nav-frontdesk' },
-        { to: '/appointments', Icon: CalendarDays, label: 'Appointments', testid: 'nav-appointments' },
+        { to: '/patients', Icon: Users, label: 'Patients', testid: 'nav-patients', badge: pendingReports > 0 ? pendingReports : null },
         (user?.role !== 'audiologist') && { to: '/billing', Icon: Receipt, label: 'Billing', testid: 'nav-billing' },
         { to: '/test', Icon: Stethoscope, label: 'Diagnostics', testid: 'nav-test' },
       ].filter(Boolean),
@@ -212,7 +210,6 @@ export default function AppShell({ children }) {
           { to: '/analytics/clinical', Icon: HeartPulse, label: 'Clinical Analytics', testid: 'nav-clinical-analytics' },
         (user?.role !== 'audiologist') && (superAdminBypass || access['referral-partners']) &&
           { to: '/partners', Icon: Handshake, label: 'Referral Partners', testid: 'nav-partners' },
-        { to: '/reports', Icon: FileText, label: 'Reports', testid: 'nav-reports', badge: pendingReports > 0 ? pendingReports : null },
       ].filter(Boolean),
     },
     user?.role === 'super_admin' && {
