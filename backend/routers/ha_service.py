@@ -22,11 +22,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
     CLINIC_WIDE_ROLES,
+)
+from utils.concurrency import (
+    assert_version, get_expected_version, version_update,
 )
 from database import get_db
 from models_ha import (
@@ -227,7 +230,7 @@ async def create_ticket(
 
 @router.put("/service-tickets/{ticket_no}", response_model=ServiceTicket)
 async def update_ticket(
-    ticket_no: str, payload: ServiceTicketUpdate,
+    ticket_no: str, payload: ServiceTicketUpdate, request: Request,
     user=Depends(require_roles(*MUTATE_ROLES)),
     db=Depends(get_db),
 ):
@@ -236,6 +239,10 @@ async def update_ticket(
         raise HTTPException(status_code=403, detail="Ticket not in your branch")
     if row["status"] in {"closed", "cancelled"}:
         raise HTTPException(status_code=409, detail=f"Ticket is {row['status']}, cannot edit")
+
+    # Optimistic concurrency: client may pin the version it loaded
+    expected = get_expected_version(request, payload.model_dump())
+    assert_version(row, expected)
 
     upd: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
 
@@ -266,9 +273,13 @@ async def update_ticket(
 
     await db.service_tickets.update_one(
         {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
-        {"$set": upd},
+        version_update(upd),
     )
-    return deserialize_datetime({**row, **upd})
+    # Reload to surface fresh version in response
+    fresh = await db.service_tickets.find_one(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no}, {"_id": 0},
+    )
+    return deserialize_datetime(fresh)
 
 
 # ==================== RESOLVE ====================

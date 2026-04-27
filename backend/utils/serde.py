@@ -54,6 +54,8 @@ def deserialize_datetime(obj):
         "otp_expires_at", "partner_since",
         # Share-link audit uses ISO strings
         "last_accessed_at", "expires_at",
+        # Optimistic concurrency
+        "version_updated_at",
     }
     if isinstance(obj, dict):
         return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}

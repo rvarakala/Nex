@@ -13,6 +13,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import ConflictResolutionModal from '../../components/ConflictResolutionModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -59,6 +60,8 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [waMessage, setWaMessage] = useState(null);
+  // Conflict-resolution state (Phase 14: 3-way merge)
+  const [conflict, setConflict] = useState(null);
 
   // Sub-forms
   const [showCourier, setShowCourier] = useState(false);
@@ -85,12 +88,49 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
     setBusy(true);
     try {
       await axios.post(`${API}/ha/service-tickets/${ticketNo}/transition`, {
-        to_status, note: opts.note || undefined,
+        to_status,
+        note: opts.note || undefined,
+        expected_version: pipe?.ticket?.version,
       });
       await load();
       onChanged && onChanged();
-    } catch (e) { setErr(e?.response?.data?.detail || 'Transition failed'); }
-    finally { setBusy(false); }
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      // Server returned a 3-way merge payload — open the resolution modal
+      if (detail && typeof detail === 'object' && detail.code === 'VERSION_MISMATCH') {
+        setConflict({
+          baseDoc: pipe.ticket,
+          serverDoc: detail.current,
+          localEdit: { ...pipe.ticket, status: to_status },
+          currentVersion: detail.current_version,
+          expectedVersion: detail.expected_version,
+          intent: { kind: 'transition', to_status, note: opts.note },
+        });
+      } else {
+        setErr(typeof detail === 'string' ? detail : (detail?.detail || 'Transition failed'));
+      }
+    } finally { setBusy(false); }
+  };
+
+  // Apply the merged result from the conflict modal back via PUT, pinned to current_version.
+  const resolveConflict = async (merged, newExpectedVersion) => {
+    const intent = conflict?.intent || {};
+    if (intent.kind === 'transition') {
+      // The current SERVER status may differ from what user wanted to move to.
+      // After the merge we re-issue the transition pinned to the new version.
+      await axios.post(`${API}/ha/service-tickets/${ticketNo}/transition`, {
+        to_status: intent.to_status,
+        note: intent.note || undefined,
+        expected_version: newExpectedVersion,
+      });
+    } else {
+      await axios.put(`${API}/ha/service-tickets/${ticketNo}`, {
+        ...merged,
+        expected_version: newExpectedVersion,
+      });
+    }
+    await load();
+    onChanged && onChanged();
   };
 
   const loadWhatsApp = async (forceStatus) => {
@@ -407,10 +447,32 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
           )}
         </div>
       )}
+      {/* ===== CONFLICT RESOLUTION (3-way merge) ===== */}
+      <ConflictResolutionModal
+        open={!!conflict}
+        onClose={() => setConflict(null)}
+        base={conflict?.baseDoc}
+        local={conflict?.localEdit}
+        server={conflict?.serverDoc}
+        currentVersion={conflict?.currentVersion || 1}
+        expectedVersion={conflict?.expectedVersion || 1}
+        recordLabel={`Service Job ${ticketNo}`}
+        fields={[
+          { key: 'status',            label: 'Status',
+            render: (v) => v ? <span className="font-mono">{v}</span> : '—' },
+          { key: 'diagnosis',         label: 'Diagnosis' },
+          { key: 'inspection_notes',  label: 'Inspection notes' },
+          { key: 'resolution_notes',  label: 'Resolution notes' },
+          { key: 'cost_to_patient',   label: 'Cost (₹)' },
+          { key: 'warranty_covered',  label: 'Warranty' },
+          { key: 'technician_name',   label: 'Technician' },
+        ]}
+        onResolve={resolveConflict}
+      />
+
     </DrawerShell>
   );
 }
-
 
 /* ============ SUB-COMPONENTS ============ */
 

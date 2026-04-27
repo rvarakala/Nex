@@ -1,5 +1,36 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Server-side Version Columns + 3-Way Diff Conflict UI (2026-04-27)
+**User report**: "Server-side version columns + 3-way diff conflict UI (P2). - explain this what is this Task" → "(a) implement it now anyway".
+
+**Why this matters**: AUDINEXA already has offline mode (PWA + outbox). Without optimistic concurrency, two users editing the same record (one offline) cause **silent data loss** when the offline user's queued save eventually flushes and overwrites the live user's edits. Classic last-writer-wins lost-update bug.
+
+**Backend** (`utils/concurrency.py` — new, `models_ha.py`, `routers/ha_service.py`, `routers/ha_service_v2.py`, `utils/serde.py`):
+- New `utils/concurrency.py` provides three reusable primitives any future endpoint can opt into in 1-2 lines:
+  - `get_expected_version(request, payload_dict)` — reads `If-Match` header OR `expected_version` body field. Returns None for legacy callers (graceful backcompat).
+  - `assert_version(existing, expected)` — one-line guard. On mismatch raises `VersionConflict` (HTTP 409) with structured payload.
+  - `version_update(set_fields)` — wraps Mongo `$set` with `$inc: {version: 1}` and stamps `version_updated_at` (ISO).
+- 409 payload shape (used as the contract for the 3-way merge UI):
+  ```json
+  {"detail": {"code": "VERSION_MISMATCH", "expected_version": N,
+    "current_version": M, "current": <full server doc>, "detail": "..."}}
+  ```
+- `ServiceTicket` model gained `version: int = 1` + `version_updated_at`. Wired into `POST /api/ha/service-tickets/{no}/transition` and `PUT /api/ha/service-tickets/{no}` — the highest-conflict surface (front-desk + technician + audiologist + accounts all touch the same ticket).
+- Both endpoints accept the canonical `If-Match: <version>` header **or** body-level `expected_version` (so the offline outbox replay path can pin the version too).
+
+**Frontend** (`components/ConflictResolutionModal.jsx` — new, `modules/repair/AudinexaPipelineDrawer.jsx`):
+- Reusable `ConflictResolutionModal` implements **classic 3-way merge** (BASE / YOUR EDIT / SERVER columns) with auto-resolve + CONFLICT flagging.
+  - Per-field rules: if `local === base` → take server, if `server === base` → take user, else **CONFLICT** prompts user choice.
+  - Only fields where SOMETHING changed appear (silent auto-resolves don't clutter UI).
+  - Footer summary "Picked: X mine · Y theirs" + "Resolve & Save (vN+1)" CTA.
+- **AudinexaPipelineDrawer** sends `expected_version: pipe.ticket.version` on every transition. On 409, opens the modal with the local + server diffs across 7 fields (status, diagnosis, inspection_notes, resolution_notes, cost_to_patient, warranty_covered, technician_name).
+- Bug avoided: resolution state is recomputed via `useEffect` (not just useState init) when the conflict payload changes — so the modal can handle multiple conflicts in one session.
+
+**Validated**:
+- New pytest `tests/test_concurrency_versions.py` (7 cases): new ticket starts at v=1, transition increments version, stale `expected_version` returns 409 + current doc embedded, fresh version succeeds, `If-Match` header works equivalently, PUT update is also fenced, unversioned legacy caller skips check but still bumps version.
+- Combined regression: **52/52 PASS** (7 new concurrency + 4 estimate fields + 5 pipeline auto-flow + 20 Phase 12 AUDINEXA + 16 production hardening).
+- UI smoke: live conflict reproduction with two simulated users — modal opens, shows "Auto-merged 7 fields safely" + 4 conflict rows (status, diagnosis, cost, warranty) with proper base/your/server columns and Resolve & Save (v4) CTA.
+
 ## ✅ COMPLETED — Estimate Pending Pricing & Approval Audit Fields (2026-04-27)
 **User report**: At Estimate Pending stage, asked for these fields:
 - **Estimated amount** (vendor) · **Conveyed amount** (to patient) · **Any Discount** · **Conveyed by** · **Conveyed date**

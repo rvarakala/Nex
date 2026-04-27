@@ -31,7 +31,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from auth import get_current_user, require_roles, user_can_see_branch, CLINIC_WIDE_ROLES
@@ -40,6 +40,9 @@ from models_ha import (
     CourierShipment, CourierShipmentCreate, CourierStatusPayload,
     ServiceEstimate, ServiceEstimateCreate,
     CustomerApproval, CustomerApprovalPayload,
+)
+from utils.concurrency import (
+    assert_version, get_expected_version, version_update,
 )
 from utils.numbering import next_number
 from utils.serde import serialize_datetime, deserialize_datetime
@@ -75,17 +78,22 @@ class TransitionPayload(BaseModel):
     note: Optional[str] = None
     vendor_id: Optional[str] = None           # for AWAITING_DISPATCH
     shipment_id: Optional[str] = None         # for DISPATCHED/IN_TRANSIT/RETURN_SHIPPED
+    expected_version: Optional[int] = None    # opt-in optimistic-lock for offline replay
 
 
 @router.post("/service-tickets/{ticket_no}/transition")
 async def transition_service_job(
-    ticket_no: str, payload: TransitionPayload,
+    ticket_no: str, payload: TransitionPayload, request: Request,
     user=Depends(require_roles(*WRITE_ROLES)),
     db=Depends(get_db),
 ):
     t = await _ticket(db, user["clinic_id"], ticket_no)
     if not user_can_see_branch(user, t["branch_id"]):
         raise HTTPException(status_code=403, detail="Ticket not in your branch")
+
+    # Optimistic concurrency: client may pin the version it loaded.
+    expected = get_expected_version(request, payload.model_dump())
+    assert_version(t, expected)
 
     cur = normalise_status(t["status"])
     assert_job_transition(cur, payload.to_status)
@@ -130,15 +138,22 @@ async def transition_service_job(
 
     await db.service_tickets.update_one(
         {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
-        {"$set": upd,
+        {"$set": {**upd, "version_updated_at": now_iso},
+         "$inc": {"version": 1},
          "$push": {"audit_trail": {
              "from": cur, "to": payload.to_status,
              "at": now_iso, "by_user_id": user["user_id"],
              "note": payload.note,
          }}},
     )
+    # Read back the new version so the client can pin its next call.
+    fresh = await db.service_tickets.find_one(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
+        {"_id": 0, "version": 1},
+    )
     return {"ok": True, "ticket_no": ticket_no,
-            "from": cur, "to": payload.to_status, "at": now_iso}
+            "from": cur, "to": payload.to_status, "at": now_iso,
+            "version": (fresh or {}).get("version", 1)}
 
 
 # ==================== COURIER SHIPMENTS ====================

@@ -691,6 +691,14 @@ class ServiceTicket(BaseModel):
     approval_id: Optional[str] = None
     vendor_id: Optional[str] = None                             # company service centre
 
+    # ---- Optimistic concurrency control (Phase 14: 3-way merge) ----
+    # Bumped atomically on every $set. Clients send `If-Match: <version>`
+    # (or `expected_version` in body) to detect stale writes; on mismatch the
+    # server returns 409 with the current doc so the client can drive a
+    # 3-way merge UI.
+    version: int = 1
+    version_updated_at: Optional[str] = None
+
 
 # ==================== COURIERS · ESTIMATES · APPROVALS (Phase 12.B) ====================
 
@@ -815,6 +823,9 @@ class ServiceTicketUpdate(BaseModel):
     cost_to_patient: Optional[float] = None
     warranty_covered: Optional[bool] = None
     loaner_serial_id: Optional[str] = None
+    # Optional: for clients that prefer body-based version fencing over
+    # the If-Match header (e.g. the offline outbox replay path).
+    expected_version: Optional[int] = None
 
 
 # ==================== LOANER ALLOCATIONS ====================
