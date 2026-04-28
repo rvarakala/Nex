@@ -17,7 +17,7 @@ import axios from 'axios';
 import { CreditCard, Sparkles, ShieldCheck, AlertTriangle, Calendar, ArrowUpRight, Receipt } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import { useSubscription } from '../../SubscriptionContext';
-import { RazorpayPayTenantInvoiceButton } from '../admin/panel/RazorpayTenantInvoiceActions';
+import { RazorpayPayTenantInvoiceButton, RazorpayReconcileButton } from '../admin/panel/RazorpayTenantInvoiceActions';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -249,9 +249,9 @@ function PendingInvoiceCard({ inv, onPaid }) {
       </div>
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
         <div className="text-[10.5px] text-slate-500">Due {fmtDate(inv.due_date) || 'on receipt'}</div>
-        <div className="inline-flex items-center gap-1.5">
+        <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
+          <RazorpayReconcileButton invoice={inv} onReconciled={onPaid} />
           <RazorpayPayTenantInvoiceButton invoice={inv} onPaid={onPaid} />
-          <span className="inline-flex items-center text-[10px] text-slate-400 gap-1"><CreditCard size={10} /> via Razorpay</span>
         </div>
       </div>
     </div>

@@ -362,6 +362,76 @@ async def refund_tenant_invoice(
     return r
 
 
+@router.post("/tenant-invoices/{invoice_id}/razorpay/reconcile")
+async def reconcile_payment(
+    invoice_id: str,
+    user=Depends(require_roles(*OWNER_ROLES)),
+    db=Depends(get_db),
+):
+    """Pull-mode reconciliation for cases where the success-handler never
+    fired (UPI QR, UPI Collect, NEFT) — i.e. the patient paid through their
+    own app on their phone, not in the browser. Without a webhook (or while
+    the webhook is being configured) we can still query Razorpay directly
+    for any payments against the original order and mark the invoice paid.
+
+    Idempotent. Safe to call repeatedly — if no captured payment exists yet
+    we return `{matched: false}` and the caller can retry later.
+    """
+    inv = await _get_tenant_invoice(db, invoice_id)
+    if not _can_pay(user, inv):
+        raise HTTPException(403, "Not authorised")
+    if inv.get("status") in {"paid", "refunded", "partially_refunded"}:
+        return {"matched": True, "already": True, "invoice": inv}
+
+    # Find every Razorpay order we ever created for this invoice.
+    orders_cursor = db.razorpay_orders.find(
+        {"tenant_invoice_id": invoice_id}, {"_id": 0},
+    )
+    orders = [r async for r in orders_cursor]
+    if not orders:
+        return {"matched": False, "reason": "No Razorpay order created for this invoice yet."}
+
+    captured: Optional[dict] = None
+    for o in orders:
+        try:
+            res = _rzp().order.payments(o["order_id"])
+        except Exception as exc:                            # noqa: BLE001
+            logger.warning("Razorpay order.payments lookup failed for %s: %s", o["order_id"], exc)
+            continue
+        for p in (res.get("items") or []):
+            if p.get("status") == "captured":
+                captured = {**p, "_audinexa_order_id": o["order_id"]}
+                break
+        if captured:
+            break
+
+    if not captured:
+        return {
+            "matched": False,
+            "reason": (
+                "Razorpay reports no captured payment yet against this invoice's order. "
+                "If you just paid via UPI QR, please wait 30–60 seconds and try Refresh again."
+            ),
+        }
+
+    updated = await _mark_tenant_invoice_paid(
+        db,
+        invoice_id=invoice_id,
+        payment_id=captured["id"],
+        via="reconcile",
+    )
+    await db.razorpay_orders.update_one(
+        {"order_id": captured["_audinexa_order_id"]},
+        {"$set": {
+            "status": "paid",
+            "razorpay_payment_id": captured["id"],
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "via": "reconcile",
+        }},
+    )
+    return {"matched": True, "invoice": updated, "razorpay_payment_id": captured["id"]}
+
+
 @router.post("/razorpay/webhook")
 async def webhook(request: Request, db=Depends(get_db)):
     """Async source of truth — fires on payment.captured / payment.failed

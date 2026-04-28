@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PageHeader, Card, Pill, tierTone, fmtINR, fmtInt, fmtDate, fmtDateTime, Empty } from './shared';
 import { ArrowLeft, UserCog, PauseCircle, PlayCircle, Download } from 'lucide-react';
 import { useAuth } from '../../../AuthContext';
-import { RazorpayPayTenantInvoiceButton, RazorpayRefundTenantInvoiceButton } from './RazorpayTenantInvoiceActions';
+import { RazorpayPayTenantInvoiceButton, RazorpayRefundTenantInvoiceButton, RazorpayReconcileButton } from './RazorpayTenantInvoiceActions';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -207,7 +207,8 @@ export default function TenantDetailPage() {
                   <td className="px-4 py-2 text-xs text-slate-500">{fmtDate(i.issued_at)}</td>
                   <td className="px-4 py-2 text-right">
                     {i.status === 'pending' && (
-                      <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2 flex-wrap justify-end">
+                        <RazorpayReconcileButton invoice={i} onReconciled={load} />
                         <RazorpayPayTenantInvoiceButton invoice={i} onPaid={load} />
                         <button onClick={async () => { await axios.post(`${API}/admin/v2/subscriptions/invoices/${i.invoice_id}/mark-paid`); load(); }}
                           className="text-xs text-emerald-700 hover:underline">Mark paid</button>

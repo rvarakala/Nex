@@ -9,7 +9,7 @@
  */
 import React, { useState } from 'react';
 import axios from 'axios';
-import { CornerUpLeft, CreditCard } from 'lucide-react';
+import { CornerUpLeft, CreditCard, RefreshCw } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const RAZORPAY_SCRIPT = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -95,6 +95,57 @@ export function RazorpayPayTenantInvoiceButton({ invoice, onPaid }) {
       className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-white bg-[#3399cc] hover:bg-[#2c87b3] disabled:bg-slate-300 font-semibold">
       <CreditCard size={11} />
       {busy ? 'Opening…' : 'Pay'}
+    </button>
+  );
+}
+
+export function RazorpayReconcileButton({ invoice, onReconciled }) {
+  /**
+   * Pull-mode reconciliation. For UPI QR / UPI Collect / NEFT cases where
+   * the patient pays in their own UPI app (not in the browser), the success
+   * handler never fires — and without a webhook we have no way to know the
+   * payment landed. This button asks Razorpay directly: "any captured
+   * payments against this invoice's order yet?". If yes, we mark paid.
+   *
+   * Always available on pending invoices that have at least one Razorpay
+   * order created against them.
+   */
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await axios.post(`${API}/billing/tenant-invoices/${invoice.invoice_id}/razorpay/reconcile`);
+      if (r.data?.matched) {
+        if (typeof onReconciled === 'function') onReconciled(r.data.invoice);
+        // eslint-disable-next-line no-alert
+        alert(`Payment found and recorded! ${r.data.razorpay_payment_id ? '\nRazorpay ID: ' + r.data.razorpay_payment_id : ''}`);
+      } else {
+        // eslint-disable-next-line no-alert
+        alert(
+          `${r.data?.reason || 'No captured payment yet against this invoice.'}\n\n` +
+          'Common reasons:\n' +
+          '• You paid via UPI QR — wait 30–60 sec then click Refresh again\n' +
+          '• Bank declined the UPI mandate (no money was deducted)\n' +
+          '• Payment is still in pending state at Razorpay',
+        );
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert('Reconcile failed: ' + (e?.response?.data?.detail || e.message));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <button
+      onClick={refresh}
+      disabled={busy}
+      data-testid={`tenant-inv-reconcile-${invoice.invoice_id}`}
+      title="Already paid via UPI QR? Click to check Razorpay & mark this invoice paid."
+      className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-slate-700 hover:bg-slate-100 border border-slate-200 disabled:opacity-50 font-semibold">
+      <RefreshCw size={11} className={busy ? 'animate-spin' : ''} />
+      {busy ? 'Checking…' : 'Refresh status'}
     </button>
   );
 }
