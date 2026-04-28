@@ -107,14 +107,39 @@ export default function DiagnosticsQueueBoard() {
   };
 
   const pickAndStart = async (row) => {
-    // Completed rows open the existing report instead of starting a new session.
+    // Completed rows open the existing report PDF in a new tab (preferred:
+    // audiologists want to view/print the finished report, not re-enter the
+    // test workflow). We pull the blob through axios so the JWT travels with
+    // the request, then create an object URL.
     if (row.state === 'completed') {
-      if (row.session_id) {
-        setActiveTest({
-          patient: { patient_id: row.patient_id, name: row.name, age: row.age, gender: row.gender, mrd: row.mrd, mobile: row.mobile },
-          sessionId: row.session_id,
-        });
-        navigate('/test');
+      if (!row.session_id) {
+        // Fall back to the patient's full profile → Reports tab when the
+        // queue row is missing a session_id (rare — pre-session data import
+        // edge case). At least the user lands somewhere with the report.
+        if (row.patient_id) navigate(`/patients/${row.patient_id}`);
+        return;
+      }
+      try {
+        const r = await axios.get(`${API}/reports/${row.session_id}/pdf`, { responseType: 'blob' });
+        const url = URL.createObjectURL(r.data);
+        const w = window.open(url, '_blank', 'noopener');
+        // Clean up the object URL after the new tab has had a chance to load.
+        setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+        if (!w) {
+          // Pop-up blocker — fall back to in-tab download
+          const a = document.createElement('a');
+          a.href = url; a.download = `report-${row.session_id}.pdf`;
+          document.body.appendChild(a); a.click(); a.remove();
+        }
+      } catch (e) {
+        // Surface a clear error rather than silently bouncing back. Most
+        // common cause: report wasn't generated yet (404).
+        // eslint-disable-next-line no-alert
+        alert(
+          e?.response?.status === 404
+            ? 'No PDF report has been generated for this session yet.'
+            : `Could not load report: ${e?.response?.data?.detail || e.message}`,
+        );
       }
       return;
     }
