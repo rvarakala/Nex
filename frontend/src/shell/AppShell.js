@@ -19,6 +19,7 @@ import InstallPrompt from '../connectivity/InstallPrompt';
 import IdleLogout from '../connectivity/IdleLogout';
 import { SyncPill, SyncDrawer } from '../connectivity/SyncDashboard';
 import ClinicStatusToggle from '../components/ClinicStatusToggle';
+import UpdateAvailableToast from '../components/UpdateAvailableToast';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
@@ -405,6 +406,7 @@ export default function AppShell({ children }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <UpdateAvailableToast />
             <ClinicStatusToggle />
             <button
               onClick={() => setPaletteOpen(true)}
