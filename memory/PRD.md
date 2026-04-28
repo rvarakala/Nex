@@ -1,5 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ⏸ PENDING — Demo / test data cleanup (parked 2026-04-28)
+
+**User decision**: WAIT. Beta-tester broadcast not yet live; user wants to keep options open.
+
+**Cleanup script ready to run**: `/app/backend/scripts/cleanup_demo_data.py`
+  * Dry-run by default. Add `--apply` to execute.
+  * Pre-flight verified — would purge **15,888 documents across 59 collections** affecting 73 clinics.
+
+**Targets (when user gives go-ahead)**:
+  * Junk: ~70 `clinic-test-clinic-*`, 2 `clinic-smoke-*`, `clinic-harmony-hearing-clinic-271f44`
+  * Demo tenants: `tenant-kims-hearing`, `tenant-apollo-audiology`, `tenant-soundcare-hyd`
+  * Possibly `clinic-acs-demo` (Phase 2 — see below)
+
+**Survivors (will be kept)**:
+  * `audinexa-platform`, `clinic-delhi-test`, `tenant-sound-clinic-blr`, `beta-01`…`beta-10`
+
+**Recommended phased plan when user resumes** (per advice given in chat):
+  1. Take `mongodump` snapshot first (safety).
+  2. Phase 1 — delete junk + 3 demo tenants only; **keep** `clinic-acs-demo` as QA sandbox so the pytest suite (~30 files reference `admin@acs.in`) doesn't break.
+  3. Set `DISABLE_DEMO_SEED=1` in `/app/backend/.env` so seed-on-startup doesn't respawn anything.
+  4. Phase 2 (later) — drop `clinic-acs-demo` once test suite is migrated to Founder credentials.
+
+---
+
+
 ## ✅ COMPLETED — Landing-page auth-state fix + Razorpay webhook hardened (2026-04-28)
 
 ### 1. Landing-page Navbar — stale-token bug fixed
