@@ -308,9 +308,24 @@ async def tenant_detail(
     # Billing (admin-panel invoices — mock/manual)
     tenant_invoices = await db.tenant_invoices.find({"clinic_id": clinic_id}, {"_id": 0}).sort("issued_at", -1).to_list(50)
 
-    # Feature flags additive toggles
-    flags_doc = await db.tenant_feature_flags.find_one({"clinic_id": clinic_id}, {"_id": 0}) or {
-        "clinic_id": clinic_id, "extra_modules": [], "disabled_modules": [],
+    # Feature flags — enriched payload so the embedded `<FeatureFlagsEditor>`
+    # in the Founder tenant-detail page renders without a second round-trip.
+    # Must match the shape returned by GET /admin/v2/feature-flags/{clinic_id}
+    # (the editor reads base_modules + available_modules and crashes if either
+    # is undefined).
+    flags_doc_raw = await db.tenant_feature_flags.find_one(
+        {"clinic_id": clinic_id}, {"_id": 0},
+    ) or {"clinic_id": clinic_id, "extra_modules": [], "disabled_modules": []}
+    base_mods = set(TIER_MODULES.get(eff, []))
+    extra_set = set(flags_doc_raw.get("extra_modules", []))
+    disabled_set = set(flags_doc_raw.get("disabled_modules", []))
+    effective_modules = sorted((base_mods | extra_set) - disabled_set)
+    flags_doc = {
+        **flags_doc_raw,
+        "tier": eff,
+        "base_modules": sorted(base_mods),
+        "available_modules": AVAILABLE_MODULES,
+        "effective_modules": effective_modules,
     }
 
     # Audit trail
