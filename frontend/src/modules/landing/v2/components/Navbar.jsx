@@ -1,10 +1,15 @@
 /**
  * Sticky landing-page navbar with glassmorphism.
  * Smooth-scrolls to anchor sections; CTA opens the demo modal.
- * Auth-aware: shows "Open Dashboard" if a token is present in localStorage.
+ *
+ * Auth-aware: shows "Open Dashboard" + "Sign Out" only when the stored
+ * JWT in localStorage is still valid (not expired). An expired token is
+ * silently cleared and the user sees the regular "Sign in" CTA — fixes
+ * the bug where users couldn't get back to the login page after their
+ * session expired.
  */
 import React, { useEffect, useState } from 'react';
-import { Shield, Menu, X } from 'lucide-react';
+import { Shield, Menu, X, LogOut } from 'lucide-react';
 
 const links = [
   { label: 'Security',  href: '#security' },
@@ -13,10 +18,51 @@ const links = [
   { label: 'FAQ',       href: '#faq' },
 ];
 
+/** Validate JWT exp without verifying signature. Server still enforces auth. */
+function isTokenValid(raw) {
+  if (!raw || typeof raw !== 'string') return false;
+  const parts = raw.split('.');
+  if (parts.length < 2) return false;
+  try {
+    const payload = JSON.parse(
+      atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')),
+    );
+    if (!payload?.exp) return true;            // no exp claim → assume valid
+    return payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function clearStaleAuth() {
+  try {
+    localStorage.removeItem('acs.token');
+    localStorage.removeItem('acs.user');
+    localStorage.removeItem('acs.activeTest');
+  } catch { /* ignore */ }
+}
+
 export default function Navbar({ onBookDemo }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const isAuthed = typeof window !== 'undefined' && !!localStorage.getItem('acs.token');
+  const [isAuthed, setIsAuthed] = useState(false);
+
+  useEffect(() => {
+    // Re-evaluate on mount + on every window focus so an expired token
+    // automatically flips the CTA back to "Sign in".
+    const check = () => {
+      const t = typeof window !== 'undefined' ? localStorage.getItem('acs.token') : null;
+      if (t && !isTokenValid(t)) {
+        clearStaleAuth();
+        setIsAuthed(false);
+      } else {
+        setIsAuthed(!!t);
+      }
+    };
+    check();
+    window.addEventListener('focus', check);
+    return () => window.removeEventListener('focus', check);
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -29,6 +75,13 @@ export default function Navbar({ onBookDemo }) {
     e.preventDefault();
     document.querySelector(href)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setMobileOpen(false);
+  };
+
+  const signOut = () => {
+    clearStaleAuth();
+    setIsAuthed(false);
+    // Stay on the landing page so the user can sign in fresh.
+    window.location.href = '/login';
   };
 
   return (
@@ -66,13 +119,23 @@ export default function Navbar({ onBookDemo }) {
 
         <div className="hidden md:flex items-center gap-2">
           {isAuthed ? (
-            <a
-              href="/dashboard"
-              data-testid="navbar-open-dashboard"
-              className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg font-semibold text-sm transition"
-            >
-              Open Dashboard
-            </a>
+            <>
+              <a
+                href="/dashboard"
+                data-testid="navbar-open-dashboard"
+                className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg font-semibold text-sm transition"
+              >
+                Open Dashboard
+              </a>
+              <button
+                onClick={signOut}
+                data-testid="navbar-signout"
+                title="Sign out and use a different account"
+                className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800 px-2 py-2 rounded-lg text-sm transition"
+              >
+                <LogOut size={14} />
+              </button>
+            </>
           ) : (
             <a
               href="/login"
@@ -116,13 +179,22 @@ export default function Navbar({ onBookDemo }) {
             ))}
             <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
               {isAuthed ? (
-                <a
-                  href="/dashboard"
-                  data-testid="navbar-mobile-dashboard"
-                  className="text-center bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2.5 rounded-lg font-semibold text-sm"
-                >
-                  Open Dashboard
-                </a>
+                <>
+                  <a
+                    href="/dashboard"
+                    data-testid="navbar-mobile-dashboard"
+                    className="text-center bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2.5 rounded-lg font-semibold text-sm"
+                  >
+                    Open Dashboard
+                  </a>
+                  <button
+                    onClick={signOut}
+                    data-testid="navbar-mobile-signout"
+                    className="text-center text-slate-600 border border-slate-200 px-3 py-2.5 rounded-lg font-semibold text-sm"
+                  >
+                    Sign Out
+                  </button>
+                </>
               ) : (
                 <a
                   href="/login"
