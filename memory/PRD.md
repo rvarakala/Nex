@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Razorpay re-targeted to SaaS subscription billing + Refund flow (2026-04-28)
+
+**User correction**: Razorpay is for AUDINEXA's own subscription billing (clinics paying us), NOT for clinics collecting patient payments. Earlier integration was rewired to the wrong target.
+
+**Changes**:
+1. **Reverted patient invoice Pay button** — removed the "Pay with Razorpay" button + `RazorpayPlaceholderDialog` component from `InvoiceDetailPage.js`. Patient invoices remain offline (cash / UPI / card recorded via the existing "+ Collect Payment" dialog).
+2. **`Payment.method` Literal reverted** to original 5 methods (no `razorpay` enum on patient payments).
+3. **`routers/razorpay_payments.py` rewritten** — now operates on `tenant_invoices` collection only:
+   * `POST /api/billing/tenant-invoices/{id}/razorpay/order` — clinic_owner of that tenant or super_admin/founder. Persists `razorpay_orders` row with `tenant_invoice_id`.
+   * `POST /api/billing/tenant-invoices/{id}/razorpay/verify` — HMAC signature check, then idempotent `tenant_invoices` mark-paid (status `pending` → `paid`, stamps `payment_method=razorpay`, `razorpay_payment_id`).
+   * `POST /api/billing/tenant-invoices/{id}/refund` — **NEW**. super_admin / founder only. Razorpay Refunds API (`client.payment.refund`). Supports full or partial. Idempotent — tracks `refunded_total` cumulatively, flips status → `partially_refunded` or `refunded` once balance hits zero. Validates against `grand_total - refunded_total` to prevent over-refund. Records each refund event (id, amount, reason, who, when) in `tenant_invoices.refunds[]` for audit.
+   * `POST /api/billing/razorpay/webhook` — pivoted to mark `tenant_invoices` paid on `payment.captured`.
+
+4. **Founder admin TenantDetailPage wired**:
+   * New helper `RazorpayTenantInvoiceActions.jsx` exposes 2 button components — `RazorpayPayTenantInvoiceButton` (lazy-loads Checkout.js, opens Razorpay with patient prefill, posts /verify on success) and `RazorpayRefundTenantInvoiceButton` (Refund + partial sub-link, prompts for reason, hits /refund).
+   * Billing tab now shows: **[ Pay ]** (cyan) for `pending` invoices alongside the existing "Mark paid" link; **[ Refund · partial ]** (rose) for `paid` / `partially_refunded` invoices that have a `razorpay_payment_id`.
+   * Status pill colours extended: `partially_refunded` → amber, `refunded` → rose.
+
+**Validated** (LIVE Razorpay):
+- API: `POST /api/billing/tenant-invoices/TIN-A1EC2A87/razorpay/order` → real Razorpay order `order_Sj15j620NHvdD7` for ₹14,158.82 (PREMIUM annual + 18% GST).
+- Old patient route `POST /api/billing/invoices/{id}/razorpay/order` → 404 ✓ (correctly removed).
+- Live UI: Founder admin → Tenants → beta-01 → Billing tab now shows Tenant invoices table with `[Pay]` button on pending TIN-A1EC2A87. Lint clean across all 4 touched files.
+
+**Pending owner action** (non-blocking):
+- Webhook URL `https://careful-feedback.preview.emergentagent.com/api/billing/razorpay/webhook` to be registered on Razorpay Dashboard with `RAZORPAY_WEBHOOK_SECRET` copied to `.env`.
+
+⚠️ **LIVE keys in use** — every Pay click charges real money for the subscription invoice amount (e.g. ₹14,158 for annual Premium).
+
+---
+
 ## ✅ COMPLETED — Razorpay LIVE payments wired (2026-04-28)
 
 **User context**: KYC approved. LIVE keys (`rzp_live_Sj0mQq2aZgVVcU`) shipped. Placeholder modal replaced with real production Checkout.

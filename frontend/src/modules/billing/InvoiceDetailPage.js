@@ -38,7 +38,6 @@ export default function InvoiceDetailPage() {
   };
 
   const [actionErr, setActionErr] = useState(null);
-  const [razorpayOpen, setRazorpayOpen] = useState(false);
   const cancelInvoice = async () => {
     const reason = window.prompt('Reason for cancellation:');
     if (!reason) return;
@@ -75,14 +74,6 @@ export default function InvoiceDetailPage() {
         {inv.status !== 'cancelled' && inv.due_total > 0.01 && (
           <button onClick={() => setPayOpen(true)} data-testid="inv-add-payment"
             className="px-3 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded">+ Collect Payment</button>
-        )}
-        {inv.status !== 'cancelled' && inv.due_total > 0.01 && (
-          <button onClick={() => setRazorpayOpen(true)} data-testid="inv-pay-razorpay"
-            title="Pay this invoice online via Razorpay"
-            className="px-3 py-1 text-xs bg-[#3399cc] hover:bg-[#2c87b3] text-white font-semibold rounded inline-flex items-center gap-1.5">
-            <span className="inline-block w-3.5 h-3.5 rounded-full bg-white text-[#3399cc] text-[9px] font-black flex items-center justify-center leading-none">R</span>
-            Pay with Razorpay
-          </button>
         )}
         {inv.status === 'paid' && (
           <button
@@ -272,143 +263,9 @@ export default function InvoiceDetailPage() {
           onSaved={(updated) => { setInv(updated); setPayOpen(false); }}
         />
       )}
-      {razorpayOpen && (
-        <RazorpayPlaceholderDialog
-          invoice={inv}
-          onClose={() => setRazorpayOpen(false)}
-          onPaid={(updated) => { setInv(updated); setRazorpayOpen(false); }}
-        />
-      )}
     </div>
   );
 }
-
-// ---------- RAZORPAY LIVE CHECKOUT ----------
-// Loads Razorpay's Checkout.js script lazily on first open, creates a
-// server-side order, then hands off to `window.Razorpay`. On success the
-// signature is sent back to /verify which records the Payment idempotently.
-const RAZORPAY_SCRIPT = 'https://checkout.razorpay.com/v1/checkout.js';
-
-const loadRazorpayScript = () => new Promise((resolve, reject) => {
-  if (window.Razorpay) return resolve();
-  const existing = document.querySelector(`script[src="${RAZORPAY_SCRIPT}"]`);
-  if (existing) {
-    existing.addEventListener('load', () => resolve());
-    existing.addEventListener('error', () => reject(new Error('Razorpay SDK failed to load')));
-    return;
-  }
-  const s = document.createElement('script');
-  s.src = RAZORPAY_SCRIPT;
-  s.async = true;
-  s.onload = () => resolve();
-  s.onerror = () => reject(new Error('Razorpay SDK failed to load'));
-  document.body.appendChild(s);
-});
-
-const RazorpayPlaceholderDialog = ({ invoice, onClose, onPaid }) => {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-
-  const startCheckout = async () => {
-    setErr(null); setBusy(true);
-    try {
-      await loadRazorpayScript();
-      // 1. Create order server-side (uses backend's stored amount, not client's).
-      const orderRes = await axios.post(`${API}/billing/invoices/${invoice.invoice_id}/razorpay/order`);
-      const order = orderRes.data;
-
-      // 2. Open Checkout with the freshly-issued order id.
-      const opts = {
-        key: order.key_id,
-        amount: order.amount,
-        currency: order.currency,
-        order_id: order.order_id,
-        name: 'AUDINEXA',
-        description: `Invoice ${order.invoice_no}`,
-        prefill: {
-          name: invoice.patient_name || '',
-          contact: invoice.patient_mobile || '',
-        },
-        notes: { invoice_id: invoice.invoice_id, invoice_no: order.invoice_no },
-        theme: { color: '#3399cc' },
-        modal: {
-          // Don't auto-close the AUDINEXA dialog on Checkout cancel — let the
-          // receptionist try again (e.g. if patient mistyped UPI VPA).
-          ondismiss: () => { setBusy(false); },
-          confirm_close: true,
-        },
-        handler: async (response) => {
-          // 3. Server-verify the signature + record the Payment.
-          try {
-            const verifyRes = await axios.post(
-              `${API}/billing/invoices/${invoice.invoice_id}/razorpay/verify`,
-              {
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              },
-            );
-            if (typeof onPaid === 'function') onPaid(verifyRes.data);
-            onClose();
-          } catch (e) {
-            setErr(e?.response?.data?.detail || e.message);
-            setBusy(false);
-          }
-        },
-      };
-      const rzp = new window.Razorpay(opts);
-      rzp.on('payment.failed', (resp) => {
-        const e = resp?.error || {};
-        setErr(`${e.code || 'PAYMENT_FAILED'}: ${e.description || 'Patient could not complete payment.'}`);
-        setBusy(false);
-      });
-      rzp.open();
-    } catch (e) {
-      setErr(e?.response?.data?.detail || e.message);
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" data-testid="razorpay-placeholder-modal">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="bg-[#3399cc] text-white px-5 py-4 flex items-center gap-3">
-          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-[#3399cc] text-sm font-black">R</span>
-          <div>
-            <div className="font-bold text-base leading-tight">Pay with Razorpay</div>
-            <div className="text-[11px] text-white/80">Secure online payment · UPI · Cards · Netbanking · Wallets</div>
-          </div>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-[12px] text-slate-700">
-            <div className="flex justify-between"><span>Invoice</span><span className="font-semibold">{invoice.invoice_no}</span></div>
-            <div className="flex justify-between"><span>Patient</span><span className="font-semibold">{invoice.patient_name}</span></div>
-            <div className="flex justify-between mt-1 pt-1 border-t border-slate-200"><span>Amount due</span><span className="font-bold text-slate-900">{fmtINR(invoice.due_total)}</span></div>
-          </div>
-          {err && (
-            <div className="bg-rose-50 border border-rose-200 rounded-md px-3 py-2 text-[11.5px] text-rose-800" data-testid="razorpay-err">
-              {err}
-            </div>
-          )}
-          <div className="text-[11px] text-slate-500 leading-relaxed">
-            Patient pays online via UPI, cards, netbanking or wallets. Payment auto-records to this invoice on success. By proceeding you agree to our{' '}
-            <a href="/terms" target="_blank" rel="noreferrer" className="text-[#3399cc] underline">Terms</a>,{' '}
-            <a href="/privacy" target="_blank" rel="noreferrer" className="text-[#3399cc] underline">Privacy</a> and{' '}
-            <a href="/refund" target="_blank" rel="noreferrer" className="text-[#3399cc] underline">Refund Policy</a>.
-          </div>
-        </div>
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-          <button onClick={onClose} disabled={busy} data-testid="razorpay-modal-close"
-            className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200 rounded font-semibold disabled:opacity-50">Close</button>
-          <button onClick={startCheckout} disabled={busy} data-testid="razorpay-pay-now"
-            className="px-4 py-1.5 text-xs bg-[#3399cc] hover:bg-[#2c87b3] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded inline-flex items-center gap-1.5">
-            {busy ? 'Opening Checkout…' : `Pay ${fmtINR(invoice.due_total)}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const Td = ({ children, right, colSpan, className = '' }) => (
   <td colSpan={colSpan} className={`px-2 py-1 ${right ? 'text-right tabular-nums' : ''} ${className}`}>{children}</td>

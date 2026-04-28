@@ -1,30 +1,27 @@
-"""Razorpay payment integration — invoice collection.
+"""Razorpay — AUDINEXA SUBSCRIPTION billing.
+
+This router handles AUDINEXA's own subscription invoices (the `tenant_invoices`
+collection) — i.e. clinics paying Audinexa for the SaaS. It is NOT used for
+patient-facing invoices.
 
 Surfaces:
-  * GET  /api/billing/razorpay/config          — public Key ID for Checkout.js
-                                                  (frontend needs key_id only;
-                                                  the secret never leaves the
-                                                  backend).
-  * POST /api/billing/invoices/{id}/razorpay/order
-                                                — creates a Razorpay Order for
-                                                  the invoice's `due_total`,
-                                                  returns {order_id, amount,
-                                                  currency, key_id}.
-  * POST /api/billing/invoices/{id}/razorpay/verify
-                                                — verifies the signature
-                                                  returned by Checkout.js's
-                                                  success handler, then
-                                                  records the Payment + flips
-                                                  the invoice to `paid`.
-  * POST /api/billing/razorpay/webhook          — async source-of-truth for
-                                                  payment.captured /
-                                                  payment.failed events
-                                                  (covers UPI auto-collect /
-                                                  NEFT where Checkout success
-                                                  callback may not fire).
-
-All amounts are in PAISE on the wire to Razorpay (multiply rupees × 100).
-Tenant scoping: invoice lookups are clinic-scoped via the JWT.
+  * GET  /api/billing/razorpay/config
+            Public Key ID for Checkout.js bootstrap.
+  * POST /api/billing/tenant-invoices/{id}/razorpay/order
+            Owner of the clinic that owns this invoice (or super_admin /
+            founder) creates a Razorpay Order against the invoice's
+            `grand_total`. Returns order_id + amount + key for Checkout.
+  * POST /api/billing/tenant-invoices/{id}/razorpay/verify
+            Checkout.js handler hits this with the signature triple. We
+            verify, mark the tenant invoice paid, persist payment_id.
+  * POST /api/billing/tenant-invoices/{id}/refund
+            super_admin / founder only. Refunds (full or partial) via
+            Razorpay's Refunds API; flips invoice status → "refunded" or
+            "partially_refunded".
+  * POST /api/billing/razorpay/webhook
+            Async source of truth for payment.captured / payment.failed
+            (covers UPI auto-collect / NEFT). Signature-verified against
+            RAZORPAY_WEBHOOK_SECRET.
 """
 from __future__ import annotations
 
@@ -38,15 +35,16 @@ from typing import Optional
 
 import razorpay
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from auth import get_current_user
-from billing import _deserialize, _serialize, _sum_invoice
+from auth import get_current_user, require_roles
 from database import get_db
-from models import Invoice, Payment
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/billing", tags=["razorpay"])
+
+OWNER_ROLES = ("clinic_owner", "super_admin", "founder")
+REFUND_ROLES = ("super_admin", "founder")
 
 
 # ──────────────────── client (lazy) ────────────────────
@@ -85,14 +83,45 @@ class RzpOrderOut(BaseModel):
     currency: str
     key_id: str
     invoice_id: str
-    invoice_no: str
-    patient_name: str
+    clinic_name: str
+    tier: str
+    duration: str
 
 
 class RzpVerifyPayload(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
+
+
+class RefundPayload(BaseModel):
+    amount: Optional[float] = Field(default=None, description="₹ amount to refund. Omit for full refund.")
+    speed: str = Field(default="normal", pattern="^(normal|optimum)$")
+    notes: Optional[str] = None
+
+
+# ──────────────────── tenant invoice helpers ───────────
+
+
+async def _get_tenant_invoice(db, invoice_id: str, *, clinic_id: Optional[str] = None) -> dict:
+    """Lookup a tenant invoice. If `clinic_id` is supplied (clinic owner
+    making a payment), enforce that the invoice belongs to their clinic."""
+    q = {"invoice_id": invoice_id}
+    if clinic_id:
+        q["clinic_id"] = clinic_id
+    inv = await db.tenant_invoices.find_one(q, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Tenant invoice not found")
+    return inv
+
+
+def _can_pay(user: dict, invoice: dict) -> bool:
+    """Owners pay their own invoices; super_admin / founder can pay any."""
+    if user.get("role") in {"super_admin", "founder"}:
+        return True
+    if user.get("role") == "clinic_owner" and user.get("clinic_id") == invoice.get("clinic_id"):
+        return True
+    return False
 
 
 # ──────────────────── routes ───────────────────────────
@@ -107,27 +136,26 @@ async def get_config(_=Depends(get_current_user)):
     return RzpConfigOut(key_id=kid, is_live=kid.startswith("rzp_live_"))
 
 
-@router.post("/invoices/{invoice_id}/razorpay/order", response_model=RzpOrderOut)
+@router.post("/tenant-invoices/{invoice_id}/razorpay/order", response_model=RzpOrderOut)
 async def create_order(
     invoice_id: str,
-    user=Depends(get_current_user),
+    user=Depends(require_roles(*OWNER_ROLES)),
     db=Depends(get_db),
 ):
-    inv = await db.invoices.find_one(
-        {"invoice_id": invoice_id, "clinic_id": user["clinic_id"]},
-        {"_id": 0},
-    )
-    if not inv:
-        raise HTTPException(404, "Invoice not found")
+    inv = await _get_tenant_invoice(db, invoice_id)
+    if not _can_pay(user, inv):
+        raise HTTPException(403, "Not authorised to pay this invoice")
+    if inv.get("status") in {"paid", "refunded"}:
+        raise HTTPException(400, f"Invoice is already {inv['status']}")
     if inv.get("status") == "cancelled":
         raise HTTPException(400, "Cannot collect against a cancelled invoice")
-    due = float(inv.get("due_total") or 0)
-    if due <= 0.01:
-        raise HTTPException(400, "Invoice has no outstanding balance")
 
-    amount_paise = int(round(due * 100))
-    # Razorpay's `receipt` field is capped at 40 chars — invoice_no ≤ 32.
-    receipt = (inv.get("invoice_no") or invoice_id)[:40]
+    grand = float(inv.get("grand_total") or 0)
+    if grand <= 0.01:
+        raise HTTPException(400, "Invoice has no outstanding amount")
+
+    amount_paise = int(round(grand * 100))
+    receipt = invoice_id[:40]
     try:
         order = _rzp().order.create({
             "amount": amount_paise,
@@ -135,24 +163,22 @@ async def create_order(
             "receipt": receipt,
             "payment_capture": 1,
             "notes": {
-                "invoice_no": inv.get("invoice_no") or "",
-                "invoice_id": invoice_id,
-                "clinic_id": user["clinic_id"],
-                "patient_id": inv.get("patient_id") or "",
+                "tenant_invoice_id": invoice_id,
+                "clinic_id": inv["clinic_id"],
+                "tier": inv.get("tier", ""),
+                "duration": inv.get("duration", ""),
             },
         })
     except razorpay.errors.BadRequestError as exc:
         raise HTTPException(400, f"Razorpay rejected order: {exc}") from exc
     except Exception as exc:                              # noqa: BLE001
-        logger.exception("Razorpay order.create failed")
+        logger.exception("Razorpay order.create failed for tenant invoice %s", invoice_id)
         raise HTTPException(502, f"Razorpay error: {exc}") from exc
 
-    # Persist the order alongside the invoice so the verify step can lookup
-    # the original amount + invoice without trusting the client.
     await db.razorpay_orders.insert_one({
         "order_id": order["id"],
-        "invoice_id": invoice_id,
-        "clinic_id": user["clinic_id"],
+        "tenant_invoice_id": invoice_id,
+        "clinic_id": inv["clinic_id"],
         "amount_paise": amount_paise,
         "status": "created",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -162,12 +188,13 @@ async def create_order(
     return RzpOrderOut(
         order_id=order["id"],
         amount=amount_paise,
-        amount_rupees=round(due, 2),
+        amount_rupees=round(grand, 2),
         currency="INR",
         key_id=os.environ["RAZORPAY_KEY_ID"],
         invoice_id=invoice_id,
-        invoice_no=inv.get("invoice_no") or "",
-        patient_name=inv.get("patient_name") or "",
+        clinic_name=inv.get("clinic_name") or "",
+        tier=inv.get("tier") or "",
+        duration=inv.get("duration") or "",
     )
 
 
@@ -179,83 +206,65 @@ def _verify_signature(order_id: str, payment_id: str, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
-async def _record_invoice_payment(
+async def _mark_tenant_invoice_paid(
     db,
     *,
-    clinic_id: str,
     invoice_id: str,
     payment_id: str,
-    amount_paise: int,
-    received_by_user_id: Optional[str] = None,
-) -> Invoice:
-    """Append a `razorpay`-method Payment to the invoice. Idempotent — if a
-    payment with the same Razorpay payment_id already exists on the invoice
-    we no-op (handler vs. webhook race)."""
-    inv_doc = await db.invoices.find_one(
-        {"invoice_id": invoice_id, "clinic_id": clinic_id}, {"_id": 0},
+    via: str = "checkout",
+) -> dict:
+    """Idempotent mark-paid. Returns the updated invoice dict (no _id)."""
+    now = datetime.now(timezone.utc).isoformat()
+    # Only flip pending → paid; if already paid, return current row unchanged.
+    r = await db.tenant_invoices.find_one_and_update(
+        {"invoice_id": invoice_id, "status": "pending"},
+        {"$set": {
+            "status": "paid",
+            "paid_at": now,
+            "payment_method": "razorpay",
+            "payment_ref": payment_id,
+            "razorpay_payment_id": payment_id,
+            "paid_via": via,
+        }},
+        projection={"_id": 0},
+        return_document=True,
     )
-    if not inv_doc:
-        raise HTTPException(404, "Invoice not found")
-    inv = Invoice(**_deserialize(inv_doc))
-
-    # Idempotency — skip if we've already recorded this Razorpay payment.
-    for existing in inv.payments:
-        if existing.reference == payment_id:
-            return inv
-
-    pay = Payment(
-        clinic_id=clinic_id,
-        invoice_id=invoice_id,
-        method="razorpay",
-        amount=round(amount_paise / 100.0, 2),
-        reference=payment_id,
-        notes="Razorpay online payment",
-        received_by_user_id=received_by_user_id or "razorpay-webhook",
-    )
-    await db.payments.insert_one(_serialize(pay.model_dump()))
-    inv.payments.append(pay)
-    _sum_invoice(inv)
-    await db.invoices.update_one(
-        {"invoice_id": invoice_id, "clinic_id": clinic_id},
-        {"$set": _serialize({
-            "payments": [p.model_dump() for p in inv.payments],
-            "paid_total": inv.paid_total,
-            "due_total": inv.due_total,
-            "status": inv.status,
-        })},
-    )
-    return inv
+    if r is None:
+        # already paid OR doesn't exist; return current state for idempotency
+        cur = await db.tenant_invoices.find_one({"invoice_id": invoice_id}, {"_id": 0})
+        if not cur:
+            raise HTTPException(404, "Tenant invoice not found")
+        return cur
+    return r
 
 
-@router.post("/invoices/{invoice_id}/razorpay/verify", response_model=Invoice)
+@router.post("/tenant-invoices/{invoice_id}/razorpay/verify")
 async def verify_and_record(
     invoice_id: str,
     payload: RzpVerifyPayload,
-    user=Depends(get_current_user),
+    user=Depends(require_roles(*OWNER_ROLES)),
     db=Depends(get_db),
 ):
-    """Called by Checkout.js's success handler. Verifies the signature,
-    looks up the original order's stored amount (NEVER trust client-supplied
-    amounts), then records the Payment."""
     if not _verify_signature(
         payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature
     ):
         raise HTTPException(400, "Razorpay signature verification failed")
 
     order = await db.razorpay_orders.find_one(
-        {"order_id": payload.razorpay_order_id, "clinic_id": user["clinic_id"]},
-        {"_id": 0},
+        {"order_id": payload.razorpay_order_id}, {"_id": 0},
     )
-    if not order or order["invoice_id"] != invoice_id:
+    if not order or order.get("tenant_invoice_id") != invoice_id:
         raise HTTPException(404, "Razorpay order not found for this invoice")
 
-    inv = await _record_invoice_payment(
+    inv = await _get_tenant_invoice(db, invoice_id)
+    if not _can_pay(user, inv):
+        raise HTTPException(403, "Not authorised to pay this invoice")
+
+    updated = await _mark_tenant_invoice_paid(
         db,
-        clinic_id=user["clinic_id"],
         invoice_id=invoice_id,
         payment_id=payload.razorpay_payment_id,
-        amount_paise=int(order["amount_paise"]),
-        received_by_user_id=user["user_id"],
+        via="checkout",
     )
     await db.razorpay_orders.update_one(
         {"order_id": payload.razorpay_order_id},
@@ -265,23 +274,101 @@ async def verify_and_record(
             "captured_at": datetime.now(timezone.utc).isoformat(),
         }},
     )
-    return inv
+    return updated
+
+
+@router.post("/tenant-invoices/{invoice_id}/refund")
+async def refund_tenant_invoice(
+    invoice_id: str,
+    payload: RefundPayload,
+    user=Depends(require_roles(*REFUND_ROLES)),
+    db=Depends(get_db),
+):
+    """Refund a paid tenant invoice — full or partial.
+
+    * `amount` omitted → full refund of the invoice's grand_total.
+    * `amount` < grand_total → partial refund; status flips to
+      `partially_refunded`. Repeated partials are additive (Razorpay tracks
+      remaining capacity).
+    * Idempotency: if the requested amount has already been fully refunded,
+      we no-op and return the current invoice.
+    """
+    inv = await _get_tenant_invoice(db, invoice_id)
+    if inv.get("status") not in {"paid", "partially_refunded"}:
+        raise HTTPException(400, f"Cannot refund invoice in '{inv.get('status')}' state")
+    payment_id = inv.get("razorpay_payment_id") or inv.get("payment_ref")
+    if not payment_id:
+        raise HTTPException(400, "This invoice has no Razorpay payment to refund")
+
+    grand = float(inv.get("grand_total") or 0)
+    already_refunded = float(inv.get("refunded_total") or 0)
+    refundable = round(grand - already_refunded, 2)
+    if refundable <= 0.01:
+        return inv  # already fully refunded — idempotent return
+
+    requested = float(payload.amount) if payload.amount is not None else refundable
+    if requested <= 0:
+        raise HTTPException(400, "Refund amount must be greater than zero")
+    if requested > refundable + 0.01:
+        raise HTTPException(
+            400,
+            f"Refund amount ₹{requested:.2f} exceeds refundable balance "
+            f"₹{refundable:.2f} (already refunded ₹{already_refunded:.2f}).",
+        )
+
+    amount_paise = int(round(requested * 100))
+    try:
+        refund = _rzp().payment.refund(payment_id, {
+            "amount": amount_paise,
+            "speed": payload.speed,
+            "notes": {
+                "tenant_invoice_id": invoice_id,
+                "reason": (payload.notes or "")[:200],
+                "initiated_by": user.get("user_id") or "",
+            },
+        })
+    except razorpay.errors.BadRequestError as exc:
+        raise HTTPException(400, f"Razorpay rejected refund: {exc}") from exc
+    except Exception as exc:                              # noqa: BLE001
+        logger.exception("Razorpay refund failed for invoice %s", invoice_id)
+        raise HTTPException(502, f"Razorpay refund error: {exc}") from exc
+
+    new_total = round(already_refunded + requested, 2)
+    new_status = "refunded" if new_total >= grand - 0.01 else "partially_refunded"
+    now = datetime.now(timezone.utc).isoformat()
+
+    refund_history = list(inv.get("refunds") or [])
+    refund_history.append({
+        "refund_id": refund.get("id"),
+        "amount": requested,
+        "speed": refund.get("speed_processed") or payload.speed,
+        "status": refund.get("status") or "processed",
+        "notes": payload.notes,
+        "refunded_at": now,
+        "refunded_by_user_id": user["user_id"],
+    })
+
+    r = await db.tenant_invoices.find_one_and_update(
+        {"invoice_id": invoice_id},
+        {"$set": {
+            "status": new_status,
+            "refunded_total": new_total,
+            "refunds": refund_history,
+            "last_refunded_at": now,
+        }},
+        projection={"_id": 0},
+        return_document=True,
+    )
+    return r
 
 
 @router.post("/razorpay/webhook")
 async def webhook(request: Request, db=Depends(get_db)):
-    """Razorpay → us. Source of truth for async events (UPI auto-collect,
-    NEFT) where the browser's success handler may not fire.
-
-    Signature verification is REQUIRED — request bodies must be HMAC-SHA256'd
-    with `RAZORPAY_WEBHOOK_SECRET`. We compare in constant time.
-    """
+    """Async source of truth — fires on payment.captured / payment.failed
+    even when the browser closes before Checkout's success handler runs."""
     raw = await request.body()
     secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()
     if not secret:
-        # Webhook received before we configured a secret — refuse rather than
-        # silently dropping events. Set RAZORPAY_WEBHOOK_SECRET in .env after
-        # registering the URL on Razorpay Dashboard → Webhooks.
         logger.warning("Razorpay webhook hit but RAZORPAY_WEBHOOK_SECRET not set")
         raise HTTPException(503, "Webhook secret not configured")
 
@@ -300,35 +387,28 @@ async def webhook(request: Request, db=Depends(get_db)):
 
     if event == "payment.captured":
         notes = payment.get("notes") or {}
-        invoice_id = notes.get("invoice_id")
-        clinic_id = notes.get("clinic_id")
-        order_id = payment.get("order_id")
-        if invoice_id and clinic_id and order_id:
-            order = await db.razorpay_orders.find_one(
-                {"order_id": order_id, "clinic_id": clinic_id}, {"_id": 0}
-            )
-            amount_paise = int(payment.get("amount") or (order or {}).get("amount_paise") or 0)
+        ten_invoice_id = notes.get("tenant_invoice_id")
+        if ten_invoice_id:
             try:
-                await _record_invoice_payment(
+                await _mark_tenant_invoice_paid(
                     db,
-                    clinic_id=clinic_id,
-                    invoice_id=invoice_id,
+                    invoice_id=ten_invoice_id,
                     payment_id=payment["id"],
-                    amount_paise=amount_paise,
+                    via="webhook",
                 )
-                await db.razorpay_orders.update_one(
-                    {"order_id": order_id},
-                    {"$set": {
-                        "status": "paid",
-                        "razorpay_payment_id": payment["id"],
-                        "captured_at": datetime.now(timezone.utc).isoformat(),
-                        "via": "webhook",
-                    }},
-                )
+                if order_id := payment.get("order_id"):
+                    await db.razorpay_orders.update_one(
+                        {"order_id": order_id},
+                        {"$set": {
+                            "status": "paid",
+                            "razorpay_payment_id": payment["id"],
+                            "captured_at": datetime.now(timezone.utc).isoformat(),
+                            "via": "webhook",
+                        }},
+                    )
             except HTTPException as exc:
-                logger.warning("Webhook capture record skip: %s", exc.detail)
+                logger.warning("Webhook capture skipped: %s", exc.detail)
 
-    # Always log the raw event for audit / future replay.
     await db.razorpay_webhook_log.insert_one({
         "event": event,
         "received_at": datetime.now(timezone.utc).isoformat(),

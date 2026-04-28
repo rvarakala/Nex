@@ -309,7 +309,7 @@ class Payment(BaseModel):
     payment_id: str = Field(default_factory=lambda: f"PAY-{str(uuid4())[:8].upper()}")
     clinic_id: str
     invoice_id: str
-    method: Literal["cash", "upi", "card", "bank_transfer", "insurance", "razorpay"]
+    method: Literal["cash", "upi", "card", "bank_transfer", "insurance"]
     amount: float
     reference: Optional[str] = None                              # Txn ref / UPI UTR / card last-4
     paid_at: datetime = Field(default_factory=datetime.utcnow)
@@ -318,7 +318,7 @@ class Payment(BaseModel):
 
 
 class PaymentCreate(BaseModel):
-    method: Literal["cash", "upi", "card", "bank_transfer", "insurance", "razorpay"]
+    method: Literal["cash", "upi", "card", "bank_transfer", "insurance"]
     amount: float
     reference: Optional[str] = None
     notes: Optional[str] = None
