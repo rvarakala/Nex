@@ -252,6 +252,32 @@ async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
 
 # ==================== AUTHENTICATED ====================
 
+@router.get("/subscription/invoices")
+async def my_subscription_invoices(
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Tenant invoices the clinic owes Audinexa (or has paid in the past).
+    Newest first. Used by the clinic-facing /billing/my-subscription page.
+    """
+    cur = (
+        db.tenant_invoices
+          .find({"clinic_id": user["clinic_id"]}, {"_id": 0})
+          .sort("created_at", -1)
+    )
+    items = [r async for r in cur]
+    # Buckets for the UI
+    pending = [i for i in items if i.get("status") == "pending"]
+    paid    = [i for i in items if i.get("status") == "paid"]
+    others  = [i for i in items if i.get("status") not in ("pending", "paid")]
+    return {
+        "pending": pending,
+        "paid": paid,
+        "other": others,                 # cancelled / refunded / partially_refunded
+        "total_count": len(items),
+    }
+
+
 @router.get("/subscription/my")
 async def my_subscription(user=Depends(get_current_user), db=Depends(get_db)):
     clinic = await db.clinics.find_one(

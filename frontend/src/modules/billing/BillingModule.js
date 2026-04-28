@@ -4,6 +4,7 @@ import InvoicesListPage from './InvoicesListPage';
 import InvoiceDetailPage from './InvoiceDetailPage';
 import CreateInvoicePage from './CreateInvoicePage';
 import ServiceCatalogPage from './ServiceCatalogPage';
+import MySubscriptionPage from './MySubscriptionPage';
 import { useAuth } from '../../AuthContext';
 
 const Tab = ({ to, label, testid }) => {
@@ -32,6 +33,7 @@ const CatalogGate = ({ canManageCatalog, children }) =>
 export default function BillingModule() {
   const { user } = useAuth();
   const canManageCatalog = ['super_admin', 'founder', 'clinic_owner', 'accounts'].includes(user?.role);
+  const canSeeSubscription = ['super_admin', 'founder', 'clinic_owner'].includes(user?.role);
 
   return (
     <div className="h-full flex flex-col" data-testid="billing-module">
@@ -40,6 +42,7 @@ export default function BillingModule() {
         <Tab to="/billing" testid="bill-tab-invoices" label="Invoices" />
         <Tab to="/billing/new" testid="bill-tab-new" label="+ New Invoice" />
         {canManageCatalog && <Tab to="/billing/catalog" testid="bill-tab-catalog" label="Service Catalog" />}
+        {canSeeSubscription && <Tab to="/billing/my-subscription" testid="bill-tab-my-sub" label="My Subscription" />}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -51,6 +54,7 @@ export default function BillingModule() {
             path="catalog"
             element={<CatalogGate canManageCatalog={canManageCatalog}><ServiceCatalogPage /></CatalogGate>}
           />
+          <Route path="my-subscription" element={<MySubscriptionPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
       </div>
