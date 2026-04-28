@@ -432,38 +432,81 @@ async def reconcile_payment(
     return {"matched": True, "invoice": updated, "razorpay_payment_id": captured["id"]}
 
 
+async def _resolve_tenant_invoice_id(db, payment: dict) -> Optional[str]:
+    """Find the tenant invoice this payment belongs to.
+
+    Two fallback paths:
+      1. `notes.tenant_invoice_id` set when we created the order.
+      2. Lookup `razorpay_orders` collection by `order_id` (covers cases
+         where checkout collapsed the notes or used a non-AUDINEXA order).
+    """
+    notes = payment.get("notes") or {}
+    if inv_id := notes.get("tenant_invoice_id"):
+        return inv_id
+    if order_id := payment.get("order_id"):
+        order = await db.razorpay_orders.find_one(
+            {"order_id": order_id}, {"_id": 0, "tenant_invoice_id": 1},
+        )
+        if order:
+            return order.get("tenant_invoice_id")
+    return None
+
+
 @router.post("/razorpay/webhook")
 async def webhook(request: Request, db=Depends(get_db)):
     """Async source of truth — fires on payment.captured / payment.failed
-    even when the browser closes before Checkout's success handler runs."""
+    even when the browser closes before Checkout's success handler runs.
+
+    Idempotent: Razorpay retries webhooks aggressively (up to 24 h) until
+    we ack with 2xx. We dedupe on the `X-Razorpay-Event-Id` header so a
+    retry never double-marks an invoice. We also avoid raising non-2xx
+    for any non-signature failure — only an unverified signature gets a
+    400; everything else is logged + acked so Razorpay stops retrying.
+    """
     raw = await request.body()
     secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()
     if not secret:
         logger.warning("Razorpay webhook hit but RAZORPAY_WEBHOOK_SECRET not set")
+        # 503 so Razorpay retries once we configure the secret.
         raise HTTPException(503, "Webhook secret not configured")
 
     sig = request.headers.get("X-Razorpay-Signature", "")
     expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
+        # Signature mismatch is the ONLY hard failure — all other errors
+        # are swallowed and acked so Razorpay doesn't retry forever.
         raise HTTPException(400, "Invalid webhook signature")
 
     try:
         body = json.loads(raw.decode())
-    except ValueError as exc:
-        raise HTTPException(400, "Webhook body is not JSON") from exc
+    except ValueError:
+        logger.exception("Razorpay webhook body is not JSON")
+        return {"ok": True, "ignored": "non-json-body"}
 
-    event = body.get("event")
-    payment = (body.get("payload") or {}).get("payment", {}).get("entity", {})
+    event = body.get("event") or "unknown"
+    event_id = request.headers.get("X-Razorpay-Event-Id", "")
+    received_at = datetime.now(timezone.utc).isoformat()
 
-    if event == "payment.captured":
-        notes = payment.get("notes") or {}
-        ten_invoice_id = notes.get("tenant_invoice_id")
-        if ten_invoice_id:
-            try:
+    # ── Idempotency: have we already processed this exact event? ──
+    if event_id:
+        already = await db.razorpay_webhook_log.find_one(
+            {"event_id": event_id, "processed": True}, {"_id": 1},
+        )
+        if already:
+            return {"ok": True, "duplicate": True}
+
+    payment = (body.get("payload") or {}).get("payment", {}).get("entity", {}) or {}
+    payment_id = payment.get("id")
+    outcome: dict = {"event": event, "handled": False}
+
+    try:
+        if event == "payment.captured" and payment_id:
+            ten_inv_id = await _resolve_tenant_invoice_id(db, payment)
+            if ten_inv_id:
                 await _mark_tenant_invoice_paid(
                     db,
-                    invoice_id=ten_invoice_id,
-                    payment_id=payment["id"],
+                    invoice_id=ten_inv_id,
+                    payment_id=payment_id,
                     via="webhook",
                 )
                 if order_id := payment.get("order_id"):
@@ -471,17 +514,53 @@ async def webhook(request: Request, db=Depends(get_db)):
                         {"order_id": order_id},
                         {"$set": {
                             "status": "paid",
-                            "razorpay_payment_id": payment["id"],
-                            "captured_at": datetime.now(timezone.utc).isoformat(),
+                            "razorpay_payment_id": payment_id,
+                            "captured_at": received_at,
                             "via": "webhook",
                         }},
                     )
-            except HTTPException as exc:
-                logger.warning("Webhook capture skipped: %s", exc.detail)
+                outcome.update(handled=True, tenant_invoice_id=ten_inv_id)
+            else:
+                outcome["skipped"] = "no_tenant_invoice_id_resolved"
+
+        elif event == "payment.failed" and payment_id:
+            ten_inv_id = await _resolve_tenant_invoice_id(db, payment)
+            if order_id := payment.get("order_id"):
+                await db.razorpay_orders.update_one(
+                    {"order_id": order_id},
+                    {"$set": {
+                        "status": "failed",
+                        "last_failure_at": received_at,
+                        "last_failure_reason": (
+                            payment.get("error_description")
+                            or payment.get("error_reason")
+                            or payment.get("error_code")
+                            or "unknown"
+                        ),
+                        "last_failed_payment_id": payment_id,
+                    }},
+                )
+            outcome.update(
+                handled=True,
+                tenant_invoice_id=ten_inv_id,
+                failure_reason=payment.get("error_description") or payment.get("error_reason"),
+            )
+            # NB: tenant invoice itself stays `pending` so the user can retry.
+    except HTTPException as exc:
+        logger.warning("Webhook %s skipped: %s", event, exc.detail)
+        outcome["error"] = exc.detail
+    except Exception as exc:                              # noqa: BLE001
+        logger.exception("Razorpay webhook %s processing failed", event)
+        outcome["error"] = str(exc)
 
     await db.razorpay_webhook_log.insert_one({
         "event": event,
-        "received_at": datetime.now(timezone.utc).isoformat(),
+        "event_id": event_id or None,
+        "payment_id": payment_id,
+        "order_id": payment.get("order_id"),
+        "received_at": received_at,
+        "processed": outcome.get("handled", False),
+        "outcome": outcome,
         "payload": body,
     })
-    return {"ok": True}
+    return {"ok": True, **outcome}

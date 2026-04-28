@@ -1,5 +1,40 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Landing-page auth-state fix + Razorpay webhook hardened (2026-04-28)
+
+### 1. Landing-page Navbar — stale-token bug fixed
+**Problem**: Users with an expired JWT in `localStorage` saw "Open Dashboard" instead of "Sign in" and had no way back to the login screen.
+
+**Fix** (`/app/frontend/src/modules/landing/v2/components/Navbar.jsx`):
+- Validate JWT `exp` claim before treating the token as authenticated. Expired tokens are silently cleared (`acs.token`, `acs.user`, `acs.activeTest`) on mount + on every window focus.
+- Added a "Sign Out" escape hatch (desktop = LogOut icon, mobile = button) that wipes auth and routes to `/login`.
+
+**Verified**: 3 screenshot scenarios all PASS — no token → "Sign in"; expired token → cleared, "Sign in"; valid token → "Open Dashboard" + Sign-out icon.
+
+### 2. Razorpay webhook listener — production-grade
+**Problem**: Existing `/api/billing/razorpay/webhook` only handled `payment.captured` and could double-process retried events.
+
+**Fix** (`/app/backend/routers/razorpay_payments.py`):
+- **`payment.failed` event** now updates the `razorpay_orders` row with `status=failed`, `last_failure_reason`, `last_failed_payment_id`. Tenant invoice deliberately stays `pending` so the user can retry.
+- **Idempotency**: dedupe on `X-Razorpay-Event-Id`. A replayed webhook returns `{duplicate:true}` instead of re-marking the invoice.
+- **Order-id fallback**: if `notes.tenant_invoice_id` is missing on the payment entity, resolve via `razorpay_orders` collection by `order_id`.
+- **Always-2xx unless signature fails**: only signature mismatch returns 400; non-JSON body / processing errors are logged + acked so Razorpay stops retrying after we've ingested the event.
+- **Audit log**: every webhook hit (including duplicates and skipped events) is persisted to `razorpay_webhook_log` with `processed`, `outcome`, `event_id`, `order_id`, `payment_id`.
+
+**Tests** (`/app/backend/tests/test_razorpay_webhook.py`, **5/5 passing**):
+- Bad signature → 400
+- `payment.captured` → invoice → paid (idempotent)
+- Order-id fallback when notes are empty
+- Same `X-Razorpay-Event-Id` replay → deduped
+- `payment.failed` → order `status=failed` + reason recorded; invoice still `pending`
+
+**Existing regression** (`test_phase12_subscription` + `test_phase14*_admin_panel`): 74/74 passing.
+
+**Pending user action** (non-blocking): paste the Razorpay-Dashboard-generated webhook secret into `RAZORPAY_WEBHOOK_SECRET` in `/app/backend/.env`. Until then the endpoint returns 503 (Razorpay will retry once the secret is set).
+
+---
+
+
 ## ✅ COMPLETED — Razorpay re-targeted to SaaS subscription billing + Refund flow (2026-04-28)
 
 **User correction**: Razorpay is for AUDINEXA's own subscription billing (clinics paying us), NOT for clinics collecting patient payments. Earlier integration was rewired to the wrong target.
