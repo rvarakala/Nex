@@ -20,6 +20,7 @@ import IdleLogout from '../connectivity/IdleLogout';
 import { SyncPill, SyncDrawer } from '../connectivity/SyncDashboard';
 import ClinicStatusToggle from '../components/ClinicStatusToggle';
 import UpdateAvailableToast from '../components/UpdateAvailableToast';
+import WhatsNewModal from '../components/WhatsNewModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const COLLAPSED_KEY = 'acs.sidebar.collapsed';
@@ -453,6 +454,7 @@ export default function AppShell({ children }) {
       <SyncDrawer open={syncOpen} onClose={() => setSyncOpen(false)} />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <WhatsNewModal />
     </div>
   );
 }
