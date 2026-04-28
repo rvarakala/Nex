@@ -1,5 +1,32 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Razorpay LIVE payments wired (2026-04-28)
+
+**User context**: KYC approved. LIVE keys (`rzp_live_Sj0mQq2aZgVVcU`) shipped. Placeholder modal replaced with real production Checkout.
+
+**Backend** (`routers/razorpay_payments.py`, 4 endpoints + webhook):
+- `razorpay==2.0.1` installed + frozen. Client lazy-initialised; secret never leaves server.
+- `GET /api/billing/razorpay/config` → `{key_id, is_live}` only.
+- `POST /api/billing/invoices/{id}/razorpay/order` → creates Razorpay Order in paise. Persists `razorpay_orders` row so the verify step uses backend-stored amount (never trust client). 40-char receipt + notes (invoice_id/clinic_id/patient_id) for reconciliation.
+- `POST /api/billing/invoices/{id}/razorpay/verify` → HMAC-SHA256 check via `hmac.compare_digest`, then appends `Payment(method="razorpay")` and runs `_sum_invoice`. Idempotent vs webhook race.
+- `POST /api/billing/razorpay/webhook` → async source of truth for `payment.captured` / `payment.failed`. Audit log to `razorpay_webhook_log`. Requires `RAZORPAY_WEBHOOK_SECRET` (blank until Dashboard URL registered).
+- `Payment.method` literal extended with `razorpay`.
+
+**Frontend** (`InvoiceDetailPage.js`):
+- `RazorpayPlaceholderDialog` rewritten as live integration. Lazy-loads Checkout.js on first open. Pay → POST /order → `window.Razorpay.open(opts)` → handler POSTs signature to /verify → invoice refreshes. Razorpay theme `#3399cc`. Patient name+mobile prefilled. `payment.failed` event surfaces structured error inline.
+
+**Validated** (LIVE):
+- Real Razorpay order created: `order_Sj0r1fewyEqKrt` for ₹800 against INV/2026/000268.
+- Config endpoint returns `{"is_live": true}`.
+- Live UI: Pay button → modal → Razorpay iframe loads with "Secured By Razorpay" shield, zero page errors. Lint clean.
+
+**Pending owner action** (non-blocking):
+- Register webhook URL `https://careful-feedback.preview.emergentagent.com/api/billing/razorpay/webhook` on Razorpay Dashboard → Webhooks → subscribe to `payment.captured` + `payment.failed` → copy secret to `.env` as `RAZORPAY_WEBHOOK_SECRET` → restart backend.
+
+⚠️ **LIVE keys in use — every Pay click charges real money. Test with ₹1 invoices first.**
+
+---
+
 ## ✅ COMPLETED — UI Phase B: Legacy nav retired + Appointments polish (2026-04-27)
 
 **Backend**: no changes.

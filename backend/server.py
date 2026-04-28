@@ -661,6 +661,7 @@ from routers import stock_transfers as stock_transfers_router  # noqa: E402
 from routers import connect as connect_router                  # noqa: E402
 from routers import clinic_status as clinic_status_router      # noqa: E402
 from routers import greetings as greetings_router               # noqa: E402
+from routers import razorpay_payments as razorpay_router        # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -705,6 +706,7 @@ app.include_router(stock_transfers_router.router)
 app.include_router(connect_router.router)
 app.include_router(clinic_status_router.router)
 app.include_router(greetings_router.router)
+app.include_router(razorpay_router.router)
 
 # ---- CORS lockdown ----
 # Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins
