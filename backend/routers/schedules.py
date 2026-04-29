@@ -347,7 +347,12 @@ async def availability_slots(
         slots.append({
             "start_at": slot_start_dt.isoformat(),
             "end_at": slot_end_dt.isoformat(),
-            "available": available if not override else (available or reason != "Already booked"),
+            # Override flag: when admin/owner ticks "book anyway", we expose
+            # every slot as `available=True` so the UI no longer disables them.
+            # The original `reason` is still returned so the tooltip continues
+            # to communicate WHAT is being overridden (lunch / off-shift /
+            # already-booked) — UI shows the warning, admin acknowledges.
+            "available": available or override,
             "reason": reason,
             "label": label,
         })

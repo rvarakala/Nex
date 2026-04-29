@@ -1,5 +1,44 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Clinic & Staff Schedules feature (2026-04-29)
+
+### Capability
+Configurable working hours for the clinic + per-audiologist split shifts. Booking modal renders a full-day slot grid with greyed-out "lunch / off-shift / already-booked" slots (with hover tooltips) plus a one-click "Override" admin escape hatch and "Next available" jump button.
+
+### Data model (2 new collections)
+- `clinic_schedules` — keyed by `clinic_id`, stores weekly hours map (Mon–Sun, each day with `open` flag + `windows[{start, end, label}]`).
+- `staff_schedules` — keyed by `(clinic_id, user_id)`, same shape + `inherit_clinic` flag.
+
+### Backend — `/app/backend/routers/schedules.py` (NEW)
+- `GET / PUT /api/clinic-schedule` — owner / super_admin / founder only.
+- `GET / PUT /api/staff-schedule/{user_id}` — admin can edit anyone, audiologist can edit only own.
+- `GET /api/availability/slots?date&staff_id[&override=true]` — returns full-day grid (06:00–22:00 at configurable granularity, default 15min) with `available`, `reason`, `label`, `next_available`. Reason taxonomy: "Clinic closed today" | "Audiologist off today" | "Outside clinic hours / lunch break" | "Audiologist not on shift" | "Already booked".
+- `GET /api/availability/week?start_date` — 7-day grid for week-view.
+
+### Frontend
+- New: `/app/frontend/src/components/WeeklyHoursEditor.jsx` — reusable week grid with split-shift support.
+- New: `/app/frontend/src/modules/settings/ClinicHoursTab.jsx` (mounted at `/settings/hours`).
+- New: `/app/frontend/src/modules/settings/StaffScheduleTab.jsx` (mounted at `/settings/staff-schedule`) — staff list + inherit-clinic toggle + custom shifts.
+- Upgraded: `BookAppointmentModal` — slot grid uses new `/availability/slots` endpoint, greys-out unavailable slots with tooltips, "Next available" jump button, "Show all / Show available only" toggle, "Override hours" checkbox.
+
+### Sensible defaults (auto-applied if a clinic hasn't set anything)
+- Mon–Fri: 09:00–13:30 (Morning) + 14:30–19:00 (Evening)
+- Sat: 09:00–13:30 (Morning) + 14:30–17:30 (Evening)
+- Sun: closed
+- Audiologists: `inherit_clinic=true` by default
+
+### Tests — `/app/backend/tests/test_schedules.py` (16 tests, all green)
+- 3 happy paths (clinic default + admin update, staff default inherits, staff custom split shift)
+- 5 RBAC tests (front-desk blocked, audiologist blocked from others' schedules, unknown user → 404, invalid HH:MM → 422, audiologist can edit own)
+- 6 edge cases (Sunday closed → all blocked, lunch break greys 13:30/14:00, conflict detection on booked slot, override unblocks ALL incl conflicts, missing staff_id → 400, week grid 7-day shape)
+- Self-cleaning fixture: every test appointment is cancelled and patient deleted on teardown.
+
+### Regression
+- Total backend regression: **116/116 passing** (schedules + admin panel + Razorpay webhook + subscription + appointments + RBAC).
+
+---
+
+
 ## ✅ COMPLETED — Codebase refactor (Phase 1-3 + ARCHITECTURE.md, 2026-04-29)
 
 ### Phase 1 — Deleted legacy `modules/frontdesk/`
