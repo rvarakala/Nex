@@ -10,7 +10,6 @@ import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
 import LandingPage from './modules/landing/v2/LandingPage';
 import SignupPage from './modules/landing/SignupPage';
-import FrontDeskModule from './modules/frontdesk/FrontDeskModule';
 import BillingModule from './modules/billing/BillingModule';
 import TestProceduresModule from './modules/test/TestProceduresModule';
 import HAModule from './modules/ha/HAModule';
@@ -34,6 +33,7 @@ import InviteAcceptPage from './modules/auth/InviteAcceptPage';
 import AudinexaCarePage from './modules/care/AudinexaCarePage';
 import LegalPage from './modules/legal/LegalPage';
 import PatientsModule from './modules/patients/PatientsModule';
+import CloseoutPage from './modules/closeout/CloseoutPage';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -43,7 +43,7 @@ const PostLoginRedirect = () => {
   if (INTERNAL_ADMIN_ROLES.includes(user.role)) return <Navigate to="/admin/dashboard" replace />;
   if (user.role === 'referral_partner') return <Navigate to="/partner" replace />;
   if (user.role === 'audiologist') return <Navigate to="/test" replace />;
-  return <Navigate to="/frontdesk" replace />;
+  return <Navigate to="/patients" replace />;
 };
 
 const ShelledRoute = ({ children }) => {
@@ -121,8 +121,9 @@ function AppRoutes() {
               {/* PARTNER (own shell — no AppShell) */}
               <Route path="/partner" element={<ProtectedRoute><PartnerPortalPage /></ProtectedRoute>} />
 
-              <Route path="/frontdesk/*" element={
-                <ShelledRoute><ModuleGate module="frontdesk"><FrontDeskModule /></ModuleGate></ShelledRoute>
+              <Route path="/frontdesk/*" element={<Navigate to="/patients" replace />} />
+              <Route path="/closeout" element={
+                <ShelledRoute><CloseoutPage /></ShelledRoute>
               } />
               <Route path="/patients/*" element={
                 <ShelledRoute><PatientsModule /></ShelledRoute>

@@ -30,7 +30,7 @@ export default function TenantDetailPage() {
   const impersonate = async () => {
     const r = await axios.post(`${API}/admin/v2/tenants/${clinicId}/impersonate`);
     await loginWithToken(r.data.access_token);
-    navigate('/frontdesk');
+    navigate('/patients');
   };
   const suspendToggle = async () => {
     const verb = d.tenant.status === 'suspended' ? 'activate' : 'suspend';

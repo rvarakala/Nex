@@ -48,7 +48,7 @@ export default function TenantsPage() {
         const r = await axios.post(`${API}/admin/v2/tenants/${cid}/impersonate`);
         if (r.data.access_token) {
           await loginWithToken(r.data.access_token);
-          navigate('/frontdesk');
+          navigate('/patients');
           return;
         }
       }

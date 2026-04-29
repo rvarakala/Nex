@@ -66,7 +66,7 @@ export default function TokenPrintView() {
           <button onClick={() => navigate(-1)} className="text-xs text-slate-600 hover:text-slate-900" data-testid="token-back">← Back</button>
           <div className="flex gap-2">
             <button onClick={() => window.print()} data-testid="token-reprint" className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded shadow">Print Again</button>
-            <button onClick={() => navigate('/frontdesk')} data-testid="token-done" className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded">Done</button>
+            <button onClick={() => navigate('/patients')} data-testid="token-done" className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded">Done</button>
           </div>
         </div>
 

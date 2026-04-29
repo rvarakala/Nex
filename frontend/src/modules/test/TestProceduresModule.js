@@ -301,7 +301,7 @@ export default function TestProceduresModule() {
       {/* Context strip */}
       <div className="bg-amber-50 border-b border-amber-200 px-3 py-1.5 flex items-center justify-between flex-shrink-0" data-testid="test-context-strip">
         <div className="flex items-center gap-2 text-xs">
-          <button onClick={() => { clearActiveTest(); navigate('/frontdesk'); }} className="text-amber-800 hover:text-amber-900 font-semibold" data-testid="test-back-btn">
+          <button onClick={() => { clearActiveTest(); navigate('/patients'); }} className="text-amber-800 hover:text-amber-900 font-semibold" data-testid="test-back-btn">
             ← Back to Front Desk
           </button>
           <div className="w-px h-4 bg-amber-300" />

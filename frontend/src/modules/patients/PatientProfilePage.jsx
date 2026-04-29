@@ -175,14 +175,14 @@ export default function PatientProfilePage() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            to={`/frontdesk/appointments`}
+            to={`/patients/appointments`}
             state={{ bookForPatient: { patient_id: patient.patient_id, name: patient.name } }}
             data-testid="profile-add-item"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
             <Plus size={13} /> Add Appointment
           </Link>
           <Link
-            to={`/frontdesk/new`}
+            to={`/patients?new=1`}
             data-testid="profile-edit"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 border border-slate-200 hover:border-slate-300 bg-white rounded-lg text-slate-700 font-semibold">
             <Edit size={13} /> Edit

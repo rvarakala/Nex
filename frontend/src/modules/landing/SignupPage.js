@@ -49,7 +49,7 @@ export default function SignupPage() {
         // Fallback: persist and hard-reload
         localStorage.setItem('acs_token', r.data.access_token);
       }
-      navigate('/frontdesk', { replace: true });
+      navigate('/patients', { replace: true });
     } catch (e) {
       const d = e?.response?.data?.detail;
       setErr(typeof d === 'string' ? d : (Array.isArray(d) ? d[0]?.msg : null) || 'Signup failed');

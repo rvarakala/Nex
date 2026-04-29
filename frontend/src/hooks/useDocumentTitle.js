@@ -23,7 +23,7 @@ const TITLES = [
   { match: /^\/admin\/marketing/,   title: 'Marketing CRM · AUDINEXA' },
   { match: /^\/admin\/features/,    title: 'Feature Flags · AUDINEXA' },
   { match: /^\/admin/,              title: 'Admin · AUDINEXA' },
-  { match: /^\/frontdesk/,          title: 'Front Desk · AUDINEXA' },
+  { match: /^\/patients/,           title: 'Patients · AUDINEXA' },
   { match: /^\/billing/,            title: 'Billing · AUDINEXA' },
   { match: /^\/test/,               title: 'Diagnostics · AUDINEXA' },
   { match: /^\/ha\/analytics/,      title: 'Analytics · AUDINEXA' },

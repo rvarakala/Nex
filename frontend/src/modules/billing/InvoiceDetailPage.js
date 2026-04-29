@@ -79,7 +79,7 @@ export default function InvoiceDetailPage() {
           <button
             onClick={() => {
               const followUp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-              navigate('/frontdesk/appointments', {
+              navigate('/patients/appointments', {
                 state: {
                   bookForPatient: { patient_id: inv.patient_id, name: inv.patient_name },
                   suggestedDate: followUp.toISOString(),

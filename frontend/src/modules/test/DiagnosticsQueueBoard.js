@@ -213,11 +213,11 @@ export default function DiagnosticsQueueBoard() {
             className="p-1.5 text-slate-600 hover:bg-slate-100 rounded">
             <RefreshCw size={13} />
           </button>
-          <button onClick={() => navigate('/frontdesk/new')} data-testid="dq-new-walkin"
+          <button onClick={() => navigate('/patients?new=1')} data-testid="dq-new-walkin"
             className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded">
             <UserPlus size={11} /> New Walk-in
           </button>
-          <button onClick={() => navigate('/frontdesk/returning')} data-testid="dq-returning"
+          <button onClick={() => navigate('/patients')} data-testid="dq-returning"
             className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded">
             Returning Patient
           </button>

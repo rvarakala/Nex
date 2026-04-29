@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSubscription } from '../SubscriptionContext';
 
 const MODULES = [
-  { key: 'frontdesk',    label: 'Front Desk',    path: '/frontdesk',   color: 'bg-blue-600',    icon: '🏥' },
+  { key: 'frontdesk',    label: 'Patients',      path: '/patients',    color: 'bg-blue-600',    icon: '🏥' },
   { key: 'diagnostics',  label: 'Diagnostics',   path: '/test',        color: 'bg-emerald-600', icon: '🎧' },
   { key: 'hearing-aids', label: 'Hearing Aids',  path: '/ha',          color: 'bg-indigo-600',  icon: '🔊' },
   { key: 'repair',       label: 'Service & Repair', path: '/repair',   color: 'bg-orange-600',  icon: '🔧' },

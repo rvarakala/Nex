@@ -50,7 +50,7 @@ export default function PatientsListPage() {
           <p className="text-[12.5px] text-slate-500 mt-0.5">All registered patients · {totalCount} {totalCount === 1 ? 'record' : 'records'}</p>
         </div>
         <Link
-          to="/frontdesk/new"
+          to="/patients?new=1"
           data-testid="patients-list-new"
           className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
           <UserPlus size={13} /> Add Patient

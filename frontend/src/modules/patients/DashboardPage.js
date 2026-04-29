@@ -76,12 +76,12 @@ export default function DashboardPage() {
       {/* Quick actions */}
       <div className="flex gap-2">
         <button
-          onClick={() => navigate('/frontdesk/new')}
+          onClick={() => navigate('/patients?new=1')}
           data-testid="quick-new-patient"
           className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded shadow-sm"
         >+ New Patient Walk-in</button>
         <button
-          onClick={() => navigate('/frontdesk/returning')}
+          onClick={() => navigate('/patients')}
           data-testid="quick-returning"
           className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded shadow-sm"
         >Search Returning Patient</button>

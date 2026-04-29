@@ -175,7 +175,7 @@ export default function AppShell({ children }) {
       if (inField) return;
       if (!meta && !e.altKey) {
         const k = e.key.toLowerCase();
-        const map = { n: '/frontdesk/new', a: '/frontdesk/appointments', i: '/billing/new', r: '/frontdesk/returning', d: '/frontdesk', q: '/frontdesk/queue' };
+        const map = { n: '/patients', a: '/patients/appointments', i: '/billing/new', r: '/patients', d: '/patients', q: '/test/queue' };
         if (map[k]) { e.preventDefault(); navigate(map[k]); }
         if (k === '/') { e.preventDefault(); setPaletteOpen(true); }
       }
@@ -421,7 +421,7 @@ export default function AppShell({ children }) {
             </button>
             {canSeeCloseout && unreadCloseout && (
               <button
-                onClick={() => navigate('/frontdesk/closeout')}
+                onClick={() => navigate('/closeout')}
                 data-testid="closeout-bell"
                 title={`Close-out for ${unreadCloseout.date} is ready`}
                 className="relative flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2 py-1 shadow-sm transition-transform hover:scale-105"

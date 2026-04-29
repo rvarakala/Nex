@@ -1,5 +1,46 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Codebase refactor (Phase 1-3 + ARCHITECTURE.md, 2026-04-29)
+
+### Phase 1 — Deleted legacy `modules/frontdesk/`
+- Removed ~3,000 lines of dead code (`FrontDeskModule.js`, `DashboardPage`, `NewPatientPage`, `ReturningPage`, `QueuePage`, `AppointmentsPage`, `QRPosterPage`, `CloseoutPage`, `ClinicPulse`, `CollectionsSparkline`, `appointments/BookAppointmentModal`, `appointments/WaitlistPanel`).
+- **Components actually still in use** were relocated, NOT deleted:
+  * `CloseoutPage` + `CollectionsSparkline` → `/app/frontend/src/modules/closeout/`
+  * `DashboardPage` + `ClinicPulse` → `/app/frontend/src/modules/patients/`
+  * `BookAppointmentModal` + `WaitlistPanel` → `/app/frontend/src/modules/appointments/components/`
+- All `/frontdesk/...` URL references throughout the app were rewritten to `/patients` or `/closeout`. Legacy `/frontdesk/*` URL still redirects to `/patients` for one release window.
+- Default post-login redirect for `front_desk` role changed from `/frontdesk` to `/patients`.
+
+### Phase 2 — Backend `models/` package + `seeds/` extraction
+- `models.py` (994 lines) → `models/` package:
+  * Single source of truth: `models/_canonical.py` (no class definitions duplicated).
+  * Domain index files: `auth.py`, `queue.py`, `appointment.py`, `billing.py`, `patient.py`, `clinical.py` — each re-exports the relevant subset for fast navigation.
+  * `__init__.py` does `from ._canonical import *` so `from models import X` keeps working unchanged.
+- `_seed_defaults` + `_seed_second_clinic` + `_seed_primary_branch` extracted from `server.py` (220 lines) into `seeds/demo.py` with cleaner sub-functions.
+- **server.py: 962 → 742 lines**.
+
+### Phase 3 — Domain-split `admin_panel.py`
+- Extracted 8 self-contained activity routes + unified search into `routers/admin_activity.py`:
+  * `GET /activity/logins` · `GET /activity/online` · `GET /activity/users/:id/pageviews` · `POST /activity/users/:id/force-logout` · `GET /activity/funnel` · `GET /activity/funnel/by-tenant` · `GET /activity/inactive` · `GET /search`
+- Mounted under same `/api/admin/v2` prefix in `server.py` — zero frontend changes.
+- **admin_panel.py: 1,331 → 1,104 lines**.
+
+### Bonus — `/app/ARCHITECTURE.md`
+A 1-page navigation map covering: backend models domain index, router-by-router URL prefix map, frontend module map, "where do I add X?" recipes, and a bug-hunting checklist. ~250 lines.
+
+### Verification
+- ✅ Frontend compiles & login works (admin@acs.in / admin123, founder@audinexa.com / founder123, admin@delhi.test / delhiadmin123 — all confirmed).
+- ✅ Smoke-tested 12 endpoints across patients, appointments, diagnostics, closeouts, branches, admin dashboard, tenants, activity logins/funnel/search — all 200 OK.
+- ✅ 74-test admin/billing regression suite green (`test_phase14_admin_panel`, `test_phase14b_admin_panel`, `test_razorpay_webhook`, `test_phase12_subscription`).
+
+### Pending technical-debt (P2 — backlog)
+- Further admin_panel.py split (still 1,104 lines — candidates: `admin_tenants.py`, `admin_subscriptions.py`, `admin_revenue_leads.py`, `admin_features.py`).
+- 403 scattered axios calls — central `src/api/client.ts` would consolidate auth headers + retry logic.
+- `models/_canonical.py` is still one big file — physically split each domain after confirming the re-export aliases are the only consumers.
+
+---
+
+
 ## ⏸ PENDING — Razorpay LIVE UPI payment block (parked 2026-04-28)
 
 **Symptom**: Live UPI payments via Razorpay fail with *"Payment blocked as website does not match registered website(s)"* — same message on multiple attempts (Apr 29 2026 01:36 AM IST is the latest example).

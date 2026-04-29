@@ -7,7 +7,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { UserPlus, Search } from 'lucide-react';
-import DashboardPage from '../frontdesk/DashboardPage';
+import DashboardPage from './DashboardPage';
 import CelebrationsWidget from '../../components/CelebrationsWidget';
 import { useAuth } from '../../AuthContext';
 
@@ -23,13 +23,13 @@ export default function PatientsDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            to="/frontdesk/returning"
+            to="/patients"
             data-testid="pmod-search-patient"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 border border-slate-200 hover:border-slate-300 bg-white rounded-lg text-slate-700 font-semibold">
             <Search size={13} /> Search patient
           </Link>
           <Link
-            to="/frontdesk/new"
+            to="/patients?new=1"
             data-testid="pmod-new-patient"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
             <UserPlus size={13} /> New Patient

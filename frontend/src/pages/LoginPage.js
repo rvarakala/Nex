@@ -15,7 +15,7 @@ const roleHome = (role) => {
   if (['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'].includes(role)) return '/admin/dashboard';
   if (role === 'referral_partner') return '/partner';
   if (role === 'audiologist') return '/test';
-  return '/frontdesk';
+  return '/patients';
 };
 
   // Redirect if already authenticated (page reload scenario)

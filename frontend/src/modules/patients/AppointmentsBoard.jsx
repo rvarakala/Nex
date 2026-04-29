@@ -143,7 +143,7 @@ export default function AppointmentsBoard() {
             />
           </div>
           <Link
-            to="/frontdesk/appointments"
+            to="/patients/appointments"
             data-testid="appts-add"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
             <Plus size={13} /> Add Appointment
@@ -205,7 +205,7 @@ export default function AppointmentsBoard() {
           <div className="text-sm font-semibold text-slate-700">
             No appointments {q ? 'match this filter' : (status !== 'all' ? `with status "${status.replace(/_/g, ' ')}"` : 'on this date')}.
           </div>
-          <Link to="/frontdesk/appointments" className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">
+          <Link to="/patients/appointments" className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">
             <Plus size={13} /> Book Appointment
           </Link>
         </div>
@@ -312,7 +312,7 @@ function ApptCard({ a, onView }) {
             <MenuItem icon={User}     label="View Profile" onClick={() => { setMenuOpen(false); onView(); }} />
             <MenuItem icon={ArrowRight} label="Attend Now"  onClick={() => { setMenuOpen(false); window.location.href = `/test`; }} />
             <MenuItem icon={ListPlus} label="Add to Queue" onClick={() => setMenuOpen(false)} />
-            <MenuItem icon={Edit2}    label="Edit"         onClick={() => { setMenuOpen(false); window.location.href = `/frontdesk/appointments`; }} />
+            <MenuItem icon={Edit2}    label="Edit"         onClick={() => { setMenuOpen(false); window.location.href = `/patients/appointments`; }} />
             <MenuItem icon={X}        label="Cancel"       danger onClick={() => setMenuOpen(false)} />
           </div>
         )}

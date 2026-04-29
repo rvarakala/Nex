@@ -11,7 +11,7 @@ import PersonsView from './components/PersonsView';
 import IntentChooser from './components/IntentChooser';
 import BookCounterpartyModal from './components/BookCounterpartyModal';
 import CalendarClinicSwitcher from './components/CalendarClinicSwitcher';
-import BookAppointmentModal from '../frontdesk/appointments/BookAppointmentModal';
+import BookAppointmentModal from './components/BookAppointmentModal';
 import { startOfWeek, addDays, fmtRange } from './utils';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;

@@ -11,15 +11,14 @@ const SHORTCUT_HINT = (() => {
 })();
 
 const ACTIONS = [
-  { id: 'new-patient',      label: 'New Patient Walk-in',      hint: 'N',    to: '/frontdesk/new',              icon: '👤' },
-  { id: 'returning',        label: 'Search Returning Patient', hint: 'R',    to: '/frontdesk/returning',        icon: '🔍' },
-  { id: 'book-appointment', label: 'Book Appointment',         hint: 'A',    to: '/frontdesk/appointments',     icon: '📅', onOpen: true },
+  { id: 'new-patient',      label: 'New Patient Walk-in',      hint: 'N',    to: '/patients?new=1',             icon: '👤' },
+  { id: 'returning',        label: 'Search Returning Patient', hint: 'R',    to: '/patients',                   icon: '🔍' },
+  { id: 'book-appointment', label: 'Book Appointment',         hint: 'A',    to: '/patients/appointments',      icon: '📅', onOpen: true },
   { id: 'new-invoice',      label: 'New Invoice',              hint: 'I',    to: '/billing/new',                icon: '₹'  },
   { id: 'invoices',         label: 'View Invoices',            hint: '',     to: '/billing',                    icon: '📄' },
-  { id: 'dashboard',        label: 'Front Desk Dashboard',     hint: 'D',    to: '/frontdesk',                  icon: '🏠' },
-  { id: 'queue',            label: 'Queue',                    hint: 'Q',    to: '/frontdesk/queue',            icon: '⏱' },
-  { id: 'qr-poster',        label: 'Waiting-Room QR Poster',   hint: '',     to: '/frontdesk/qr-poster',        icon: '📱' },
-  { id: 'closeout',         label: 'Day Close-out',            hint: '',     to: '/frontdesk/closeout',         icon: '📊' },
+  { id: 'dashboard',        label: 'Patients Dashboard',       hint: 'D',    to: '/patients',                   icon: '🏠' },
+  { id: 'queue',            label: 'Queue',                    hint: 'Q',    to: '/test/queue',                 icon: '⏱' },
+  { id: 'closeout',         label: 'Day Close-out',            hint: '',     to: '/closeout',                    icon: '📊' },
 ];
 
 export default function CommandPalette({ open, onClose }) {

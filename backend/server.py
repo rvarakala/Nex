@@ -218,7 +218,8 @@ async def lifespan(_app: FastAPI):
         _log.info("MongoDB indexes ensured")
 
         # ---- seed defaults (clinic, users, services) — idempotent ----
-        await _seed_defaults()
+        from seeds import run_demo_seed
+        await run_demo_seed(db, billing_module)
 
         # ---- one-time backfill: extend existing appointments with the new
         # counterparty + staff resource fields (Phase: Calendar v2). Idempotent
@@ -654,6 +655,7 @@ from routers import referral_partners as referral_partners_router  # noqa: E402
 from routers import patient_portal as patient_portal_router   # noqa: E402
 from routers import admin_panel as admin_panel_router         # noqa: E402
 from routers import admin_panel_b as admin_panel_b_router     # noqa: E402
+from routers import admin_activity as admin_activity_router   # noqa: E402
 from routers import export_data as export_data_router         # noqa: E402
 from routers import report_handover as report_handover_router # noqa: E402
 from routers import settings as settings_router                # noqa: E402
@@ -699,6 +701,7 @@ app.include_router(referral_partners_router.router)
 app.include_router(patient_portal_router.router)
 app.include_router(admin_panel_router.router)
 app.include_router(admin_panel_b_router.router)
+app.include_router(admin_activity_router.router)
 app.include_router(export_data_router.router)
 app.include_router(report_handover_router.router)
 app.include_router(settings_router.router)
@@ -739,224 +742,3 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def _seed_defaults():
-    """Idempotently creates the default clinic + 4 demo users (super_admin, front_desk, audiologist, accounts).
-
-    Also: backfill existing patients/referring_doctors that lack `clinic_id` so legacy records remain accessible.
-
-    PRODUCTION SAFETY: when env var `DISABLE_DEMO_SEED=1` is set, the demo
-    clinic + demo users + second test clinic + admin panel demo tenants are
-    all skipped. The founder account (founder@audinexa.com) is still seeded
-    via `admin_seed.seed_founder_only()` so the platform owner can sign in.
-    Set `FOUNDER_PASSWORD` to override the default password in production.
-    """
-    disable_demo = os.environ.get("DISABLE_DEMO_SEED") == "1"
-
-    if disable_demo:
-        # Production path — only seed the founder, nothing else.
-        logger.info("DISABLE_DEMO_SEED=1 — skipping demo data seed")
-        try:
-            from admin_seed import seed_founder_only
-            await seed_founder_only(db)
-        except Exception as e:
-            logger.warning(f"Founder seed skipped: {e}")
-        return
-
-    clinic_id = os.environ.get("DEFAULT_CLINIC_ID", "clinic-acs-demo")
-    clinic_name = os.environ.get("DEFAULT_CLINIC_NAME", "ACS Audiology Clinic")
-
-    existing = await db.clinics.find_one({"clinic_id": clinic_id})
-    if not existing:
-        await db.clinics.insert_one(serialize_datetime({
-            "clinic_id": clinic_id,
-            "name": clinic_name,
-            "city": "Mumbai",
-            "state": "Maharashtra",
-            "phone": "+91-22-00000000",
-            "email": "clinic@acsdemo.in",
-            "mrd_prefix": "ACS",
-            # Phase 12.0 — demo clinic seeded on PREMIUM so every feature is visible
-            # for showcase. New real clinics start on BASIC + 30-day Premium trial.
-            "subscription_tier": "PREMIUM",
-            "created_at": datetime.utcnow(),
-        }))
-        logger.info(f"Seeded default clinic: {clinic_id}")
-    else:
-        # Ensure subscription_tier is set on existing demo clinic (idempotent)
-        if not existing.get("subscription_tier"):
-            await db.clinics.update_one(
-                {"clinic_id": clinic_id},
-                {"$set": {"subscription_tier": "PREMIUM"}},
-            )
-
-    demo_users = [
-        {"email": "admin@acs.in",      "password": "admin123",     "name": "Super Admin",   "role": "super_admin"},
-        {"email": "frontdesk@acs.in",  "password": "frontdesk123", "name": "Front Desk",    "role": "front_desk"},
-        {"email": "audiologist@acs.in","password": "audio123",     "name": "Dr. Audiologist","role": "audiologist"},
-        {"email": "accounts@acs.in",   "password": "accounts123",  "name": "Accounts Team", "role": "accounts"},
-    ]
-    for u in demo_users:
-        found = await db.users.find_one({"email": u["email"]})
-        if found:
-            # Keep password in sync with seed defaults (safe in demo)
-            if not verify_password(u["password"], found.get("password_hash", "")):
-                await db.users.update_one(
-                    {"email": u["email"]},
-                    {"$set": {"password_hash": hash_password(u["password"]), "clinic_id": clinic_id}},
-                )
-            continue
-        await db.users.insert_one(serialize_datetime({
-            "user_id": f"USR-{str(os.urandom(4).hex()).upper()}",
-            "clinic_id": clinic_id,
-            "email": u["email"],
-            "name": u["name"],
-            "role": u["role"],
-            "active": True,
-            "password_hash": hash_password(u["password"]),
-            "created_at": datetime.utcnow(),
-        }))
-        logger.info(f"Seeded user: {u['email']} ({u['role']})")
-
-    # Backfill legacy records missing clinic_id
-    for coll in ("patients", "referring_doctors", "test_sessions"):
-        try:
-            await db[coll].update_many({"clinic_id": {"$exists": False}}, {"$set": {"clinic_id": clinic_id}})
-            await db[coll].update_many({"clinic_id": None}, {"$set": {"clinic_id": clinic_id}})
-        except Exception as e:
-            logger.warning(f"Backfill skipped for {coll}: {e}")
-
-    # Seed default service catalogue for the default clinic.
-    # Disabled by default — clinics should curate their own catalogue from the
-    # Settings → Service Catalogue UI. Set SEED_DEFAULT_SERVICES=1 to opt back in
-    # (useful only for greenfield demo / dev environments).
-    if os.environ.get("SEED_DEFAULT_SERVICES") == "1":
-        try:
-            inserted = await billing_module.seed_default_services(db, clinic_id)
-            if inserted:
-                logger.info(f"Seeded {inserted} default services for {clinic_id}")
-        except Exception as e:
-            logger.warning(f"Service seeding skipped: {e}")
-
-    # Seed the primary Mumbai HQ branch + backfill existing users to it.
-    await _seed_primary_branch(clinic_id, "Mumbai HQ", "Mumbai", "Maharashtra")
-
-    # ---- Second test clinic (for cross-tenant isolation tests) ----
-    # Delhi branch with its own 2 users. Enables end-to-end 403 assertions on
-    # patient / report / share-link cross-clinic access.
-    await _seed_second_clinic()
-
-    # ---- AUDINEXA Super Admin Panel demo data (founder + 4 demo tenants + leads) ----
-    try:
-        from admin_seed import seed_admin_panel_demo
-        await seed_admin_panel_demo(db)
-    except Exception as e:
-        logger.warning(f"Admin panel seed skipped: {e}")
-
-
-async def _seed_second_clinic():
-    """Idempotently seed a second clinic + 2 users for cross-tenant testing.
-
-    This is a test fixture (not a product feature). It lets test code log in as
-    a Delhi-clinic user and confirm they receive 403 on Mumbai-clinic resources.
-    Safe in demo because passwords match the documented convention.
-    """
-    c2_id = "clinic-delhi-test"
-    existing = await db.clinics.find_one({"clinic_id": c2_id})
-    if existing:
-        # Back-fill subscription_tier if missing on an existing doc (migration safety).
-        if not existing.get("subscription_tier"):
-            await db.clinics.update_one(
-                {"clinic_id": c2_id},
-                {"$set": {"subscription_tier": "BASIC"}},
-            )
-        # Still ensure passwords stay in sync for the Delhi users.
-        for u in _DELHI_USERS:
-            found = await db.users.find_one({"email": u["email"]})
-            if found and not verify_password(u["password"], found.get("password_hash", "")):
-                await db.users.update_one(
-                    {"email": u["email"]},
-                    {"$set": {"password_hash": hash_password(u["password"]), "clinic_id": c2_id}},
-                )
-        # Ensure Delhi also has a primary branch + all users are scoped to it.
-        await _seed_primary_branch(c2_id, "Delhi", "New Delhi", "Delhi")
-        return
-
-    await db.clinics.insert_one(serialize_datetime({
-        "clinic_id": c2_id,
-        "name": "Delhi Test Branch",
-        "city": "New Delhi",
-        "state": "Delhi",
-        "phone": "+91-11-00000000",
-        "email": "clinic@delhi.test",
-        "mrd_prefix": "DEL",
-        # Delhi seeded on BASIC so cross-tenant tier-gate tests are meaningful
-        # (non-super-admin Delhi users hitting /repair, /analytics, etc. → 402).
-        "subscription_tier": "BASIC",
-        "created_at": datetime.utcnow(),
-    }))
-    logger.info(f"Seeded second test clinic: {c2_id}")
-
-    for u in _DELHI_USERS:
-        if await db.users.find_one({"email": u["email"]}):
-            continue
-        await db.users.insert_one(serialize_datetime({
-            "user_id": f"USR-{str(os.urandom(4).hex()).upper()}",
-            "clinic_id": c2_id,
-            "email": u["email"],
-            "name": u["name"],
-            "role": u["role"],
-            "active": True,
-            "password_hash": hash_password(u["password"]),
-            "created_at": datetime.utcnow(),
-        }))
-        logger.info(f"Seeded user: {u['email']} ({u['role']}) [clinic {c2_id}]")
-
-    try:
-        inserted = await billing_module.seed_default_services(db, c2_id)
-        if inserted:
-            logger.info(f"Seeded {inserted} default services for {c2_id}")
-    except Exception as e:
-        logger.warning(f"Delhi service seeding skipped: {e}")
-
-    # Seed Delhi primary branch + backfill Delhi users.
-    await _seed_primary_branch(c2_id, "Delhi", "New Delhi", "Delhi")
-
-
-async def _seed_primary_branch(clinic_id: str, name: str, city: str, state: str):
-    """Ensure the given clinic has at least one primary branch, and backfill
-    every user that currently has no `branch_ids` so they're scoped to it.
-
-    Idempotent: safe to call on every boot.
-    """
-    existing = await db.branches.find_one({"clinic_id": clinic_id, "is_primary": True})
-    if existing:
-        primary_branch_id = existing["branch_id"]
-    else:
-        from uuid import uuid4
-        primary_branch_id = f"BR-{str(uuid4())[:8].upper()}"
-        await db.branches.insert_one(serialize_datetime({
-            "branch_id": primary_branch_id,
-            "clinic_id": clinic_id,
-            "name": name,
-            "city": city,
-            "state": state,
-            "is_primary": True,
-            "active": True,
-            "created_at": datetime.utcnow(),
-        }))
-        logger.info(f"Seeded primary branch {primary_branch_id} ({name}) for {clinic_id}")
-
-    # Backfill branch_ids for every user in this clinic who has none.
-    res = await db.users.update_many(
-        {"clinic_id": clinic_id,
-         "$or": [{"branch_ids": {"$exists": False}}, {"branch_ids": {"$size": 0}}]},
-        {"$set": {"branch_ids": [primary_branch_id]}},
-    )
-    if res.modified_count:
-        logger.info(f"Backfilled branch_ids for {res.modified_count} users in {clinic_id}")
-
-
-_DELHI_USERS = [
-    {"email": "admin@delhi.test",      "password": "delhiadmin123",     "name": "Delhi Admin",     "role": "super_admin"},
-    {"email": "frontdesk@delhi.test",  "password": "delhifrontdesk123", "name": "Delhi Front Desk","role": "front_desk"},
-]
