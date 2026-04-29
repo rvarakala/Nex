@@ -80,6 +80,7 @@ export default function AppShell({ children }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch { return false; }
   });
