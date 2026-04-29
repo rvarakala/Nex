@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
@@ -29,31 +29,57 @@ const COLLAPSED_KEY = 'acs.sidebar.collapsed';
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
 
 // ================= Nav item =================
-const NavItem = ({ to, Icon, label, testid, collapsed, onNavigate, badge }) => (
-  <NavLink
-    to={to}
-    data-testid={testid}
-    onClick={onNavigate}
-    end={false}
-    className={({ isActive }) =>
+// Custom matcher (replaces NavLink) so that:
+//  • Items sharing a path but different query strings (Patients vs
+//    Follow Ups vs Leads — all under /patients/list) don't all light up
+//    at once.
+//  • `exact` items (Dashboard /patients, Patients /patients/list) only
+//    match when no filter query is present, so their child / filtered
+//    siblings can claim the active state instead.
+//  • Other items keep prefix-matching so deep child routes (e.g.
+//    /test/queue under /test) still highlight the parent.
+const NavItem = ({ to, Icon, label, testid, collapsed, onNavigate, badge, exact = false }) => {
+  const location = useLocation();
+  const [toPath, toSearch = ''] = to.split('?');
+
+  let isActive = false;
+  if (toSearch) {
+    // Must match path exactly AND every query param the link declared.
+    const want = new URLSearchParams(toSearch);
+    const cur = new URLSearchParams(location.search);
+    isActive = location.pathname === toPath
+      && Array.from(want).every(([k, v]) => cur.get(k) === v);
+  } else if (exact) {
+    // Path exact + no `filter=` query (so filtered siblings win).
+    isActive = location.pathname === toPath && !location.search.includes('filter=');
+  } else {
+    isActive = location.pathname === toPath
+      || location.pathname.startsWith(toPath + '/');
+  }
+
+  return (
+    <Link
+      to={to}
+      data-testid={testid}
+      onClick={onNavigate}
       // Active row uses a high-contrast white pill on the deep-navy rail —
       // matches the SoundCare reference. Inactive rows are slate-300 with
       // slate-700 hover background; subtle, premium, scannable.
-      `group flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+      className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${
         isActive
           ? 'bg-white text-slate-900 shadow-sm shadow-black/30'
           : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
-      }`
-    }
-    title={collapsed ? label : undefined}
-  >
-    <Icon size={17} strokeWidth={2} className="flex-shrink-0" />
-    {!collapsed && <span className="truncate flex-1">{label}</span>}
-    {!collapsed && badge && (
-      <span className="px-1.5 py-0.5 text-[9px] font-bold bg-orange-500 text-white rounded-full">{badge}</span>
-    )}
-  </NavLink>
-);
+      }`}
+      title={collapsed ? label : undefined}
+    >
+      <Icon size={17} strokeWidth={2} className="flex-shrink-0" />
+      {!collapsed && <span className="truncate flex-1">{label}</span>}
+      {!collapsed && badge && (
+        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-orange-500 text-white rounded-full">{badge}</span>
+      )}
+    </Link>
+  );
+};
 
 // ================= Tier badge =================
 const TierBadge = ({ tier }) => {
@@ -204,7 +230,7 @@ export default function AppShell({ children }) {
       // Dashboard sits in its own ungrouped row at the top — no header
       label: '',
       items: [
-        { to: '/patients', Icon: LayoutDashboard, label: 'Dashboard', testid: 'nav-dashboard',
+        { to: '/patients', Icon: LayoutDashboard, label: 'Dashboard', testid: 'nav-dashboard', exact: true,
           badge: pendingReports > 0 ? pendingReports : null },
       ].filter(Boolean),
     },
@@ -221,8 +247,8 @@ export default function AppShell({ children }) {
     {
       label: 'Registration',
       items: [
-        { to: '/patients/new',   Icon: UserPlus,    label: 'New Registration', testid: 'nav-new-registration' },
-        { to: '/patients/list',  Icon: Users,       label: 'Patients',         testid: 'nav-patients' },
+        { to: '/patients/new',   Icon: UserPlus,    label: 'New Registration', testid: 'nav-new-registration', exact: true },
+        { to: '/patients/list',  Icon: Users,       label: 'Patients',         testid: 'nav-patients',         exact: true },
         !isAudio &&
           { to: '/patients/list?filter=leads', Icon: UserSquare2, label: 'Leads & Walk-ins', testid: 'nav-leads' },
       ].filter(Boolean),
@@ -312,7 +338,7 @@ export default function AppShell({ children }) {
       </div>
 
       {/* Nav sections */}
-      <div className="flex-1 overflow-auto py-3 px-2 space-y-3">
+      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-3 nav-scrollbar">
         {sections.map((s, idx) => (
           <div key={s.label || `__top_${idx}`}>
             {!collapsed && s.label && (
