@@ -11,13 +11,14 @@
  *   /patients/reports         → Reports handover queue (legacy /reports)
  *   /patients/:patientId      → Single Patient profile (sub-tabs)
  */
-import React from 'react';
-import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Routes, Route, Navigate, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { LayoutDashboard, CalendarDays, Users, FileText } from 'lucide-react';
 import PatientsDashboard from './PatientsDashboard';
 import PatientsListPage from './PatientsListPage';
 import AppointmentsBoard from './AppointmentsBoard';
 import PatientProfilePage from './PatientProfilePage';
+import NewPatientPage from './NewPatientPage';
 import ReportsModule from '../reports/ReportsModule';
 
 const TABS = [
@@ -29,9 +30,23 @@ const TABS = [
 
 export default function PatientsModule() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Backward-compat: legacy buttons & shortcuts use `/patients?new=1` to open
+  // the New Patient form. We rewrite that to the dedicated `/patients/new`
+  // route so the form actually mounts (the previous version silently rendered
+  // the dashboard). Done in an effect so we keep <Link to="/patients?new=1">
+  // semantics while presenting the proper page.
+  useEffect(() => {
+    if (searchParams.get('new') === '1' && location.pathname === '/patients') {
+      navigate('/patients/new', { replace: true });
+    }
+  }, [searchParams, location.pathname, navigate]);
+
   // Hide top tab bar on the per-patient profile page (it has its own sub-tabs)
   const onProfile = /^\/patients\/[^/]+$/.test(location.pathname)
-    && !['/patients/appointments', '/patients/list', '/patients/reports'].includes(location.pathname);
+    && !['/patients/new', '/patients/appointments', '/patients/list', '/patients/reports'].includes(location.pathname);
 
   return (
     <div className="h-full flex flex-col bg-slate-50" data-testid="patients-module">
@@ -58,6 +73,7 @@ export default function PatientsModule() {
       <main className="flex-1 overflow-auto">
         <Routes>
           <Route index element={<PatientsDashboard />} />
+          <Route path="new" element={<NewPatientPage />} />
           <Route path="appointments" element={<AppointmentsBoard />} />
           <Route path="list" element={<PatientsListPage />} />
           <Route path="reports" element={<ReportsModule />} />

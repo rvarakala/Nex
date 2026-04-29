@@ -6,10 +6,11 @@
  * Loads today's appointments from /api/appointments?date=today.
  */
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Plus, Search, MoreVertical, ArrowRight, X, Edit2, ListPlus, User, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
+import BookAppointmentModal from '../appointments/components/BookAppointmentModal';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -67,6 +68,26 @@ export default function AppointmentsBoard() {
   const [loading, setLoading] = useState(true);
   const [view, setView]   = useState(() => localStorage.getItem('audinexa.appts.view') || 'board');
   const [status, setStatus] = useState('all');
+  const [bookOpen, setBookOpen]   = useState(false);
+  const [audiologists, setAudiologists] = useState([]);
+
+  // Pull staff once for the booking modal — we expose audiologist + clinic_owner roles
+  // so the front desk can assign the appointment to the appropriate person.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/users`);
+        const list = Array.isArray(r.data) ? r.data : (r.data?.users || []);
+        if (alive) {
+          setAudiologists(list
+            .filter((u) => ['audiologist', 'clinic_owner', 'super_admin'].includes(u.role))
+            .map((u) => ({ user_id: u.user_id, name: u.name, role: u.role })));
+        }
+      } catch { /* booking modal will still work without it (manual entry). */ }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => { try { localStorage.setItem('audinexa.appts.view', view); } catch { /* ignore */ } }, [view]);
 
@@ -142,12 +163,13 @@ export default function AppointmentsBoard() {
               className="text-[12px] pl-8 pr-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:border-indigo-500 w-44"
             />
           </div>
-          <Link
-            to="/patients/appointments"
-            data-testid="appts-add"
+          <button
+            type="button"
+            onClick={() => setBookOpen(true)}
+            data-testid="appts-add-btn"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
             <Plus size={13} /> Add Appointment
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -205,9 +227,12 @@ export default function AppointmentsBoard() {
           <div className="text-sm font-semibold text-slate-700">
             No appointments {q ? 'match this filter' : (status !== 'all' ? `with status "${status.replace(/_/g, ' ')}"` : 'on this date')}.
           </div>
-          <Link to="/patients/appointments" className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">
+          <button
+            type="button"
+            onClick={() => setBookOpen(true)}
+            className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">
             <Plus size={13} /> Book Appointment
-          </Link>
+          </button>
         </div>
       ) : view === 'list' ? (
         <ListView rows={filtered} onView={(pid) => navigate(`/patients/${pid}`)} />
@@ -217,6 +242,17 @@ export default function AppointmentsBoard() {
             <ApptCard key={a.appointment_id} a={a} onView={() => navigate(`/patients/${a.patient_id}`)} />
           ))}
         </div>
+      )}
+
+      {bookOpen && (
+        <BookAppointmentModal
+          audiologists={audiologists}
+          // Modal expects a JS Date object — `date` is the YYYY-MM-DD string
+          // backing the date picker, so convert before passing.
+          initialDate={new Date(date)}
+          onClose={() => setBookOpen(false)}
+          onSaved={() => { setBookOpen(false); load(); }}
+        />
       )}
     </div>
   );
