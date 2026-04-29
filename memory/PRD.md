@@ -1,5 +1,25 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ⏸ PENDING — App-wide font-size still feels small (parked 2026-04-29)
+
+**User feedback**: "still small" even after **+2px** global bump on every Tailwind text tier. Wants to revisit later — not blocking other work.
+
+**Current state** (in `/app/frontend/src/index.css`, last block):
+- `text-[10px]` → 12px, `text-[11px]` → 13px, `text-[12px]` → **14px** (dominant body tier), `text-[13px]` → 15px, `text-[14px]` → 16px
+- `text-xs` → 14px, `text-sm` → 16px, `text-base` → 17px, `text-lg` → 19px, `text-xl` → 22px
+
+**Diagnostic plan when user resumes**:
+1. Ask which specific area still feels small (sidebar / KPI numbers / list rows / patient profile / settings / billing). The user may be reacting to ONE specific area, not the whole app.
+2. Two options to consider:
+   - **a. Continue the global bump** to +3px on body tiers (text-[12px] → 15px) and +2 on heading tiers — but layouts may start breaking at this scale on cards / KPI sparklines / nav rail; will need to widen sidebar from 240→260px and bump KPI card paddings.
+   - **b. Add a user-level Display Density toggle** (Default / Comfortable / Large) in their profile drop-down — saves to localStorage + applies a `data-density="large"` attribute on `<html>` that scales the CSS overrides. Each user picks their own size. Cleaner long-term but ~30 min build.
+3. Recommend (b) if multiple staff disagree on size, or (a) if every clinic always wants bigger.
+
+**Code anchor**: single CSS block at the bottom of `/app/frontend/src/index.css` — easy to dial up or replace with the density toggle.
+
+---
+
+
 ## ✅ COMPLETED — Clinic & Staff Schedules feature (2026-04-29)
 
 ### Capability
