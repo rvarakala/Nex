@@ -55,6 +55,9 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [slots, setSlots] = useState([]);
+  const [nextAvailable, setNextAvailable] = useState(null);
+  const [override, setOverride] = useState(false);
+  const [showAllSlots, setShowAllSlots] = useState(false);
 
   // Front-desk intake triage (the user's "recommended tests" feature)
   const [visitType, setVisitType] = useState(existing?.visit_type || 'walkin');
@@ -215,16 +218,33 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     return () => clearTimeout(t);
   }, [patientQuery, selectedPatient]);
 
-  // Slot suggestions
+  // Slot suggestions — uses /availability/slots which returns the FULL day
+  // with availability+reason metadata so we can grey out lunch / off-shift /
+  // already-booked slots with tooltips instead of silently hiding them.
   const fetchSlots = useCallback(async () => {
     if (!audiologistId || !date) return;
     try {
-      const r = await axios.get(`${API}/appointments/slots`, {
-        params: { audiologist_id: audiologistId, date, duration_minutes: duration },
+      const r = await axios.get(`${API}/availability/slots`, {
+        params: {
+          staff_id: audiologistId,
+          date,
+          duration_minutes: duration,
+          override: override ? 'true' : 'false',
+        },
       });
       setSlots(r.data?.slots || []);
-    } catch { setSlots([]); }
-  }, [audiologistId, date, duration]);
+      setNextAvailable(r.data?.next_available || null);
+    } catch {
+      // fallback to legacy free-only endpoint if availability isn't available
+      try {
+        const r2 = await axios.get(`${API}/appointments/slots`, {
+          params: { audiologist_id: audiologistId, date, duration_minutes: duration },
+        });
+        setSlots((r2.data?.slots || []).map((s) => ({ ...s, available: true })));
+        setNextAvailable(null);
+      } catch { setSlots([]); setNextAvailable(null); }
+    }
+  }, [audiologistId, date, duration, override]);
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
   const valid = selectedPatient && audiologistId && service && date && time;
@@ -413,21 +433,58 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             </div>
           </div>
 
-          {/* Suggested slots */}
+          {/* Suggested slots — full day grid with availability metadata.
+              Available slots are highlighted; unavailable ones (lunch, off-shift,
+              already booked) are greyed out with a tooltip explaining why. */}
           {slots.length > 0 && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded p-1.5">
-              <div className="text-[9px] font-semibold text-emerald-800 mb-1 uppercase tracking-wider">Available slots on {date}:</div>
-              <div className="flex flex-wrap gap-0.5">
-                {slots.slice(0, 14).map((s) => (
-                  <button key={s.start_at} type="button"
-                    onClick={() => setTime(s.start_at.slice(11, 16))}
-                    className="text-[10px] px-1.5 py-0.5 bg-white border border-emerald-300 hover:bg-emerald-100 rounded text-emerald-800 font-mono tabular-nums"
-                    data-testid={`bk-slot-${s.start_at.slice(11, 16)}`}>
-                    {s.start_at.slice(11, 16)}
+            <div className="bg-slate-50 border border-slate-200 rounded p-2">
+              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+                <div className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">Slots on {date}</div>
+                <div className="flex items-center gap-2">
+                  {nextAvailable && (
+                    <button type="button"
+                      onClick={() => setTime(nextAvailable.start_at.slice(11, 16))}
+                      className="text-[10px] px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded text-emerald-800 font-semibold"
+                      data-testid="bk-slot-next-available">
+                      Next available · {nextAvailable.start_at.slice(11, 16)}
+                    </button>
+                  )}
+                  <button type="button"
+                    onClick={() => setShowAllSlots((s) => !s)}
+                    className="text-[10px] px-2 py-0.5 border border-slate-300 hover:bg-slate-100 rounded text-slate-700"
+                    data-testid="bk-slots-toggle-all">
+                    {showAllSlots ? 'Show available only' : `Show all ${slots.length}`}
                   </button>
-                ))}
-                {slots.length > 14 && <span className="text-[9px] text-emerald-700 self-center px-1">+{slots.length - 14} more</span>}
+                </div>
               </div>
+              <div className="flex flex-wrap gap-0.5">
+                {(showAllSlots ? slots : slots.filter((s) => s.available)).map((s) => {
+                  const t = s.start_at.slice(11, 16);
+                  const blocked = !s.available;
+                  return (
+                    <button key={s.start_at} type="button"
+                      onClick={() => { if (!blocked || override) setTime(t); }}
+                      disabled={blocked && !override}
+                      title={s.reason || s.label || 'Available'}
+                      className={`text-[10px] px-1.5 py-0.5 border rounded font-mono tabular-nums transition ${
+                        time === t
+                          ? 'bg-indigo-600 border-indigo-700 text-white font-semibold'
+                          : blocked
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 line-through cursor-not-allowed'
+                            : 'bg-white border-emerald-300 hover:bg-emerald-50 text-emerald-800'
+                      }`}
+                      data-testid={`bk-slot-${t}`}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+              <label className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-600 cursor-pointer select-none">
+                <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)}
+                  data-testid="bk-slot-override"
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                <span>Override hours / lunch / off-shift (book anyway)</span>
+              </label>
             </div>
           )}
 
