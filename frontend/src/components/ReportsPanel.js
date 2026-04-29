@@ -6,7 +6,7 @@ import ReportPreflightModal from './reports/ReportPreflightModal';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // Constants, narrative builder
-import { CLINIC_STORAGE_KEY, TOGGLEABLE_SECTIONS, loadClinic, fmtDate } from './reports/constants';
+import { CLINIC_STORAGE_KEY, TOGGLEABLE_SECTIONS, FINDINGS_TITLES, loadClinic, fmtDate } from './reports/constants';
 import { buildCaseHistoryNarrative } from './reports/narrative';
 
 // Layout pieces
@@ -54,9 +54,14 @@ const ReportsPanel = ({
   const [recText, setRecText] = useState((recommendations || []).join('\n'));
   const [furtherAdvice, setFurtherAdvice] = useState('');
   const [license, setLicense] = useState('');
-  const [ptFindings, setPtFindings] = useState('');
-  const [immFindings, setImmFindings] = useState('');
-  const [speechFindings, setSpeechFindings] = useState('');
+  // Per-section findings narrative — keyed by section id (see FINDINGS_TITLES).
+  // Each enabled section that has an entry in FINDINGS_TITLES contributes a
+  // findings cell to the Results grid; the audiologist edits the text in the
+  // matching textarea in BuilderSidebar.
+  const [findings, setFindings] = useState({});
+  const setFinding = (id, val) =>
+    setFindings((prev) => ({ ...prev, [id]: val }));
+  const [provisionalDiagnosis, setProvisionalDiagnosis] = useState('');
   const [referredBy, setReferredBy] = useState('');
   const [mrdEdit, setMrdEdit] = useState(patient?.patient_id || '');
 
@@ -93,16 +98,26 @@ const ReportsPanel = ({
     saveTimer.current = setTimeout(() => {
       onPersist({
         clinical_impression: resultsText,
-        puretone_findings: ptFindings,
-        immitence_findings: immFindings,
-        speech_findings: speechFindings,
+        // Legacy fields retained for backward-compat with the existing
+        // `test_sessions` document & PDF templates that read them by name.
+        puretone_findings:    findings.pure_tone || '',
+        immitence_findings:   findings.tympanometry || '',
+        speech_findings:      findings.speech || '',
+        // New per-section findings — the full map is also persisted so we
+        // never lose narrative for sections that aren't covered by the
+        // 3 named legacy columns above.
+        findings_by_section:  findings,
+        provisional_diagnosis: provisionalDiagnosis,
         referred_by: referredBy,
         further_advice: furtherAdvice,
         recommendations: recText.split('\n').map((l) => l.trim()).filter(Boolean),
       });
     }, 800);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [resultsText, recText, ptFindings, immFindings, speechFindings, referredBy, furtherAdvice, onPersist]);
+  }, [
+    resultsText, recText, findings, provisionalDiagnosis,
+    referredBy, furtherAdvice, onPersist,
+  ]);
 
   const toggleSection = (id) =>
     setSections((s) => s.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
@@ -124,11 +139,15 @@ const ReportsPanel = ({
   // findings cells to show. Impedance also shows when Tymp is on a separate page.
   const isEnabled = (id) => !!sections.find((s) => s.id === id && s.enabled);
   const buildResultEntries = () => {
-    const list = [];
-    if (isEnabled('pure_tone'))    list.push({ key: 'pt',     title: 'Puretone Audiometry Findings', text: ptFindings });
-    if (isEnabled('speech'))       list.push({ key: 'speech', title: 'Speech Audiometry Findings',   text: speechFindings });
-    if (isEnabled('tympanometry')) list.push({ key: 'imm',    title: 'Immitence Audiometry Findings', text: immFindings });
-    return list;
+    // Honour the section order in the sidebar so the audiologist's drag/drop
+    // re-order is reflected in the Results grid too.
+    return sections
+      .filter((s) => s.enabled && FINDINGS_TITLES[s.id])
+      .map((s) => ({
+        key: s.id,
+        title: FINDINGS_TITLES[s.id],
+        text: findings[s.id] || '',
+      }));
   };
 
   // Shared context consumed by the section registry's render functions.
@@ -140,6 +159,7 @@ const ReportsPanel = ({
     audiogramMode, audiogramSize, useSeparatePage, tuningForkFull,
     showABC, showBing,
     recText, furtherAdvice,
+    provisionalDiagnosis,
     buildResultEntries,
   };
 
@@ -244,9 +264,13 @@ const ReportsPanel = ({
         autoSeparatePage={autoSeparatePage}
         audiogramSize={audiogramSize}
         setAudiogramSize={setAudiogramSize}
-        ptFindings={ptFindings} setPtFindings={setPtFindings}
-        immFindings={immFindings} setImmFindings={setImmFindings}
-        speechFindings={speechFindings} setSpeechFindings={setSpeechFindings}
+        ptFindings={findings.pure_tone || ''} setPtFindings={(v) => setFinding('pure_tone', v)}
+        immFindings={findings.tympanometry || ''} setImmFindings={(v) => setFinding('tympanometry', v)}
+        speechFindings={findings.speech || ''} setSpeechFindings={(v) => setFinding('speech', v)}
+        findings={findings}
+        setFinding={setFinding}
+        provisionalDiagnosis={provisionalDiagnosis}
+        setProvisionalDiagnosis={setProvisionalDiagnosis}
         referredBy={referredBy} setReferredBy={setReferredBy}
         mrdEdit={mrdEdit} setMrdEdit={setMrdEdit}
         recText={recText} setRecText={setRecText}

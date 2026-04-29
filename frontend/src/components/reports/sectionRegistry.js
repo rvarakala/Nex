@@ -7,6 +7,7 @@ import { OtoscopySection } from './sections/OtoscopySection';
 import { SpeechSection } from './sections/SpeechSection';
 import { ResultsGridSection } from './sections/ResultsGridSection';
 import { RecommendationsAdviceSection } from './sections/RecommendationsAdviceSection';
+import { ProvisionalDiagnosisSection } from './sections/ProvisionalDiagnosisSection';
 import { GenericClinicalSection } from './sections/GenericClinicalSection';
 import { TympanometryInlineSection } from './TympanometrySections';
 import ABRWaveformCanvas from '../ABRWaveformCanvas';
@@ -102,6 +103,9 @@ export const SECTION_REGISTRY = {
     ctx.useSeparatePage ? null : <TympanometryInlineSection impedance={ctx.impedanceData} />,
 
   results:         (ctx) => <ResultsGridSection entries={ctx.buildResultEntries()} />,
+  provisional_diagnosis: (ctx) => (
+    <ProvisionalDiagnosisSection text={ctx.provisionalDiagnosis} />
+  ),
   recommendations: (ctx) => (
     <RecommendationsAdviceSection
       recommendations={ctx.recText}

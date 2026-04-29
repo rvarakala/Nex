@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { DEFAULT_CLINIC, fileToResizedBase64 } from './constants';
+import { DEFAULT_CLINIC, FINDINGS_TITLES, fileToResizedBase64 } from './constants';
 
 const PrintIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -403,9 +403,11 @@ export const BuilderSidebar = ({
   // Audiogram size (effective only when useSeparatePage)
   audiogramSize, setAudiogramSize,
   // Editable textareas / inputs
-  ptFindings, setPtFindings,
-  immFindings, setImmFindings,
-  speechFindings, setSpeechFindings,
+  ptFindings, setPtFindings,             // legacy alias for findings.pure_tone
+  immFindings, setImmFindings,           // legacy alias for findings.tympanometry
+  speechFindings, setSpeechFindings,     // legacy alias for findings.speech
+  findings, setFinding,                  // dynamic per-section findings map
+  provisionalDiagnosis, setProvisionalDiagnosis,
   referredBy, setReferredBy,
   mrdEdit, setMrdEdit,
   recText, setRecText,
@@ -516,6 +518,32 @@ export const BuilderSidebar = ({
         value={speechFindings}
         onChange={setSpeechFindings}
         placeholder="SRT consistent with PTA; excellent word recognition in quiet; mild deterioration in noise…"
+      />
+      {/* Per-section narrative for every other enabled diagnostic section.
+          Each gets its own textarea, ordered by the sidebar. Hidden when the
+          section is toggled off so we don't clutter the UI for tests the
+          audiologist isn't running for this patient. */}
+      {sections
+        .filter((s) => s.enabled
+          && FINDINGS_TITLES[s.id]
+          && !['pure_tone', 'tympanometry', 'speech'].includes(s.id))
+        .map((s) => (
+          <Textarea
+            key={s.id}
+            label={`Results — ${FINDINGS_TITLES[s.id]}`}
+            testid={`report-findings-${s.id}`}
+            value={findings?.[s.id] || ''}
+            onChange={(v) => setFinding?.(s.id, v)}
+            placeholder="Enter findings narrative…"
+          />
+        ))}
+      <Textarea
+        label="Provisional Diagnosis"
+        testid="report-provisional-diagnosis-input"
+        value={provisionalDiagnosis}
+        onChange={setProvisionalDiagnosis}
+        rows={3}
+        placeholder="e.g. Bilateral mild SNHL; right ear conductive component suspected."
       />
       <TextInput
         label="Referred by"

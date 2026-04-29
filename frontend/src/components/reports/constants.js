@@ -53,21 +53,42 @@ export const fileToResizedBase64 = (file, maxSize = 400) =>
 
 // Toggleable & reorderable report sections. Header/patient strip/signature are fixed.
 export const TOGGLEABLE_SECTIONS = [
-  { id: 'case_history',    label: 'Case History (summary)',    defaultEnabled: true },
-  { id: 'pure_tone',       label: 'Pure Tone Audiometry',      defaultEnabled: true },
-  { id: 'tuning_fork',     label: 'Tuning Fork Tests',         defaultEnabled: false },
-  { id: 'otoscopy',        label: 'Otoscopic Examination',     defaultEnabled: false },
-  { id: 'speech',          label: 'Speech Audiometry',         defaultEnabled: false },
-  { id: 'tympanometry',    label: 'Tympanometry / Impedance',  defaultEnabled: true },
-  { id: 'special_tests',   label: 'Special Tests',             defaultEnabled: false },
-  { id: 'oae',             label: 'Otoacoustic Emissions',     defaultEnabled: false },
-  { id: 'soundfield',      label: 'Sound Field / Aided',       defaultEnabled: false },
-  { id: 'abr',             label: 'ABR / ASSR',                defaultEnabled: false },
-  { id: 'pediatric',       label: 'Pediatric Audiometry',      defaultEnabled: false },
-  { id: 'tinnitus',        label: 'Tinnitus Assessment',       defaultEnabled: false },
-  { id: 'results',         label: 'Results (narrative)',       defaultEnabled: true },
-  { id: 'recommendations', label: 'Recommendations',           defaultEnabled: true },
+  { id: 'case_history',          label: 'Case History (summary)',    defaultEnabled: true },
+  { id: 'pure_tone',             label: 'Pure Tone Audiometry',      defaultEnabled: true },
+  { id: 'tuning_fork',           label: 'Tuning Fork Tests',         defaultEnabled: false },
+  { id: 'otoscopy',              label: 'Otoscopic Examination',     defaultEnabled: false },
+  { id: 'speech',                label: 'Speech Audiometry',         defaultEnabled: false },
+  { id: 'tympanometry',          label: 'Tympanometry / Impedance',  defaultEnabled: true },
+  { id: 'special_tests',         label: 'Special Tests',             defaultEnabled: false },
+  { id: 'oae',                   label: 'Otoacoustic Emissions',     defaultEnabled: false },
+  { id: 'soundfield',            label: 'Sound Field / Aided',       defaultEnabled: false },
+  { id: 'abr',                   label: 'ABR / ASSR',                defaultEnabled: false },
+  { id: 'pediatric',             label: 'Pediatric Audiometry',      defaultEnabled: false },
+  { id: 'tinnitus',              label: 'Tinnitus Assessment',       defaultEnabled: false },
+  { id: 'results',               label: 'Results (narrative)',       defaultEnabled: true },
+  { id: 'provisional_diagnosis', label: 'Provisional Diagnosis',     defaultEnabled: true },
+  { id: 'recommendations',       label: 'Recommendations',           defaultEnabled: true },
 ];
+
+/**
+ * Map of section_id → narrative title to display on the Results grid.
+ * The presence of an id here means the section can contribute a findings
+ * cell to the Results grid. Sections NOT listed here (e.g. case_history,
+ * results, provisional_diagnosis, recommendations) are layout/meta-only.
+ */
+export const FINDINGS_TITLES = {
+  pure_tone:    'Puretone Audiometry Findings',
+  tuning_fork:  'Tuning Fork Findings',
+  otoscopy:     'Otoscopy Findings',
+  speech:       'Speech Audiometry Findings',
+  tympanometry: 'Immitence Audiometry Findings',
+  special_tests:'Special Tests Findings',
+  oae:          'OAE Findings',
+  soundfield:   'Sound Field / Aided Findings',
+  abr:          'ABR / ASSR Findings',
+  pediatric:    'Pediatric Audiometry Findings',
+  tinnitus:     'Tinnitus Findings',
+};
 
 export const fmtDate = (d = new Date()) =>
   d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
