@@ -3,8 +3,10 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
-  BarChart3, HeartPulse, Handshake, ChevronLeft, LogOut,
+  BarChart3, ChevronLeft, LogOut,
   Menu, Search as SearchIcon, Settings, Database, LifeBuoy,
+  Calendar, CalendarDays, BookOpen, RotateCcw, UserPlus, UserSquare2,
+  Package, Tag, IndianRupee, Bell, MessageSquare, HelpCircle, ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -34,10 +36,13 @@ const NavItem = ({ to, Icon, label, testid, collapsed, onNavigate, badge }) => (
     onClick={onNavigate}
     end={false}
     className={({ isActive }) =>
-      `group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${
+      // Active row uses a high-contrast white pill on the deep-navy rail —
+      // matches the SoundCare reference. Inactive rows are slate-300 with
+      // slate-700 hover background; subtle, premium, scannable.
+      `group flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${
         isActive
-          ? 'bg-white/10 text-white shadow-inner'
-          : 'text-slate-400 hover:bg-white/5 hover:text-white'
+          ? 'bg-white text-slate-900 shadow-sm shadow-black/30'
+          : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
       }`
     }
     title={collapsed ? label : undefined}
@@ -184,68 +189,87 @@ export default function AppShell({ children }) {
     return () => window.removeEventListener('keydown', handler);
   }, [navigate]);
 
-  // ================= Nav structure =================
+  // ================= Nav structure (SoundCare-style grouping) =================
+  // Sections mirror the user's reference layout: Dashboard at top (no group
+  // header), then APPOINTMENTS / REGISTRATION / MANAGE / BILLING / REPORTS /
+  // OTHER. Items are gated by tier + role just like before; module-flag access
+  // checks (e.g. `access['hearing-aids']`) survive untouched.
+  const isAudio = user?.role === 'audiologist';
+  const isOwnerOrAdmin = ['clinic_owner', 'super_admin', 'founder'].includes(user?.role);
+  const m = (k) => superAdminBypass || access[k];          // shorthand for module access
+
   const sections = [
     {
-      label: 'Clinic',
+      // Dashboard sits in its own ungrouped row at the top — no header
+      label: '',
       items: [
-        { to: '/patients', Icon: Users, label: 'Patients', testid: 'nav-patients', badge: pendingReports > 0 ? pendingReports : null },
-        (user?.role !== 'audiologist') && { to: '/billing', Icon: Receipt, label: 'Billing', testid: 'nav-billing' },
-        { to: '/test', Icon: Stethoscope, label: 'Diagnostics', testid: 'nav-test' },
+        { to: '/patients', Icon: LayoutDashboard, label: 'Dashboard', testid: 'nav-dashboard',
+          badge: pendingReports > 0 ? pendingReports : null },
       ].filter(Boolean),
     },
     {
-      label: 'Commerce',
+      label: 'Appointments',
       items: [
-        (user?.role !== 'audiologist') && (superAdminBypass || access['hearing-aids']) &&
-          { to: '/ha', Icon: Headphones, label: 'Hearing Aids', testid: 'nav-ha' },
-        (user?.role !== 'audiologist') && (superAdminBypass || access['repair']) &&
+        { to: '/patients/appointments', Icon: Calendar, label: 'Appointments', testid: 'nav-appointments' },
+        { to: '/appointments/calendar',  Icon: CalendarDays, label: 'Calendar',     testid: 'nav-calendar' },
+        isOwnerOrAdmin &&
+          { to: '/settings/staff-schedule', Icon: BookOpen, label: 'Doctor Schedule', testid: 'nav-doctor-schedule' },
+        { to: '/patients/list?filter=recall', Icon: RotateCcw, label: 'Follow Ups & Recall', testid: 'nav-followups' },
+      ].filter(Boolean),
+    },
+    {
+      label: 'Registration',
+      items: [
+        { to: '/patients/new',   Icon: UserPlus,    label: 'New Registration', testid: 'nav-new-registration' },
+        { to: '/patients/list',  Icon: Users,       label: 'Patients',         testid: 'nav-patients' },
+        !isAudio &&
+          { to: '/patients/list?filter=leads', Icon: UserSquare2, label: 'Leads & Walk-ins', testid: 'nav-leads' },
+      ].filter(Boolean),
+    },
+    {
+      label: 'Manage',
+      items: [
+        { to: '/test', Icon: Stethoscope, label: 'Hearing Tests', testid: 'nav-test' },
+        !isAudio && m('hearing-aids') &&
+          { to: '/ha',           Icon: Headphones, label: 'Hearing Aids', testid: 'nav-ha' },
+        !isAudio && m('hearing-aids') &&
+          { to: '/ha/inventory', Icon: Package,    label: 'Inventory',    testid: 'nav-inventory' },
+        isOwnerOrAdmin &&
+          { to: '/settings/services', Icon: Tag, label: 'Services & Packages', testid: 'nav-services' },
+        !isAudio && m('repair') &&
           { to: '/repair', Icon: Wrench, label: 'Service & Repair', testid: 'nav-repair' },
       ].filter(Boolean),
     },
-    {
-      label: 'Insights',
+    !isAudio && {
+      label: 'Billing',
       items: [
-        (user?.role !== 'audiologist') && (superAdminBypass || access['analytics']) &&
-          { to: '/ha/analytics', Icon: BarChart3, label: 'Owner Analytics', testid: 'nav-analytics' },
-        (user?.role !== 'audiologist') && (superAdminBypass || access['analytics']) &&
-          { to: '/analytics/clinical', Icon: HeartPulse, label: 'Clinical Analytics', testid: 'nav-clinical-analytics' },
-        (user?.role !== 'audiologist') && (superAdminBypass || access['referral-partners']) &&
-          { to: '/partners', Icon: Handshake, label: 'Referral Partners', testid: 'nav-partners' },
+        { to: '/billing',         Icon: Receipt,      label: 'Invoices',          testid: 'nav-billing' },
+        { to: '/billing/payments', Icon: IndianRupee, label: 'Payments & Refunds', testid: 'nav-payments' },
       ].filter(Boolean),
     },
-    user?.role === 'super_admin' && {
-      label: 'Admin',
+    !isAudio && m('analytics') && {
+      label: 'Reports',
       items: [
-        { to: '/admin/clinics', Icon: Settings, label: 'Clinics Admin', testid: 'nav-admin' },
-        { to: '/data-export', Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
-      ],
+        { to: '/ha/analytics',       Icon: BarChart3, label: 'Reports & Analytics', testid: 'nav-analytics' },
+      ].filter(Boolean),
     },
-    // Separate "Data" section for non-super-admin roles that can still export
-    user?.role !== 'super_admin' && ['clinic_owner', 'accounts', 'founder'].includes(user?.role) && {
-      label: 'Data',
+    {
+      label: 'Other',
       items: [
-        { to: '/data-export', Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
-      ],
+        isOwnerOrAdmin &&
+          { to: '/settings/clinic', Icon: Settings, label: 'Settings', testid: 'nav-settings' },
+        ['clinic_owner', 'accounts', 'founder'].includes(user?.role) &&
+          { to: '/data-export',     Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
+        user?.role === 'super_admin' &&
+          { to: '/admin/clinics',   Icon: Settings, label: 'Clinics Admin', testid: 'nav-admin' },
+        user && !INTERNAL_ADMIN_ROLES.includes(user?.role) && user?.role !== 'referral_partner' &&
+          { to: '/care', Icon: LifeBuoy, label: 'AUDINEXA Care', testid: 'nav-care',
+            badge: careOpenCount > 0 ? careOpenCount : null },
+      ].filter(Boolean),
     },
-    // Settings — clinic owners + super admins only.
-    (user?.role === 'clinic_owner' || user?.role === 'super_admin' || user?.role === 'founder') && {
-      label: 'Settings',
-      items: [
-        { to: '/settings/clinic', Icon: Settings, label: 'Settings', testid: 'nav-settings' },
-      ],
-    },
-    // AUDINEXA Care — visible to ALL clinic users (the support inbox).
-    user && !INTERNAL_ADMIN_ROLES.includes(user?.role) && user?.role !== 'referral_partner' && {
-      label: 'Help',
-      items: [
-        { to: '/care', Icon: LifeBuoy, label: 'AUDINEXA Care', testid: 'nav-care',
-          badge: careOpenCount > 0 ? careOpenCount : null },
-      ],
-    },
-  ].filter(Boolean);
+  ].filter(Boolean).filter((s) => s.items.length > 0);
 
-  const sideWidth = collapsed ? 'w-[64px]' : 'w-[220px]';
+  const sideWidth = collapsed ? 'w-[64px]' : 'w-[248px]';
 
   const navInner = (
     <>
@@ -287,15 +311,15 @@ export default function AppShell({ children }) {
       </div>
 
       {/* Nav sections */}
-      <div className="flex-1 overflow-auto py-3 px-2 space-y-4">
-        {sections.map((s) => (
-          <div key={s.label}>
-            {!collapsed && (
-              <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500 font-bold px-3 mb-1">{s.label}</div>
+      <div className="flex-1 overflow-auto py-3 px-2 space-y-3">
+        {sections.map((s, idx) => (
+          <div key={s.label || `__top_${idx}`}>
+            {!collapsed && s.label && (
+              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 font-bold px-3 mb-1.5 mt-2">{s.label}</div>
             )}
             <div className="space-y-0.5">
               {s.items.map((item) => (
-                <NavItem key={item.to} {...item} collapsed={collapsed} onNavigate={closeMobileNav} />
+                <NavItem key={item.to + item.label} {...item} collapsed={collapsed} onNavigate={closeMobileNav} />
               ))}
             </div>
           </div>
@@ -406,34 +430,100 @@ export default function AppShell({ children }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             <UpdateAvailableToast />
-            <ClinicStatusToggle />
+            {/* Reference-style top bar — bell, chat, help, avatar.
+                We retain the command-palette trigger (essential power-user
+                shortcut) and online connectivity dot since both are operational
+                signals; the rest of the noisier widgets (clinic status toggle,
+                day-close-out bell, sync pill, app switcher) are now reachable
+                from the sidebar / settings instead. */}
             <button
               onClick={() => setPaletteOpen(true)}
               data-testid="cmdk-trigger"
-              title="Command palette (Cmd/Ctrl+K)"
-              className="hidden md:flex items-center gap-2 text-[11px] text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-2.5 py-1 transition-colors"
+              title="Search (Cmd/Ctrl+K)"
+              className="hidden md:flex items-center gap-2 text-[12px] text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5 transition-colors"
             >
-              <SearchIcon size={12} />
-              <span>Search…</span>
-              <span className="ml-2 font-mono bg-white border border-slate-300 text-slate-600 rounded px-1 text-[9px]">⌘K</span>
+              <SearchIcon size={13} />
+              <span className="hidden lg:inline">Search…</span>
+              <span className="ml-1 font-mono bg-white border border-slate-300 text-slate-600 rounded px-1 text-[10px]">⌘K</span>
             </button>
-            {canSeeCloseout && unreadCloseout && (
-              <button
-                onClick={() => navigate('/closeout')}
-                data-testid="closeout-bell"
-                title={`Close-out for ${unreadCloseout.date} is ready`}
-                className="relative flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2 py-1 shadow-sm transition-transform hover:scale-105"
-              >
-                <span className="text-sm">📊</span>
-                <span className="hidden lg:inline">Day Close-out Ready</span>
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
-              </button>
-            )}
-            <SyncPill onClick={() => setSyncOpen(true)} />
             <ConnectivityIndicator />
-            <AppSwitcher />
+            <button
+              onClick={() => navigate('/care')}
+              data-testid="topbar-bell"
+              title="Notifications"
+              className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+            >
+              <Bell size={17} />
+              {careOpenCount > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white" />
+              )}
+            </button>
+            <button
+              onClick={() => navigate('/care')}
+              data-testid="topbar-chat"
+              title="AUDINEXA Care · Support inbox"
+              className="hidden sm:inline-flex p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+            >
+              <MessageSquare size={17} />
+            </button>
+            <button
+              onClick={() => window.open('https://audinexa.com/help', '_blank', 'noopener,noreferrer')}
+              data-testid="topbar-help"
+              title="Help & docs"
+              className="hidden sm:inline-flex p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+            >
+              <HelpCircle size={17} />
+            </button>
+            <button
+              onClick={() => setUserMenuOpen((o) => !o)}
+              data-testid="topbar-avatar"
+              title={user?.name || user?.email}
+              className="flex items-center gap-1.5 pl-1 pr-1.5 py-1 hover:bg-slate-100 rounded-full transition-colors"
+            >
+              <span className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-sky-600 text-white font-bold text-[12px] flex items-center justify-center">
+                {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
+              </span>
+              <ChevronDown size={13} className="text-slate-400" />
+            </button>
+            {userMenuOpen && (
+              <>
+                {/* Backdrop closes the menu on outside click */}
+                <button
+                  className="fixed inset-0 z-40"
+                  aria-label="Close menu"
+                  onClick={() => setUserMenuOpen(false)}
+                />
+                <div
+                  className="absolute right-3 top-12 z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-2"
+                  data-testid="topbar-user-menu"
+                >
+                  <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                    <div className="text-[12.5px] font-semibold text-slate-800 truncate">{user?.name || user?.email}</div>
+                    <div className="text-[10.5px] uppercase tracking-wider text-slate-400">{(user?.role || '').replace('_', ' ')}</div>
+                    {clinic?.name && (
+                      <div className="text-[11px] text-slate-500 mt-0.5 truncate">{clinic.name}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setUserMenuOpen(false); navigate('/settings/clinic'); }}
+                    className="w-full text-left text-[12.5px] px-3 py-1.5 text-slate-700 hover:bg-slate-50 rounded-md"
+                    data-testid="topbar-menu-settings"
+                  >
+                    Settings
+                  </button>
+                  <ClinicSwitcher inline collapsed={false} />
+                  <button
+                    onClick={() => { setUserMenuOpen(false); logout(); navigate('/login'); }}
+                    className="w-full text-left text-[12.5px] px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-md"
+                    data-testid="topbar-menu-signout"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </header>
 
