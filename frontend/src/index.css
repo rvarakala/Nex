@@ -165,44 +165,44 @@ html, body {
 
 
 /* ─────────────────────────────────────────────────────────────────
- * Global +1px font-size bump (Option A — 2026-04-29)
+ * Global +2px font-size bump (Option A → upgraded 2026-04-29)
  *
  * The codebase uses a lot of arbitrary `text-[Npx]` Tailwind classes for
- * compact UI density. Users reported the app felt too small overall, so
- * each tier is shifted up by one pixel. This keeps relative hierarchy
- * intact (h1 still bigger than label, label still bigger than caption)
- * while making body copy noticeably easier to read at a normal monitor
- * distance — without forcing layout changes anywhere.
+ * compact UI density. Users reported the app felt too small overall — first
+ * pass at +1px wasn't enough, so each tier is now shifted up by TWO pixels.
+ * Relative hierarchy (h1 > label > caption) stays intact while body copy
+ * becomes meaningfully easier to read at a normal monitor distance.
  *
  * Bumps in lock-step:
- *   10   → 11
- *   10.5 → 11.5
- *   11   → 12
- *   11.5 → 12.5
- *   12   → 13   (← the dominant body-copy tier in the app)
- *   12.5 → 13.5
- *   13   → 14
- *   13.5 → 14.5
- *   14   → 15
- *   14.5 → 15.5
+ *   10   → 12
+ *   10.5 → 12.5
+ *   11   → 13
+ *   11.5 → 13.5
+ *   12   → 14   (← the dominant body-copy tier in the app)
+ *   12.5 → 14.5
+ *   13   → 15
+ *   13.5 → 15.5
+ *   14   → 16
+ *   14.5 → 16.5
  *
  * !important is used because Tailwind's JIT emits these arbitrary-value
  * rules at the same specificity as ours; we need to win without having
  * to load-order the stylesheet.
  * ───────────────────────────────────────────────────────────────── */
-.text-\[10px\]    { font-size: 11px   !important; }
-.text-\[10\.5px\] { font-size: 11.5px !important; }
-.text-\[11px\]    { font-size: 12px   !important; }
-.text-\[11\.5px\] { font-size: 12.5px !important; }
-.text-\[12px\]    { font-size: 13px   !important; }
-.text-\[12\.5px\] { font-size: 13.5px !important; }
-.text-\[13px\]    { font-size: 14px   !important; }
-.text-\[13\.5px\] { font-size: 14.5px !important; }
-.text-\[14px\]    { font-size: 15px   !important; }
-.text-\[14\.5px\] { font-size: 15.5px !important; }
+.text-\[10px\]    { font-size: 12px   !important; }
+.text-\[10\.5px\] { font-size: 12.5px !important; }
+.text-\[11px\]    { font-size: 13px   !important; }
+.text-\[11\.5px\] { font-size: 13.5px !important; }
+.text-\[12px\]    { font-size: 14px   !important; }
+.text-\[12\.5px\] { font-size: 14.5px !important; }
+.text-\[13px\]    { font-size: 15px   !important; }
+.text-\[13\.5px\] { font-size: 15.5px !important; }
+.text-\[14px\]    { font-size: 16px   !important; }
+.text-\[14\.5px\] { font-size: 16.5px !important; }
 
-/* Tailwind's named tiers also bump by 1px so the whole app feels
- * consistent. text-base / text-lg / text-xl etc. stay at their defaults
- * since headings are already comfortable. */
-.text-xs  { font-size: 13px   !important; line-height: 1.45 !important; }   /* default 12 → 13 */
-.text-sm  { font-size: 15px   !important; line-height: 1.5  !important; }   /* default 14 → 15 */
+/* Tailwind's named tiers also bump so the whole app feels consistent. */
+.text-xs   { font-size: 14px   !important; line-height: 1.5  !important; }   /* default 12 → 14 */
+.text-sm   { font-size: 16px   !important; line-height: 1.55 !important; }   /* default 14 → 16 */
+.text-base { font-size: 17px   !important; line-height: 1.6  !important; }   /* default 16 → 17 */
+.text-lg   { font-size: 19px   !important; line-height: 1.6  !important; }   /* default 18 → 19 */
+.text-xl   { font-size: 22px   !important; line-height: 1.5  !important; }   /* default 20 → 22 */
