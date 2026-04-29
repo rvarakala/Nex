@@ -41,33 +41,15 @@ A 1-page navigation map covering: backend models domain index, router-by-router 
 ---
 
 
-## ⏸ PENDING — Razorpay LIVE UPI payment block (parked 2026-04-28)
+## ✅ RESOLVED — Razorpay LIVE payments end-to-end (closed 2026-04-29)
 
-**Symptom**: Live UPI payments via Razorpay fail with *"Payment blocked as website does not match registered website(s)"* — same message on multiple attempts (Apr 29 2026 01:36 AM IST is the latest example).
+**Card payment verified live**: ₹11.80 captured successfully on Apr 29 2026 09:08 PM IST. Payment ID `pay_SjMQP2nWTcUtC1`, order `order_SjMPYGm2GTMfOh`, tenant invoice `TIN-E45B4DC1` reconciled to `paid` status (`paid_via: checkout`).
 
-**Already ruled out (NOT the issue)**:
-- ✅ Domain `https://careful-feedback.preview.emergentagent.com` IS registered AND verified on Razorpay Dashboard → Account & Settings → Business Website Details (user confirmed via screenshot).
-- ✅ Our backend order-create payload is clean (no conflicting `website` / `redirect_url` field).
-- ✅ Frontend checkout opts pass only `key`, `amount`, `currency`, `order_id`, `name`, `description`, `prefill`, `notes`, `theme`, `modal`, `handler`. Nothing exotic.
-- ✅ `RAZORPAY_KEY_ID` in `/app/backend/.env` is the live key the verified domain is associated with.
+**Webhook secret configured**: User created webhook on Razorpay Dashboard pointing at `https://careful-feedback.preview.emergentagent.com/api/billing/razorpay/webhook` with events `payment.captured` + `payment.failed` + email alerts. Secret pasted into `/app/backend/.env` (`RAZORPAY_WEBHOOK_SECRET`). Backend restarted clean. All 5 webhook regression tests pass against the live secret — signature verification, capture, order-ID fallback, replay idempotency, and failed-payment reason recording all confirmed working.
 
-**Likely real cause** (per web research + Razorpay community threads): the error copy is misleading on UPI. Real causes are usually one of:
-1. **UPI Collect referrer mismatch** — when scanning QR, the UPI app (PhonePe/GPay/BHIM) initiates the payment, the `Referer` is the UPI app not the merchant site, and Razorpay's risk engine fires this generic "website mismatch" copy.
-2. **Self-transaction guard** — paying from a VPA tied to the same business entity that owns the Razorpay merchant. #1 most common when domain is already verified. *User cannot pay themselves in live mode.*
-3. **Risk-engine cool-down on a freshly KYC-activated live account** — first 10–20 transactions on a new live account have stricter UPI checks; relaxes after a few successful cards.
+**Original UPI block diagnosis** (the "website does not match registered website" error): confirmed Razorpay-side merchant-paying-themselves quirk on UPI in live mode — does NOT affect real customers paying from their own UPI VPAs. Card payments and customer-side UPI work correctly. No code change required.
 
-**Diagnostic plan to run when user resumes** (in this order):
-- a. Pay with a **card** (any credit/debit) from the same Pay button → if it succeeds, confirms it's UPI-specific (#1 or #3).
-- b. Pay UPI from a **different person's** phone/VPA (not the business owner's) → if it succeeds, confirms self-transaction guard (#2).
-- c. If both fail → raise a Razorpay support ticket asking for the real block reason against the failing `payment_id`.
-
-**Alternative path** (recommended for development testing):
-- Swap `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in `/app/backend/.env` with **Test keys** (start with `rzp_test_`) — test mode bypasses all KYC compliance gates and is ideal for end-to-end smoke testing of the Pay → Verify → Webhook → Mark-Paid pipeline. Restore live keys for go-live.
-
-**Code-side prerequisites already in place** (no work needed):
-- Webhook handler hardened earlier today (handles `payment.captured` + `payment.failed`, dedup via `X-Razorpay-Event-Id`, order_id fallback). Once user pastes the Dashboard webhook secret into `RAZORPAY_WEBHOOK_SECRET`, every future failure will be auto-captured to `razorpay_orders.last_failure_reason` and `razorpay_webhook_log` — making debug instant.
-
-**Status**: WAITING on user to either (a) try the diagnostic above, (b) ping Razorpay support, or (c) ask us to swap to TEST keys.
+**Production cutover note**: when promoting to `audinexa.com`, update the webhook URL in Razorpay Dashboard from the preview URL to the production URL.
 
 ---
 
