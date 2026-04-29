@@ -73,7 +73,11 @@ export default function AppointmentsBoard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await axios.get(`${API}/appointments?date=${date}`);
+      // Backend expects from_date/to_date — send both pinned to the same day
+      // so we get exactly today's appointments and nothing else.
+      const r = await axios.get(`${API}/appointments`, {
+        params: { from_date: date, to_date: date, limit: 500 },
+      });
       setRows(Array.isArray(r.data) ? r.data : (r.data?.items || []));
     } catch { setRows([]); }
     finally { setLoading(false); }

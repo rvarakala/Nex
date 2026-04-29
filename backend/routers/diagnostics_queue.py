@@ -175,12 +175,18 @@ async def diagnostics_queue(
         })
 
     # ---- appointments ----
-    # "scheduled"/"confirmed" don't show on the board — the patient hasn't
-    # arrived yet. We only include them from checked_in onwards.
+    # Map every relevant appointment status to a queue column so today's
+    # whole roster is visible to the audiologist:
+    #   • "scheduled" / "confirmed"  → WAITING   (booked but not yet here)
+    #   • "checked_in"               → CHECKED IN (FD has marked arrival)
+    #   • "in_progress"              → IN PROGRESS
+    #   • "completed"                → COMPLETED
     appt_state = {
-        "checked_in": "checked_in",
+        "scheduled":   "waiting",
+        "confirmed":   "waiting",
+        "checked_in":  "checked_in",
         "in_progress": "in_progress",
-        "completed": "completed",
+        "completed":   "completed",
     }
     for a in appts:
         if a.get("status") not in appt_state:
