@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom';
-import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock } from 'lucide-react';
+import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
@@ -20,6 +20,7 @@ import SecurityPrivacyTab from './SecurityPrivacyTab';
 import ConnectWhatsAppTab from './ConnectWhatsAppTab';
 import ClinicHoursTab from './ClinicHoursTab';
 import StaffScheduleTab from './StaffScheduleTab';
+import DataImportTab from './DataImportTab';
 import ServiceCatalogPage from '../billing/ServiceCatalogPage';
 import { useAuth } from '../../AuthContext';
 
@@ -44,6 +45,7 @@ export default function SettingsModule() {
             <SideLink to="/settings/branches" icon={<MapPin size={14} />}  label="Branches"       testid="settings-nav-branches" />
             <SideLink to="/settings/security" icon={<ShieldCheck size={14} />} label="Security & Privacy" testid="settings-nav-security" />
             <SideLink to="/settings/connect"  icon={<MessageCircle size={14} />} label="Connect (WhatsApp)" testid="settings-nav-connect" />
+            <SideLink to="/settings/import"   icon={<Upload size={14} />}        label="Data Import"        testid="settings-nav-import" />
           </>
         )}
         {canManageCatalog && (
@@ -62,6 +64,7 @@ export default function SettingsModule() {
           {isAdmin && <Route path="branches" element={<BranchesTab />} />}
           {isAdmin && <Route path="security" element={<SecurityPrivacyTab />} />}
           {isAdmin && <Route path="connect"  element={<ConnectWhatsAppTab />} />}
+          {isAdmin && <Route path="import"   element={<DataImportTab />} />}
           {canManageCatalog && <Route path="services" element={<ServiceCatalogPage />} />}
           <Route path="signature" element={<MySignatureTab />} />
         </Routes>
