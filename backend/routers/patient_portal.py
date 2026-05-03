@@ -186,8 +186,27 @@ async def request_otp(payload: OTPRequest, db=Depends(get_db)):
         }},
         upsert=True,
     )
-    # TODO: real SMS integration (MSG91/Twilio). Current: wa.me deep-link mock.
-    resp = {"sent": True, "expires_at": exp_iso}
+    # Real SMS via Twilio (or mock fallback in dev). OTP flow is security-
+    # critical, so if the send fails we surface a clean error instead of
+    # silently pretending it worked. Clinic branding goes into the body so
+    # the patient knows what the code is for.
+    from utils.sms import send_sms
+
+    # Grab clinic name for template; fall back to "AUDINEXA" for tidiness.
+    clinic_doc = await db.clinics.find_one(
+        {"clinic_id": payload.clinic_id}, {"_id": 0, "name": 1}
+    ) or {}
+    clinic_name = clinic_doc.get("name") or "AUDINEXA"
+    body_text = (
+        f"{otp} is your {clinic_name} patient portal login code. "
+        f"Valid for {OTP_TTL_MINUTES} minutes. Do not share."
+    )
+    sms_result = send_sms(patient.get("mobile") or "", body_text, purpose="patient_otp")
+
+    resp = {"sent": sms_result["status"] in ("sent", "mocked"), "expires_at": exp_iso, "sms": sms_result}
+    if sms_result["status"] == "error":
+        # Don't leak the OTP if SMS failed — signal a clean 502 so the UI can retry.
+        raise HTTPException(502, detail=f"Could not send OTP SMS: {sms_result.get('error')}")
     if DEV_ECHO_OTP:
         resp["dev_otp"] = otp
         resp["dev_note"] = "OTP echoed because PATIENT_OTP_DEV_ECHO=true"

@@ -90,3 +90,13 @@ TOKEN=$(curl -s -X POST "$API/auth/login" -H "Content-Type: application/json" \
 
 curl -s "$API/patients" -H "Authorization: Bearer $TOKEN"
 ```
+
+## Twilio SMS (LIVE — configured in /app/backend/.env)
+- Provider: Twilio, `SMS_PROVIDER=twilio`
+- Account SID: `ACa7e2d2c737c9220877328f2e33dfb01f`
+- From Number: `+15709425660` (US trial number)
+- Trial account → can ONLY deliver to numbers on Twilio's "Verified Caller IDs" list.
+- Admin test UI: `/admin/settings` → "Send test SMS" card
+- API: `POST /api/admin/v2/test-sms` (founder/super_admin only)
+- To run the live-delivery pytest, set `TWILIO_VERIFIED_TEST_NUMBER=+91…` before running `pytest tests/test_sms.py`.
+

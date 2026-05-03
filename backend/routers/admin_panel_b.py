@@ -835,6 +835,39 @@ async def create_tenant_user(
     return {**doc, "clinic_name": clinic.get("name")}
 
 
+# ==================== TEST SMS (Twilio smoke test) ==========================
+# One-shot endpoint for the founder to fire a real SMS and confirm end-to-end
+# delivery. Mirrors the `send_sms()` helper contract so the UI just needs to
+# show the returned status + error string. Audit-logged so the channel-bill
+# can be reconciled later.
+
+class TestSmsRequest(BaseModel):
+    to: str = Field(min_length=6, max_length=20)
+    body: str = Field(default="AUDINEXA test SMS — if you see this, Twilio works.",
+                      min_length=1, max_length=480)
+
+
+@router.post("/test-sms")
+async def test_sms(
+    payload: TestSmsRequest, request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Founder / super-admin fires a real SMS via the configured provider.
+    Returns the raw `send_sms()` result so any Twilio error code surfaces
+    directly in the UI."""
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    from utils.sms import send_sms
+    result = send_sms(payload.to, payload.body, purpose="admin_smoke_test")
+    await _log_audit(
+        db, user, "sms.test", payload.to,
+        after={"status": result.get("status"), "provider": result.get("provider"), "sid": result.get("sid")},
+        request=request,
+    )
+    return result
+
+
 # ==================== 15. CLINIC ASSIGNMENTS (Multi-Clinic admin) ====================
 #
 # Lets founders / super_admins manage which clinics a user can sign into.
