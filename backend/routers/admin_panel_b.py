@@ -765,6 +765,76 @@ async def update_internal_user(
     return deserialize_datetime(r)
 
 
+# ==================== TENANT USERS (admin-created clinic staff) ====================
+# Founder / Super Admin can manually create a user inside a specific clinic by
+# providing email + password directly — bypasses the invite-accept flow when
+# support is onboarding a clinic over a phone call or setting up a demo.
+
+CLINIC_ROLES = {
+    "clinic_owner", "front_desk", "audiologist", "accounts",
+    "inventory_manager", "technician", "referral_partner",
+}
+
+
+class TenantUserCreate(BaseModel):
+    clinic_id: str
+    email: EmailStr
+    name: str
+    password: str = Field(min_length=8)
+    role: str
+    branch_ids: Optional[list[str]] = None
+
+
+@router.post("/tenant-users")
+async def create_tenant_user(
+    payload: TenantUserCreate, request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Directly create a clinic user. Founder + Super Admin only."""
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    if payload.role not in CLINIC_ROLES:
+        raise HTTPException(
+            400,
+            detail=f"Invalid clinic role. Valid: {sorted(CLINIC_ROLES)}",
+        )
+    # Confirm target clinic exists (prevents orphaned users from typos).
+    clinic = await db.clinics.find_one({"clinic_id": payload.clinic_id}, {"_id": 0, "clinic_id": 1, "name": 1})
+    if not clinic:
+        raise HTTPException(404, detail=f"Clinic '{payload.clinic_id}' not found")
+    # Global email uniqueness (the DB has a unique index on email).
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(409, detail="Email already registered")
+
+    from auth import hash_password as _hp  # avoid circular
+
+    doc = {
+        "user_id": f"USR-{uuid.uuid4().hex[:8].upper()}",
+        "clinic_id": payload.clinic_id,
+        "email": payload.email.lower(),
+        "name": payload.name,
+        "role": payload.role,
+        "active": True,
+        "two_fa_enabled": False,
+        "password_hash": _hp(payload.password),
+        "branch_ids": payload.branch_ids or [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["user_id"],
+        "created_via": "admin_manual",  # audit hint — not from invite flow
+    }
+    await db.users.insert_one(doc.copy())
+    await _log_audit(
+        db, user, "tenant_user.create", payload.email.lower(),
+        after={"clinic_id": payload.clinic_id, "role": payload.role},
+        request=request,
+    )
+    doc.pop("_id", None)
+    doc.pop("password_hash", None)
+    return {**doc, "clinic_name": clinic.get("name")}
+
+
 # ==================== 15. CLINIC ASSIGNMENTS (Multi-Clinic admin) ====================
 #
 # Lets founders / super_admins manage which clinics a user can sign into.
