@@ -1,5 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Iter25 Triple Fix (2026-05-03)
+
+### (a) Founder Dashboard KPI/Funnel overflow — FIXED
+- KPI grid was `lg:grid-cols-8`, causing currency tiles (`₹22,331.42`, `₹2,67,977.04`) to clip / ellipsis-truncate at 1024–1440px.
+- Now `2xl:grid-cols-8` (only at 1536px+) — tiles fit cleanly as 4×2 grid on smaller desktops.
+- KPITile hardened with `min-w-0 overflow-hidden` + responsive `text-xl xl:text-2xl` + `truncate`.
+- Conversion Funnel card: `min-w-0 overflow-hidden`, bar widths `Math.min(100, ...)` clamped, first bar bumped to `bg-slate-400` for visibility.
+- Files: `/app/frontend/src/modules/admin/panel/DashboardPage.jsx`, `shared.jsx`.
+
+### (b) Data Health probe → auto-incident — DONE
+- `GET /api/admin/v2/system/data-health` now auto-opens an incident named `DATA_HEALTH: <coll> schema drift` (severity major; critical if health_pct<90) when sampled docs fail Pydantic validation.
+- Idempotent — second probe never duplicates an open incident; response includes new field `auto_incidents_opened: [incident_id, ...]`.
+- Files: `/app/backend/routers/admin_panel_b.py` (data_health endpoint).
+- Test: `/app/backend/tests/test_data_health_auto_incident.py` ✅
+
+### (c) Auto-link HA Sales → Invoice — DONE
+- New endpoint `GET /api/ha/sales/{sale_no}/invoice-prefill` returns patient + lines pre-populated with `make`, `model`, `serial_numbers`, `technology_tier`, `unit_price`, `qty`, `gst_rate`, `product_type='Hearing Aid'` (uses canonical `serial_items` collection). 404 on unknown sale; `already_invoiced` flag if already billed.
+- `CreateInvoicePage.js` reads `?from_sale=<sale_no>` from URL and hydrates the form. Banner test-ids: `ci-prefill-banner` / `ci-prefill-already`.
+- `QuotationStudioPage.js` convert flow shows confirm dialog after sale creation → navigates to `/billing/invoices/new?from_sale=<sale_no>`. Adds `Generate Invoice` button (`ha-quote-go-invoice`) on already-converted quotes.
+- Files: `routers/ha_sales.py`, `modules/billing/CreateInvoicePage.js`, `modules/ha/QuotationStudioPage.js`.
+- Test: `/app/backend/tests/test_sale_invoke_prefill.py` ✅ (4/4 testing-agent cases PASS).
+
+---
+
+
 ## ⏸ PENDING — App-wide font-size still feels small (parked 2026-04-29)
 
 **User feedback**: "still small" even after **+2px** global bump on every Tailwind text tier. Wants to revisit later — not blocking other work.

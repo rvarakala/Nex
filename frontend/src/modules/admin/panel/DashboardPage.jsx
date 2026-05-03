@@ -26,8 +26,8 @@ export default function DashboardPage() {
     <div className="p-6 space-y-6" data-testid="admin-dashboard-page">
       <PageHeader title="Executive Dashboard" subtitle="Platform-wide health, revenue & growth" />
 
-      {/* KPI row — 8 tiles, but only stretch to 8 cols at xl so currency values don't clip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+      {/* KPI row — 8 tiles only at 2xl (1536px+) so currency values don't ellipsis-truncate on 1280-1440 desktops */}
+      <div className="grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-8 gap-3">
         <KPITile label="Active Clinics" value={fmtInt(kpis.active_clinics)} tone="emerald" testid="kpi-active" />
         <KPITile label="On Trial" value={fmtInt(kpis.trial_accounts)} tone="indigo" testid="kpi-trials" />
         <KPITile label="MRR" value={fmtINR(kpis.mrr)} tone="fuchsia" testid="kpi-mrr" />
