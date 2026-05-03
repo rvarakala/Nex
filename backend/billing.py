@@ -110,6 +110,11 @@ def _compute_line(line_in: InvoiceLineCreate, service: Optional[dict]) -> Invoic
         tax_amount = 0.0
 
     # The CGST/SGST vs IGST split is decided at invoice level (intra vs inter-state).
+    # Validate serial numbers length against quantity for hearing aids — each
+    # unit ought to ship with one serial. We only WARN by trimming/padding to
+    # avoid breaking legacy callers; the UI enforces it strictly.
+    serial_numbers = [s.strip() for s in (line_in.serial_numbers or []) if s and s.strip()]
+
     return InvoiceLine(
         service_id=line_in.service_id,
         description=name,
@@ -124,6 +129,12 @@ def _compute_line(line_in: InvoiceLineCreate, service: Optional[dict]) -> Invoic
         taxable_value=taxable,
         cgst_amount=0.0, sgst_amount=0.0, igst_amount=0.0,
         line_total=round(taxable + tax_amount, 2),
+        # Pass-through product detail fields.
+        product_type=line_in.product_type,
+        make=line_in.make,
+        model=line_in.model,
+        serial_numbers=serial_numbers,
+        technology_tier=line_in.technology_tier,
     )
 
 

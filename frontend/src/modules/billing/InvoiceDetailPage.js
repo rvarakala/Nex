@@ -161,13 +161,16 @@ export default function InvoiceDetailPage() {
           <tbody>
             {inv.lines.map((l, i) => (
               <tr key={l.line_id} className="border-b border-slate-200 last:border-0">
-                <td className="px-2 py-1 text-slate-600">{i + 1}</td>
-                <td className="px-2 py-1 font-medium">{l.description}</td>
-                <td className="px-2 py-1 font-mono text-slate-500">{l.hsn_sac || '—'}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{l.quantity}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{fmtINR(l.unit_price)}</td>
+                <td className="px-2 py-1 text-slate-600 align-top">{i + 1}</td>
+                <td className="px-2 py-1 font-medium align-top">
+                  <div>{l.description}</div>
+                  <ProductDetailLines line={l} />
+                </td>
+                <td className="px-2 py-1 font-mono text-slate-500 align-top">{l.hsn_sac || '—'}</td>
+                <td className="px-2 py-1 text-right tabular-nums align-top">{l.quantity}</td>
+                <td className="px-2 py-1 text-right tabular-nums align-top">{fmtINR(l.unit_price)}</td>
                 {hasDiscount && (
-                  <td className="px-2 py-1 text-right tabular-nums" data-testid={`inv-line-discount-${l.line_id}`}>
+                  <td className="px-2 py-1 text-right tabular-nums align-top" data-testid={`inv-line-discount-${l.line_id}`}>
                     {Number(l.discount_amount) > 0 ? (
                       l.discount_type === 'percent' && Number(l.discount_value) > 0 ? (
                         <>
@@ -180,8 +183,8 @@ export default function InvoiceDetailPage() {
                     ) : '—'}
                   </td>
                 )}
-                <td className="px-2 py-1 text-right tabular-nums">{fmtINR(l.taxable_value)}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-slate-600">
+                <td className="px-2 py-1 text-right tabular-nums align-top">{fmtINR(l.taxable_value)}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-slate-600 align-top">
                   {l.is_taxable ? (
                     <>
                       <div>{l.gst_rate}%</div>
@@ -191,7 +194,7 @@ export default function InvoiceDetailPage() {
                     </>
                   ) : <span className="text-[9px] italic">Exempt</span>}
                 </td>
-                <td className="px-2 py-1 text-right tabular-nums font-semibold">{fmtINR(l.line_total)}</td>
+                <td className="px-2 py-1 text-right tabular-nums font-semibold align-top">{fmtINR(l.line_total)}</td>
               </tr>
             ))}
           </tbody>
@@ -270,6 +273,39 @@ export default function InvoiceDetailPage() {
 const Td = ({ children, right, colSpan, className = '' }) => (
   <td colSpan={colSpan} className={`px-2 py-1 ${right ? 'text-right tabular-nums' : ''} ${className}`}>{children}</td>
 );
+
+// ---------- Product detail mini-row (rendered under the description) ----------
+// Compact pill row showing only what's filled in. Stays tidy when a line has
+// no product metadata (renders nothing) and prints nicely.
+const ProductDetailLines = ({ line }) => {
+  const serials = (line.serial_numbers || []).filter((s) => (s || '').trim());
+  const bits = [
+    line.product_type,
+    line.make,
+    line.model,
+    line.technology_tier ? `${line.technology_tier} tier` : null,
+  ].filter(Boolean);
+  if (bits.length === 0 && serials.length === 0) return null;
+  return (
+    <div className="mt-1 space-y-0.5" data-testid={`inv-line-product-${line.line_id}`}>
+      {bits.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {bits.map((b, i) => (
+            <span key={i} className="inline-flex items-center px-1.5 py-px text-[9px] font-semibold rounded bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
+              {b}
+            </span>
+          ))}
+        </div>
+      )}
+      {serials.length > 0 && (
+        <div className="text-[10px] text-slate-600">
+          <span className="font-bold mr-1">S/N:</span>
+          <span className="font-mono">{serials.join(', ')}</span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ---------- PAYMENT DIALOG ----------
 const PaymentDialog = ({ invoice, onClose, onSaved }) => {
@@ -378,6 +414,15 @@ function printThermal(inv, clinic) {
   line(`<div class="row"><span>Item</span><span>Amt</span></div>`);
   for (const l of inv.lines) {
     line(`<div class="row small"><span>${esc(l.description)}${l.quantity !== 1 ? ` × ${esc(l.quantity)}` : ''}</span><span>${inr(l.line_total)}</span></div>`);
+    // Product detail sub-lines for hearing aids / accessories.
+    const bits = [l.product_type, l.make, l.model, l.technology_tier ? `${l.technology_tier} tier` : null].filter(Boolean);
+    if (bits.length > 0) {
+      line(`<div class="tiny" style="color:#666;margin-left:8px">${esc(bits.join(' · '))}</div>`);
+    }
+    const serials = (l.serial_numbers || []).filter((s) => (s || '').trim());
+    if (serials.length > 0) {
+      line(`<div class="tiny" style="color:#666;margin-left:8px">S/N: ${esc(serials.join(', '))}</div>`);
+    }
     if (l.discount_amount > 0) {
       const label = l.discount_type === 'percent' && l.discount_value > 0
         ? `&nbsp;&nbsp;Discount (${esc(l.discount_value)}%)`

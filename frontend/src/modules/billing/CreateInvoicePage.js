@@ -90,6 +90,11 @@ export default function CreateInvoicePage() {
   const addLine = (service_id) => {
     const svc = svcMap[service_id];
     if (!svc) return;
+    // Auto-prep product fields when this service is a tracked physical
+    // product. Saves the user a click — the panel is open by default and
+    // a sensible product_type is preselected.
+    const isHa  = svc.category === 'Hearing Aid';
+    const isAcc = svc.category === 'Accessory';
     setLines((ls) => [...ls, {
       key: Math.random().toString(36).slice(2),
       service_id,
@@ -100,6 +105,12 @@ export default function CreateInvoicePage() {
       discount_value: 0,
       is_taxable: svc.is_taxable,
       gst_rate: svc.gst_rate,
+      product_type: isHa ? 'Hearing Aid' : isAcc ? 'Accessory' : null,
+      make: '',
+      model: '',
+      serial_numbers: [''],            // start with one empty slot
+      technology_tier: '',
+      details_open: isHa || isAcc,     // auto-expand for trackable products
     }]);
   };
 
@@ -107,6 +118,8 @@ export default function CreateInvoicePage() {
   // we just merge it into local catalog state and immediately add it as a line.
   const handleServiceCreated = (svc) => {
     setServices((prev) => [...prev, svc]);
+    const isHa  = svc.category === 'Hearing Aid';
+    const isAcc = svc.category === 'Accessory';
     setLines((ls) => [...ls, {
       key: Math.random().toString(36).slice(2),
       service_id: svc.service_id,
@@ -117,6 +130,12 @@ export default function CreateInvoicePage() {
       discount_value: 0,
       is_taxable: svc.is_taxable,
       gst_rate: svc.gst_rate,
+      product_type: isHa ? 'Hearing Aid' : isAcc ? 'Accessory' : null,
+      make: '',
+      model: '',
+      serial_numbers: [''],
+      technology_tier: '',
+      details_open: isHa || isAcc,
     }]);
   };
 
@@ -131,11 +150,35 @@ export default function CreateInvoicePage() {
       discount_value: 0,
       is_taxable: false,
       gst_rate: 0,
+      product_type: null,
+      make: '',
+      model: '',
+      serial_numbers: [''],
+      technology_tier: '',
+      details_open: false,
     }]);
   };
 
   const updateLine = (key, patch) => {
-    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+    setLines((ls) => ls.map((l) => {
+      if (l.key !== key) return l;
+      const next = { ...l, ...patch };
+      // Keep serial-number slots in lockstep with quantity for tracked products.
+      if (patch.quantity !== undefined && (next.product_type === 'Hearing Aid' || next.product_type === 'Accessory')) {
+        const q = Math.max(1, Math.floor(Number(next.quantity) || 1));
+        const cur = next.serial_numbers || [];
+        if (cur.length < q) next.serial_numbers = [...cur, ...Array(q - cur.length).fill('')];
+        if (cur.length > q) next.serial_numbers = cur.slice(0, q);
+      }
+      // When user picks/changes the product type, also align slots.
+      if (patch.product_type !== undefined && (patch.product_type === 'Hearing Aid' || patch.product_type === 'Accessory')) {
+        const q = Math.max(1, Math.floor(Number(next.quantity) || 1));
+        if (!next.serial_numbers || next.serial_numbers.length === 0) {
+          next.serial_numbers = Array(q).fill('');
+        }
+      }
+      return next;
+    }));
   };
   const removeLine = (key) => setLines((ls) => ls.filter((l) => l.key !== key));
 
@@ -170,16 +213,25 @@ export default function CreateInvoicePage() {
       const body = {
         patient_id: patient.patient_id,
         session_id: preselectSession,
-        lines: lines.map((l) => ({
-          service_id: l.service_id || null,
-          description: l.service_id ? null : l.description,
-          quantity: Number(l.quantity) || 1,
-          unit_price: Number(l.unit_price),
-          discount_type: l.discount_type || 'flat',
-          discount_value: Number(l.discount_value) || 0,
-          is_taxable: l.is_taxable,
-          gst_rate: Number(l.gst_rate) || 0,
-        })),
+        lines: lines.map((l) => {
+          // Trim serial_numbers; only include when something was actually entered.
+          const serials = (l.serial_numbers || []).map((s) => (s || '').trim()).filter(Boolean);
+          return {
+            service_id: l.service_id || null,
+            description: l.service_id ? null : l.description,
+            quantity: Number(l.quantity) || 1,
+            unit_price: Number(l.unit_price),
+            discount_type: l.discount_type || 'flat',
+            discount_value: Number(l.discount_value) || 0,
+            is_taxable: l.is_taxable,
+            gst_rate: Number(l.gst_rate) || 0,
+            product_type: l.product_type || null,
+            make: (l.make || '').trim() || null,
+            model: (l.model || '').trim() || null,
+            serial_numbers: serials.length ? serials : null,
+            technology_tier: l.technology_tier || null,
+          };
+        }),
         notes: notes || null,
         patient_gstin: patientGstin || null,
         initial_payment: payNow.enabled && payNow.amount
@@ -322,13 +374,32 @@ export default function CreateInvoicePage() {
               {lines.map((l) => {
                 const svc = l.service_id ? svcMap[l.service_id] : null;
                 const p = computeLinePreview(l, svc);
+                const hasProductDetails = Boolean(
+                  l.product_type || l.make || l.model || l.technology_tier ||
+                  (l.serial_numbers || []).some((s) => (s || '').trim()),
+                );
                 return (
-                  <tr key={l.key} data-testid={`ci-line-${l.key}`} className="border-b border-slate-100 last:border-0">
+                  <React.Fragment key={l.key}>
+                  <tr data-testid={`ci-line-${l.key}`} className="border-b border-slate-100 last:border-0">
                     <td className="px-2 py-1">
                       <input type="text" value={l.description}
                         disabled={!!l.service_id}
                         onChange={(e) => updateLine(l.key, { description: e.target.value })}
                         className="w-full px-1.5 py-1 text-xs border border-slate-200 rounded disabled:bg-slate-50" />
+                      <button
+                        type="button"
+                        onClick={() => updateLine(l.key, { details_open: !l.details_open })}
+                        data-testid={`ci-toggle-product-${l.key}`}
+                        className={`mt-0.5 text-[10px] font-semibold inline-flex items-center gap-0.5 transition-colors ${
+                          l.details_open ? 'text-indigo-700 hover:text-indigo-900' : 'text-slate-500 hover:text-indigo-700'
+                        }`}
+                      >
+                        <span>{l.details_open ? '▾' : '▸'}</span>
+                        {hasProductDetails ? 'Product details' : '+ Add product details'}
+                        {hasProductDetails && !l.details_open && (
+                          <span className="ml-1 px-1 py-px text-[9px] font-bold rounded bg-indigo-100 text-indigo-700">filled</span>
+                        )}
+                      </button>
                     </td>
                     <td className="px-2 py-1">
                       <span className="text-[10px] font-mono text-slate-500">{svc?.hsn_sac || '—'}</span>
@@ -376,6 +447,14 @@ export default function CreateInvoicePage() {
                         className="text-rose-500 hover:text-rose-700 text-sm leading-none">×</button>
                     </td>
                   </tr>
+                  {l.details_open && (
+                    <tr className="bg-slate-50/70 border-b border-slate-100">
+                      <td colSpan={8} className="px-3 py-2.5">
+                        <ProductDetailsPanel line={l} onChange={(patch) => updateLine(l.key, patch)} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -454,3 +533,120 @@ const Row = ({ label, value, strong, big }) => (
     </span>
   </div>
 );
+
+// ============================================================================
+// ProductDetailsPanel — collapsible per-line editor for hearing aid /
+// accessory metadata that should print on the invoice. Fields are all
+// optional at the API level; the UI nudges sensible defaults based on
+// product_type but never blocks save.
+// ============================================================================
+const TIER_OPTIONS    = ['Basic', 'Essential', 'Standard', 'Advanced', 'Premium'];
+const PRODUCT_TYPES   = ['Hearing Aid', 'Accessory', 'Other'];
+const POPULAR_MAKES   = ['Phonak', 'Signia', 'ReSound', 'Widex', 'Oticon', 'Starkey', 'Unitron'];
+
+function ProductDetailsPanel({ line, onChange }) {
+  const isHa = line.product_type === 'Hearing Aid';
+  const qty  = Math.max(1, Math.floor(Number(line.quantity) || 1));
+  // Ensure exactly `qty` slots when the panel is open so the UI matches sale qty.
+  const serials = (() => {
+    const cur = line.serial_numbers || [];
+    if (cur.length === qty) return cur;
+    if (cur.length < qty) return [...cur, ...Array(qty - cur.length).fill('')];
+    return cur.slice(0, qty);
+  })();
+
+  const updSerial = (i, v) => {
+    const next = [...serials];
+    next[i] = v;
+    onChange({ serial_numbers: next });
+  };
+
+  return (
+    <div data-testid={`ci-product-panel-${line.key}`} className="space-y-2">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Product details (optional)</div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <FieldLabel label="Product Type">
+          <select
+            value={line.product_type || ''}
+            onChange={(e) => onChange({ product_type: e.target.value || null })}
+            data-testid={`ci-product-type-${line.key}`}
+            className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white"
+          >
+            <option value="">— Select —</option>
+            {PRODUCT_TYPES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel label="Make / Brand">
+          <input
+            list={`makes-${line.key}`}
+            value={line.make || ''}
+            onChange={(e) => onChange({ make: e.target.value })}
+            data-testid={`ci-product-make-${line.key}`}
+            placeholder="Phonak, Signia…"
+            className="w-full px-2 py-1 text-xs border border-slate-300 rounded"
+          />
+          <datalist id={`makes-${line.key}`}>
+            {POPULAR_MAKES.map((m) => <option key={m} value={m} />)}
+          </datalist>
+        </FieldLabel>
+
+        <FieldLabel label="Model">
+          <input
+            value={line.model || ''}
+            onChange={(e) => onChange({ model: e.target.value })}
+            data-testid={`ci-product-model-${line.key}`}
+            placeholder="e.g., Audeo P50-R"
+            className="w-full px-2 py-1 text-xs border border-slate-300 rounded"
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Technology Tier" disabled={!isHa} hint={!isHa ? 'For hearing aids only' : undefined}>
+          <select
+            value={line.technology_tier || ''}
+            onChange={(e) => onChange({ technology_tier: e.target.value || null })}
+            disabled={!isHa}
+            data-testid={`ci-product-tier-${line.key}`}
+            className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            <option value="">— Select —</option>
+            {TIER_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </FieldLabel>
+      </div>
+
+      {/* Serial numbers — one input per unit when product_type is HA/Accessory */}
+      {(line.product_type === 'Hearing Aid' || line.product_type === 'Accessory') && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">
+            Serial Numbers <span className="text-slate-400 font-normal">({qty} unit{qty === 1 ? '' : 's'})</span>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+            {serials.map((s, i) => (
+              <input
+                key={i}
+                value={s || ''}
+                onChange={(e) => updSerial(i, e.target.value)}
+                data-testid={`ci-product-serial-${line.key}-${i}`}
+                placeholder={`Unit ${i + 1} serial #`}
+                className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldLabel({ label, children, disabled, hint }) {
+  return (
+    <label className="block">
+      <span className={`block text-[10px] uppercase tracking-wider font-bold mb-0.5 ${disabled ? 'text-slate-400' : 'text-slate-600'}`}>
+        {label} {hint && <span className="ml-1 text-[9px] font-normal text-slate-400 normal-case tracking-normal">· {hint}</span>}
+      </span>
+      {children}
+    </label>
+  );
+}

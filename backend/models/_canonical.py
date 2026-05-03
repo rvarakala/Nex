@@ -302,6 +302,14 @@ class InvoiceLine(BaseModel):
     sgst_amount: float = 0.0
     igst_amount: float = 0.0
     line_total: float = 0.0                                      # taxable_value + cgst + sgst (or + igst)
+    # Optional product detail fields — populated when the line is a hearing
+    # aid, accessory, or any tracked physical product. All optional so generic
+    # service lines (consultation, audiogram, etc.) stay untouched.
+    product_type: Optional[Literal["Hearing Aid", "Accessory", "Other"]] = None
+    make: Optional[str] = None                                   # Brand: Phonak, Signia, etc.
+    model: Optional[str] = None                                  # Model name / SKU
+    serial_numbers: List[str] = []                               # One entry per unit; len should equal quantity for HAs
+    technology_tier: Optional[Literal["Basic", "Essential", "Standard", "Advanced", "Premium"]] = None
 
 
 class Payment(BaseModel):
@@ -380,6 +388,12 @@ class InvoiceLineCreate(BaseModel):
     is_taxable: Optional[bool] = None                            # Override
     gst_rate: Optional[float] = None
     hsn_sac: Optional[str] = None
+    # Optional product detail fields (mirrored from InvoiceLine).
+    product_type: Optional[Literal["Hearing Aid", "Accessory", "Other"]] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    serial_numbers: Optional[List[str]] = None
+    technology_tier: Optional[Literal["Basic", "Essential", "Standard", "Advanced", "Premium"]] = None
 
 
 class InvoiceCreate(BaseModel):
