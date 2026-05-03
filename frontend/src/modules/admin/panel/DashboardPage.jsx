@@ -26,8 +26,8 @@ export default function DashboardPage() {
     <div className="p-6 space-y-6" data-testid="admin-dashboard-page">
       <PageHeader title="Executive Dashboard" subtitle="Platform-wide health, revenue & growth" />
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      {/* KPI row — 8 tiles, but only stretch to 8 cols at xl so currency values don't clip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         <KPITile label="Active Clinics" value={fmtInt(kpis.active_clinics)} tone="emerald" testid="kpi-active" />
         <KPITile label="On Trial" value={fmtInt(kpis.trial_accounts)} tone="indigo" testid="kpi-trials" />
         <KPITile label="MRR" value={fmtINR(kpis.mrr)} tone="fuchsia" testid="kpi-mrr" />
@@ -109,21 +109,22 @@ export default function DashboardPage() {
         </Card>
 
         <Card title="Conversion Funnel" subtitle="Leads → Trials → Paid" testid="chart-funnel">
-          <div className="p-5 space-y-3">
+          <div className="p-5 space-y-3 min-w-0 overflow-hidden">
             {[
-              { label: 'Leads / Waitlist', value: funnel.leads, tone: 'bg-slate-200' },
+              { label: 'Leads / Waitlist', value: funnel.leads, tone: 'bg-slate-400' },
               { label: 'On Trial', value: funnel.trials, tone: 'bg-indigo-400' },
               { label: 'Paid', value: funnel.paid, tone: 'bg-emerald-500' },
             ].map((r, i, arr) => {
               const max = Math.max(arr[0].value, 1);
+              const pct = Math.min(100, Math.max(0, (r.value / max) * 100));
               return (
-                <div key={r.label}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="font-semibold text-slate-700">{r.label}</span>
-                    <span className="text-slate-500">{r.value}</span>
+                <div key={r.label} className="min-w-0">
+                  <div className="flex justify-between text-xs mb-1 gap-2">
+                    <span className="font-semibold text-slate-700 truncate">{r.label}</span>
+                    <span className="text-slate-500 flex-shrink-0">{r.value}</span>
                   </div>
-                  <div className="h-5 bg-slate-100 rounded">
-                    <div className={`h-5 rounded ${r.tone}`} style={{ width: `${(r.value / max) * 100}%` }} />
+                  <div className="h-5 bg-slate-100 rounded overflow-hidden">
+                    <div className={`h-5 rounded ${r.tone} transition-all duration-500`} style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );

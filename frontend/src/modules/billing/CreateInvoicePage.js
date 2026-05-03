@@ -45,6 +45,10 @@ export default function CreateInvoicePage() {
   const location = useLocation();
   const preselectPatient = location.state?.patient || null;           // { patient_id, name, mobile, mrd }
   const preselectSession = location.state?.session_id || null;
+  // When opened from an HA Sale (e.g. /billing/invoices/new?from_sale=SAL-...),
+  // we hydrate patient + lines from a prefill endpoint so HA product details
+  // (make, model, serial #, tier) are auto-filled — no manual re-entry.
+  const fromSaleNo = new URLSearchParams(location.search).get('from_sale');
 
   const [services, setServices] = useState([]);
   const [patient, setPatient] = useState(preselectPatient);
@@ -57,10 +61,56 @@ export default function CreateInvoicePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showAddSvc, setShowAddSvc] = useState(false);
+  const [prefillBanner, setPrefillBanner] = useState(null); // { sale_no, alreadyInvoiced?, invoiceNo? }
 
   useEffect(() => {
     axios.get(`${API}/billing/services`).then((r) => setServices(r.data || [])).catch(() => {});
   }, []);
+
+  // Hydrate from HA sale prefill (one-shot, on mount when ?from_sale= present).
+  useEffect(() => {
+    if (!fromSaleNo) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/ha/sales/${fromSaleNo}/invoice-prefill`);
+        if (cancelled) return;
+        const d = r.data || {};
+        if (d.already_invoiced) {
+          setPrefillBanner({ sale_no: fromSaleNo, alreadyInvoiced: true, invoiceNo: d.invoice_no });
+          return;
+        }
+        if (d.patient) {
+          setPatient(d.patient);
+          setPatientQuery(d.patient.name || '');
+        }
+        if (Array.isArray(d.lines) && d.lines.length) {
+          setLines(d.lines.map((ln) => ({
+            key: Math.random().toString(36).slice(2),
+            service_id: ln.service_id || null,
+            description: ln.description || '',
+            quantity: ln.quantity || 1,
+            unit_price: ln.unit_price || 0,
+            discount_type: ln.discount_type || 'flat',
+            discount_value: ln.discount_value || 0,
+            is_taxable: !!ln.is_taxable,
+            gst_rate: ln.gst_rate || 0,
+            product_type: ln.product_type || null,
+            make: ln.make || '',
+            model: ln.model || '',
+            serial_numbers: ln.serial_numbers && ln.serial_numbers.length ? ln.serial_numbers : [''],
+            technology_tier: ln.technology_tier || '',
+            details_open: true,
+          })));
+        }
+        if (d.notes) setNotes(d.notes);
+        setPrefillBanner({ sale_no: fromSaleNo });
+      } catch (e) {
+        setError(describeError(e) || `Could not load HA sale ${fromSaleNo}`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fromSaleNo]);
 
   // Patient search (debounced)
   useEffect(() => {
@@ -249,6 +299,17 @@ export default function CreateInvoicePage() {
     <div className="p-4 grid grid-cols-[1fr_320px] gap-3" data-testid="create-invoice-page">
       {/* LEFT: form */}
       <div className="space-y-3">
+        {prefillBanner && (
+          prefillBanner.alreadyInvoiced ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800" data-testid="ci-prefill-already">
+              Sale <b className="font-mono">{prefillBanner.sale_no}</b> is already invoiced as <b className="font-mono">{prefillBanner.invoiceNo}</b>. Generate a new invoice only if you really intend to.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800" data-testid="ci-prefill-banner">
+              Lines pre-filled from HA sale <b className="font-mono">{prefillBanner.sale_no}</b> — verify make/model/serial and adjust before creating.
+            </div>
+          )
+        )}
         {/* Patient */}
         <div className="bg-white rounded-lg border border-slate-200 p-3 space-y-2">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Patient</div>

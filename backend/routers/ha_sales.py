@@ -67,6 +67,120 @@ async def get_sale(sale_no: str, user=Depends(get_current_user), db=Depends(get_
     return deserialize_datetime(row)
 
 
+_TECH_TIER_MAP = {
+    "essential": "Essential",
+    "standard": "Standard",
+    "advanced": "Advanced",
+    "premium": "Premium",
+    "basic": "Basic",
+}
+
+
+@router.get("/sales/{sale_no}/invoice-prefill")
+async def invoice_prefill(
+    sale_no: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Returns a structured prefill payload for the Create Invoice form so that
+    HA product details (make/model/serial/tier) auto-populate when generating
+    an invoice from a sale. Read-only; does NOT create the invoice."""
+    sale = await db.ha_sales.find_one(
+        {"sale_no": sale_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    if not user_can_see_branch(user, sale["branch_id"]):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if sale.get("invoice_no"):
+        # Sale already invoiced — surface to caller so UI can warn / link.
+        return {
+            "already_invoiced": True,
+            "invoice_no": sale["invoice_no"],
+            "sale_no": sale_no,
+        }
+
+    # Patient summary
+    patient = await db.patients.find_one(
+        {"patient_id": sale["patient_id"], "clinic_id": user["clinic_id"]},
+        {"_id": 0, "patient_id": 1, "first_name": 1, "last_name": 1, "mobile": 1, "mrd": 1},
+    ) or {}
+    pname = (patient.get("first_name", "") + " " + patient.get("last_name", "")).strip() \
+        or sale.get("patient_name") or ""
+
+    # Bulk-fetch products + serials referenced by all lines
+    product_ids = sorted({ln.get("product_id") for ln in sale["lines"] if ln.get("product_id")})
+    serial_ids  = sorted({ln.get("serial_id")  for ln in sale["lines"] if ln.get("serial_id")})
+
+    products = {
+        p["product_id"]: p async for p in db.ha_products.find(
+            {"product_id": {"$in": product_ids}, "clinic_id": user["clinic_id"]},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1, "tech_tier": 1, "gst_rate": 1, "hsn": 1},
+        )
+    }
+    serials = {
+        s["serial_id"]: s async for s in db.serial_items.find(
+            {"serial_id": {"$in": serial_ids}, "clinic_id": user["clinic_id"]},
+            {"_id": 0, "serial_id": 1, "serial_no": 1},
+        )
+    }
+
+    lines_out = []
+    for ln in sale["lines"]:
+        prod = products.get(ln.get("product_id"), {})
+        srl  = serials.get(ln.get("serial_id"))
+        brand = prod.get("brand") or ""
+        model = prod.get("model") or ""
+        tier  = _TECH_TIER_MAP.get((prod.get("tech_tier") or "").lower())
+        qty   = int(ln.get("qty") or 1)
+        unit  = float(ln.get("unit_price") or 0)
+        disc_pct = float(ln.get("discount_pct") or 0)
+        gst_rate = float(ln.get("gst_rate") or prod.get("gst_rate") or 18)
+
+        serial_numbers = [srl["serial_no"]] if srl and srl.get("serial_no") else []
+        # Pad serial slots up to qty so the form has the right number of inputs.
+        while len(serial_numbers) < qty:
+            serial_numbers.append("")
+
+        desc_bits = [b for b in [brand, model] if b]
+        description = " ".join(desc_bits) or "Hearing Aid"
+        if tier:
+            description = f"{description} ({tier})"
+
+        lines_out.append({
+            "service_id": None,
+            "description": description,
+            "quantity": qty,
+            "unit_price": unit,
+            "discount_type": "percent" if disc_pct else "flat",
+            "discount_value": disc_pct if disc_pct else 0,
+            "is_taxable": True,
+            "gst_rate": gst_rate,
+            "hsn_sac": prod.get("hsn") or "9021",
+            "product_type": "Hearing Aid",
+            "make": brand,
+            "model": model,
+            "serial_numbers": serial_numbers,
+            "technology_tier": tier,
+        })
+
+    return {
+        "already_invoiced": False,
+        "sale_no": sale_no,
+        "patient": {
+            "patient_id": sale["patient_id"],
+            "name": pname,
+            "mobile": patient.get("mobile"),
+            "mrd": patient.get("mrd"),
+        },
+        "trade_in_credit": float(sale.get("trade_in_credit") or 0),
+        "trade_in_id": sale.get("trade_in_id"),
+        "lines": lines_out,
+        "notes": f"Generated from HA sale {sale_no}"
+                 + (f" (quote {sale['quote_no']})" if sale.get("quote_no") else ""),
+    }
+
+
 @router.post("/sales", response_model=Sale)
 async def create_sale_from_quote(
     payload: SaleCreate,

@@ -43,10 +43,10 @@ export const KPITile = ({ label, value, delta, tone = 'slate', testid }) => {
   return (
     <div
       data-testid={testid}
-      className={`rounded-xl p-4 bg-gradient-to-br border ${tones[tone]}`}
+      className={`rounded-xl p-4 bg-gradient-to-br border min-w-0 overflow-hidden ${tones[tone]}`}
     >
-      <div className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{label}</div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider opacity-70 truncate">{label}</div>
+      <div className="text-xl xl:text-2xl font-bold mt-1 truncate" title={String(value)}>{value}</div>
       {delta != null && (
         <div className={`text-[11px] mt-1 ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
           {delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}% vs prev

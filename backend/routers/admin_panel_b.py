@@ -500,18 +500,22 @@ async def data_health(
     db=Depends(get_db),
 ):
     from pydantic import ValidationError
-    try:
-        from models import Patient, Invoice, Sale  # HA sales
-    except ImportError:
-        Patient = Invoice = Sale = None
-
     PROBES = []
-    if Patient is not None:
+    try:
+        from models import Patient
         PROBES.append(("patients", "patients", Patient))
-    if Invoice is not None:
+    except ImportError:
+        pass
+    try:
+        from models import Invoice
         PROBES.append(("invoices", "invoices", Invoice))
-    if Sale is not None:
+    except ImportError:
+        pass
+    try:
+        from models_ha import Sale
         PROBES.append(("ha_sales", "ha_sales", Sale))
+    except ImportError:
+        pass
 
     results = []
     for label, coll, Model in PROBES:
@@ -551,8 +555,44 @@ async def data_health(
     overall = "healthy"
     if any(r["failed"] > 0 for r in results):
         overall = "degraded"
+
+    # ---- Auto-incident on schema drift -------------------------------------
+    # For every probed collection with failures, ensure exactly ONE open
+    # incident exists titled `DATA_HEALTH: <coll> schema drift`. We never
+    # close it from here — operator must investigate + manually resolve.
+    auto_incidents: list[str] = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for r in results:
+        if r["failed"] <= 0:
+            continue
+        title = f"DATA_HEALTH: {r['collection']} schema drift"
+        existing = await db.platform_incidents.find_one(
+            {"title": title, "resolved_at": None}, projection={"_id": 0}
+        )
+        if existing:
+            continue
+        sev = "critical" if r["health_pct"] < 90 else "major"
+        sample_ids = ", ".join(str(f.get("id", "?")) for f in r["failures"][:3])
+        doc = {
+            "incident_id": f"INC-{uuid.uuid4().hex[:8].upper()}",
+            "title": title,
+            "severity": sev,
+            "summary": (
+                f"Auto-detected by data-health probe: {r['failed']}/{r['sampled']} "
+                f"sampled docs failed Pydantic validation "
+                f"({r['health_pct']}% healthy). Sample doc ids: {sample_ids or '—'}."
+            ),
+            "started_at": now_iso,
+            "resolved_at": None,
+            "logged_by": "system:data-health",
+            "source": "auto",
+        }
+        await db.platform_incidents.insert_one(doc.copy())
+        auto_incidents.append(doc["incident_id"])
+
     return {"overall": overall, "probes": results,
-            "at": datetime.now(timezone.utc).isoformat()}
+            "auto_incidents_opened": auto_incidents,
+            "at": now_iso}
 
 
 # ---------- Bulk-resolve synthetic / named-prefix incidents -------------------

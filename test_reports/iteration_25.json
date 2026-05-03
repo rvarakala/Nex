@@ -1,0 +1,47 @@
+{
+  "summary": "Iter25 — Verified the 3 freshly-shipped fixes for AUDINEXA: (a) Founder Dashboard KPI/Funnel overflow at lg/xl viewports, (b) Data-Health auto-incident generation + idempotency + bulk-resolve, (c) HA Sales→Invoice prefill endpoint. Backend: 4/4 pytest cases PASS in 2.56s (existing test_data_health_auto_incident.py + test_sale_invoice_prefill.py + new test_iter25_extras.py covering 404 path and platform_incidents doc verification). Frontend: Logged in as founder@audinexa.com, opened /admin/dashboard at 1280 and 1920 viewports — no DOM overflow on KPI tiles (scrollWidth==clientWidth) and no funnel-bar escape from card boundary at either width; first funnel bar correctly uses bg-slate-400. All cleanup performed (DATA_HEALTH:* incidents bulk-resolved + deleted, test patient/sale/quote/product/serial removed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/admin/dashboard at viewport=1280",
+        "issues": [
+          "At exactly 1280px (xl breakpoint kicks in → 8-col grid), each KPI tile is ~145px wide. The `truncate` fix prevents container overflow (scrollWidth==clientWidth confirmed in DOM), but visually shows ellipsis: MRR='₹22,3...', ARR='₹2,67...', PAYMENT FAILS label='PAYMENT ...'. Container-overflow bug IS fixed; legibility tradeoff remains. Suggest either bumping xl breakpoint trigger (e.g., `2xl:grid-cols-8` or `min-[1440px]:grid-cols-8`) or reducing tile padding/font-size below xl. At 1920px all KPI values render in full (₹22,331.42, ₹2,67,977.04) — no issue."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_data_health_auto_incident.py",
+    "/app/backend/tests/test_sale_invoice_prefill.py",
+    "/app/backend/tests/test_iter25_extras.py",
+    "/app/test_reports/pytest/iter25_three_fixes.xml"
+  ],
+  "action_items": [
+    "(Optional, design polish) Consider gating the 8-col KPI grid on `2xl:` (1536px+) or `min-[1440px]:` instead of `xl:` (1280px) so MRR/ARR values aren't ellipsis-truncated at the low end of large desktops. Functional bug is resolved; this is a legibility nit only."
+  ],
+  "critical_code_review_comments": [
+    "data-health auto-incident logic (admin_panel_b.py ~551-590) correctly idempotent — second probe returns auto_incidents_opened=[] verified end-to-end. Title pattern 'DATA_HEALTH: <coll> schema drift' is what bulk-resolve title_prefix relies on, so keep these two strings in lockstep when refactoring.",
+    "ha_sales.invoice_prefill cleanly returns 404 for nonexistent sale_no, and seeded test confirms make/model/serial/tier/qty/unit_price/gst_rate/product_type all hydrate as documented.",
+    "DashboardPage.jsx KPI grid migration from lg:→xl: is correct for the reported overflow bug, but pushes truncation onto exactly the 1280-1535 band. If the team supports 13\"/14\" laptops at 1280-1366 commonly, raise the breakpoint or rebalance tile widths. Non-blocking.",
+    "Conversion Funnel `Math.min(100, ...)` clamp + bg-slate-400 first bar render correctly at both 1280 and 1920 — no bar overflows card boundaries (verified via getBoundingClientRect comparison)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_extras.py (new — covers 404 prefill + platform_incidents doc + bulk-resolve)"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4 pytest cases PASS)",
+    "frontend": "100% functional (no DOM overflow, no funnel escape); 1 design nit on KPI truncation at 1280px"
+  },
+  "test_credentials": "founder@audinexa.com / founder123 (for /admin/dashboard + /admin/v2/system/* + bulk-resolve); admin@delhi.test / delhiadmin123 (for /api/ha/sales prefill flow on clinic-delhi-test branch BR-F05F6C00).",
+  "seed_data_creation": "All test data is self-contained and torn down by each test's finally block: bad patient docs (TEST-BAD-*), test ha_products (PRD-TEST*), serial_items (SRL-TEST*), quotations, ha_sales, and DATA_HEALTH:* platform_incidents are deleted. Bulk-resolve was exercised end-to-end (matched=2, modified=2 confirmed by API response).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Three-fix verification suite is in /app/backend/tests/test_data_health_auto_incident.py + test_sale_invoice_prefill.py + test_iter25_extras.py — re-run with `pytest <those> -v --junitxml=...`. Always wait for any prior data-health auto-incidents to be cleared (`POST /api/admin/v2/system/incidents/bulk-resolve {title_prefix:'DATA_HEALTH:'}`) before re-running idempotency tests, otherwise the 'first call must open >=1' assertion will see opened=[] from a prior bad-patient run that was cleaned up but cached. The new test file already does this via cleanup teardown. For UI: the only outstanding observation is KPI truncation at exactly 1280px — verify any future Dashboard refactor doesn't reintroduce real container overflow (use scrollWidth>clientWidth check on KPI tiles).",
+  "rca of the issue": "All three fixes verified working as designed. (a) DashboardPage grid migration lg:→xl: + truncate/min-w-0/overflow-hidden eliminates real container overflow; ellipsis truncation at 1280px is the expected tradeoff of the chosen breakpoint and is a separate design call, not a regression of the original bug. (b) Auto-incident block in admin_panel_b.py correctly inserts into platform_incidents on first probe and uses an existence-check (likely on title+resolved_at=null) to skip duplicates on subsequent probes — confirmed by opened1>=1, opened2==[], and bulk-resolve returning matched=2 modified=2. (c) ha_sales.invoice_prefill correctly hydrates patient + lines with all required fields and returns 404 for nonexistent sale_no."
+}

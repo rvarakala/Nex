@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -261,6 +262,7 @@ function NewQuoteModal({ onClose, onCreated }) {
 }
 
 function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
+  const navigate = useNavigate();
   const [q, setQ] = useState(null);
   const [serials, setSerials] = useState([]);
   const [users, setUsers] = useState([]);
@@ -320,9 +322,17 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
       if (below.length && approvalUser) body.margin_approval_user_id = approvalUser;
       if (tradeInId) body.trade_in_id = tradeInId;
       const r = await axios.post(`${API}/ha/sales`, body);
-      alert(`Sale ${r.data.sale_no} created — serial(s) RESERVED.${r.data.trade_in_credit ? ` Trade-in credit ₹${r.data.trade_in_credit} applied.` : ''}`);
+      const saleNo = r.data.sale_no;
+      const tradeMsg = r.data.trade_in_credit ? ` Trade-in credit ₹${r.data.trade_in_credit} applied.` : '';
       setConverting(false);
       setTradeInId('');
+      const goInvoice = window.confirm(
+        `Sale ${saleNo} created — serial(s) RESERVED.${tradeMsg}\n\nGenerate the invoice now? Make/model/serial/tier will be pre-filled.`
+      );
+      if (goInvoice) {
+        navigate(`/billing/invoices/new?from_sale=${encodeURIComponent(saleNo)}`);
+        return;
+      }
       await load();
       onChanged && onChanged();
     } catch (e) {
@@ -403,7 +413,17 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
               {q.status === 'sent' && <button onClick={() => transition('rejected')} className="px-3 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded">Mark Rejected</button>}
               {canConvert && <button onClick={() => setConverting(true)} data-testid="ha-quote-convert-start" className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow">Convert → Sale</button>}
               {q.status !== 'cancelled' && q.status !== 'converted' && <button onClick={() => transition('cancelled')} className="px-3 py-1.5 text-xs font-semibold bg-slate-500 hover:bg-slate-600 text-white rounded">Cancel</button>}
-              {q.converted_sale_no && <div className="text-xs text-slate-600 ml-auto">Converted to sale <span className="font-mono font-bold">{q.converted_sale_no}</span></div>}
+              {q.converted_sale_no && (
+                <>
+                  <div className="text-xs text-slate-600 ml-auto">Converted to sale <span className="font-mono font-bold">{q.converted_sale_no}</span></div>
+                  <button
+                    onClick={() => navigate(`/billing/invoices/new?from_sale=${encodeURIComponent(q.converted_sale_no)}`)}
+                    data-testid="ha-quote-go-invoice"
+                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow">
+                    Generate Invoice
+                  </button>
+                </>
+              )}
             </div>
           )}
 

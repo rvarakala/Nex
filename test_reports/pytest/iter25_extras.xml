@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="1.328" timestamp="2026-05-03T17:08:55.705595+00:00" hostname="agent-env-78b3eb2e-29ea-421f-b588-3b58f3caecb2"><testcase classname="tests.test_iter25_extras" name="test_invoice_prefill_404_for_nonexistent_sale" time="0.560" /><testcase classname="tests.test_iter25_extras" name="test_auto_incident_doc_exists_and_bulk_resolves" time="0.591"><failure message="RuntimeError: There is no current event loop in thread 'MainThread'.">tests/test_iter25_extras.py:85: in test_auto_incident_doc_exists_and_bulk_resolves
+    asyncio.run(db.platform_incidents.delete_many({"title": {"$regex": "^DATA_HEALTH:"}}))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/motor/metaprogramming.py:73: in method
+    loop = self.get_io_loop()
+           ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/motor/core.py:1351: in get_io_loop
+    return self.database.get_io_loop()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/motor/core.py:862: in get_io_loop
+    return self._client.get_io_loop()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/motor/core.py:158: in get_io_loop
+    return self.io_loop
+           ^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/motor/core.py:154: in io_loop
+    self._io_loop = self._framework.get_event_loop()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/events.py:681: in get_event_loop
+    raise RuntimeError('There is no current event loop in thread %r.'
+E   RuntimeError: There is no current event loop in thread 'MainThread'.</failure></testcase></testsuite></testsuites>
