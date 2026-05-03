@@ -868,6 +868,43 @@ async def test_sms(
     return result
 
 
+# ==================== TEST EMAIL (ZeptoMail smoke test) =====================
+# Mirror of /test-sms for the email channel.
+
+class TestEmailRequest(BaseModel):
+    to: EmailStr
+    subject: str = Field(default="AUDINEXA test email — if you see this, ZeptoMail works.",
+                         min_length=1, max_length=200)
+    body: str = Field(default="<p>Hello from <b>AUDINEXA</b>.</p><p>If you see this, ZeptoMail SMTP is wired correctly.</p>",
+                      min_length=1, max_length=10_000)
+
+
+@router.post("/test-email")
+async def test_email(
+    payload: TestEmailRequest, request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Founder / super-admin fires a real email via the configured provider.
+    Returns the structured `send_email()` result so any SMTP error surfaces
+    directly in the UI."""
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    from utils.email import send_email
+    result = send_email(
+        payload.to, payload.subject,
+        html_body=payload.body,
+        purpose="admin_smoke_test",
+    )
+    await _log_audit(
+        db, user, "email.test", payload.to,
+        after={"status": result.get("status"), "provider": result.get("provider"),
+               "message_id": result.get("message_id")},
+        request=request,
+    )
+    return result
+
+
 # ==================== 15. CLINIC ASSIGNMENTS (Multi-Clinic admin) ====================
 #
 # Lets founders / super_admins manage which clinics a user can sign into.

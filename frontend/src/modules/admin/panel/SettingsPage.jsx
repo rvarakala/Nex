@@ -95,6 +95,7 @@ export default function SettingsPage() {
       </div>
 
       <TestSmsCard />
+      <TestEmailCard />
     </div>
   );
 }
@@ -172,6 +173,97 @@ function TestSmsCard() {
           {result.data?.to     && <div className="font-mono text-[11px]">to: {result.data.to}</div>}
           {result.data?.error  && <div className="mt-0.5">{result.data.error}</div>}
           {result.data?.detail && <div className="mt-0.5">{typeof result.data.detail === 'string' ? result.data.detail : JSON.stringify(result.data.detail)}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
+// ============================================================================
+// TestEmailCard — founder/super-admin smoke-test for the ZeptoMail channel.
+// Same pattern as TestSmsCard but hits POST /api/admin/v2/test-email.
+// ============================================================================
+
+function TestEmailCard() {
+  const [to, setTo]       = useState('');
+  const [subject, setSub] = useState('AUDINEXA test email — if you see this, ZeptoMail works.');
+  const [body, setBody]   = useState('<h2>Hello from AUDINEXA</h2><p>If you see this email, ZeptoMail is wired up correctly.</p>');
+  const [busy, setBusy]   = useState(false);
+  const [result, setResult] = useState(null);
+
+  const fire = async () => {
+    setBusy(true); setResult(null);
+    try {
+      const r = await axios.post(`${API}/admin/v2/test-email`, { to, subject, body });
+      setResult({ ok: r.data.status === 'sent' || r.data.status === 'mocked', data: r.data });
+    } catch (err) {
+      setResult({ ok: false, data: err?.response?.data || { error: err?.message } });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Card
+      title="Send test email"
+      subtitle="Fires a real email via ZeptoMail SMTP. Sender domain must be verified in the ZeptoMail console for production delivery."
+    >
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-[260px_1fr_auto] gap-3 items-end">
+          <label className="block text-sm">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">To</span>
+            <input
+              value={to} onChange={(e) => setTo(e.target.value)}
+              data-testid="test-email-to"
+              placeholder="you@example.com"
+              className="mt-0.5 w-full px-2 py-1.5 text-sm font-mono border border-slate-300 rounded focus:border-indigo-500 outline-none"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Subject</span>
+            <input
+              value={subject} onChange={(e) => setSub(e.target.value)}
+              data-testid="test-email-subject"
+              className="mt-0.5 w-full px-2 py-1.5 text-sm border border-slate-300 rounded focus:border-indigo-500 outline-none"
+            />
+          </label>
+          <button
+            onClick={fire}
+            disabled={busy || !to.trim() || !subject.trim()}
+            data-testid="test-email-send"
+            className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded disabled:opacity-50"
+          >
+            {busy ? 'Sending…' : 'Send test email'}
+          </button>
+        </div>
+        <label className="block text-sm">
+          <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">HTML body</span>
+          <textarea
+            value={body} onChange={(e) => setBody(e.target.value)}
+            data-testid="test-email-body"
+            rows={3}
+            className="mt-0.5 w-full px-2 py-1.5 text-xs font-mono border border-slate-300 rounded focus:border-indigo-500 outline-none resize-none"
+          />
+        </label>
+      </div>
+
+      {result && (
+        <div
+          data-testid="test-email-result"
+          className={`mx-4 mb-4 rounded border px-3 py-2 text-xs ${
+            result.ok
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <div className="font-semibold">
+            {result.ok ? '✓ Email dispatched' : '✗ Email failed'}
+            {result.data?.status ? ` · status: ${result.data.status}` : ''}
+            {result.data?.provider ? ` · provider: ${result.data.provider}` : ''}
+          </div>
+          {result.data?.message_id && <div className="mt-0.5 font-mono text-[11px]">message_id: {result.data.message_id}</div>}
+          {result.data?.to         && <div className="font-mono text-[11px]">to: {Array.isArray(result.data.to) ? result.data.to.join(', ') : result.data.to}</div>}
+          {result.data?.error      && <div className="mt-0.5">{result.data.error}</div>}
+          {result.data?.detail     && <div className="mt-0.5">{typeof result.data.detail === 'string' ? result.data.detail : JSON.stringify(result.data.detail)}</div>}
         </div>
       )}
     </Card>

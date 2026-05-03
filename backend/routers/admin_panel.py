@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
+import os
 import uuid
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
@@ -33,6 +35,8 @@ from auth import (
 )
 from database import get_db
 from utils.serde import serialize_datetime, deserialize_datetime
+
+log = logging.getLogger("audinexa.admin_panel")
 from utils.tiers import (
     TIER_ORDER, TIER_MODULES, get_tier_prices,
     resolve_effective_tier, has_module_access,
@@ -837,6 +841,41 @@ async def _create_clinic_with_invite(
             after={"email": email, "tier": tier, "lead_email": lead_email},
             request=request,
         )
+
+        # Fire a welcome email with the credentials as a backup for the owner —
+        # the UI still shows them once for the admin. Best-effort: if email
+        # fails, we log but do not break the creation flow.
+        try:
+            from utils.email import send_email
+            login_url = os.environ.get("PUBLIC_APP_URL", "").rstrip("/") or ""
+            html = f"""
+            <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:540px;margin:0 auto">
+              <div style="background:#0B5FFF;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0">
+                <h2 style="margin:0">Welcome to AUDINEXA</h2>
+                <p style="margin:4px 0 0;opacity:0.9;font-size:13px">{clinic_name.strip()} · {tier} plan</p>
+              </div>
+              <div style="background:#fff;border:1px solid #e5e7eb;border-top:0;padding:24px;border-radius:0 0 12px 12px">
+                <p>Hi {owner_name.strip()},</p>
+                <p>Your AUDINEXA clinic account has been created. You can sign in with the credentials below:</p>
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin:16px 0;font-family:monospace;font-size:13px">
+                  <div><b style="color:#64748b;font-family:sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Email</b><br>{email}</div>
+                  <div style="margin-top:10px"><b style="color:#64748b;font-family:sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Password</b><br>{initial_password}</div>
+                </div>
+                <p><b>Next step:</b> please change this password after your first login. Open Settings → My Profile to update it.</p>
+                { f'<p style="margin-top:20px"><a href="{login_url}/login" style="background:#0B5FFF;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;display:inline-block">Sign in now</a></p>' if login_url else '' }
+                <p style="color:#94a3b8;font-size:12px;margin-top:24px">If you didn't expect this email, please ignore it — your account remains secure.</p>
+              </div>
+            </div>
+            """
+            send_email(
+                to=email,
+                subject=f"Your AUDINEXA account is ready — {clinic_name.strip()}",
+                html_body=html,
+                purpose="tenant_welcome_direct_password",
+            )
+        except Exception as _exc:  # noqa: BLE001 — email is non-critical here
+            log.warning("welcome_email_failed clinic=%s err=%s", clinic_id, _exc)
+
         return TenantCreatedResponse(
             clinic_id=clinic_id,
             clinic_name=clinic_name.strip(),

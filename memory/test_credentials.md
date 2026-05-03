@@ -100,3 +100,14 @@ curl -s "$API/patients" -H "Authorization: Bearer $TOKEN"
 - API: `POST /api/admin/v2/test-sms` (founder/super_admin only)
 - To run the live-delivery pytest, set `TWILIO_VERIFIED_TEST_NUMBER=+91…` before running `pytest tests/test_sms.py`.
 
+## ZeptoMail Email (LIVE — configured in /app/backend/.env)
+- Provider: ZeptoMail SMTP, `EMAIL_PROVIDER=zepto`
+- Server: `smtp.zeptomail.com:587` (STARTTLS)
+- Username: `emailapikey` (literal)
+- From: `noreply@audinexa.com` (name: `AUDINEXA`)
+- Admin test UI: `/admin/settings` → "Send test email" card
+- API: `POST /api/admin/v2/test-email` (founder/super_admin only)
+- Live-delivery pytest: `ZEPTO_TEST_RECIPIENT=you@example.com pytest tests/test_email.py -k live`
+- Welcome email is auto-sent when founder creates a tenant via "Set password now" mode.
+
+
