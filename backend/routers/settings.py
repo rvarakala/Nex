@@ -29,7 +29,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-from pydantic import BaseModel
+from pydantic import BaseModel, Field as pyField
 
 from auth import get_current_user, hash_password, require_roles
 from database import get_db
@@ -434,3 +434,192 @@ async def fetch_user_signature(user_id: str,
         "X-Signed-By": udoc.get("name") or "",
         "Cache-Control": "private, max-age=300",
     })
+
+
+
+# ============================================================================
+# SELF-SERVICE PROFILE & PASSWORD ENDPOINTS
+# ----------------------------------------------------------------------------
+# The `change-password` flow is critical because admins now provision users
+# with a temporary password (via /api/admin/v2/tenants ?initial_password or
+# /api/admin/v2/tenant-users). Without this endpoint, those users would be
+# stuck on a password they didn't choose. Profile editing + avatar upload
+# follow the same pattern as the existing signature endpoints (GridFS-backed,
+# data-URL friendly) so we don't need a new infrastructure layer.
+# ============================================================================
+
+from auth import verify_password as _verify_password  # noqa: E402
+
+_AVATAR_BUCKET = "user_avatars"
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024  # 2 MB — head-shot photos compress small
+
+# Industry-standard professional fields for an audiology clinic. None are
+# required by the schema, but the UI guides the audiologist to fill them.
+class MyProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    designation: Optional[str] = None        # e.g., "Senior Audiologist"
+    qualifications: Optional[str] = None     # e.g., "MASLP, M.Sc. Audiology"
+    license_no: Optional[str] = None         # RCI / state council registration
+    rci_registration_no: Optional[str] = None  # RCI is the national body in India
+    specialization: Optional[str] = None     # "Pediatric audiology", "Hearing aid fitting"
+    years_of_experience: Optional[int] = None
+    languages: Optional[List[str]] = None    # spoken languages — used in patient matching
+    bio: Optional[str] = None                # short bio shown on patient portal
+
+
+class ChangePasswordPayload(BaseModel):
+    current_password: str
+    new_password: str = pyField(min_length=8, max_length=128)
+
+
+# pyField alias so pydantic doesn't clash with the form-data Field already imported.
+@router.get("/me/profile")
+async def get_my_profile(user=Depends(get_current_user), db=Depends(get_db)):
+    """Return the rich profile + clinic context for the current user.
+
+    UI uses this on the My Profile tab; intentionally returns more fields than
+    /auth/me which is meant to be lightweight for nav rendering."""
+    fields = [
+        "user_id", "email", "name", "role", "phone", "designation",
+        "qualifications", "license_no", "rci_registration_no",
+        "specialization", "years_of_experience", "languages", "bio",
+        "avatar_fs_id", "signature_image_fs_id",
+        "appointment_color", "must_change_password",
+        "created_at", "updated_at",
+    ]
+    proj = {"_id": 0, **{f: 1 for f in fields}}
+    udoc = await db.users.find_one({"user_id": user["user_id"]}, proj) or {}
+    clinic = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "clinic_id": 1, "name": 1, "city": 1, "state": 1,
+         "phone": 1, "email": 1, "subscription_tier": 1, "logo_fs_id": 1,
+         "mrd_prefix": 1, "gst_no": 1, "registration_no": 1,
+         "address": 1, "pincode": 1},
+    ) or {}
+    return {"user": udoc, "clinic": clinic}
+
+
+@router.patch("/me/profile")
+async def update_my_profile(payload: MyProfileUpdate,
+                            user=Depends(get_current_user), db=Depends(get_db)):
+    """User self-edits a curated subset of their profile.
+
+    Email + role are NOT editable here — those changes require admin action
+    to keep audit trails clean and prevent privilege escalation."""
+    update = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None or v == 0}
+    # Years of experience can legitimately be 0; treat empty string as null.
+    if payload.years_of_experience is None:
+        update.pop("years_of_experience", None)
+    if not update:
+        raise HTTPException(400, "No fields to update")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
+    return {"ok": True, "updated_fields": list(update.keys())}
+
+
+@router.post("/me/change-password")
+async def change_my_password(payload: ChangePasswordPayload,
+                             user=Depends(get_current_user), db=Depends(get_db)):
+    """Self-service password change. Requires the *current* password so a
+    stolen JWT can't pivot into a permanent account takeover."""
+    udoc = await db.users.find_one({"user_id": user["user_id"]},
+                                   {"_id": 0, "password_hash": 1}) or {}
+    if not udoc.get("password_hash"):
+        raise HTTPException(400, "Password authentication isn't enabled on this account")
+    if not _verify_password(payload.current_password, udoc["password_hash"]):
+        raise HTTPException(401, "Current password is incorrect")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(400, "New password must be different from current password")
+
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "password_hash": hash_password(payload.new_password),
+            "must_change_password": False,    # admin-set temp password is now consumed
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, "$inc": {"token_version": 1}},     # invalidate other sessions
+    )
+    return {"ok": True}
+
+
+# ---------- Avatar upload (multipart) -----------------------------------------
+# Two upload paths supported:
+#   • multipart file POST  → /me/avatar (file=...)
+#   • base64 JSON          → /me/avatar/base64 (mirrors the signature pad)
+# A single GET returns the bytes; the GridFS id is stored on the user.
+
+@router.post("/me/avatar")
+async def upload_my_avatar(file: UploadFile = File(...),
+                           user=Depends(get_current_user), db=Depends(get_db)):
+    if file.content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+        raise HTTPException(400, "Only PNG, JPEG, or WebP images are accepted")
+    blob = await file.read()
+    if not blob:
+        raise HTTPException(400, "Empty file")
+    if len(blob) > _MAX_AVATAR_BYTES:
+        raise HTTPException(413, "Avatar image too large (max 2 MB)")
+
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AVATAR_BUCKET)
+    udoc = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "avatar_fs_id": 1}) or {}
+    if udoc.get("avatar_fs_id"):
+        try:
+            await bucket.delete(ObjectId(udoc["avatar_fs_id"]))
+        except Exception:
+            pass
+    fs_id = await bucket.upload_from_stream(
+        f"avatar-{user['user_id']}.{(file.filename or 'png').rsplit('.', 1)[-1].lower()}",
+        io.BytesIO(blob),
+        metadata={"user_id": user["user_id"], "kind": "user-avatar",
+                  "content_type": file.content_type},
+    )
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"avatar_fs_id": str(fs_id),
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"avatar_fs_id": str(fs_id)}
+
+
+@router.delete("/me/avatar")
+async def delete_my_avatar(user=Depends(get_current_user), db=Depends(get_db)):
+    udoc = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "avatar_fs_id": 1}) or {}
+    if udoc.get("avatar_fs_id"):
+        bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AVATAR_BUCKET)
+        try:
+            await bucket.delete(ObjectId(udoc["avatar_fs_id"]))
+        except Exception:
+            pass
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"avatar_fs_id": None,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
+
+
+@router.get("/users/{user_id}/avatar")
+async def fetch_user_avatar(user_id: str,
+                            user=Depends(get_current_user), db=Depends(get_db)):
+    """Same-tenant lookup. The avatar is small + non-sensitive so any logged-in
+    teammate can render it (e.g. on the appointment grid)."""
+    udoc = await db.users.find_one(
+        {"user_id": user_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "avatar_fs_id": 1},
+    )
+    if not udoc or not udoc.get("avatar_fs_id"):
+        raise HTTPException(404, "No avatar on file")
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AVATAR_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(udoc["avatar_fs_id"]))
+        data = await stream.read()
+        meta = stream.metadata or {}
+    except Exception:
+        raise HTTPException(404, "Avatar blob missing")
+    from fastapi.responses import Response
+    return Response(
+        content=data,
+        media_type=meta.get("content_type", "image/png"),
+        headers={"Cache-Control": "private, max-age=300"},
+    )

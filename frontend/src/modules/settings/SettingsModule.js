@@ -11,11 +11,12 @@
  */
 import React from 'react';
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom';
-import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload } from 'lucide-react';
+import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload, User } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
 import MySignatureTab from './MySignatureTab';
+import MyProfileTab from './MyProfileTab';
 import SecurityPrivacyTab from './SecurityPrivacyTab';
 import ConnectWhatsAppTab from './ConnectWhatsAppTab';
 import ClinicHoursTab from './ClinicHoursTab';
@@ -52,11 +53,12 @@ export default function SettingsModule() {
           <SideLink to="/settings/services" icon={<ListChecks size={14} />} label="Service Catalogue" testid="settings-nav-services" />
         )}
         {(isAdmin || canManageCatalog) && <div className="my-2 border-t border-slate-100" />}
-        <SideLink to="/settings/signature" icon={<Pen size={14} />} label="My Signature" testid="settings-nav-signature" />
+        <SideLink to="/settings/profile"   icon={<User size={14} />} label="My Profile"   testid="settings-nav-profile" />
+        <SideLink to="/settings/signature" icon={<Pen size={14} />}  label="My Signature" testid="settings-nav-signature" />
       </aside>
       <main className="flex-1 overflow-auto">
         <Routes>
-          <Route index element={<Navigate to={isAdmin ? 'clinic' : (canManageCatalog ? 'services' : 'signature')} replace />} />
+          <Route index element={<Navigate to={isAdmin ? 'clinic' : (canManageCatalog ? 'services' : 'profile')} replace />} />
           {isAdmin && <Route path="clinic"   element={<ClinicDetailsTab />} />}
           {isAdmin && <Route path="hours"    element={<ClinicHoursTab />} />}
           {isAdmin && <Route path="staff"    element={<StaffSettingsTab />} />}
@@ -66,6 +68,7 @@ export default function SettingsModule() {
           {isAdmin && <Route path="connect"  element={<ConnectWhatsAppTab />} />}
           {isAdmin && <Route path="import"   element={<DataImportTab />} />}
           {canManageCatalog && <Route path="services" element={<ServiceCatalogPage />} />}
+          <Route path="profile"   element={<MyProfileTab />} />
           <Route path="signature" element={<MySignatureTab />} />
         </Routes>
       </main>
