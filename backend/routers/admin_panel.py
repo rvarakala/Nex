@@ -715,18 +715,28 @@ class CreateTenantRequest(BaseModel):
     phone: Optional[str] = None
     tier: Literal["BASIC", "STANDARD", "PREMIUM"] = "STANDARD"
     trial_days: int = Field(default=30, ge=0, le=180)
+    # Direct-password mode — if provided, a fully-formed clinic_owner user
+    # is created with this password and NO invitation link is issued. Useful
+    # when the founder is on a phone call with the owner and wants them to
+    # log in immediately. Length mirrors the tenant-user endpoint (>=8).
+    initial_password: Optional[str] = Field(default=None, min_length=8, max_length=128)
 
 
 class TenantCreatedResponse(BaseModel):
     """Returned to the founder after a successful conversion / creation.
-    `accept_url` is the WhatsApp/email-shareable invite link."""
+    Either `accept_url` (invite flow) OR `direct_login_password` (direct-
+    password flow) will be populated — never both."""
     clinic_id: str
     clinic_name: str
     owner_email: str
-    accept_url: str
-    invite_token: str
-    invite_expires_at: datetime
+    accept_url: Optional[str] = None
+    invite_token: Optional[str] = None
+    invite_expires_at: Optional[datetime] = None
     converted_from_lead: bool = False
+    # Direct-password mode fields (only present when initial_password was set).
+    direct_login_password: Optional[str] = None
+    direct_login_name: Optional[str] = None
+    tier: Optional[str] = None
 
 
 async def _create_clinic_with_invite(
@@ -735,11 +745,13 @@ async def _create_clinic_with_invite(
     city: str, state: str, phone: str,
     tier: str, trial_days: int,
     converted_from_lead: bool = False, lead_email: Optional[str] = None,
+    initial_password: Optional[str] = None,
 ) -> TenantCreatedResponse:
     """Shared helper used by both 'Convert Lead' and 'Add Tenant'.
-    Creates clinic + primary branch + invitation token. NO user is created
-    here — the user is materialised when the invitee accepts the invite,
-    so the password is chosen by the new owner, never the founder."""
+    Creates clinic + primary branch. Then either (a) issues an invitation
+    link so the new owner sets their own password, or (b) when
+    `initial_password` is supplied, creates the clinic_owner user directly
+    with that password so they can sign in immediately — no invite dance."""
     import re
     import secrets
     from datetime import timedelta as _td
@@ -785,7 +797,57 @@ async def _create_clinic_with_invite(
         "created_at": now,
     }))
 
-    # ----- Mint invitation token -----
+    # ----- Branch: direct-password OR invite flow --------------------------
+    if initial_password:
+        # Create the clinic_owner user right now with the supplied password.
+        # No invitation row is minted — the owner can log in immediately.
+        from auth import hash_password as _hp
+        user_doc = {
+            "user_id": f"USR-{uuid.uuid4().hex[:8].upper()}",
+            "clinic_id": clinic_id,
+            "email": email,
+            "name": owner_name.strip(),
+            "role": "clinic_owner",
+            "active": True,
+            "two_fa_enabled": False,
+            "password_hash": _hp(initial_password),
+            "branch_ids": [branch_id],
+            "created_at": now.isoformat(),
+            "created_by": actor["user_id"],
+            "created_via": "admin_direct_tenant_create",
+        }
+        await db.users.insert_one(user_doc.copy())
+
+        # Update lead → converted (same audit trail as invite flow).
+        if converted_from_lead and lead_email:
+            await db.waitlist_signups.update_one(
+                {"email": lead_email.lower()},
+                {"$set": {
+                    "stage": "Converted",
+                    "converted_clinic_id": clinic_id,
+                    "converted_at": now,
+                    "converted_by": actor["user_id"],
+                    "updated_at": now.isoformat(),
+                }},
+            )
+        await _log_audit(
+            db, actor,
+            "tenant.create_direct_password" if not converted_from_lead else "lead.convert_direct_password",
+            clinic_id,
+            after={"email": email, "tier": tier, "lead_email": lead_email},
+            request=request,
+        )
+        return TenantCreatedResponse(
+            clinic_id=clinic_id,
+            clinic_name=clinic_name.strip(),
+            owner_email=email,
+            converted_from_lead=converted_from_lead,
+            direct_login_password=initial_password,
+            direct_login_name=owner_name.strip(),
+            tier=tier,
+        )
+
+    # ----- Invitation flow (default) ---------------------------------------
     token = secrets.token_urlsafe(32)
     expires_at = now + _td(days=INVITE_TTL_DAYS)
     invite_doc = {
@@ -833,6 +895,7 @@ async def _create_clinic_with_invite(
         invite_token=token,
         invite_expires_at=expires_at,
         converted_from_lead=converted_from_lead,
+        tier=tier,
     )
 
 
@@ -887,6 +950,7 @@ async def create_tenant_with_invite(
         tier=payload.tier,
         trial_days=payload.trial_days,
         converted_from_lead=False,
+        initial_password=payload.initial_password,
     )
 
 
