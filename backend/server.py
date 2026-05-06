@@ -323,6 +323,23 @@ async def lifespan(_app: FastAPI):
                 logging.getLogger(__name__).info("APScheduler job added: daily_greeting_scan_0900_ist (09:00 IST)")
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Greeting scan scheduler skipped: {e}")
+            # Hybrid PDF Storage retention sweep — 03:15 IST daily.
+            # Purges audiogram-report PDFs older than PDF_RETENTION_DAYS (default 30d)
+            # so the on-demand generator handles older fetches. Set PDF_RETENTION_DAYS=0
+            # to disable.
+            try:
+                from services.pdf_retention import purge_expired_session_reports
+                scheduler.add_job(
+                    purge_expired_session_reports,
+                    trigger=CronTrigger(hour=3, minute=15, timezone=IST),
+                    args=[db],
+                    id="pdf_retention_sweep_0315_ist",
+                    replace_existing=True,
+                    misfire_grace_time=3600,
+                )
+                logging.getLogger(__name__).info("APScheduler job added: pdf_retention_sweep_0315_ist (03:15 IST)")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"PDF retention sweeper skipped: {e}")
         except Exception as e:
             logging.getLogger(__name__).warning(f"FollowUp scheduler job skipped: {e}")
     except Exception as e:

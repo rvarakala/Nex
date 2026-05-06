@@ -664,6 +664,44 @@ async def resolve_incident(
     return deserialize_datetime(r)
 
 
+# ==================== HYBRID PDF STORAGE (P2) =========================
+# Stats + manual sweep trigger for the audiogram-report blob retention model.
+# Daily APScheduler job runs at 03:15 IST; admins can also force a sweep.
+
+@router.get("/system/storage")
+async def system_storage(
+    user=Depends(require_permission("system:read")),
+    db=Depends(get_db),
+):
+    from services.pdf_retention import gridfs_storage_stats
+    return await gridfs_storage_stats(db)
+
+
+@router.post("/system/storage/purge-pdfs")
+async def system_storage_purge(
+    request: Request,
+    payload: dict | None = None,
+    user=Depends(require_permission("system:read")),
+    db=Depends(get_db),
+):
+    """Force-run the audiogram-report retention sweep. Founders/super_admin
+    can override the configured retention with `?days=N` in the body.
+    """
+    from services.pdf_retention import purge_expired_session_reports
+    days = None
+    if isinstance(payload, dict) and "days" in payload:
+        try:
+            days = int(payload["days"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, detail="days must be an integer")
+    if days is not None and user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Only founder/super_admin may override retention window")
+    res = await purge_expired_session_reports(db, retention_days=days)
+    await _log_audit(db, user, "system.pdf_retention.purge", "session_reports",
+                     after=res, request=request)
+    return res
+
+
 # ==================== 10. MARKETING CRM (Phase 14B) ====================
 
 class CampaignCreate(BaseModel):

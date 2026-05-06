@@ -30,6 +30,8 @@ export default function SystemHealthPage() {
   const [dataHealth, setDataHealth] = useState(null);
   const [dhLoading, setDhLoading] = useState(false);
   const [pingState, setPingState] = useState({});  // {email: {busy, result}, sms: {...}, whatsapp: {...}}
+  const [storage, setStorage] = useState(null);
+  const [purging, setPurging] = useState(false);
 
   const load = async () => {
     const r = await axios.get(`${API}/admin/v2/system/health`);
@@ -42,7 +44,24 @@ export default function SystemHealthPage() {
       setDataHealth(r.data);
     } finally { setDhLoading(false); }
   };
-  useEffect(() => { load(); loadDataHealth(); }, [tick]);
+  const loadStorage = async () => {
+    try {
+      const r = await axios.get(`${API}/admin/v2/system/storage`);
+      setStorage(r.data);
+    } catch { /* permission-gated */ }
+  };
+  const purgePdfs = async () => {
+    if (!window.confirm('Run PDF retention sweep now? Blobs older than the configured window will be deleted.')) return;
+    setPurging(true);
+    try {
+      const r = await axios.post(`${API}/admin/v2/system/storage/purge-pdfs`, {});
+      await loadStorage();
+      window.alert(`Sweep complete. Purged ${r.data.purged}/${r.data.scanned}, freed ${(r.data.freed_bytes/1024).toFixed(1)} KB.`);
+    } catch (e) {
+      window.alert('Purge failed: ' + (e?.response?.data?.detail || e.message));
+    } finally { setPurging(false); }
+  };
+  useEffect(() => { load(); loadDataHealth(); loadStorage(); }, [tick]);
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 15000); return () => clearInterval(t); }, []);
 
   const resolve = async (id) => { await axios.post(`${API}/admin/v2/system/incidents/${id}/resolve`); load(); };
@@ -89,6 +108,9 @@ export default function SystemHealthPage() {
 
       {/* Data health probe */}
       <DataHealthCard data={dataHealth} loading={dhLoading} onRefresh={loadDataHealth} />
+
+      {/* Storage / Hybrid PDF Retention */}
+      <StorageCard data={storage} purging={purging} onPurge={purgePdfs} onRefresh={loadStorage} />
 
       {/* Incidents */}
       <Card
@@ -257,6 +279,74 @@ function DataHealthCard({ data, loading, onRefresh }) {
     </Card>
   );
 }
+
+// ---------- Storage / Hybrid PDF retention ----------
+function StorageCard({ data, purging, onPurge, onRefresh }) {
+  if (!data) return (
+    <Card title="Storage · Hybrid PDF Retention" testid="storage-card">
+      <div className="px-5 py-4 text-xs text-slate-400 italic">Loading storage stats…</div>
+    </Card>
+  );
+  const buckets = Object.entries(data.buckets || {});
+  const fmtMB = (b) => `${(b / 1024 / 1024).toFixed(2)} MB`;
+  const total = buckets.reduce((s, [, v]) => s + (v.total_bytes || 0), 0);
+  const swept = buckets.filter(([, v]) => v.swept).reduce((s, [, v]) => s + (v.total_bytes || 0), 0);
+
+  return (
+    <Card
+      title={`Storage · Hybrid PDF Retention (${data.retention_days}d)`}
+      subtitle="Audiogram-report PDFs are auto-purged after the retention window — on-demand generator handles older fetches"
+      testid="storage-card"
+      actions={
+        <div className="flex items-center gap-2">
+          <button onClick={onRefresh} className="px-2 py-1 text-[11px] font-semibold border border-slate-300 rounded inline-flex items-center gap-1" data-testid="storage-refresh">
+            <RefreshCw size={11} /> Refresh
+          </button>
+          <button
+            onClick={onPurge}
+            disabled={purging}
+            data-testid="storage-purge"
+            className={`px-2 py-1 text-[11px] font-semibold rounded inline-flex items-center gap-1 ${
+              purging ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                      : 'bg-amber-600 text-white hover:bg-amber-700'
+            }`}
+          >
+            {purging ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+            Purge expired PDFs
+          </button>
+        </div>
+      }
+    >
+      <div className="px-5 py-3 grid grid-cols-3 gap-3 text-xs border-b border-slate-100 bg-slate-50">
+        <div><div className="text-[10px] uppercase font-semibold text-slate-500">Total stored</div><div className="text-sm font-bold text-slate-900 tabular-nums">{fmtMB(total)}</div></div>
+        <div><div className="text-[10px] uppercase font-semibold text-slate-500">Eligible for sweep</div><div className="text-sm font-bold text-amber-700 tabular-nums">{fmtMB(swept)}</div></div>
+        <div><div className="text-[10px] uppercase font-semibold text-slate-500">Retention window</div><div className="text-sm font-bold text-slate-900 tabular-nums">{data.retention_days || 0} days</div></div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th className="px-4 py-2 text-left">Bucket</th>
+            <th className="px-4 py-2 text-right">Files</th>
+            <th className="px-4 py-2 text-right">Size</th>
+            <th className="px-4 py-2 text-left">Policy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {buckets.length === 0 && <tr><td colSpan={4}><Empty>No GridFS buckets found.</Empty></td></tr>}
+          {buckets.map(([name, v]) => (
+            <tr key={name} className="border-t border-slate-100" data-testid={`storage-row-${name}`}>
+              <td className="px-4 py-2 font-mono text-xs">{name}</td>
+              <td className="px-4 py-2 text-right tabular-nums">{v.count}</td>
+              <td className="px-4 py-2 text-right tabular-nums">{fmtMB(v.total_bytes || 0)}</td>
+              <td className="px-4 py-2"><Pill tone={v.swept ? 'amber' : 'slate'}>{v.swept ? `Auto-purge ${data.retention_days}d` : 'Permanent'}</Pill></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
 
 const IncidentForm = ({ onClose, onSaved }) => {
   const [f, setF] = useState({ title: '', severity: 'minor', summary: '' });
