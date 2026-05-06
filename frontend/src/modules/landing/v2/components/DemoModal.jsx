@@ -64,8 +64,25 @@ export default function DemoModal({ open, onClose, initialTier }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!form.contact_name.trim()) {
+      setError('Please enter your name.');
+      return;
+    }
+    if (!form.clinic_name.trim()) {
+      setError('Please enter your clinic name.');
+      return;
+    }
     if (!form.email.trim() || !/.+@.+\..+/.test(form.email)) {
       setError('Please enter a valid email address.');
+      return;
+    }
+    const phoneDigits = form.whatsapp.replace(/\D/g, '');
+    if (phoneDigits.length < 10) {
+      setError('Please enter a valid phone number (at least 10 digits).');
+      return;
+    }
+    if (!form.city.trim()) {
+      setError('Please enter your city.');
       return;
     }
     setSubmitting(true);
@@ -150,12 +167,12 @@ export default function DemoModal({ open, onClose, initialTier }) {
 
             <div className="mt-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Your name">
-                  <input data-testid="demo-input-name" value={form.contact_name} onChange={update('contact_name')} placeholder="Dr. Priya Nair"
+                <Field label="Your name" required>
+                  <input data-testid="demo-input-name" required value={form.contact_name} onChange={update('contact_name')} placeholder="Dr. Priya Nair"
                     className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#0B5FFF] focus:ring-2 focus:ring-[#0B5FFF]/15 transition" />
                 </Field>
-                <Field label="Clinic name">
-                  <input data-testid="demo-input-clinic" value={form.clinic_name} onChange={update('clinic_name')} placeholder="The Sound Clinic"
+                <Field label="Clinic name" required>
+                  <input data-testid="demo-input-clinic" required value={form.clinic_name} onChange={update('clinic_name')} placeholder="The Sound Clinic"
                     className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#0B5FFF] focus:ring-2 focus:ring-[#0B5FFF]/15 transition" />
                 </Field>
               </div>
@@ -164,12 +181,12 @@ export default function DemoModal({ open, onClose, initialTier }) {
                   className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#0B5FFF] focus:ring-2 focus:ring-[#0B5FFF]/15 transition" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="WhatsApp">
-                  <input data-testid="demo-input-whatsapp" value={form.whatsapp} onChange={update('whatsapp')} placeholder="+91 98xxxxxxxx"
+                <Field label="WhatsApp / Phone" required>
+                  <input data-testid="demo-input-whatsapp" required type="tel" value={form.whatsapp} onChange={update('whatsapp')} placeholder="+91 98xxxxxxxx"
                     className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#0B5FFF] focus:ring-2 focus:ring-[#0B5FFF]/15 transition" />
                 </Field>
-                <Field label="City">
-                  <input data-testid="demo-input-city" value={form.city} onChange={update('city')} placeholder="Bengaluru"
+                <Field label="City" required>
+                  <input data-testid="demo-input-city" required value={form.city} onChange={update('city')} placeholder="Bengaluru"
                     className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-[#0B5FFF] focus:ring-2 focus:ring-[#0B5FFF]/15 transition" />
                 </Field>
               </div>
