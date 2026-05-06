@@ -114,20 +114,23 @@ def _build_accept_url(request: Request, token: str) -> str:
     """Build the absolute URL the invitee will click.
 
     Order of precedence:
-      1. ``PUBLIC_APP_URL`` env var (set this on production to ``https://audinexa.com``).
-      2. If running on the production deployment host (``*.emergent.host``) → fall back to ``https://audinexa.com``.
+      1. **Production host detection** — if the request hits ``*.emergent.host``
+         or ``*.audinexa.com`` (the production deployment), always use
+         ``https://audinexa.com`` regardless of any other config.
+      2. ``PUBLIC_APP_URL`` env var (useful in preview / local dev).
       3. ``X-Forwarded-Proto`` + ``X-Forwarded-Host`` request headers.
-      4. The request's own scheme + host (last resort, often the internal ingress URL).
+      4. The request's own scheme + host (last resort).
     """
+    fwd_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").lower()
+    # Production host detection — emergent.host is the internal deployment
+    # hostname; audinexa.com is the public custom domain. Either way we always
+    # want public links to use the canonical custom domain.
+    if "emergent.host" in fwd_host or "audinexa.com" in fwd_host:
+        return f"https://audinexa.com/invite/{token}"
+
     base = (os.environ.get("PUBLIC_APP_URL") or "").strip().rstrip("/")
     if base:
         return f"{base}/invite/{token}"
-
-    fwd_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").lower()
-    # Production host fallback — emergent.host is the internal deployment hostname
-    # the K8s ingress uses; clients see audinexa.com publicly.
-    if "emergent.host" in fwd_host or "audinexa.com" in fwd_host:
-        return f"https://audinexa.com/invite/{token}"
 
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = fwd_host or request.url.netloc
