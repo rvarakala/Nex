@@ -10,6 +10,7 @@ GST invoice engine with:
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
 from datetime import datetime
+import logging
 import re
 
 from utils.ist import IST  # noqa: F401
@@ -294,6 +295,7 @@ async def create_invoice(payload: InvoiceCreate,
         session_id=resolved_session_id,
         lines=resolved_lines,
         notes=payload.notes,
+        linked_sale_no=payload.from_sale_no,
         created_by_user_id=user["user_id"],
     )
 
@@ -314,6 +316,32 @@ async def create_invoice(payload: InvoiceCreate,
     _sum_invoice(inv)
 
     await db.invoices.insert_one(_serialize(inv.model_dump()))
+
+    # If created from an HA sale, write the back-link into ha_sales so the
+    # auto-flip on payment can find the sale by invoice_no.
+    if payload.from_sale_no:
+        await db.ha_sales.update_one(
+            {"sale_no": payload.from_sale_no, "clinic_id": clinic_id},
+            {"$set": {"invoice_no": inv.invoice_no, "status": "invoiced"}},
+        )
+
+    # If this brand-new invoice is already fully paid (e.g. cash-in-hand at
+    # checkout via initial_payment), also auto-flip the linked HA sale.
+    if inv.status == "paid" and payload.from_sale_no:
+        try:
+            from routers.ha_sales import mark_sale_paid_internal
+            await mark_sale_paid_internal(
+                db, clinic_id, payload.from_sale_no,
+                actor_user_id=user["user_id"], invoice_no=inv.invoice_no,
+            )
+        except HTTPException as exc:
+            # Don't fail the invoice create — just log; admin can manually
+            # mark-paid later.
+            logging.getLogger(__name__).warning(
+                f"Auto-flip on invoice create skipped for sale "
+                f"{payload.from_sale_no}: {exc.detail}",
+            )
+
     return inv
 
 
@@ -397,6 +425,22 @@ async def add_payment(invoice_id: str, payload: PaymentCreate,
             "status": inv.status,
         })},
     )
+
+    # Auto-flip linked HA sale → paid (P2 Quote→Sale→Invoice→Paid one-click)
+    # Trigger only on the transition to fully-paid; idempotent if already paid.
+    was_paid_before = (inv_doc.get("status") == "paid")
+    linked_sale_no = inv.linked_sale_no or inv_doc.get("linked_sale_no")
+    if inv.status == "paid" and not was_paid_before and linked_sale_no:
+        try:
+            from routers.ha_sales import mark_sale_paid_internal
+            await mark_sale_paid_internal(
+                db, user["clinic_id"], linked_sale_no,
+                actor_user_id=user["user_id"], invoice_no=inv.invoice_no,
+            )
+        except HTTPException as exc:
+            logging.getLogger(__name__).warning(
+                f"Auto-flip on payment skipped for sale {linked_sale_no}: {exc.detail}",
+            )
     return inv
 
 

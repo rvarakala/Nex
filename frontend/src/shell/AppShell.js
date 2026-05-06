@@ -7,7 +7,7 @@ import {
   Menu, Search as SearchIcon, Settings, Database, LifeBuoy,
   Calendar, CalendarDays, BookOpen, RotateCcw, UserPlus, UserSquare2,
   Package, Tag, IndianRupee, Bell, MessageSquare, HelpCircle, ChevronDown,
-  TrendingUp,
+  TrendingUp, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -292,6 +292,8 @@ export default function AppShell({ children }) {
       items: [
         isOwnerOrAdmin &&
           { to: '/settings/clinic', Icon: Settings, label: 'Settings', testid: 'nav-settings' },
+        isOwnerOrAdmin &&
+          { to: '/settings/compliance', Icon: ShieldCheck, label: 'Compliance Pack', testid: 'nav-compliance' },
         ['clinic_owner', 'accounts', 'founder'].includes(user?.role) &&
           { to: '/data-export',     Icon: Database, label: 'Data Export', testid: 'nav-data-export' },
         user?.role === 'super_admin' &&

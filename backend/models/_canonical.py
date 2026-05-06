@@ -383,6 +383,7 @@ class Invoice(BaseModel):
     # Imported-via tag — populated when row created by /api/imports/patients/commit.
     imported_via: Optional[str] = None
     external_invoice_no: Optional[str] = None  # Original clinic bill # from CSV import
+    linked_sale_no: Optional[str] = None       # If invoice was generated from an HA sale.
 
 
 class InvoiceLineCreate(BaseModel):
@@ -412,6 +413,7 @@ class InvoiceCreate(BaseModel):
     patient_gstin: Optional[str] = None
     notes: Optional[str] = None
     initial_payment: Optional[PaymentCreate] = None              # Optional single-shot payment on create
+    from_sale_no: Optional[str] = None                           # If invoice was generated from an HA sale, link them.
 
 
 class ReportDelivery(BaseModel):

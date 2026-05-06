@@ -284,6 +284,7 @@ export default function CreateInvoicePage() {
         }),
         notes: notes || null,
         patient_gstin: patientGstin || null,
+        from_sale_no: fromSaleNo || null,
         initial_payment: payNow.enabled && payNow.amount
           ? { method: payNow.method, amount: Number(payNow.amount), reference: payNow.reference || null }
           : null,

@@ -400,12 +400,31 @@ async def mark_sale_paid(
     """Once the patient has paid the linked invoice, call this to transition
     every assigned serial RESERVED → SOLD and mark the sale 'paid'.
     Body: {invoice_no?: str}  — invoice_no is stored for the audit trail."""
+    return await mark_sale_paid_internal(
+        db, user["clinic_id"], sale_no,
+        actor_user_id=user["user_id"],
+        invoice_no=(payload or {}).get("invoice_no"),
+        verify_branch_access=user,
+    )
+
+
+async def mark_sale_paid_internal(
+    db, clinic_id: str, sale_no: str, *, actor_user_id: str,
+    invoice_no: Optional[str] = None, verify_branch_access: Optional[dict] = None,
+) -> dict:
+    """Reusable helper. Used by:
+      * the manual `/sales/{sale_no}/mark-paid` endpoint (front-desk button), and
+      * the **auto-flip** that fires from `billing.add_payment` when the linked
+        invoice transitions to `status='paid'` so the entire Quote→Sale→Invoice
+        →Paid funnel is one click for accounting.
+    Idempotent — calling on an already-paid sale returns `{already: True}`.
+    """
     sale = await db.ha_sales.find_one(
-        {"sale_no": sale_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
+        {"sale_no": sale_no, "clinic_id": clinic_id}, {"_id": 0},
     )
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
-    if not user_can_see_branch(user, sale["branch_id"]):
+    if verify_branch_access is not None and not user_can_see_branch(verify_branch_access, sale["branch_id"]):
         raise HTTPException(status_code=403, detail="Branch access denied")
     if sale["status"] == "paid":
         return {"sale_no": sale_no, "status": "paid", "already": True}
@@ -420,7 +439,7 @@ async def mark_sale_paid(
         if s["state"] == "RESERVED":
             await transition_serial(
                 db, sid, "SOLD",
-                actor_user_id=user["user_id"],
+                actor_user_id=actor_user_id,
                 ref_doc={"kind": "sale", "id": sale_no},
                 note=f"Sold via {sale_no}",
             )
@@ -433,21 +452,21 @@ async def mark_sale_paid(
             )
 
     upd = {"status": "paid"}
-    if payload.get("invoice_no"):
-        upd["invoice_no"] = payload["invoice_no"]
+    if invoice_no:
+        upd["invoice_no"] = invoice_no
     await db.ha_sales.update_one({"sale_no": sale_no}, {"$set": upd})
 
     # ---- Finalise linked trade-in: old serial RETURNED → RETIRED + status=applied
     if sale.get("trade_in_id"):
         ti = await db.ha_trade_ins.find_one(
-            {"clinic_id": user["clinic_id"], "trade_in_id": sale["trade_in_id"]},
+            {"clinic_id": clinic_id, "trade_in_id": sale["trade_in_id"]},
             {"_id": 0, "status": 1, "old_serial_id": 1},
         )
         if ti and ti["status"] == "accepted":
             try:
                 await transition_serial(
                     db, ti["old_serial_id"], "RETIRED",
-                    actor_user_id=user["user_id"],
+                    actor_user_id=actor_user_id,
                     ref_doc={"kind": "trade_in", "id": sale["trade_in_id"]},
                     note=f"Trade-in applied via paid sale {sale_no}",
                 )
@@ -456,7 +475,7 @@ async def mark_sale_paid(
                 pass
             now_iso = datetime.now(timezone.utc).isoformat()
             await db.ha_trade_ins.update_one(
-                {"clinic_id": user["clinic_id"], "trade_in_id": sale["trade_in_id"]},
+                {"clinic_id": clinic_id, "trade_in_id": sale["trade_in_id"]},
                 {"$set": {"status": "applied", "applied_at": now_iso,
                           "linked_sale_no": sale_no}},
             )

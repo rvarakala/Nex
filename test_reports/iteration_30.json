@@ -1,0 +1,40 @@
+{
+  "summary": "Iter30 — Task A (auto-flip linked HA Sale → 'paid' on invoice payment) + Task B (ISO 27001 / DPDP Policy Pack) end-to-end testing. Wrote /app/backend/tests/test_iter30_extras.py with 6 new tests covering: (1) regular invoice without from_sale_no still 200 (no linked_sale_no leak), (2) all 7 policies render fully substituted (no '{{' remaining) with valid PDFs (>1KB, %PDF- magic), (3) auth-required (401/403 unauthenticated), (4) 404 on unknown policy, (5) raw template gating (super_admin/clinic_owner allowed, front_desk forbidden), (6) trade-in flow end-to-end on auto-flip (ha_trade_ins.status='applied' + old serial RETIRED). Frontend Playwright run on /settings/compliance as admin@delhi.test verified compliance-page testid, all 7 policy buttons (data-testid=policy-{id}), 'Personalised for: Delhi Test Branch · DPO: Delhi Admin · Effective: 2026-05-06' banner, click navigation to 04_incident_response updates pane in-place, Download PDF button hits /api/legal/policies/{id}/pdf returning 200 application/pdf, and nav-compliance is highlighted active on /settings/compliance. Confirmed nav-compliance is HIDDEN from front_desk role. Full backend regression: 15/15 PASS (9 reference + 6 new).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_extras.py",
+    "/app/test_reports/pytest/iter30.xml",
+    "/app/test_reports/pytest/iter30_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OK — mark_sale_paid_internal idempotency guard (status=='paid' → returns {already: True}) verified; 2nd payment on a paid invoice does not 5xx (test_autoflip_via_payment).",
+    "OK — initial_payment branch in billing.create_invoice fully covers the cash-in-hand happy path; sale + serial flip atomically (test_autoflip_with_initial_payment).",
+    "OK — trade-in finalisation: ha_trade_ins.status transitions accepted→applied AND serial_items[old].state→RETIRED only when sale.trade_in_id was passed via SaleCreate. The HTTPException catch in mark_sale_paid_internal (lines 462-465) correctly tolerates already-RETIRED serials (manual admin path) but still flips the trade-in row.",
+    "OK — legal/policies endpoints: list (count=7, dpdp_aligned=true), render (no '{{' leftovers), pdf (application/pdf, >1KB, %PDF- magic), 404 unknown, auth-gated, raw template clinic_owner/super_admin only — front_desk receives 401/403.",
+    "Minor (not a bug) — GET /api/legal/policies/{id}/raw returns the field as `markdown_raw` (with `policy_id` + `placeholders` siblings), while GET /api/legal/policies/{id} returns it as `markdown` (with `title`, `code`, `context`). Frontend reader uses the rendered endpoint so this is fine — but the inconsistency could trip up future API consumers; consider standardising on `markdown` everywhere with a `raw: bool` flag in the response.",
+    "Minor (UX) — 'View PDF' button on CompliancePolicyPack.jsx opens the PDF in a new tab via the same /pdf endpoint that requires Bearer auth — confirmed working since axios attaches the cookie/token, but a hardlink without auth would 401. Not blocking.",
+    "OK — AppShell nav gating: Compliance Pack hidden from front_desk (verified by login + DOM check); shown + active-highlighted for super_admin/clinic_owner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_extras.py (new — 6 tests for Task A + Task B coverage)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 — 2 autoflip + 1 policy_pack + 6 iter30_extras + 6 prior regression)",
+    "frontend": "100% (compliance-page renders, 7 policy buttons, banner, markdown reader, click-nav, PDF download request, role-gated sidebar)"
+  },
+  "test_credentials": "admin@delhi.test / delhiadmin123 (super_admin@clinic-delhi-test) and frontdesk@delhi.test / delhifrontdesk123 (front_desk) — both verified.",
+  "seed_data_creation": "All test data uses TASKA-{RUN6} / TI-{RUN6} / PAT-AF{RUN6} prefixes (per agent_to_agent_context_note convention). Auto-cleanup in finally blocks per test — no persistent data, no email/SMS triggers.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app && set -a && source backend/.env && set +a && export REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL frontend/.env | cut -d= -f2) && python -m pytest backend/tests/test_iter30_extras.py backend/tests/test_autoflip_sale_paid.py backend/tests/test_policy_pack.py -v — runs in ~10s, fully self-cleaning. Trade-in test pattern: insert ha_trade_ins doc with status='accepted' BEFORE creating the sale, then pass trade_in_id in SaleCreate (NOT in a separate update) so the sale row carries trade_in_id; on auto-flip, mark_sale_paid_internal queries ha_trade_ins by sale.trade_in_id (NOT by sale_no) and writes status='applied' + applied_at + linked_sale_no. Frontend testids confirmed working: compliance-page, nav-compliance, policy-{01..07}_*, policy-markdown, compliance-context, download-pdf-btn.",
+  "rca of the issue": "No bugs surfaced — all 15 backend tests + 9 frontend assertions PASS on the preview environment. Implementation matches the Task A + Task B specs verbatim."
+}
