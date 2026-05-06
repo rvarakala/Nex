@@ -1,5 +1,40 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Auto-flip HA Sale + ISO 27001 / DPDP Policy Pack (2026-05-06)
+
+### Task A — Auto-flip linked HA Sale → 'paid' (P2)
+- New body field on `POST /api/billing/invoices`: `from_sale_no`. When set, backend writes `ha_sales.invoice_no` and flips sale `status='invoiced'`.
+- Refactored `mark_sale_paid` into reusable `mark_sale_paid_internal()` helper. Idempotent — already-paid sale returns `{already: true}`.
+- `add_payment` auto-fires the helper when invoice transitions to `status='paid'` AND has `linked_sale_no`. Also fires when an invoice is created with `initial_payment` covering full amount.
+- Trade-in finalisation auto-runs: linked trade-in → `status='applied'`, old serial → RETIRED.
+- Frontend `CreateInvoicePage.js` now sends `from_sale_no` in the create payload (already had `?from_sale=` URL hydration from iter25).
+
+### Task B — ISO 27001 / DPDP Policy Pack (P3)
+- 7 audit-ready policy templates at `/app/backend/docs/compliance/`:
+  ISP-01 Information Security · ACP-02 Access Control · DPP-03 Data Protection & Privacy · IRP-04 Incident Response · DRP-05 Data Retention & Deletion · VSR-06 Vendor / Sub-processor Register · BCP-07 Business Continuity & Backup.
+- New router `/app/backend/routers/legal.py` with `{{placeholder}}` substitution at render time (clinic_name, owner_name, dpo_name, dpo_email, branch_count, effective_date, etc.).
+- Endpoints (auth required):
+  - `GET /api/legal/policies` — catalogue list
+  - `GET /api/legal/policies/{id}` — rendered markdown + context
+  - `GET /api/legal/policies/{id}/pdf` — reportlab-rendered PDF download
+  - `GET /api/legal/policies/{id}/raw` — un-substituted template (founder/super_admin/clinic_owner only)
+- New page `/settings/compliance` with sidebar list + reader pane + 'Personalised for' banner + Download/View PDF buttons. Uses `react-markdown` 8.x.
+- New nav item `Compliance Pack` (testid=`nav-compliance`) under 'Other' group, ShieldCheck icon, role-gated to clinic_owner / super_admin.
+
+### Models updated
+- `Invoice` + `InvoiceCreate` in `/app/backend/models/_canonical.py` got `from_sale_no` and `linked_sale_no` fields.
+
+### Files
+- New: `/app/backend/routers/legal.py`, `/app/backend/docs/compliance/01-07_*.md`, `/app/frontend/src/modules/compliance/CompliancePolicyPack.jsx`, `/app/backend/tests/test_autoflip_sale_paid.py`, `/app/backend/tests/test_policy_pack.py`, `/app/backend/tests/test_iter30_extras.py`
+- Modified: `/app/backend/billing.py` (auto-flip on payment), `/app/backend/routers/ha_sales.py` (mark_sale_paid_internal), `/app/backend/models/_canonical.py`, `/app/backend/server.py` (router wiring), `/app/frontend/src/App.js` (route), `/app/frontend/src/shell/AppShell.js` (nav), `/app/frontend/src/modules/billing/CreateInvoicePage.js` (from_sale_no in payload), `/app/frontend/package.json` (react-markdown)
+
+### Testing — Iter30
+- 15/15 backend PASS (9 prior regression + 6 new)
+- 100% frontend verified (compliance page renders for clinic_owner, sidebar list of 7, click-nav works, banner shows clinic-specific values, PDF download button hits /pdf endpoint, nav-compliance hidden from front_desk)
+
+---
+
+
 ## ✅ HOTFIX — "Connection issue, retrying save" toast (2026-05-06)
 
 ### Symptom
