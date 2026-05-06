@@ -1,5 +1,46 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Phase A: Rich CSV Patient Import + Accounts Module (2026-05-06)
+
+### What ships
+**Patient Import (rewrite of /api/imports/patients/preview + /commit):**
+- New header aliases support the user's exact CSV: `S.NO, Date, Pt.Name, Age, Gender, Area, MR.NO, Ph.No, Bill.No, Tests, Diagnosis, Amount, Ref.Dr, Remarks` (DD-MM-YYYY dates).
+- **Minimum required**: Name + Mobile + (Age OR DOB). Everything else optional. Gender now optional (defaults to "Other").
+- **MR.NO policy** body param `mrd_policy: "keep"|"auto"`. Default `keep` → uses CSV value verbatim; `auto` → AUDINEXA's `ACS-YYYY-NNNNNN` sequence.
+- **Repeats = follow-ups, not duplicates**. Same MR.NO/mobile on a different date → reuses existing patient_id, just adds appointment + visit-note + invoice. Only same-patient + same-date + same-bill-no triplets are flagged as true duplicates.
+- **Per-row side-effects on commit**:
+  - `appointments` doc (status=`completed`, parsed visit_date, tests stored as recommended_tests, ref_dr in referred_by).
+  - `patient_notes` entry (visit log: tests + diagnosis + ref + amount + bill_no).
+  - `invoices` + `payments` if amount > 0 (uses bill_no as `external_invoice_no`, else auto-generated).
+  - `services` auto-created for unknown test tokens (e.g. PTA, IMP, VEMP) so revenue can attribute by test.
+  - `referring_doctors` auto-upserted per unique Ref.Dr.
+
+**New Accounts Module (NEW main-nav item):**
+- `/api/accounts/revenue?range=daily|weekly|monthly|quarterly|half_yearly|yearly|custom[&from=&to=]` — returns `{total, payment_count, unique_patients, invoice_count, timeseries[], by_method, by_referring_doctor[], by_test[]}`.
+- `/api/accounts/recent-payments?limit=N` — latest N payment rows.
+- New page `/accounts` with 7 range presets + custom date range, 4 KPIs, daily-revenue area chart, 3 breakdown cards (by ref-doctor / by test / by method), recent-payments table.
+
+**Import Wizard UI updates:**
+- Step 1 copy now lists required vs optional columns.
+- Step 3 has a clear MRD-policy toggle (Keep my numbering | AUDINEXA auto) and 5-tab tally (Total / New / Follow-ups / True duplicates / Errors).
+- Result block now shows 5 stats: New patients · Follow-ups · Appointments · Invoices · Revenue.
+
+### Files
+- New: `/app/backend/routers/accounts.py`, `/app/frontend/src/modules/accounts/AccountsRevenuePage.jsx`, `/app/backend/tests/test_rich_csv_import_and_accounts.py`, `/app/backend/tests/test_iter28_accounts_and_imports.py`
+- Modified: `/app/backend/routers/imports.py` (heavy rewrite), `/app/backend/server.py` (wire accounts router), `/app/frontend/src/App.js` (`/accounts` route), `/app/frontend/src/shell/AppShell.js` (Accounts nav group + TrendingUp icon), `/app/frontend/src/modules/settings/DataImportTab.jsx` (MRD toggle + 5-tab tally + rich result block + updated copy)
+
+### Testing
+- Reference test passes: 4 patients + 1 follow-up + 4 invoices + ₹8,900 revenue + correct by-test/by-doctor breakdown.
+- Tested with the user's actual 58-row CSV — 57 OK + 1 follow-up + 0 fail + 0 skip.
+- Testing agent iter28: **100% backend (19/19), 95% frontend** — no blockers. Optional a11y polish noted.
+
+### Phase B (deferred)
+- Color-coded preview rows in the import wizard (visual distinction between brand-new/follow-up/dup beyond the tally tabs).
+- Patient profile timeline visualisation (surfacing the visit_log as a chronological list on the patient drawer).
+
+---
+
+
 ## ✅ COMPLETED — Hybrid PDF Storage Model (P2) (2026-05-04)
 
 ### What ships
