@@ -19,11 +19,12 @@ Endpoints (mounted under /api by main):
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import uuid4
+import os
+import secrets
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 from typing import Annotated
-import secrets
 
 from auth import get_current_user, hash_password, create_access_token, require_roles
 from database import get_db
@@ -110,8 +111,16 @@ def _ensure_aware(dt):
 
 
 def _build_accept_url(request: Request, token: str) -> str:
-    """Build the absolute URL the invitee will click. Works behind reverse
-    proxy because we honour X-Forwarded-Proto / Host headers when present."""
+    """Build the absolute URL the invitee will click.
+
+    Order of precedence:
+      1. ``PUBLIC_APP_URL`` env var (set this on production to ``https://audinexa.com``).
+      2. ``X-Forwarded-Proto`` + ``X-Forwarded-Host`` request headers.
+      3. The request's own scheme + host (last resort, often the internal ingress URL).
+    """
+    base = (os.environ.get("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if base:
+        return f"{base}/invite/{token}"
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     return f"{proto}://{host}/invite/{token}"
