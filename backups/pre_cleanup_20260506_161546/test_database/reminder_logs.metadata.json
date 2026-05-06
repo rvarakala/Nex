@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"clinic_id":{"$numberInt":"1"},"sent_at":{"$numberInt":"-1"}},"name":"clinic_id_1_sent_at_-1"}],"uuid":"bd804e730533438a8f3007dfaeeda00c","collectionName":"reminder_logs","type":"collection"}

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"db89be118bd2456c81ed34797e98b29e","collectionName":"clinic_switch_audit","type":"collection"}

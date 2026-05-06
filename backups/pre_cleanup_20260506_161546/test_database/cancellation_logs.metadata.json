@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"clinic_id":{"$numberInt":"1"},"cancelled_at":{"$numberInt":"-1"}},"name":"clinic_id_1_cancelled_at_-1"}],"uuid":"e1bb05d3897c4451ab02108836d3fc15","collectionName":"cancellation_logs","type":"collection"}

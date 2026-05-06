@@ -1,5 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Demo / Test Data Cleanup Phase 1 (2026-05-06)
+
+### What ran
+- Backup: `mongodump` snapshot at `/app/backups/pre_cleanup_20260506_161546` (1.5 MB).
+- Script: `/app/backend/scripts/cleanup_demo_data.py --apply` (Phase 1 — junk only, keeps `clinic-acs-demo`).
+- Patterns expanded to also catch newer pytest/UI test pollution: `clinic-direct-test-clinic-`, `clinic-invite-test-clinic-`, `clinic-pytest-`, `clinic-ui-direct-clinic-`.
+- `KEEP_EXACT` extended with `clinic-acs-demo`, `clinic-sandbox-test-clinic-cef32c`, `tenant-ent-plus`.
+
+### Result
+- 9 junk clinics deleted (all pytest/UI direct-create test artifacts).
+- 39 documents purged across 6 collections (`branches`, `clinics`, `daily_closeouts`, `invitations`, `login_events`, `users`).
+- `DISABLE_DEMO_SEED=1` already in `/app/backend/.env` (no respawn on backend restart).
+- Surviving clinics (15): `audinexa-platform`, beta-01…beta-10, `clinic-delhi-test`, `clinic-sandbox-test-clinic-cef32c`, `tenant-ent-plus`, `tenant-sound-clinic-blr`.
+
+### Verified
+- Founder (`founder@audinexa.com`), Sandbox owner (`sandbox.demo@audinexademo.com`), Sound Clinic owner (`owner@thesoundclinic.in`) login OK after backend restart.
+
+### Side-note — `clinic-acs-demo` was already gone before this script ran
+DISABLE_DEMO_SEED=1 had been set previously, so the demo seed wasn't re-creating the ACS clinic. Pytest suites that reference `admin@acs.in` will need to either run against a local Mongo without this env var, or be migrated to founder credentials (P2 backlog).
+
+### Phase 2 (deferred)
+- Migrate the 30+ pytest files away from `admin@acs.in` so `clinic-acs-demo` can be permanently dropped from the seed.
+
+---
+
+
 ## ✅ COMPLETED — Auto-flip HA Sale + ISO 27001 / DPDP Policy Pack (2026-05-06)
 
 ### Task A — Auto-flip linked HA Sale → 'paid' (P2)

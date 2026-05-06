@@ -43,15 +43,19 @@ KEEP_EXACT = {
     "audinexa-platform",
     "clinic-delhi-test",
     "tenant-sound-clinic-blr",
+    "clinic-acs-demo",                       # Phase 1: keep — pytest suite reference
+    "clinic-sandbox-test-clinic-cef32c",     # User's sandbox tenant (test_credentials.md)
+    "tenant-ent-plus",                       # BASIC trial demo — keep until user decides
 }
 KEEP_PREFIX = ("beta-",)             # beta-01 … beta-10
 
 # Hard-coded "demo" tenants the user asked to drop:
+# Phase 1 (2026-05-06): KEEP clinic-acs-demo — pytest suite still references
+# admin@acs.in. Drop in Phase 2 once tests migrate to founder credentials.
 EXTRA_DELETE = {
     "tenant-kims-hearing",
     "tenant-apollo-audiology",
     "tenant-soundcare-hyd",
-    "clinic-acs-demo",
     "clinic-harmony-hearing-clinic-271f44",
 }
 
@@ -59,6 +63,10 @@ EXTRA_DELETE = {
 JUNK_PATTERNS = [
     re.compile(r"^clinic-test-clinic-"),
     re.compile(r"^clinic-smoke-clinic-"),
+    re.compile(r"^clinic-direct-test-clinic-"),
+    re.compile(r"^clinic-invite-test-clinic-"),
+    re.compile(r"^clinic-pytest-"),
+    re.compile(r"^clinic-ui-direct-clinic-"),
 ]
 
 # Collections holding tenant-scoped data via direct `clinic_id` field.

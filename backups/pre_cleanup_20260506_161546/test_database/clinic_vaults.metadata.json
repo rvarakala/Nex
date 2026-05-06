@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"clinic_id":{"$numberInt":"1"}},"name":"clinic_id_1","unique":true}],"uuid":"15da8c2cf9ea4a8a80f3f8b21f0806ec","collectionName":"clinic_vaults","type":"collection"}

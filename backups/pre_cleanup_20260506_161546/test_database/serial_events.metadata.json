@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"serial_id":{"$numberInt":"1"},"at":{"$numberInt":"-1"}},"name":"serial_id_1_at_-1"}],"uuid":"0f9b0a5382a14ef79597d32f400e012d","collectionName":"serial_events","type":"collection"}

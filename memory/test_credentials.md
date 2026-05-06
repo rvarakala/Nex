@@ -7,22 +7,17 @@ When this env var is set on the backend (recommended in production):
 - Override the founder password by setting `FOUNDER_PASSWORD=<strong-pass>` (also `FOUNDER_EMAIL=<email>` if needed).
 - Test credentials below apply to **dev / staging / preview** environments only (where `DISABLE_DEMO_SEED` is unset).
 
-## Default Clinic (Mumbai)
-- **clinic_id**: `clinic-acs-demo`
-- **name**: ACS Audiology Clinic
-- **city**: Mumbai / Maharashtra
-- **MRD prefix**: `ACS` (generates `ACS-YYYY-NNNNNN`)
+## ⚠️ DEPRECATED — Default Clinic (Mumbai) `clinic-acs-demo`
+- **Status (2026-05-06)**: NOT seeded in this environment (`DISABLE_DEMO_SEED=1`). The clinic + 4 users (`admin@acs.in`, `frontdesk@acs.in`, `audiologist@acs.in`, `accounts@acs.in`) are **gone** from preview/prod DB.
+- **For local pytest runs** that still reference `admin@acs.in`: spin up a local MongoDB without `DISABLE_DEMO_SEED` so `seeds/demo.py` re-creates the clinic.
+- **Migration plan (P2 backlog)**: rewrite the 30+ pytest files to use `founder@audinexa.com` or the sandbox tenant.
 
-## Demo Users (seeded automatically on backend startup)
-
-| Role | Email | Password |
+| Legacy Role | Email | Password |
 |---|---|---|
 | Super Admin | `admin@acs.in` | `admin123` |
 | Front Desk | `frontdesk@acs.in` | `frontdesk123` |
 | Audiologist | `audiologist@acs.in` | `audio123` |
 | Accounts | `accounts@acs.in` | `accounts123` |
-
-All four users are scoped to `clinic-acs-demo` + branch `Mumbai HQ` (primary). The seed is idempotent — passwords are re-synced to the above values on every backend restart.
 
 ### Expanded role enum (Phase 1 HA Foundation + Phase 13-14)
 Valid roles: `super_admin`, `clinic_owner`, `front_desk`, `audiologist`, `accounts`, `inventory_manager`, `technician`, `referral_partner`, `founder`. `super_admin` and `founder` bypass every `require_roles` + `require_tier` check.
