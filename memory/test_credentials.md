@@ -111,3 +111,15 @@ curl -s "$API/patients" -H "Authorization: Bearer $TOKEN"
 - Welcome email is auto-sent when founder creates a tenant via "Set password now" mode.
 
 
+
+## Sandbox Test Clinic (NEW — 2026-05-06)
+- **Login URL**: PREVIEW preview env `REACT_APP_BACKEND_URL` / PROD `https://audinexa.com/login`
+- **Email**: `sandbox.demo@audinexademo.com`
+- **Password**: `Sandbox@123`
+- **Role**: `clinic_owner`
+- **Tier**: `STANDARD` (30-day trial)
+- **clinic_id**: `clinic-sandbox-test-clinic-cef32c`
+- **City / State**: Bengaluru, Karnataka
+- **Phone**: `+919900110011`
+- **Created via**: `POST /api/admin/v2/tenants` (founder, set-password-now mode)
+- **Status**: Trial, ready for end-to-end testing of import + accounts + scheduling + billing flows.
