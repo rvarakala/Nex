@@ -1,5 +1,29 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ HOTFIX — "Connection issue, retrying save" toast (2026-05-06)
+
+### Symptom
+Users on stable internet repeatedly saw a toast: *"Connection issue — retrying save… (attempt 1 of 3)"* and saves felt sluggish. Reported on production (audinexa.com) AND preview.
+
+### Root cause
+Some legacy MongoDB documents store fields like `dob`, `warranty_end_date`, `expected_date`, `approved_at`, `updated_at` as native BSON `datetime` objects. The corresponding canonical Pydantic models declare these fields as `Optional[str]`. When FastAPI serialized the response via `response_model=`, it raised `ResponseValidationError` → endpoint returned **HTTP 500** → the global axios retry interceptor (`/app/frontend/src/connectivity/axiosRetry.js`) treated it as a transient infra error and showed the misleading "Connection issue" toast.
+
+The `deserialize_datetime` helper in `utils/serde.py` already had a `STRING_DATE_KEYS` set, but it only **skipped** parsing — it didn't **coerce** native datetime values back into strings.
+
+### Fix
+`/app/backend/utils/serde.py:deserialize_datetime` now actively coerces `datetime → ISO string` for any key in `STRING_DATE_KEYS`. Date-only fields (`dob`) collapse to `YYYY-MM-DD`; date-time fields (`updated_at`) keep full ISO. New docs (already string) pass through unchanged.
+
+### Verification
+- New regression test `/app/backend/tests/test_legacy_dt_serde_regression.py` seeds a patient with native `dob = datetime(1980, 1, 15)`, then asserts `GET /api/patients` and `GET /api/patients/{pid}` both return 200 with `dob` as a string.
+- Probed all previously-affected endpoints (`/patients`, `/ha/products`, `/ha/purchase-orders`, `/billing/invoices`, `/appointments`, `/accounts/revenue`) — all 200, **zero ResponseValidationError** in backend logs after fix.
+- All 6 prior backend test suites still PASS.
+
+### Production rollout
+Code-only fix in `utils/serde.py` (+ test). User redeploys the preview build to production via Emergent's deploy panel.
+
+---
+
+
 ## ✅ COMPLETED — Phase B (Excel import + Coloured rows + Patient Timeline) (2026-05-06)
 
 ### What ships

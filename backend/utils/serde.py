@@ -63,7 +63,27 @@ def deserialize_datetime(obj):
         "visit_date", "invoice_date",
     }
     if isinstance(obj, dict):
-        return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}
+        # For string-typed date keys, coerce native datetime values back to
+        # ISO strings so Pydantic models declaring `Optional[str]` accept the
+        # response. Legacy docs sometimes store BSON datetime even though the
+        # model expects a YYYY-MM-DD string — without this branch, FastAPI's
+        # `response_model=` validation raises ResponseValidationError and the
+        # endpoint returns HTTP 500 (the user sees a misleading "Connection
+        # issue" toast from the axios retry interceptor).
+        out = {}
+        for k, v in obj.items():
+            if k in STRING_DATE_KEYS:
+                if isinstance(v, datetime):
+                    # Date-only fields (dob etc.) → 'YYYY-MM-DD'.
+                    # Date-time fields (updated_at etc.) → full ISO.
+                    out[k] = (v.date().isoformat()
+                              if v.hour == 0 and v.minute == 0 and v.second == 0
+                              else v.isoformat())
+                else:
+                    out[k] = v
+            else:
+                out[k] = deserialize_datetime(v)
+        return out
     if isinstance(obj, list):
         return [deserialize_datetime(item) for item in obj]
     if isinstance(obj, str):
