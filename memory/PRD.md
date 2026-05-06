@@ -1,5 +1,40 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Phase B (Excel import + Coloured rows + Patient Timeline) (2026-05-06)
+
+### What ships
+**Excel (.xlsx) import**
+- POST /api/imports/patients/preview now accepts `.xlsx` in addition to `.csv` (auto-detects from filename).
+- Backend reads the first sheet via openpyxl 3.1.5, treats row 1 as headers, normalises numerics (whole-floats stripped) and datetimes (formatted to YYYY-MM-DD).
+- Rejects `.pdf` / `.txt` etc with HTTP 400.
+- Frontend file picker accepts both `.csv` and `.xlsx`; copy updated to "CSV or Excel (.xlsx)".
+
+**Colour-coded import preview rows**
+- Step 3 of the wizard now tints each row by status: 🟢 emerald (new patient), 🔵 blue + **OLD PATIENT** badge (follow-up of existing patient), 🟠 amber (true duplicate), 🌹 rose (validation error). Coloured left-border 4px on every row.
+- Table shows 3 new columns (Visit date, Tests, Amount) so the operator can sanity-check the parsed payload at a glance.
+- Each row carries `data-testid=preview-row-{N}` for automated testing.
+
+**Patient profile timeline visualisation**
+- Patient History tab now displays imported events with a blue **IMPORTED** badge next to the date.
+- Imported events sort by their original visit date (start_at / invoice_date / visit_date) — not the bulk-import time — so chronology reflects clinical reality.
+- Detail line surfaces tests, ref doctor, and diagnosis in one row for each imported visit.
+
+**Model + serde fixes (uncovered by testing agent)**
+- Added `imported_via: Optional[str]` to canonical `Appointment`, `Invoice`, `PatientNote` models. Was being stripped by `response_model=` filtering before.
+- Added `external_invoice_no: Optional[str]` to `Invoice` (preserves original clinic Bill.No).
+- Added `visit_date: Optional[str]` to `PatientNote` (visit date for imported note).
+- `utils/serde.py:STRING_DATE_KEYS` extended with `visit_date` + `invoice_date` to fix a 500 on GET /api/patient-notes when an imported note is in the result set.
+
+### Files
+- New: `/app/backend/tests/test_xlsx_import.py`, `/app/backend/tests/test_phase_b_xlsx_and_timeline.py`
+- Modified: `/app/backend/routers/imports.py` (xlsx parse branch), `/app/backend/models/_canonical.py` (imported_via on 3 models), `/app/backend/utils/serde.py` (date keys), `/app/backend/requirements.txt` (openpyxl, et_xmlfile), `/app/frontend/src/modules/settings/DataImportTab.jsx` (coloured rows + new columns + .xlsx accept), `/app/frontend/src/modules/patients/PatientProfilePage.jsx` (IMPORTED badge + visit-date sorting)
+
+### Testing
+- 26/26 backend PASS (5 new phase_b + 21 regression). Frontend visually verified — emerald/blue/rose tints, OLD PATIENT badge, IMPORTED badge on patient timeline (6 events for the demo patient).
+
+---
+
+
 ## ✅ COMPLETED — Phase A: Rich CSV Patient Import + Accounts Module (2026-05-06)
 
 ### What ships
