@@ -626,6 +626,14 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 
+# Non-prefixed /health for Kubernetes liveness/readiness probes.
+# Emergent's K8s probe hits 127.0.0.1:8001/health (no /api prefix) and a 404
+# would mark the pod unhealthy and fail the deployment.
+@app.get("/health")
+async def k8s_health_probe():
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
 # ==================== EXTRACTED → routers/ ==================== (== PATIENT ROUTES)
 # ==================== EXTRACTED → routers/ ==================== (== M01.B: APPOINTMEN)
 # ==================== EXTRACTED → routers/ ==================== (== TOKEN / QUEUE)
