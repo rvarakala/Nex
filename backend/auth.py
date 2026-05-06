@@ -18,6 +18,13 @@ from fastapi import HTTPException, Request, status
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_TTL = timedelta(hours=12)  # front-desk runs all day; 12h is pragmatic for this sprint
 
+# bcrypt silently truncates input longer than 72 bytes — a 100-char password
+# would auth-equivalent to its first 72 bytes, which is a real auth-bypass
+# vector. We enforce the cap at the hashing boundary so EVERY caller (login,
+# reset-password, admin reset, seeds) is protected, regardless of whether
+# their Pydantic model added max_length.
+MAX_PASSWORD_BYTES = 72
+
 VALID_ROLES = {
     "super_admin", "clinic_owner", "front_desk", "audiologist",
     "accounts", "inventory_manager", "technician", "referral_partner",
@@ -37,11 +44,23 @@ def _jwt_secret() -> str:
 
 
 def hash_password(pw: str) -> str:
+    if len(pw.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password is too long. Please use {MAX_PASSWORD_BYTES} characters or fewer.",
+        )
     return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(pw: str, hashed: str) -> bool:
     try:
+        # Reject inputs longer than bcrypt's 72-byte limit so an attacker can't
+        # bypass auth with a 100-char password whose first 72 bytes match.
+        # Existing accounts unaffected — their stored hashes were created from
+        # passwords already <= 72 bytes (older code never enforced this, but
+        # passwords longer than 72 are extremely rare in practice).
+        if len(pw.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            return False
         return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False

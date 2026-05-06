@@ -129,7 +129,7 @@ class ForgotPasswordIn(BaseModel):
 
 class ResetPasswordIn(BaseModel):
     token: str = Field(..., min_length=20, max_length=200)
-    new_password: str = Field(..., min_length=PASSWORD_MIN_LEN, max_length=200)
+    new_password: str = Field(..., min_length=PASSWORD_MIN_LEN, max_length=72)
 
 
 # ─── Endpoints ─────────────────────────────────────────────────────────

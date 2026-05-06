@@ -48,8 +48,8 @@ class User(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., max_length=320)        # RFC 5321 max email length
+    password: str = Field(..., min_length=1, max_length=72)  # bcrypt's hard limit
 
 
 # ==================== TOKEN + QUEUE (UC-01 front-desk) ====================
