@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import OpenInAppLink from '../connectivity/OpenInAppLink';
 
@@ -68,7 +68,16 @@ const roleHome = (role) => {
             />
           </div>
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Password</label>
+              <Link
+                to="/forgot-password"
+                data-testid="login-forgot-link"
+                className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}
@@ -91,6 +100,10 @@ const roleHome = (role) => {
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
+
+          <p className="text-center text-[11px] text-slate-500 pt-1" data-testid="login-forgot-username-hint">
+            Forgot your email? Ask your clinic owner — they can see staff emails in <i>Settings → Staff</i>.
+          </p>
         </form>
 
         <div className="text-center mt-4 text-[10px] text-slate-500 flex items-center justify-center gap-2">

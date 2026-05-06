@@ -43,6 +43,13 @@ async def lifespan(_app: FastAPI):
         await db.patients.create_index("patient_id", unique=True)
         await db.patients.create_index("mobile")
         await db.patients.create_index("updated_at")
+        # Password reset (self-serve forgot-password flow)
+        await db.password_reset_tokens.create_index("token_hash", unique=True)
+        await db.password_reset_tokens.create_index("user_id")
+        await db.password_reset_tokens.create_index(
+            "expires_at", expireAfterSeconds=86_400,  # 24h grace after expiry, then auto-purge
+        )
+        await db.auth_events.create_index([("user_id", 1), ("at", -1)])
         await db.referring_doctors.create_index("doctor_id", unique=True)
         await db.referring_doctors.create_index("name")
         await db.patient_notes.create_index("patient_id")
@@ -693,6 +700,7 @@ from routers import razorpay_payments as razorpay_router        # noqa: E402
 from routers import imports as imports_router                    # noqa: E402
 from routers import accounts as accounts_router                   # noqa: E402
 from routers import legal as legal_router                         # noqa: E402
+from routers import password_reset as password_reset_router       # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -743,6 +751,7 @@ app.include_router(razorpay_router.router)
 app.include_router(imports_router.router)
 app.include_router(accounts_router.router)
 app.include_router(legal_router.router)
+app.include_router(password_reset_router.router)
 
 # ---- CORS lockdown ----
 # Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins

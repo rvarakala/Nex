@@ -6,6 +6,8 @@ import { TestContextProvider } from './TestContext';
 import { ProtectedRoute } from './shell/ProtectedRoute';
 import AppShell from './shell/AppShell';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
 import LandingPage from './modules/landing/v2/LandingPage';
@@ -105,6 +107,8 @@ function AppRoutes() {
               <Route path="/" element={<LandingPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
               <Route path="/invite/:token" element={<InviteAcceptPage />} />
               <Route path="/queue/:clinicId" element={<QueueTVPage />} />
               <Route path="/patient-portal" element={<PatientPortal />} />
