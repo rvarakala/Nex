@@ -19,6 +19,7 @@ const STATUS_META = {
   ok:   { Icon: CheckCircle2, text: 'text-emerald-700', bg: 'bg-emerald-50',  ring: 'ring-emerald-200', label: 'Will create' },
   skip: { Icon: SkipForward,  text: 'text-amber-700',   bg: 'bg-amber-50',    ring: 'ring-amber-200',   label: 'Skip — duplicate' },
   fail: { Icon: AlertTriangle,text: 'text-rose-700',    bg: 'bg-rose-50',     ring: 'ring-rose-200',    label: 'Validation error' },
+  followup: { Icon: SkipForward, text: 'text-blue-700', bg: 'bg-blue-50', ring: 'ring-blue-200', label: 'Follow-up visit' },
 };
 
 export default function DataImportTab() {
@@ -28,8 +29,9 @@ export default function DataImportTab() {
   const [committing, setCommitting] = useState(false);
   const [preview, setPreview] = useState(null);   // { import_id, tally, rows }
   const [commitResult, setCommitResult] = useState(null); // { tally, failure_details }
-  const [filter, setFilter] = useState('all');    // all | ok | skip | fail
+  const [filter, setFilter] = useState('all');    // all | ok | skip | fail | followup
   const [history, setHistory] = useState([]);
+  const [mrdPolicy, setMrdPolicy] = useState('keep');  // 'keep' | 'auto'
 
   const loadHistory = async () => {
     try {
@@ -93,10 +95,13 @@ export default function DataImportTab() {
 
     setCommitting(true);
     try {
-      const r = await axios.post(`${API}/imports/patients/commit`, { import_id: preview.import_id });
+      const r = await axios.post(`${API}/imports/patients/commit`, {
+        import_id: preview.import_id,
+        mrd_policy: mrdPolicy,
+      });
       setCommitResult(r.data);
       const t = r.data.tally || {};
-      toast.success(`Imported ${t.created || 0} patients (${t.skipped || 0} skipped, ${t.failed || 0} failed).`);
+      toast.success(`Imported ${t.created || 0} new patients · ${t.followups || 0} follow-ups · ${t.invoices || 0} invoices · ₹${(t.revenue||0).toLocaleString('en-IN')}`);
       loadHistory();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Import failed');
@@ -127,21 +132,30 @@ export default function DataImportTab() {
         </h1>
         <p className="text-sm text-slate-500 mt-1">
           Migrate your existing patient records to AUDINEXA. Upload a CSV, preview the parse, then confirm.
-          Mobile / MRD duplicates are skipped automatically.
+          Repeat patients on different visit dates are auto-saved as <b className="text-blue-700">follow-up visits</b>; their tests, diagnosis, amount and referring doctor are added to history.
         </p>
       </header>
 
       {/* Step 1 — Download template */}
       <Step number={1} title="Download the CSV template">
+        <p className="text-[13px] text-slate-600 mb-2">
+          <b>Required:</b> <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">name</code>,
+          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">age</code> or <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">dob</code>,
+          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">mobile</code>.
+        </p>
         <p className="text-[13px] text-slate-600 mb-3">
-          Required columns: <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">name</code>,
-          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">age</code> or
-          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">dob</code>,
-          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">gender</code>,
-          and at least one of {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">mobile</code> /
-          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">email</code>.
-          Existing MRDs from your old system are preserved if provided in the
-          {' '}<code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">existing_mrd</code> column.
+          <b>Optional (auto-mapped):</b> <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">gender</code>,
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">MR.NO</code> /
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">existing_mrd</code>,
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">date</code> /
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">visit_date</code> (DD-MM-YYYY → creates an appointment),
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">tests</code> (e.g. <i>PTA+IMP+VEMP</i>),
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">diagnosis</code>,
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">amount</code> (creates an invoice + payment),
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">bill_no</code>,
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">ref_dr</code> (auto-creates referring doctor),
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">area</code>,
+          {' '}<code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">remarks</code>.
         </p>
         <button
           type="button"
@@ -195,7 +209,7 @@ export default function DataImportTab() {
       {/* Step 3 — Preview & Commit */}
       {preview && !commitResult && (
         <Step number={3} title="Preview & confirm">
-          <TallyStrip tally={preview.tally} filter={filter} setFilter={setFilter} />
+          <TallyStrip tally={preview.tally} filter={filter} setFilter={setFilter} rows={preview.rows} />
           <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
             <div className="max-h-96 overflow-auto">
               <table className="w-full text-[12.5px]">
@@ -239,36 +253,72 @@ export default function DataImportTab() {
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-[12px] text-slate-500">
-              Preview expires {new Date(preview.expires_at).toLocaleString()} — re-upload after that.
-            </p>
+          <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[260px]">
+              <label className="text-[11px] uppercase font-semibold text-slate-500 block mb-1">Medical Record Number policy</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  data-testid="mrd-policy-keep"
+                  onClick={() => setMrdPolicy('keep')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-semibold rounded-lg border transition-all ${
+                    mrdPolicy === 'keep'
+                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  Keep my numbering
+                  <div className="text-[10px] font-normal mt-0.5 opacity-90">Use the MR.NO column from your CSV verbatim</div>
+                </button>
+                <button
+                  type="button"
+                  data-testid="mrd-policy-auto"
+                  onClick={() => setMrdPolicy('auto')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-semibold rounded-lg border transition-all ${
+                    mrdPolicy === 'auto'
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  Use AUDINEXA auto-numbering
+                  <div className="text-[10px] font-normal mt-0.5 opacity-90">Generate fresh ACS-YYYY-NNNNNN ids</div>
+                </button>
+              </div>
+            </div>
             <button
               type="button"
               onClick={handleCommit}
               disabled={committing || preview.tally.will_create === 0}
               data-testid="import-commit-btn"
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors shadow-sm"
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors shadow-sm self-end"
             >
               {committing ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              Import {preview.tally.will_create} patient{preview.tally.will_create === 1 ? '' : 's'}
+              Import {preview.tally.will_create} row{preview.tally.will_create === 1 ? '' : 's'}
             </button>
           </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            Preview expires {new Date(preview.expires_at).toLocaleString()} — re-upload after that. Repeat patients (same MR.NO / mobile on a different date) will be saved as <b className="text-blue-700">follow-up visits</b>, not duplicates.
+          </p>
         </Step>
       )}
 
       {/* Result */}
       {commitResult && (
         <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-5" data-testid="import-result">
-          <div className="flex items-center gap-2 text-emerald-800 font-bold mb-1">
+          <div className="flex items-center gap-2 text-emerald-800 font-bold mb-2">
             <CheckCircle2 size={18} />
             Import complete
           </div>
-          <p className="text-[13px] text-emerald-900">
-            <b>{commitResult.tally?.created || 0}</b> patient{commitResult.tally?.created === 1 ? '' : 's'} created
-            {' '}· <b>{commitResult.tally?.skipped || 0}</b> skipped (duplicates)
-            {' '}· <b>{commitResult.tally?.failed || 0}</b> failed.
-          </p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
+            <ResultStat label="New patients" value={commitResult.tally?.created || 0} tone="emerald" />
+            <ResultStat label="Follow-ups" value={commitResult.tally?.followups || 0} tone="blue" />
+            <ResultStat label="Appointments" value={commitResult.tally?.appointments || 0} tone="indigo" />
+            <ResultStat label="Invoices" value={commitResult.tally?.invoices || 0} tone="amber" />
+            <ResultStat label="Revenue" value={`₹${(commitResult.tally?.revenue || 0).toLocaleString('en-IN')}`} tone="fuchsia" />
+          </div>
+          {commitResult.tally?.failed > 0 && (
+            <p className="text-[12px] text-rose-700 mb-2"><b>{commitResult.tally.failed}</b> rows failed:</p>
+          )}
           {commitResult.failure_details?.length > 0 && (
             <ul className="mt-2 text-[12px] text-rose-700 list-disc pl-5">
               {commitResult.failure_details.map((f, i) => (
@@ -337,15 +387,17 @@ function Step({ number, title, children }) {
   );
 }
 
-function TallyStrip({ tally, filter, setFilter }) {
+function TallyStrip({ tally, filter, setFilter, rows = [] }) {
+  const followupCount = rows.filter((r) => r.status === 'followup').length;
   const items = [
     { key: 'all',  label: 'Total',       value: tally.total,       color: 'text-slate-700' },
-    { key: 'ok',   label: 'Will create', value: tally.will_create, color: 'text-emerald-700' },
-    { key: 'skip', label: 'Skip (dupes)',value: tally.will_skip,   color: 'text-amber-700' },
+    { key: 'ok',   label: 'New patient', value: tally.will_create - followupCount, color: 'text-emerald-700' },
+    { key: 'followup', label: 'Follow-ups', value: followupCount,  color: 'text-blue-700' },
+    { key: 'skip', label: 'True duplicates', value: tally.will_skip, color: 'text-amber-700' },
     { key: 'fail', label: 'Errors',      value: tally.will_fail,   color: 'text-rose-700' },
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       {items.map((it) => (
         <button
           key={it.key}
@@ -360,6 +412,22 @@ function TallyStrip({ tally, filter, setFilter }) {
           <div className={`text-2xl font-black ${it.color}`}>{it.value}</div>
         </button>
       ))}
+    </div>
+  );
+}
+
+function ResultStat({ label, value, tone = 'emerald' }) {
+  const tones = {
+    emerald: 'bg-emerald-100 text-emerald-900 border-emerald-200',
+    blue: 'bg-blue-100 text-blue-900 border-blue-200',
+    indigo: 'bg-indigo-100 text-indigo-900 border-indigo-200',
+    amber: 'bg-amber-100 text-amber-900 border-amber-200',
+    fuchsia: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200',
+  };
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${tones[tone] || tones.emerald}`}>
+      <div className="text-[10px] uppercase tracking-wider opacity-70 font-bold">{label}</div>
+      <div className="text-xl font-black mt-0.5 truncate" title={String(value)}>{value}</div>
     </div>
   );
 }

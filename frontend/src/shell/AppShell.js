@@ -7,6 +7,7 @@ import {
   Menu, Search as SearchIcon, Settings, Database, LifeBuoy,
   Calendar, CalendarDays, BookOpen, RotateCcw, UserPlus, UserSquare2,
   Package, Tag, IndianRupee, Bell, MessageSquare, HelpCircle, ChevronDown,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -272,6 +273,12 @@ export default function AppShell({ children }) {
       items: [
         { to: '/billing',         Icon: Receipt,      label: 'Invoices',          testid: 'nav-billing' },
         { to: '/billing/payments', Icon: IndianRupee, label: 'Payments & Refunds', testid: 'nav-payments' },
+      ].filter(Boolean),
+    },
+    !isAudio && {
+      label: 'Accounts',
+      items: [
+        { to: '/accounts',         Icon: TrendingUp, label: 'Revenue Dashboard', testid: 'nav-accounts-revenue' },
       ].filter(Boolean),
     },
     !isAudio && m('analytics') && {

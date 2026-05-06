@@ -18,7 +18,7 @@ import csv
 import io
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -40,19 +40,37 @@ TEMPLATE_HEADERS = [
     "dob", "email", "alternate_mobile", "address", "city",
     "state", "pincode", "occupation", "chief_complaint",
     "referral_source", "notes",
+    # Visit-level fields (rich-import flow): one row = one visit.
+    "visit_date", "bill_no", "tests", "diagnosis", "amount", "referring_doctor",
 ]
 
 HEADER_ALIASES = {
-    "patient_name": "name", "full_name": "name",
+    # Patient core
+    "patient_name": "name", "full_name": "name", "pt_name": "name", "pt._name": "name", "pt_._name": "name",
     "phone": "mobile", "phone_number": "mobile", "mobile_number": "mobile",
+    "ph_no": "mobile", "ph._no": "mobile", "ph_._no": "mobile",
     "sex": "gender",
     "mrd": "existing_mrd", "mrn": "existing_mrd", "old_mrd": "existing_mrd", "patient_id": "existing_mrd",
+    "mr_no": "existing_mrd", "mr._no": "existing_mrd", "mr_._no": "existing_mrd",
     "date_of_birth": "dob", "birth_date": "dob",
     "alt_mobile": "alternate_mobile", "secondary_phone": "alternate_mobile",
-    "address1": "address", "street_address": "address",
+    "address1": "address", "street_address": "address", "area": "address",
     "zip": "pincode", "zipcode": "pincode", "postal_code": "pincode",
     "complaint": "chief_complaint",
     "source": "referral_source", "lead_source": "referral_source",
+    "remarks": "notes",
+    # Visit / billing
+    "date": "visit_date", "visit": "visit_date", "appointment_date": "visit_date",
+    "bill": "bill_no", "bill_number": "bill_no", "invoice_no": "bill_no", "invoice_number": "bill_no",
+    "bill._no": "bill_no", "bill_._no": "bill_no",
+    "test": "tests", "tests_performed": "tests", "test_performed": "tests", "investigation": "tests", "procedure": "tests",
+    "dx": "diagnosis", "impression": "diagnosis", "findings": "diagnosis",
+    "amt": "amount", "fee": "amount", "charges": "amount", "total_paid": "amount", "paid_amount": "amount",
+    "ref_dr": "referring_doctor", "ref._dr": "referring_doctor", "ref_._dr": "referring_doctor",
+    "referring_dr": "referring_doctor", "referring_physician": "referring_doctor",
+    "referral_doctor": "referring_doctor", "doctor": "referring_doctor", "physician": "referring_doctor",
+    # Index column we just drop
+    "s.no": "_drop", "s_no": "_drop", "s._no": "_drop", "sl_no": "_drop", "sno": "_drop",
 }
 
 GENDER_MAP = {
@@ -68,7 +86,15 @@ PREVIEW_TTL_HOURS = 2  # Stored preview blobs are pruned after this.
 # ---------- helpers --------------------------------------------------------
 
 def _normalise_header(h: str) -> str:
-    h = (h or "").strip().lower().replace(" ", "_").replace("-", "_")
+    h = (h or "").strip().lower()
+    # Replace common separators with underscore so "Pt.Name", "Pt Name", "Pt-Name"
+    # and "Pt_Name" all collapse to "pt_name".
+    for ch in (" ", "-", ".", "/"):
+        h = h.replace(ch, "_")
+    # Collapse multiple underscores
+    while "__" in h:
+        h = h.replace("__", "_")
+    h = h.strip("_")
     return HEADER_ALIASES.get(h, h)
 
 
@@ -134,6 +160,30 @@ def _parse_dob(value: str) -> Optional[str]:
     return None
 
 
+def _parse_amount(value) -> float:
+    """Permissive ₹ / float / "1,250.00" parser. Negatives / NaN → 0."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        s = str(value).strip().replace(",", "").replace("\u20b9", "").replace("Rs.", "").replace("INR", "")
+        s = re.sub(r"[^\d.\-]", "", s)
+        if not s or s in ("-", "."):
+            return 0.0
+        n = float(s)
+        return max(0.0, n)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _split_tests(raw: str) -> list[str]:
+    """Tests column may be 'PTA+IMP', 'PTA, IMP, VEMP', or just 'PTA'.
+    Returns a list of clean uppercase tokens (e.g. ['PTA', 'IMP', 'VEMP'])."""
+    if not raw:
+        return []
+    s = str(raw).replace(",", "+").replace("/", "+").replace("&", "+").replace(";", "+")
+    return [t.strip().upper() for t in s.split("+") if t.strip()]
+
+
 async def _next_mrd(db, clinic_id: str, mrd_prefix: str) -> str:
     """Mirror of patients.py — same counter, so generated MRDs slot into the
     clinic's existing sequence."""
@@ -163,12 +213,14 @@ async def download_patients_template(
         "1962-04-12", "asha@example.com", "", "12 Marine Drive", "Mumbai",
         "Maharashtra", "400001", "Retired Teacher", "Reduced hearing both ears",
         "Walk-in", "Long-term patient since 2019",
+        "01-04-2026", "BILL-A-001", "PTA+IMP", "Bil. Mild SNHL", "2500", "Internal Medicine",
     ])
     writer.writerow([
         "Rahul Singh", "34", "Male", "9123456780", "",
         "", "", "", "", "Bengaluru",
         "Karnataka", "560001", "Software Engineer", "",
         "Doctor", "",
+        "02-04-2026", "", "PTA", "Mild HF SNHL", "1500", "Dr. Mehta",
     ])
     buf.seek(0)
     return StreamingResponse(
@@ -248,6 +300,7 @@ async def preview_patients(
     parsed_for_commit: list[dict] = []
     seen_mobiles_in_file: set[str] = set()
     seen_mrds_in_file: set[str] = set()
+    seen_visit_keys: set[str] = set()  # NEW: detects same-patient-same-day-same-bill TRUE dupes
     counts = {"will_create": 0, "will_skip": 0, "will_fail": 0}
 
     for idx, raw_row in enumerate(reader, start=2):  # Start at 2 — row 1 is header.
@@ -257,8 +310,9 @@ async def preview_patients(
                 f"Files larger than {MAX_ROWS} rows aren't supported in a single upload — please split.",
             )
 
-        # Re-key row using canonical headers.
+        # Re-key row using canonical headers, drop columns aliased to "_drop" (e.g. S.NO).
         row = {header_map.get(k, k): (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items()}
+        row.pop("_drop", None)
         # Treat fully-blank lines as a soft EOF (Excel often appends them).
         if not any((v or "").strip() for v in row.values() if isinstance(v, str)):
             continue
@@ -269,29 +323,49 @@ async def preview_patients(
             errors.append("Name is required")
 
         gender = _parse_gender(row.get("gender", ""))
+        # Gender is now optional — many import sources don't capture it.
         if not gender:
-            errors.append("Gender must be Male / Female / Other")
+            gender = None  # stored as None on the patient
 
         dob = _parse_dob(row.get("dob", ""))
         age = _parse_age(row.get("age", ""), dob)
         if age is None:
-            errors.append("Age (or DOB in YYYY-MM-DD) is required")
+            errors.append("Age (or DOB in YYYY-MM-DD / DD-MM-YYYY) is required")
 
         mobile = _normalise_mobile(row.get("mobile", ""))
         email = _validate_email(row.get("email", ""))
-        if not mobile and not email:
-            errors.append("At least one contact (mobile or email) is required")
+        if not mobile:
+            errors.append("Mobile / phone number is required")
 
         existing_mrd = (row.get("existing_mrd") or "").strip().upper() or None
 
+        # Visit-level fields (rich import — one row = one visit).
+        visit_date = _parse_dob(row.get("visit_date", ""))   # reuses date parser
+        bill_no = (row.get("bill_no") or "").strip() or None
+        tests_raw = (row.get("tests") or "").strip()
+        tests_list = _split_tests(tests_raw)
+        diagnosis = (row.get("diagnosis") or "").strip() or None
+        amount = _parse_amount(row.get("amount"))
+        ref_dr = (row.get("referring_doctor") or "").strip() or None
+
         # Duplicate detection — within file + against DB.
+        # NEW SEMANTICS: a repeating MR.NO/mobile is treated as a FOLLOW-UP visit,
+        # not a duplicate, **unless** the same (mrd OR mobile) + visit_date +
+        # bill_no triplet is already present in this file (true duplicate row).
+        is_followup = False
         dup_reason = None
         if existing_mrd:
             if existing_mrd in existing_mrds or existing_mrd in seen_mrds_in_file:
-                dup_reason = f"MRD {existing_mrd} already exists"
-        if not dup_reason and mobile:
+                is_followup = True
+        if mobile and not is_followup:
             if mobile in existing_mobiles or mobile in seen_mobiles_in_file:
-                dup_reason = f"Mobile {mobile} already exists"
+                is_followup = True
+        # In-file true-duplicate guard: same patient + same date + same bill_no
+        in_file_key = None
+        if visit_date and bill_no and (existing_mrd or mobile):
+            in_file_key = f"{existing_mrd or mobile}|{visit_date}|{bill_no}"
+            if in_file_key in seen_visit_keys:
+                dup_reason = f"Same patient + {visit_date} + bill {bill_no} already in this file"
 
         if errors:
             status = "fail"
@@ -301,23 +375,29 @@ async def preview_patients(
             counts["will_skip"] += 1
             errors = [dup_reason]
         else:
-            status = "ok"
+            status = "followup" if is_followup else "ok"
             counts["will_create"] += 1
             if mobile:
                 seen_mobiles_in_file.add(mobile)
             if existing_mrd:
                 seen_mrds_in_file.add(existing_mrd)
+            if in_file_key:
+                seen_visit_keys.add(in_file_key)
 
         rows_out.append({
             "row_num": idx,
             "name": name or "(missing)",
             "mobile": mobile or "",
             "mrd": existing_mrd or "",
+            "visit_date": visit_date,
+            "tests": tests_list,
+            "amount": amount,
+            "ref_dr": ref_dr,
             "status": status,
             "errors": errors,
         })
 
-        if status == "ok":
+        if status in ("ok", "followup"):
             parsed_for_commit.append({
                 "name": name,
                 "age": age,
@@ -335,6 +415,14 @@ async def preview_patients(
                 "referral_source": row.get("referral_source") or None,
                 "notes": row.get("notes") or None,
                 "existing_mrd": existing_mrd,
+                # Visit fields (consumed during commit, not stored on patient doc)
+                "_visit_date": visit_date,
+                "_bill_no": bill_no,
+                "_tests": tests_list,
+                "_diagnosis": diagnosis,
+                "_amount": amount,
+                "_ref_dr": ref_dr,
+                "_is_followup": is_followup,
             })
 
     if not rows_out:
@@ -371,10 +459,26 @@ async def commit_patients(
     user=Depends(require_roles("clinic_owner", "super_admin")),
     db=Depends(get_db),
 ):
-    """Commits a previously-previewed CSV by import_id. Idempotent — if the
-    job is already committed, a second call returns the original tally without
-    duplicate inserts."""
+    """Commits a previously-previewed CSV by import_id.
+
+    Side-effects per row (NEW — rich import flow):
+      * Patient: insert if new, else reuse existing (matched by MR.NO or mobile).
+      * Appointment: created on visit_date if present (status=completed).
+      * Visit note: PatientNote with tests + diagnosis appended.
+      * Invoice + Payment: created if amount > 0. Uses bill_no as `external_invoice_no`,
+        else auto-generated. Unknown tests auto-create a generic Service entry.
+      * Referring doctor: upserted in `referring_doctors` if Ref.Dr column was provided.
+      * MRD policy: `mrd_policy` body param ("keep" | "auto"). Default "keep" — uses the
+        clinic's own MR.NO from the CSV verbatim. "auto" → falls through to AUDINEXA's
+        sequence generator.
+
+    Idempotent on re-call — committed jobs return their original tally without
+    re-inserting.
+    """
     import_id = (payload or {}).get("import_id")
+    mrd_policy = (payload or {}).get("mrd_policy", "keep").strip().lower()
+    if mrd_policy not in ("keep", "auto"):
+        mrd_policy = "keep"
     if not import_id:
         raise HTTPException(400, "import_id is required")
 
@@ -393,32 +497,312 @@ async def commit_patients(
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0}) or {}
     mrd_prefix = clinic.get("mrd_prefix", "ACS")
 
+    # Pre-load all patients in the clinic for fast follow-up matching (mrd / mobile).
+    patient_by_mrd: dict[str, dict] = {}
+    patient_by_mobile: dict[str, dict] = {}
+    async for p in db.patients.find(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "patient_id": 1, "mrd": 1, "mobile": 1, "name": 1},
+    ):
+        if p.get("mrd"):
+            patient_by_mrd[str(p["mrd"]).strip().upper()] = p
+        if p.get("mobile"):
+            patient_by_mobile[_normalise_mobile(p["mobile"]) or ""] = p
+
+    # Cache services + ref-docs created during this commit so we don't re-create them.
+    services_cache: dict[str, dict] = {}        # token → service doc
+    referring_cache: dict[str, str] = {}        # name lower → doctor_id
+
+    async def _resolve_service(token: str, fallback_price: float) -> dict:
+        """Find or auto-create a Service for an imported test token (e.g. 'PTA')."""
+        key = token.upper()
+        if key in services_cache:
+            return services_cache[key]
+        existing = await db.services.find_one(
+            {"clinic_id": user["clinic_id"],
+             "$or": [{"code": {"$regex": f"^{re.escape(key)}$", "$options": "i"}},
+                     {"name": {"$regex": f"^{re.escape(key)}$", "$options": "i"}}]},
+            {"_id": 0},
+        )
+        if existing:
+            services_cache[key] = existing
+            return existing
+        # Auto-create a minimal service so revenue can attribute by test.
+        from uuid import uuid4
+        svc = {
+            "service_id": f"SVC-{str(uuid4())[:8].upper()}",
+            "clinic_id": user["clinic_id"],
+            "code": key,
+            "name": key,
+            "category": "Audiology",
+            "price": round(fallback_price, 2),
+            "gst_rate": 0.0,
+            "gst_inclusive": True,
+            "is_taxable": False,
+            "active": True,
+            "auto_created_via": "import",
+            "created_at": datetime.utcnow(),
+        }
+        await db.services.insert_one(serialize_datetime(dict(svc)))
+        services_cache[key] = svc
+        return svc
+
+    async def _resolve_ref_doctor(name: str) -> Optional[str]:
+        """Find or auto-create a referring doctor for the import's Ref.Dr column."""
+        clean = name.strip()
+        if not clean:
+            return None
+        key = clean.lower()
+        if key in referring_cache:
+            return referring_cache[key]
+        existing = await db.referring_doctors.find_one(
+            {"clinic_id": user["clinic_id"],
+             "name": {"$regex": f"^{re.escape(clean)}$", "$options": "i"}},
+            {"_id": 0, "doctor_id": 1},
+        )
+        if existing:
+            referring_cache[key] = existing["doctor_id"]
+            return existing["doctor_id"]
+        from uuid import uuid4
+        did = f"DR-{str(uuid4())[:8].upper()}"
+        await db.referring_doctors.insert_one(serialize_datetime({
+            "doctor_id": did,
+            "clinic_id": user["clinic_id"],
+            "name": clean,
+            "specialty": None,
+            "auto_created_via": "import",
+            "created_at": datetime.utcnow(),
+        }))
+        referring_cache[key] = did
+        return did
+
     created = 0
+    followups = 0
+    appointments_created = 0
+    invoices_created = 0
+    payments_total = 0.0
     failed = 0
     failure_details: list[dict] = []
-    docs_to_insert: list[dict] = []
 
     for r in job.get("rows", []):
         try:
             existing_mrd = r.pop("existing_mrd", None)
-            mrd = existing_mrd if existing_mrd else await _next_mrd(db, user["clinic_id"], mrd_prefix)
-            patient_obj = Patient(
-                **r,
-                clinic_id=user["clinic_id"],
-                mrd=mrd,
-            )
-            doc = serialize_datetime(patient_obj.model_dump())
-            docs_to_insert.append(doc)
-            created += 1
+            visit_date = r.pop("_visit_date", None)
+            bill_no = r.pop("_bill_no", None)
+            tests_list = r.pop("_tests", []) or []
+            diagnosis = r.pop("_diagnosis", None)
+            amount = float(r.pop("_amount", 0) or 0)
+            ref_dr = r.pop("_ref_dr", None)
+            r.pop("_is_followup", None)
+
+            # Resolve patient: existing or new
+            existing_pat = None
+            if existing_mrd and existing_mrd in patient_by_mrd:
+                existing_pat = patient_by_mrd[existing_mrd]
+            elif r.get("mobile"):
+                existing_pat = patient_by_mobile.get(r["mobile"])
+
+            if existing_pat:
+                patient_id = existing_pat["patient_id"]
+                patient_mrd = existing_pat.get("mrd") or existing_mrd
+                patient_name = existing_pat.get("name") or r["name"]
+                followups += 1
+            else:
+                # Apply MRD policy
+                if mrd_policy == "keep" and existing_mrd:
+                    mrd_to_assign = existing_mrd
+                else:
+                    mrd_to_assign = await _next_mrd(db, user["clinic_id"], mrd_prefix)
+                # Patient model requires gender + age non-null. Default missing gender to "Other".
+                pat_kwargs = {k: v for k, v in r.items() if not k.startswith("_")}
+                if not pat_kwargs.get("gender"):
+                    pat_kwargs["gender"] = "Other"
+                pat_kwargs["referring_physician"] = ref_dr or pat_kwargs.get("chief_complaint") and None
+                ref_doctor_id = await _resolve_ref_doctor(ref_dr) if ref_dr else None
+                if ref_doctor_id:
+                    pat_kwargs["referring_doctor_id"] = ref_doctor_id
+                if ref_dr:
+                    pat_kwargs["referring_physician"] = ref_dr
+                patient_obj = Patient(
+                    **pat_kwargs,
+                    clinic_id=user["clinic_id"],
+                    mrd=mrd_to_assign,
+                )
+                doc = serialize_datetime(patient_obj.model_dump())
+                await db.patients.insert_one(dict(doc))   # copy so Mongo's _id mutation doesn't leak
+                patient_id = patient_obj.patient_id
+                patient_mrd = mrd_to_assign
+                patient_name = patient_obj.name
+                # Cache so later rows in the same import treat them as follow-ups.
+                if mrd_to_assign:
+                    patient_by_mrd[str(mrd_to_assign).strip().upper()] = {
+                        "patient_id": patient_id, "mrd": mrd_to_assign,
+                        "mobile": r.get("mobile"), "name": patient_name,
+                    }
+                if r.get("mobile"):
+                    patient_by_mobile[r["mobile"]] = {
+                        "patient_id": patient_id, "mrd": mrd_to_assign,
+                        "mobile": r.get("mobile"), "name": patient_name,
+                    }
+                created += 1
+
+            # Side effects: appointment / invoice / visit-note, all keyed on visit_date.
+            if visit_date or tests_list or diagnosis or amount > 0:
+                from uuid import uuid4
+                visit_dt = None
+                if visit_date:
+                    try:
+                        visit_dt = datetime.strptime(visit_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        visit_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
+                else:
+                    visit_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+                # Appointment
+                ref_doctor_id = await _resolve_ref_doctor(ref_dr) if ref_dr else None
+                apt_id = f"APT-{str(uuid4())[:10].upper()}"
+                await db.appointments.insert_one(serialize_datetime({
+                    "appointment_id": apt_id,
+                    "clinic_id": user["clinic_id"],
+                    "patient_id": patient_id,
+                    "patient_name": patient_name,
+                    "patient_mobile": r.get("mobile"),
+                    "mrd": patient_mrd,
+                    "counterparty_type": "patient",
+                    "counterparty_name": patient_name,
+                    "counterparty_phone": r.get("mobile"),
+                    "service": " + ".join(tests_list) if tests_list else None,
+                    "category": "diagnostic" if tests_list else "consultation",
+                    "priority": "normal",
+                    "visit_type": "referral" if ref_dr else "walkin",
+                    "recommended_tests": tests_list,
+                    "referred_by": ref_dr,
+                    "start_at": visit_dt,
+                    "end_at": visit_dt + timedelta(minutes=30),
+                    "duration_minutes": 30,
+                    "status": "completed",
+                    "notes": diagnosis,
+                    "created_at": datetime.utcnow(),
+                    "created_by_user_id": user["user_id"],
+                    "imported_via": import_id,
+                }))
+                appointments_created += 1
+
+                # Visit note (tests + diagnosis go into patient timeline)
+                summary_bits = []
+                if tests_list:
+                    summary_bits.append("Tests: " + ", ".join(tests_list))
+                if diagnosis:
+                    summary_bits.append("Diagnosis: " + diagnosis)
+                if ref_dr:
+                    summary_bits.append("Ref: " + ref_dr)
+                if amount > 0:
+                    summary_bits.append(f"Paid ₹{amount:.0f}")
+                if bill_no:
+                    summary_bits.append(f"Bill {bill_no}")
+                if summary_bits:
+                    await db.patient_notes.insert_one(serialize_datetime({
+                        "note_id": f"NOTE-{str(uuid4())[:10].upper()}",
+                        "patient_id": patient_id,
+                        "audiologist": None,
+                        "text": " · ".join(summary_bits),
+                        "auto": True,
+                        "imported_via": import_id,
+                        "visit_date": visit_date,
+                        "created_at": visit_dt,
+                    }))
+
+                # Invoice + Payment if amount > 0
+                if amount > 0:
+                    # Distribute amount evenly across tests for service-level revenue attribution.
+                    tcount = max(1, len(tests_list))
+                    per_test_price = round(amount / tcount, 2)
+                    inv_lines = []
+                    for t in (tests_list or ["CONSULT"]):
+                        svc = await _resolve_service(t, per_test_price)
+                        inv_lines.append({
+                            "line_id": str(uuid4())[:8],
+                            "service_id": svc["service_id"],
+                            "description": svc["name"],
+                            "quantity": 1,
+                            "unit_price": per_test_price,
+                            "discount_amount": 0.0,
+                            "discount_type": "flat",
+                            "discount_value": 0.0,
+                            "is_taxable": False,
+                            "gst_rate": 0.0,
+                            "taxable_value": per_test_price,
+                            "cgst_amount": 0.0, "sgst_amount": 0.0, "igst_amount": 0.0,
+                            "line_total": per_test_price,
+                        })
+                    invoice_no = bill_no or f"IMP/{visit_date or datetime.utcnow().strftime('%Y-%m-%d')}/{str(uuid4())[:6].upper()}"
+                    invoice_id = f"INV-{str(uuid4())[:10].upper()}"
+                    payment_id = f"PAY-{str(uuid4())[:8].upper()}"
+                    inv_doc = {
+                        "invoice_id": invoice_id,
+                        "clinic_id": user["clinic_id"],
+                        "invoice_no": invoice_no,
+                        "external_invoice_no": bill_no,            # original clinic bill #
+                        "patient_id": patient_id,
+                        "patient_name": patient_name,
+                        "patient_mobile": r.get("mobile"),
+                        "mrd": patient_mrd,
+                        "appointment_id": apt_id,
+                        "invoice_date": visit_dt,
+                        "lines": inv_lines,
+                        "subtotal": amount, "discount_total": 0.0,
+                        "cgst_total": 0.0, "sgst_total": 0.0, "igst_total": 0.0, "tax_total": 0.0,
+                        "grand_total": amount, "rounded_total": round(amount), "round_off": round(amount) - amount,
+                        "paid_total": amount, "due_total": 0.0,
+                        "status": "paid",
+                        "payments": [{
+                            "payment_id": payment_id,
+                            "clinic_id": user["clinic_id"],
+                            "invoice_id": invoice_id,
+                            "method": "cash",
+                            "amount": amount,
+                            "reference": bill_no,
+                            "paid_at": visit_dt,
+                            "received_by_user_id": user["user_id"],
+                            "notes": "Imported from CSV",
+                        }],
+                        "notes": diagnosis,
+                        "created_at": datetime.utcnow(),
+                        "created_by_user_id": user["user_id"],
+                        "imported_via": import_id,
+                    }
+                    await db.invoices.insert_one(serialize_datetime(dict(inv_doc)))
+                    # Also write a top-level payment row so revenue aggregation picks it up.
+                    await db.payments.insert_one(serialize_datetime({
+                        "payment_id": payment_id,
+                        "clinic_id": user["clinic_id"],
+                        "invoice_id": invoice_id,
+                        "method": "cash",
+                        "amount": amount,
+                        "reference": bill_no,
+                        "paid_at": visit_dt,
+                        "received_by_user_id": user["user_id"],
+                        "notes": "Imported from CSV",
+                        "imported_via": import_id,
+                        "tests": tests_list,
+                        "referring_doctor_id": ref_doctor_id,
+                        "referring_doctor_name": ref_dr,
+                        "patient_id": patient_id,
+                        "visit_date": visit_date,
+                    }))
+                    invoices_created += 1
+                    payments_total += amount
+
         except Exception as exc:
             failed += 1
             failure_details.append({"row": r.get("name"), "error": str(exc)})
 
-    if docs_to_insert:
-        await db.patients.insert_many(docs_to_insert)
-
     commit_tally = {
         "created": created,
+        "followups": followups,
+        "appointments": appointments_created,
+        "invoices": invoices_created,
+        "revenue": round(payments_total, 2),
         "failed": failed,
         "skipped": job.get("tally", {}).get("will_skip", 0),
     }
@@ -429,6 +813,7 @@ async def commit_patients(
             "status": "committed",
             "committed_at": datetime.utcnow(),
             "committed_by": user["user_id"],
+            "mrd_policy": mrd_policy,
             "commit_tally": commit_tally,
             "failure_details": failure_details,
         })},

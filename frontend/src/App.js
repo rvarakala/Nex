@@ -11,6 +11,7 @@ import QueueTVPage from './pages/QueueTVPage';
 import LandingPage from './modules/landing/v2/LandingPage';
 import SignupPage from './modules/landing/SignupPage';
 import BillingModule from './modules/billing/BillingModule';
+import AccountsRevenuePage from './modules/accounts/AccountsRevenuePage';
 import TestProceduresModule from './modules/test/TestProceduresModule';
 import HAModule from './modules/ha/HAModule';
 import RepairModule from './modules/repair/RepairModule';
@@ -132,6 +133,9 @@ function AppRoutes() {
                 <ShelledRoute><AppointmentsCalendarPage /></ShelledRoute>
               } />
               <Route path="/billing/*" element={<ShelledRoute><BillingModule /></ShelledRoute>} />
+              <Route path="/accounts" element={
+                <ShelledRoute><AccountsRevenuePage /></ShelledRoute>
+              } />
               <Route path="/test/*" element={
                 <ShelledRoute><ModuleGate module="diagnostics"><TestProceduresModule /></ModuleGate></ShelledRoute>
               } />
