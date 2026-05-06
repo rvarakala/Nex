@@ -56,9 +56,23 @@ def has_permission(user_role: str, action: str) -> bool:
     return action in allowed
 
 
+# The internal AUDINEXA tenant (founder + internal team). Tenant-level admins
+# (e.g. a clinic's super_admin) must NEVER get access to /api/admin/v2/* —
+# every dep here enforces both role + platform-clinic membership.
+PLATFORM_CLINIC_ID = "audinexa-platform"
+
+
 def require_permission(action: str):
-    """Dependency — verifies caller has ACTION under ROLE_PERMISSIONS."""
+    """Dependency — verifies caller has ACTION under ROLE_PERMISSIONS AND is
+    a member of the AUDINEXA platform tenant. The latter blocks tenant-level
+    super_admins from reaching the founder admin panel."""
     async def _dep(user=Depends(get_current_user)):
+        # Hard fence: must be on the platform clinic.
+        if user.get("clinic_id") != PLATFORM_CLINIC_ID:
+            raise HTTPException(
+                status_code=403,
+                detail="AUDINEXA admin panel is restricted to platform staff",
+            )
         if user["role"] in ("founder", "super_admin"):
             return user
         if not has_permission(user["role"], action):

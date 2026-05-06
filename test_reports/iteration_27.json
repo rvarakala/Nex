@@ -1,0 +1,49 @@
+{
+  "summary": "Iter27 — RETEST of platform-fence RBAC fix in utils/rbac.py:require_permission(). The new check `user.clinic_id == 'audinexa-platform'` correctly blocks tenant-level super_admins from /api/admin/v2/* while leaving founder + audinexa-platform sub-roles (read_only, support_agent, etc.) untouched and tenant-app endpoints unaffected. Created /app/backend/tests/test_iter27_platform_fence.py with 20 parametrized cases covering the entire spec: tenant-admin 403 on storage GET/purge/dashboard/audit-logs (with platform-staff message), founder 200 on storage + purge default + purge {days:7}, support_agent 403 on days override, read-only analyst 200 on dashboard/system-health/audit-logs/storage, and confirmation that admin@delhi.test still has full access to /api/auth/login, /api/auth/me, /api/patients, /api/billing/invoices. Re-ran the entire iter26 suite (11/11 PASS — the 2 previously failing tenant-admin tests are now GREEN) plus test_pdf_retention.py (1/1 PASS). Note: backend has 10/min login rate limit, so combined runs need a 60s sleep between files; using module-scoped fixtures in iter27 keeps logins to 4 total.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/v2/system/storage/purge-pdfs",
+        "issue": "Endpoint signature uses `payload: dict | None = None` (carry-over from iter26). FastAPI will skip Pydantic validation; works today but is brittle. Suggest a small `PurgeReq(BaseModel)` with optional days:int. Non-blocking."
+      },
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "10 req/min login rate-limit causes 429s when running multiple test files back-to-back. Tests should re-use tokens via session-scoped fixtures. Not a code bug — test-runner concern only."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_platform_fence.py",
+    "/app/backend/tests/test_iter26_pdf_storage_endpoints.py",
+    "/app/backend/tests/test_pdf_retention.py",
+    "/app/test_reports/pytest/iter27_platform_fence.xml",
+    "/app/test_reports/pytest/iter26_retest.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "utils/rbac.py:require_permission() fix is clean and minimal — single hard fence at the top of the dependency, runs before role/permission check, returns 403 with the exact spec message 'AUDINEXA admin panel is restricted to platform staff'. PLATFORM_CLINIC_ID is module-level constant ('audinexa-platform') — good practice.",
+    "The fence is enforced INSIDE require_permission() so it covers every /admin/v2/* endpoint that uses Depends(require_permission(...)). Verified by hitting /system/storage, /system/storage/purge-pdfs, /dashboard, and /audit-logs as admin@delhi.test — all return 403 with the platform-fence message.",
+    "Sub-role permissions still resolve correctly: read_only analyst can hit dashboard/system/health/audit-logs/storage (system:read in matrix); support_agent gets 403 only on the days-override path inside admin_panel_b.py, not on the fence itself.",
+    "No regression on tenant-app surface: admin@delhi.test still 200 on /auth/login, /auth/me, /patients, /billing/invoices. The fence is correctly scoped to the admin panel router only.",
+    "Note: review request used path '/admin/v2/audit/logs' but the actual route is '/admin/v2/audit-logs' (hyphen, not slash). Tests adjusted accordingly. Main agent may want to confirm this is the intended URL shape."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter27_platform_fence.py (new — 20 cases covering the platform-fence spec)"
+  ],
+  "success_rate": {
+    "backend": "100% (32/32 across iter27 + iter26 + pdf_retention)",
+    "frontend": "n/a (backend-only retest)"
+  },
+  "test_credentials": "Same as test_credentials.md — founder@audinexa.com/founder123, support@audinexa.com/support123, analyst@audinexa.com/analyst123, admin@delhi.test/delhiadmin123. All four logins verified working.",
+  "seed_data_creation": "None — pure RBAC retest. test_pdf_retention.py still seeds + cleans 2 GridFS blobs in its own scope.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `cd /app && python -m pytest backend/tests/test_iter27_platform_fence.py backend/tests/test_iter26_pdf_storage_endpoints.py backend/tests/test_pdf_retention.py -v` BUT add `sleep 60` between files due to 10/min login rate limit. iter27 file uses scope='module' fixtures so it only logs in 4 times total. The platform-fence is now bulletproof for /admin/v2/* — if a new admin endpoint is added, it just needs to use Depends(require_permission(...)) and the fence applies automatically. Audit-logs path is `/audit-logs` (hyphen), not `/audit/logs` as worded in some review requests.",
+  "rca of the issue": "FIXED. Previous iter26 RCA: utils/rbac.py:require_permission() short-circuited any user with role in {founder, super_admin} regardless of clinic_id. Mitigation applied at lines 71-75: hard fence `if user.get('clinic_id') != PLATFORM_CLINIC_ID: raise HTTPException(403, 'AUDINEXA admin panel is restricted to platform staff')` runs BEFORE the role bypass, so tenant super_admins are blocked even before role lookup. Verified via 4 dedicated 403 tests (storage GET, purge POST, dashboard GET, audit-logs GET) — all return 403 with the exact platform-fence message. The fence does NOT touch tenant-app endpoints (auth, patients, billing) which use a different auth dependency."
+}
