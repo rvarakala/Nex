@@ -1,0 +1,44 @@
+{
+  "summary": "Iter29 - AUDINEXA Phase B (.xlsx import + colour-coded preview rows + Patient timeline IMPORTED badge). Authored /app/backend/tests/test_phase_b_xlsx_and_timeline.py (5 tests) covering xlsx preview/commit, .pdf/.txt rejection (400), and verification that imported_via surfaces on GET /appointments, /billing/invoices and /patient-notes (was None before per Phase B item #4). Found and FIXED a critical 500 bug on GET /api/patient-notes when patient has imported notes — root cause and fix detailed below. After fix: 5/5 phase_b + 21/21 regression = 26/26 backend PASS. Frontend visually verified via Playwright + screenshot: emerald/blue/rose row tints, 'OLD PATIENT' badge on follow-up, all 5 new columns (Visit date, Tests, Amount, Status, Notes) rendering, commit toast 'Parsed 3 rows - 2 ready, 0 duplicates, 1 errors' shown.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/imports/patients/preview", "issue": "Status enum returned for new rows is 'ok' (not 'new' as Phase B description suggested). Front-end correctly maps both via STATUS_META lookup, but worth normalising the API contract docs to {ok|followup|skip|fail} so testers don't hit the same surprise."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_b_xlsx_and_timeline.py",
+    "/app/test_reports/pytest/iter29_phase_b.xml",
+    "/app/test_reports/pytest/iter29_full_regression.xml"
+  ],
+  "action_items": [
+    "(Optional) Document the import preview row.status enum in OpenAPI: {ok, followup, skip, fail}.",
+    "(Optional) Audit other Optional[str] date-like fields on Pydantic models to ensure they're listed in utils/serde.py:STRING_DATE_KEYS — pattern is fragile (silent 500s on first GET that happens to read such a field)."
+  ],
+  "critical_code_review_comments": [
+    "BUG (FIXED) — utils/serde.py:deserialize_datetime had no entry for 'visit_date' or 'invoice_date'. The new PatientNote.visit_date / Invoice.invoice_date fields are typed Optional[str] (YYYY-MM-DD), but deserialize_datetime parsed the stored ISO string into a datetime, causing FastAPI ResponseValidationError (500) on GET /api/patient-notes for any patient with imported notes. Root cause: utils/serde.py only excludes a hand-curated set; new string-typed dates must be added there or their first read will 500. Mitigation applied: added 'visit_date' + 'invoice_date' to STRING_DATE_KEYS. Same class of bug will recur every time a new Optional[str] date field is added — consider an alternative: rely on the Pydantic model's annotations rather than maintaining a manual allow-list (e.g. fetch model fields via get_type_hints() on insert/read paths).",
+    "imports.py:752 inserts patient_notes without `clinic_id`. The list_patient_notes router only filters by patient_id (which is itself clinic-scoped via the patient lookup), so this currently still tenant-isolates correctly — but storing clinic_id on every doc would make $regex cleanup safer and align with the rest of the schema.",
+    "DataImportTab.jsx:242 uses `new Date(row.visit_date)` for formatting — when visit_date is a YYYY-MM-DD string this works in modern Chrome/Edge, but Safari is stricter; consider `new Date(row.visit_date + 'T00:00:00')`.",
+    "PatientProfilePage.jsx:96-150 sorts events on `at` (visit_date for imported, created_at for non-imported) — correct for clinical chronology. Confirmed working via API → UI pipeline.",
+    "Phase B regression: all earlier suites (test_xlsx_import.py, test_rich_csv_import_and_accounts.py, test_data_health_auto_incident.py, test_iter28_accounts_and_imports.py) still PASS after the serde fix."
+  ],
+  "updated_files": [
+    "/app/backend/utils/serde.py (added 'visit_date' + 'invoice_date' to STRING_DATE_KEYS to fix 500 on GET /api/patient-notes)",
+    "/app/backend/tests/test_phase_b_xlsx_and_timeline.py (new — 5 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26 — 5 phase_b + 21 regression after serde fix)",
+    "frontend": "95% (preview wizard rendering + colour tints + OLD PATIENT badge + new columns + parse-result toast all visually confirmed; commit button click on the gradient button needed force=True and didn't materialise the import-result panel in playwright, but same /commit code path is fully covered by backend tests)"
+  },
+  "test_credentials": "admin@delhi.test / delhiadmin123 — verified working via /api/auth/login.",
+  "seed_data_creation": "All test data uses PHB-{RUN6}- and UIPHB- MRD prefixes with auto-cleanup in the module-scoped pytest fixture. xlsx/csv attached as in-memory openpyxl/string. No persistent seed changes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `cd /app && python -m pytest backend/tests/test_phase_b_xlsx_and_timeline.py backend/tests/test_xlsx_import.py backend/tests/test_rich_csv_import_and_accounts.py -v` — ~6s, fully self-cleaning. Phase B wiring expects: row.status enum {ok, followup, skip, fail}; commit creates appointment+invoice+payment+patient_note with `imported_via=imp_<hex>`; PatientNote.visit_date is Optional[str] (YYYY-MM-DD) and MUST be present in utils/serde.py STRING_DATE_KEYS — same for Invoice.invoice_date. Frontend testids: data-import-tab, import-file-input, import-preview-btn, import-preview-rows, preview-row-{N}, mrd-policy-keep, mrd-policy-auto, import-commit-btn, import-result, import-tally-{key}; profile-history-tab, history-event-{i}.",
+  "rca of the issue": "RCA — GET /api/patient-notes 500: After Phase B added `visit_date: Optional[str]` to PatientNote model and the import path stored 'YYYY-MM-DD' strings, the read path /app/backend/routers/ref_docs.py:79 calls `deserialize_datetime(n)` on each note. utils/serde.py:deserialize_datetime is recursive and converts any ISO-like string back to datetime UNLESS the dict key is in a hand-maintained allow-list (STRING_DATE_KEYS). 'visit_date' was not in that set, so the string was coerced to a datetime; then FastAPI's response_model=List[PatientNote] validation failed with `string_type` errors at .visit_date, returning 500. Reproduction: import any CSV/XLSX that produces a patient_note with visit_date, then GET /api/patient-notes?patient_id=<that-patient> -> 500. Mitigation applied: added 'visit_date' and 'invoice_date' to STRING_DATE_KEYS. Verified via test_imported_via_surfaces_on_api_responses (now PASS). Long-term fix suggestion: replace the manual allow-list with model-driven introspection (use Pydantic model field annotations to decide which keys to keep as strings)."
+}

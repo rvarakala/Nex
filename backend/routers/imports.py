@@ -251,24 +251,72 @@ async def preview_patients(
     No data is written to `patients` yet — the parsed payload is stashed in
     `import_jobs` keyed by import_id, ready to be committed in a second call.
     """
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(400, "Please upload a .csv file (Excel users: File → Save As → CSV).")
+    fname = (file.filename or "").lower()
+    is_xlsx = fname.endswith(".xlsx")
+    is_csv = fname.endswith(".csv")
+    if not (is_csv or is_xlsx):
+        raise HTTPException(400, "Please upload a .csv or .xlsx file.")
 
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "File too large — please split into batches of <5MB.")
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        try:
-            text = raw.decode("latin-1")
-        except UnicodeDecodeError:
-            raise HTTPException(400, "Could not decode file — please save as UTF-8 CSV.")
 
-    reader = csv.DictReader(io.StringIO(text))
-    raw_headers = reader.fieldnames or []
-    if not raw_headers:
-        raise HTTPException(400, "CSV is empty or missing a header row.")
+    if is_xlsx:
+        # Excel — read the first sheet, treat row 1 as headers.
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            raise HTTPException(500, "Excel support not installed (openpyxl missing on server).")
+        try:
+            wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"Could not read Excel file: {exc}")
+        ws = wb.active
+        rows_iter = ws.iter_rows(values_only=True)
+        header_row = next(rows_iter, None) or []
+        raw_headers = [str(h).strip() if h is not None else "" for h in header_row]
+        # Drop trailing empty headers (typical when Excel has phantom columns)
+        while raw_headers and not raw_headers[-1]:
+            raw_headers.pop()
+        if not raw_headers:
+            raise HTTPException(400, "Excel file is empty or missing a header row.")
+
+        def _row_iter():
+            for row in rows_iter:
+                # Skip totally-empty rows (Excel often pads to 1048576).
+                if all((c is None or str(c).strip() == "") for c in row):
+                    continue
+                # Convert each cell to a string, preserving DD-MM-YYYY etc.
+                cleaned = []
+                for c in row[:len(raw_headers)]:
+                    if c is None:
+                        cleaned.append("")
+                    elif isinstance(c, datetime):
+                        cleaned.append(c.strftime("%Y-%m-%d"))
+                    elif isinstance(c, (int, float)):
+                        # int/float — drop trailing .0 on whole numbers (mobiles, MRDs)
+                        if isinstance(c, float) and c.is_integer():
+                            cleaned.append(str(int(c)))
+                        else:
+                            cleaned.append(str(c))
+                    else:
+                        cleaned.append(str(c).strip())
+                yield dict(zip(raw_headers, cleaned))
+        reader_iter = _row_iter()
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = raw.decode("latin-1")
+            except UnicodeDecodeError:
+                raise HTTPException(400, "Could not decode file — please save as UTF-8 CSV.")
+
+        reader = csv.DictReader(io.StringIO(text))
+        raw_headers = reader.fieldnames or []
+        if not raw_headers:
+            raise HTTPException(400, "CSV is empty or missing a header row.")
+        reader_iter = reader
 
     # Map raw headers to canonical names, keep track of which canonical fields
     # were present so per-row lookups are O(1).
@@ -303,7 +351,7 @@ async def preview_patients(
     seen_visit_keys: set[str] = set()  # NEW: detects same-patient-same-day-same-bill TRUE dupes
     counts = {"will_create": 0, "will_skip": 0, "will_fail": 0}
 
-    for idx, raw_row in enumerate(reader, start=2):  # Start at 2 — row 1 is header.
+    for idx, raw_row in enumerate(reader_iter, start=2):  # Start at 2 — row 1 is header.
         if idx - 1 > MAX_ROWS:
             raise HTTPException(
                 400,

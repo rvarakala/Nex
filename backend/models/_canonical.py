@@ -169,6 +169,10 @@ class Appointment(BaseModel):
     created_by_user_id: Optional[str] = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+    # Imported-via tag — populated when row created by /api/imports/patients/commit.
+    # Surfaces in the patient profile timeline as the "Imported" badge.
+    imported_via: Optional[str] = None
+
 
 class AppointmentCreate(BaseModel):
     # Either `patient_id` (legacy patient booking) or counterparty_* fields are required.
@@ -376,6 +380,10 @@ class Invoice(BaseModel):
     cancelled_at: Optional[datetime] = None
     cancelled_reason: Optional[str] = None
 
+    # Imported-via tag — populated when row created by /api/imports/patients/commit.
+    imported_via: Optional[str] = None
+    external_invoice_no: Optional[str] = None  # Original clinic bill # from CSV import
+
 
 class InvoiceLineCreate(BaseModel):
     service_id: Optional[str] = None
@@ -560,6 +568,10 @@ class PatientNote(BaseModel):
     text: str
     auto: bool = False                     # True for system-generated entries (session created, report printed, etc.)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Imported-via tag — populated when row created by /api/imports/patients/commit.
+    imported_via: Optional[str] = None
+    visit_date: Optional[str] = None       # YYYY-MM-DD if from CSV/Excel import
 
 
 class PatientNoteCreate(BaseModel):

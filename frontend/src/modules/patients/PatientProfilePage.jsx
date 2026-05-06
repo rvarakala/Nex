@@ -93,41 +93,64 @@ export default function PatientProfilePage() {
     }
   }, [patientId]);
 
-  // Auto-derived timeline — newest first
+  // Auto-derived timeline — newest first.
+  // For imported events, prefer `start_at` (the original visit date) over
+  // `created_at` (which is the bulk-import timestamp) so the timeline reflects
+  // actual clinical chronology, not data-entry order.
   const timeline = useMemo(() => {
     const events = [];
     if (patient?.created_at) events.push({ at: patient.created_at, kind: 'patient_added', label: 'Patient registered', detail: `MRD ${patient.mrd || patient.patient_id}` });
-    appointments.forEach((a) => events.push({
-      at: a.created_at || a.start_at, kind: 'appointment',
-      label: `Appointment ${a.status || 'scheduled'}`,
-      detail: `${a.audiologist_name || a.service || ''} · ${fmtDateTime(a.start_at)}`,
-    }));
+    appointments.forEach((a) => {
+      const isImported = !!a.imported_via;
+      events.push({
+        at: isImported ? (a.start_at || a.created_at) : (a.created_at || a.start_at),
+        kind: 'appointment',
+        label: `Visit · ${a.status || 'scheduled'}`,
+        detail: [
+          (a.recommended_tests || []).join(' + ') || a.service || '',
+          a.referred_by ? `Ref: ${a.referred_by}` : '',
+          a.notes ? `Dx: ${a.notes}` : '',
+        ].filter(Boolean).join(' · '),
+        imported: isImported,
+      });
+    });
     sessions.forEach((s) => events.push({
       at: s.created_at, kind: 'session',
       label: `Diagnostics ${(s.report_status || s.status || 'started').replace(/_/g, ' ')}`,
       detail: s.report_status === 'handed_over' ? 'Report handed over' : (s.tests_done || s.test_methods || []).join?.(', ') || '',
     }));
-    invoices.forEach((i) => events.push({
-      at: i.created_at, kind: 'invoice',
-      label: `Invoice ${i.invoice_no} · ₹${Number(i.rounded_total || i.grand_total || 0).toLocaleString('en-IN')}`,
-      detail: `Status: ${i.status}`,
-      link: `/billing/invoice/${i.invoice_id}`,
-    }));
+    invoices.forEach((i) => {
+      const isImported = !!i.imported_via;
+      events.push({
+        at: isImported ? (i.invoice_date || i.created_at) : i.created_at,
+        kind: 'invoice',
+        label: `Invoice ${i.invoice_no} · ₹${Number(i.rounded_total || i.grand_total || 0).toLocaleString('en-IN')}`,
+        detail: `Status: ${i.status}${i.external_invoice_no ? ` · Bill ${i.external_invoice_no}` : ''}`,
+        link: `/billing/invoice/${i.invoice_id}`,
+        imported: isImported,
+      });
+    });
     (invoices || []).forEach((i) => (i.payments || []).forEach((p) => events.push({
       at: p.paid_at, kind: 'payment',
       label: `Payment ₹${Number(p.amount || 0).toLocaleString('en-IN')} via ${p.method}`,
       detail: p.reference ? `Ref: ${p.reference}` : '',
+      imported: !!i.imported_via,
     })));
     tickets.forEach((t) => events.push({
       at: t.created_at, kind: 'service',
       label: `Service ticket ${t.ticket_no}`,
       detail: `${t.kind} · ${t.status}`,
     }));
-    notes.forEach((n) => events.push({
-      at: n.created_at, kind: 'note',
-      label: 'Note added',
-      detail: n.text,
-    }));
+    notes.forEach((n) => {
+      const isImported = !!n.imported_via;
+      events.push({
+        at: isImported && n.visit_date ? `${n.visit_date}T00:00:00` : n.created_at,
+        kind: 'note',
+        label: isImported ? 'Visit log (imported)' : 'Note added',
+        detail: n.text,
+        imported: isImported,
+      });
+    });
     return events.filter(e => e.at).sort((a, b) => new Date(b.at) - new Date(a.at));
   }, [patient, appointments, sessions, invoices, tickets, notes]);
 
@@ -292,9 +315,19 @@ const HistoryTab = ({ events }) => {
               {i < events.length - 1 && <span className="flex-1 w-px bg-slate-200 mt-1" />}
             </div>
             <div className="flex-1 pb-2">
-              <div className="text-[11px] text-slate-500 font-medium">{fmtDateTime(e.at)}</div>
+              <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2">
+                <span>{fmtDateTime(e.at)}</span>
+                {e.imported && (
+                  <span
+                    title="Imported from CSV / Excel — original visit date shown"
+                    className="inline-flex items-center px-1.5 py-0 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 border border-blue-200"
+                  >
+                    Imported
+                  </span>
+                )}
+              </div>
               <div className="text-[13px] font-semibold text-slate-900 mt-0.5">{e.label}</div>
-              {e.detail && <div className="text-[12px] text-slate-600 mt-0.5">{e.detail}</div>}
+              {e.detail && <div className="text-[12px] text-slate-600 mt-0.5 whitespace-pre-wrap">{e.detail}</div>}
               {e.link && <Link to={e.link} className="text-[11px] text-indigo-600 underline mt-1 inline-block">Open →</Link>}
             </div>
           </li>

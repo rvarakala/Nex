@@ -174,7 +174,7 @@ export default function DataImportTab() {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => { setFile(e.target.files?.[0] || null); setPreview(null); setCommitResult(null); }}
             data-testid="import-file-input"
             className="block text-[13px] text-slate-600 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border-0 file:text-[13px] file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
@@ -202,7 +202,7 @@ export default function DataImportTab() {
           )}
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          CSV only · UTF-8 · max 5 MB · up to 5,000 rows per upload.
+          CSV or Excel (.xlsx) · UTF-8 · max 5 MB · up to 5,000 rows per upload.
         </p>
       </Step>
 
@@ -219,6 +219,9 @@ export default function DataImportTab() {
                     <th className="px-3 py-2 font-semibold">Name</th>
                     <th className="px-3 py-2 font-semibold">Mobile</th>
                     <th className="px-3 py-2 font-semibold">MRD</th>
+                    <th className="px-3 py-2 font-semibold">Visit date</th>
+                    <th className="px-3 py-2 font-semibold">Tests</th>
+                    <th className="px-3 py-2 font-semibold text-right">Amount</th>
                     <th className="px-3 py-2 font-semibold">Status</th>
                     <th className="px-3 py-2 font-semibold">Notes</th>
                   </tr>
@@ -227,12 +230,40 @@ export default function DataImportTab() {
                   {visibleRows.map((row) => {
                     const meta = STATUS_META[row.status] || STATUS_META.fail;
                     const Icon = meta.Icon;
+                    // Per-row tinted background — gives the operator instant visual context:
+                    //   green = brand-new, blue = follow-up of an existing patient,
+                    //   amber = same-day same-bill duplicate, rose = validation error.
+                    const rowTint = (
+                      row.status === 'followup' ? 'bg-blue-50/60 hover:bg-blue-100/70 border-l-4 border-l-blue-400' :
+                      row.status === 'skip'     ? 'bg-amber-50/60 hover:bg-amber-100/70 border-l-4 border-l-amber-400' :
+                      row.status === 'fail'     ? 'bg-rose-50/60 hover:bg-rose-100/70 border-l-4 border-l-rose-400' :
+                                                   'bg-emerald-50/40 hover:bg-emerald-100/60 border-l-4 border-l-emerald-300'
+                    );
+                    const formattedDate = row.visit_date
+                      ? new Date(row.visit_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : '—';
                     return (
-                      <tr key={row.row_num} className="hover:bg-slate-50">
+                      <tr key={row.row_num} className={rowTint} data-testid={`preview-row-${row.row_num}`}>
                         <td className="px-3 py-2 text-slate-400 font-mono">{row.row_num}</td>
-                        <td className="px-3 py-2 text-slate-800 font-medium">{row.name}</td>
+                        <td className="px-3 py-2 text-slate-800 font-medium">
+                          {row.name}
+                          {row.status === 'followup' && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider rounded bg-blue-600 text-white" title="This patient already exists — visit will be appended to their history">
+                              Old patient
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-slate-600">{row.mobile || '—'}</td>
                         <td className="px-3 py-2 text-slate-600 font-mono text-[11.5px]">{row.mrd || '(auto)'}</td>
+                        <td className="px-3 py-2 text-slate-600 text-[11.5px]">{formattedDate}</td>
+                        <td className="px-3 py-2 text-slate-600 text-[11.5px]">
+                          {(row.tests || []).length > 0
+                            ? <span className="font-mono">{(row.tests || []).join(' + ')}</span>
+                            : <span className="text-slate-300 italic">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-700 font-mono tabular-nums text-[11.5px]">
+                          {row.amount > 0 ? `₹${row.amount.toLocaleString('en-IN')}` : <span className="text-slate-300">—</span>}
+                        </td>
                         <td className="px-3 py-2">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-full ring-1 ${meta.bg} ${meta.text} ${meta.ring}`}>
                             <Icon size={11} />
@@ -246,7 +277,7 @@ export default function DataImportTab() {
                     );
                   })}
                   {visibleRows.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-400">No rows match this filter.</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">No rows match this filter.</td></tr>
                   )}
                 </tbody>
               </table>

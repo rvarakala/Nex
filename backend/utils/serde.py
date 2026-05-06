@@ -59,6 +59,8 @@ def deserialize_datetime(obj):
         # AUDINEXA Connect (PR 1) — patient WhatsApp consent stamps + config audit
         "whatsapp_consent_at", "whatsapp_consent_withdrawn_at",
         "dpa_accepted_at", "last_test_at",
+        # AUDINEXA Phase B — Imported clinical YYYY-MM-DD visit dates (PatientNote / Invoice / Appointment side metadata)
+        "visit_date", "invoice_date",
     }
     if isinstance(obj, dict):
         return {k: (v if k in STRING_DATE_KEYS else deserialize_datetime(v)) for k, v in obj.items()}
