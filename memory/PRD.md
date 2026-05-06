@@ -1,5 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Hybrid PDF Storage Model (P2) (2026-05-04)
+
+### What ships
+- **Audiogram report PDFs** (GridFS bucket `session_reports`) are no longer stored forever. They're auto-purged after `PDF_RETENTION_DAYS` (default **30 days**, env-tunable) and the on-demand generator (`pdf_generator.generate_report_pdf`) re-renders any older fetch from source `test_sessions` + `patients` data.
+- **Daily APScheduler sweep** at **03:15 IST** (`pdf_retention_sweep_0315_ist`) runs the purge automatically.
+- **Admin endpoints**:
+  - `GET /api/admin/v2/system/storage` — per-bucket size + count (session_reports flagged `swept:true`, image buckets `swept:false`).
+  - `POST /api/admin/v2/system/storage/purge-pdfs` `{}` — manual sweep with default retention. Founder/super_admin can pass `{days: N}` to override; sub-roles 403 on override.
+- **System Health UI** — new "Storage · Hybrid PDF Retention" card with 3 KPIs, per-bucket policy table, Refresh + Purge buttons.
+
+### RBAC tightening (regression fix flagged during iter26)
+- `utils/rbac.py:require_permission` now also enforces `user.clinic_id == 'audinexa-platform'` so tenant-level super_admins (e.g. `admin@delhi.test`) **cannot** reach `/api/admin/v2/*` even though their role grants `*:read`. Existing platform sub-roles (read_only, support_agent, etc.) unaffected. Tenant-app endpoints (`/auth/*`, `/patients`, `/billing/invoices`, …) unaffected.
+
+### Files
+- New: `/app/backend/services/pdf_retention.py`, `/app/backend/services/__init__.py`
+- New tests: `/app/backend/tests/test_pdf_retention.py`, `/app/backend/tests/test_iter27_platform_fence.py` — 32/32 PASS
+- Modified: `/app/backend/server.py` (scheduler), `/app/backend/routers/admin_panel_b.py` (endpoints), `/app/backend/utils/rbac.py` (platform fence), `/app/backend/.env` (`PDF_RETENTION_DAYS=30`), `/app/frontend/src/modules/admin/panel/SystemHealthPage.jsx` (StorageCard + hooks)
+
+### Outcome
+- DB bloat from `session_reports.chunks` is now naturally bounded by clinic activity in the trailing 30d window (vs unbounded growth before).
+- Older reports still served correctly via on-demand fallback in `routers/reports.py:_stream_pdf`.
+
+---
+
+
 ## ✅ COMPLETED — Iter25 Triple Fix (2026-05-03)
 
 ### (a) Founder Dashboard KPI/Funnel overflow — FIXED
