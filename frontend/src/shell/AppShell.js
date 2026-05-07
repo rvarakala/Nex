@@ -250,8 +250,6 @@ export default function AppShell({ children }) {
       items: [
         { to: '/patients/new',   Icon: UserPlus,    label: 'New Registration', testid: 'nav-new-registration', exact: true },
         { to: '/patients/list',  Icon: Users,       label: 'Patients',         testid: 'nav-patients',         exact: true },
-        !isAudio &&
-          { to: '/patients/list?filter=leads', Icon: UserSquare2, label: 'Leads & Walk-ins', testid: 'nav-leads' },
       ].filter(Boolean),
     },
     {
@@ -259,7 +257,7 @@ export default function AppShell({ children }) {
       items: [
         { to: '/test', Icon: Stethoscope, label: 'Hearing Tests', testid: 'nav-test' },
         !isAudio && m('hearing-aids') &&
-          { to: '/ha',           Icon: Headphones, label: 'Hearing Aids', testid: 'nav-ha' },
+          { to: '/ha/trials',    Icon: Headphones, label: 'Hearing Aids', testid: 'nav-ha' },
         !isAudio && m('hearing-aids') &&
           { to: '/ha/inventory', Icon: Package,    label: 'Inventory',    testid: 'nav-inventory' },
         isOwnerOrAdmin &&
@@ -271,7 +269,6 @@ export default function AppShell({ children }) {
     !isAudio && {
       label: 'Billing',
       items: [
-        { to: '/billing',         Icon: Receipt,      label: 'Invoices',          testid: 'nav-billing' },
         { to: '/billing/payments', Icon: IndianRupee, label: 'Payments & Refunds', testid: 'nav-payments' },
       ].filter(Boolean),
     },

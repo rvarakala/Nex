@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import ProductCataloguePage from './ProductCataloguePage';
 import InventoryBoardPage from './InventoryBoardPage';
 import DemoStockPage from './DemoStockPage';
@@ -14,6 +14,32 @@ import OwnerAnalyticsPage from './OwnerAnalyticsPage';
 import UpgradeFunnelPage from './UpgradeFunnelPage';
 import AMCPage from './AMCPage';
 import StockTransfersPage from './transfers/StockTransfersPage';
+
+// Sub-tabs grouped by section. Sidebar shows two top-level links:
+//   • "Hearing Aids" → /ha/trials (sales lifecycle)
+//   • "Inventory"    → /ha/inventory (stock + procurement + catalogue)
+// Both render <HAModule />; this component picks which tab strip to show
+// based on the current pathname so the sub-nav stays scoped to the section
+// the user clicked. Routes the user reaches via direct URL still resolve.
+const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups']);
+const INVENTORY_PATHS = new Set([
+  'inventory', 'demo-stock', 'amc', 'procurement', 'products', 'transfers', 'vendors',
+]);
+
+const SALES_TABS = [
+  { to: '/ha/trials',     label: 'Trials',     testid: 'ha-tab-trials' },
+  { to: '/ha/quotations', label: 'Quotations', testid: 'ha-tab-quotations' },
+  { to: '/ha/fittings',   label: 'Fittings',   testid: 'ha-tab-fittings' },
+  { to: '/ha/followups',  label: 'Follow-ups', testid: 'ha-tab-followups' },
+];
+
+const INVENTORY_TABS = [
+  { to: '/ha/inventory',   label: 'Inventory Board', testid: 'ha-tab-inventory' },
+  { to: '/ha/demo-stock',  label: 'Demo Stock',      testid: 'ha-tab-demo-stock' },
+  { to: '/ha/amc',         label: 'AMC',             testid: 'ha-tab-amc' },
+  { to: '/ha/procurement', label: 'Procurement',     testid: 'ha-tab-procurement' },
+  { to: '/ha/products',    label: 'Catalogue',       testid: 'ha-tab-products' },
+];
 
 const Tab = ({ to, label, testid }) => (
   <NavLink
@@ -33,24 +59,17 @@ const Tab = ({ to, label, testid }) => (
 );
 
 export default function HAModule() {
+  const loc = useLocation();
+  const segment = (loc.pathname.split('/')[2] || '').split('?')[0];
+  // Default unknown segments to inventory tabs (catches `/ha`, `/ha/upgrades`, `/ha/subscriptions`, etc.)
+  const tabs = SALES_PATHS.has(segment) ? SALES_TABS
+             : INVENTORY_PATHS.has(segment) ? INVENTORY_TABS
+             : INVENTORY_TABS;
+
   return (
     <div className="h-full flex flex-col" data-testid="ha-module">
-      {/* Sub-nav for HA */}
       <div className="border-b border-slate-200 bg-slate-50 flex items-center gap-1 px-4 flex-shrink-0">
-        <Tab to="/ha/inventory" label="Inventory Board" testid="ha-tab-inventory" />
-        <Tab to="/ha/transfers" label="Transfers" testid="ha-tab-transfers" />
-        <Tab to="/ha/demo-stock" label="Demo Stock" testid="ha-tab-demo-stock" />
-        <Tab to="/ha/quotations" label="Quotations" testid="ha-tab-quotations" />
-        <Tab to="/ha/trials" label="Trials" testid="ha-tab-trials" />
-        <Tab to="/ha/fittings" label="Fittings" testid="ha-tab-fittings" />
-        <Tab to="/ha/upgrades" label="Upgrades" testid="ha-tab-upgrades" />
-        <Tab to="/ha/followups" label="Follow-ups" testid="ha-tab-followups" />
-        <Tab to="/ha/subscriptions" label="Subscriptions" testid="ha-tab-subs" />
-        <Tab to="/ha/amc" label="AMC" testid="ha-tab-amc" />
-        <Tab to="/ha/procurement" label="Procurement" testid="ha-tab-procurement" />
-        <Tab to="/ha/vendors" label="Vendors" testid="ha-tab-vendors" />
-        <Tab to="/ha/products" label="Catalogue" testid="ha-tab-products" />
-        <Tab to="/ha/analytics" label="Analytics" testid="ha-tab-analytics" />
+        {tabs.map((t) => <Tab key={t.to} {...t} />)}
       </div>
 
       <div className="flex-1 overflow-auto">
