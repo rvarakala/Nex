@@ -437,6 +437,23 @@ class Fitting(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
 
+    # ── Quick-Sale denormalised fields (populated only when source="quick_sale")
+    # so the Fittings ledger UI can show pending balance + a Mark Balance Paid
+    # button without an extra fetch. Optional + default None for legacy rows.
+    quick_sale_id: Optional[str] = None
+    source: Optional[str] = None             # e.g. "quick_sale"
+    sale_total: Optional[float] = None
+    amount_paid: Optional[float] = None
+    balance_due: Optional[float] = None
+    payment_status: Optional[str] = None     # fully_paid | advance_paid | unpaid
+    invoice_id: Optional[str] = None
+    invoice_no: Optional[str] = None
+    ha_brand: Optional[str] = None
+    ha_model: Optional[str] = None
+    ha_type: Optional[str] = None
+    warranty_months: Optional[int] = None
+    extended_warranty: Optional[bool] = None
+
 
 class FittingCreate(BaseModel):
     branch_id: str

@@ -294,6 +294,13 @@ async def create_quick_sale(
         "ha_type": payload.ha_type,
         "warranty_months": payload.warranty_months,
         "extended_warranty": payload.extended_warranty,
+        # Money snapshot for the Fittings table (kept in sync via mark-paid):
+        "sale_total": totals["total"],
+        "amount_paid": paid,
+        "balance_due": balance,
+        "payment_status": payload.payment_status,
+        "invoice_id": invoice_id,
+        "invoice_no": invoice_no,
     }
     await db.ha_fittings.insert_one(fitting_doc)
 
@@ -420,3 +427,162 @@ async def list_quick_sales(
     async for r in cursor:
         rows.append(r)
     return rows
+
+
+# ─── Mark balance paid (settle advance-paid sale) ─────────────────────
+
+class MarkBalancePaidIn(BaseModel):
+    """Settle the remaining balance on an advance-paid quick-sale.
+
+    Defaults: amount = current balance_due, mode = original payment_mode,
+    payment_date = today. Caller can override any of them.
+    """
+    amount: Optional[float] = Field(None, ge=0, description="Defaults to current balance_due")
+    payment_mode: Optional[Literal["cash", "upi", "card", "bank_transfer", "cheque"]] = None
+    payment_date: Optional[str] = None
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MarkBalancePaidOut(BaseModel):
+    quick_sale_id: str
+    invoice_id: str
+    invoice_no: str
+    total: float
+    amount_paid: float
+    balance_due: float
+    payment_status: str
+    invoice_status: str
+
+
+@router.post("/quick-sales/{quick_sale_id}/mark-paid", response_model=MarkBalancePaidOut)
+async def mark_balance_paid(
+    quick_sale_id: str,
+    payload: MarkBalancePaidIn,
+    user=Depends(require_roles(
+        "front_desk", "accounts", "clinic_owner", "super_admin",
+    )),
+    db=Depends(get_db),
+):
+    """Capture a follow-up payment against an advance-paid Quick Sale and roll
+    the invoice + fitting denorms forward atomically."""
+    qs = await db.ha_quick_sales.find_one(
+        {"quick_sale_id": quick_sale_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0},
+    )
+    if not qs:
+        raise HTTPException(404, "Quick Sale not found")
+    if not user_can_see_branch(user, qs["branch_id"]):
+        raise HTTPException(403, "Branch access denied")
+    if qs.get("payment_status") == "fully_paid":
+        raise HTTPException(409, "This sale is already fully paid.")
+
+    current_balance = round(float(qs.get("balance_due") or 0), 2)
+    if current_balance <= 0:
+        raise HTTPException(409, "No outstanding balance on this sale.")
+
+    pay_amount = round(float(payload.amount) if payload.amount is not None else current_balance, 2)
+    if pay_amount <= 0:
+        raise HTTPException(400, "amount must be > 0")
+    if pay_amount > current_balance + 0.5:
+        raise HTTPException(400, f"Payment cannot exceed balance ({current_balance:.2f})")
+
+    pay_mode = payload.payment_mode or qs.get("payment_mode") or "cash"
+    pay_date_iso = payload.payment_date or _today_iso()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    new_paid = round(float(qs.get("amount_paid") or 0) + pay_amount, 2)
+    new_balance = round(float(qs.get("total") or 0) - new_paid, 2)
+    fully_settled = new_balance <= 0.005
+    new_payment_status = "fully_paid" if fully_settled else "advance_paid"
+
+    # 1) Update ha_quick_sales
+    await db.ha_quick_sales.update_one(
+        {"quick_sale_id": quick_sale_id},
+        {"$set": {
+            "amount_paid": new_paid,
+            "balance_due": max(0.0, new_balance),
+            "payment_status": new_payment_status,
+            "payment_mode": pay_mode,
+            "last_payment_at": now_iso,
+            "last_payment_date": pay_date_iso,
+            "status": "completed" if fully_settled else "open",
+        }},
+    )
+
+    # 2) Update invoice — append a Payment, recompute paid_total/due_total/status
+    invoice = await db.invoices.find_one({"invoice_id": qs["invoice_id"]}, {"_id": 0})
+    if invoice:
+        new_payment = {
+            "payment_id": f"PAY-{uuid.uuid4().hex[:8].upper()}",
+            "clinic_id": user["clinic_id"],
+            "invoice_id": invoice["invoice_id"],
+            "method": pay_mode,
+            "amount": pay_amount,
+            "reference": payload.reference,
+            "paid_at": now,
+            "received_by_user_id": user["user_id"],
+            "notes": payload.notes or "Balance settlement via Mark balance paid.",
+        }
+        new_inv_paid = round(float(invoice.get("paid_total") or 0) + pay_amount, 2)
+        grand_total = float(invoice.get("grand_total") or invoice.get("rounded_total") or qs.get("total") or 0)
+        new_inv_due = max(0.0, round(grand_total - new_inv_paid, 2))
+        new_inv_status = "paid" if new_inv_due <= 0.005 else "partial"
+        await db.invoices.update_one(
+            {"invoice_id": invoice["invoice_id"]},
+            {
+                "$push": {"payments": new_payment},
+                "$set": {
+                    "paid_total": new_inv_paid,
+                    "due_total": new_inv_due,
+                    "status": new_inv_status,
+                },
+            },
+        )
+    else:
+        new_inv_status = "paid" if fully_settled else "partial"
+        new_inv_paid = new_paid
+
+    # 3) Sync fitting denorm (so the Fittings table reflects new balance/status)
+    await db.ha_fittings.update_one(
+        {"quick_sale_id": quick_sale_id},
+        {"$set": {
+            "amount_paid": new_paid,
+            "balance_due": max(0.0, new_balance),
+            "payment_status": new_payment_status,
+            "updated_at": now_iso,
+        }},
+    )
+
+    # 4) Audit
+    await db.audit_logs.insert_one({
+        "kind": "quick_sale_balance_paid",
+        "quick_sale_id": quick_sale_id,
+        "invoice_id": qs.get("invoice_id"),
+        "clinic_id": user["clinic_id"],
+        "actor_user_id": user["user_id"],
+        "actor_name": user.get("name", ""),
+        "amount": pay_amount,
+        "mode": pay_mode,
+        "balance_after": max(0.0, new_balance),
+        "fully_settled": fully_settled,
+        "at": now_iso,
+    })
+
+    log.info(
+        f"quick-sale balance paid clinic={user['clinic_id']} qs={quick_sale_id} "
+        f"+₹{pay_amount} → paid=₹{new_paid} balance=₹{max(0.0,new_balance)} "
+        f"settled={fully_settled}"
+    )
+
+    return MarkBalancePaidOut(
+        quick_sale_id=quick_sale_id,
+        invoice_id=qs["invoice_id"],
+        invoice_no=qs.get("invoice_no") or "",
+        total=float(qs.get("total") or 0),
+        amount_paid=new_paid,
+        balance_due=max(0.0, new_balance),
+        payment_status=new_payment_status,
+        invoice_status=new_inv_status,
+    )

@@ -24,6 +24,7 @@ export default function FittingLedgerPage() {
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
   const [quickSale, setQuickSale] = useState(false);
+  const [markPaidFor, setMarkPaidFor] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [me, setMe] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,14 +110,20 @@ export default function FittingLedgerPage() {
               <th className="px-3 py-2 text-left">Sale</th>
               <th className="px-3 py-2 text-right">Units</th>
               <th className="px-3 py-2 text-right">Visits</th>
+              <th className="px-3 py-2 text-right">Balance</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Started</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={9} className="py-10 text-center text-slate-400 italic text-xs">No fittings yet.</td></tr>}
-            {rows.map(f => (
+            {rows.length === 0 && <tr><td colSpan={10} className="py-10 text-center text-slate-400 italic text-xs">No fittings yet.</td></tr>}
+            {rows.map(f => {
+              const isQuickSale = f.source === 'quick_sale' || !!f.quick_sale_id;
+              const balanceDue = Number(f.balance_due || 0);
+              const totalAmt = Number(f.sale_total || 0);
+              const showMarkPaid = isQuickSale && balanceDue > 0.5 && canWrite;
+              return (
               <tr key={f.fitting_id} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`ha-fit-row-${f.fitting_id}`}>
                 <td className="px-3 py-2 font-mono text-[11px] font-bold">{f.fitting_id}</td>
                 <td className="px-3 py-2">{f.patient_name || f.patient_id}</td>
@@ -124,13 +131,37 @@ export default function FittingLedgerPage() {
                 <td className="px-3 py-2 font-mono text-[11px] text-indigo-700">{f.sale_no || '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{f.serials?.length || 0}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{f.visits?.length || 0}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-[11px]">
+                  {totalAmt > 0 ? (
+                    balanceDue > 0.5 ? (
+                      <span className="text-rose-600 font-bold" data-testid={`ha-fit-balance-${f.fitting_id}`}>
+                        ₹{balanceDue.toLocaleString('en-IN')}
+                      </span>
+                    ) : (
+                      <span className="text-emerald-600 font-semibold">Paid</span>
+                    )
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
+                </td>
                 <td className="px-3 py-2"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[f.status]}`}>{f.status.toUpperCase()}</span></td>
                 <td className="px-3 py-2 text-[10px] text-slate-500">{f.first_fit_at ? new Date(f.first_fit_at).toLocaleDateString('en-IN') : ''}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {showMarkPaid && (
+                    <button
+                      onClick={() => setMarkPaidFor(f)}
+                      data-testid={`ha-fit-mark-paid-${f.fitting_id}`}
+                      className="text-[10px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded mr-1.5"
+                      title="Record balance payment"
+                    >
+                      Mark balance paid
+                    </button>
+                  )}
                   <button onClick={() => setOpenId(f.fitting_id)} data-testid={`ha-fit-open-${f.fitting_id}`} className="text-[10px] text-indigo-600 font-semibold hover:underline">Open →</button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -146,6 +177,13 @@ export default function FittingLedgerPage() {
             // The new doc is now visible in the ledger — open its detail pane.
             if (r?.fitting_id) setOpenId(r.fitting_id);
           }}
+        />
+      )}
+      {markPaidFor && (
+        <MarkBalancePaidModal
+          fitting={markPaidFor}
+          onClose={() => setMarkPaidFor(null)}
+          onSettled={() => { setMarkPaidFor(null); load(); }}
         />
       )}
       {openId && <FittingDetailDrawer fittingId={openId} onClose={() => setOpenId(null)} onChanged={load} canWrite={canWrite} />}
@@ -593,6 +631,142 @@ function InfoTab({ fit }) {
       {row('First fit at', fit.first_fit_at && new Date(fit.first_fit_at).toLocaleString('en-IN'))}
       {row('Completed at', fit.completed_at && new Date(fit.completed_at).toLocaleString('en-IN'))}
       {row('Notes', fit.notes)}
+    </div>
+  );
+}
+
+
+// ==================== MARK BALANCE PAID MODAL ====================
+
+const PAY_MODES = [
+  { value: 'cash',          label: 'Cash' },
+  { value: 'upi',           label: 'UPI' },
+  { value: 'card',          label: 'Card' },
+  { value: 'bank_transfer', label: 'Bank transfer' },
+  { value: 'cheque',        label: 'Cheque' },
+];
+
+function MarkBalancePaidModal({ fitting, onClose, onSettled }) {
+  const balance = Number(fitting.balance_due || 0);
+  const total = Number(fitting.sale_total || 0);
+  const paid = Math.max(0, total - balance);
+
+  const [amount, setAmount] = useState(balance.toFixed(2));
+  const [mode, setMode] = useState('cash');
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async () => {
+    setErr('');
+    const amt = parseFloat(amount);
+    if (!Number.isFinite(amt) || amt <= 0) { setErr('Enter a valid amount.'); return; }
+    if (amt > balance + 0.5) { setErr(`Amount cannot exceed balance ₹${balance.toLocaleString('en-IN')}.`); return; }
+    setBusy(true);
+    try {
+      await axios.post(`${API}/ha/quick-sales/${fitting.quick_sale_id}/mark-paid`, {
+        amount: amt,
+        payment_mode: mode,
+        payment_date: date,
+        reference: reference || null,
+        notes: notes || null,
+      });
+      onSettled && onSettled();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === 'string' ? d : (e?.message || 'Save failed.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+         data-testid="mark-paid-modal">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+           onClick={(e) => e.stopPropagation()}>
+        <div className="bg-gradient-to-r from-emerald-500 to-emerald-700 text-white px-5 py-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold">Mark Balance Paid</h2>
+            <p className="text-[11px] opacity-90">{fitting.patient_name} · {fitting.sale_no}</p>
+          </div>
+          <button onClick={onClose} className="text-white/90 hover:text-white text-2xl leading-none" aria-label="Close">×</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Snapshot */}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="bg-slate-50 border border-slate-200 rounded p-2">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">Total</div>
+              <div className="text-sm font-bold tabular-nums">₹{total.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded p-2">
+              <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Paid</div>
+              <div className="text-sm font-bold text-emerald-700 tabular-nums">₹{paid.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-rose-50 border border-rose-200 rounded p-2">
+              <div className="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Balance</div>
+              <div className="text-sm font-bold text-rose-700 tabular-nums" data-testid="mark-paid-balance">
+                ₹{balance.toLocaleString('en-IN')}
+              </div>
+            </div>
+          </div>
+
+          {err && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded px-3 py-2" data-testid="mark-paid-err">{err}</div>}
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Amount paid <span className="text-rose-500">*</span></span>
+              <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+                data-testid="mark-paid-amount"
+                className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm tabular-nums focus:outline-none focus:border-emerald-500" />
+              <span className="block text-[10px] text-slate-400 mt-0.5">Defaults to full balance.</span>
+            </label>
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Mode</span>
+              <select value={mode} onChange={(e) => setMode(e.target.value)}
+                data-testid="mark-paid-mode"
+                className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                {PAY_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Payment date</span>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+                data-testid="mark-paid-date"
+                className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+            </label>
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Reference (optional)</span>
+              <input value={reference} onChange={(e) => setReference(e.target.value)}
+                data-testid="mark-paid-ref"
+                placeholder="UPI UTR / Receipt #"
+                className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Notes</span>
+            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
+              data-testid="mark-paid-notes"
+              className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+          </label>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded">
+              Cancel
+            </button>
+            <button onClick={submit} disabled={busy}
+              data-testid="mark-paid-submit"
+              className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow-md">
+              {busy ? 'Saving…' : `Record ₹${parseFloat(amount || 0).toLocaleString('en-IN')}`}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
