@@ -701,6 +701,7 @@ from routers import imports as imports_router                    # noqa: E402
 from routers import accounts as accounts_router                   # noqa: E402
 from routers import legal as legal_router                         # noqa: E402
 from routers import password_reset as password_reset_router       # noqa: E402
+from routers import ha_quick_sale as ha_quick_sale_router         # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -752,6 +753,7 @@ app.include_router(imports_router.router)
 app.include_router(accounts_router.router)
 app.include_router(legal_router.router)
 app.include_router(password_reset_router.router)
+app.include_router(ha_quick_sale_router.router)
 
 # ---- CORS lockdown ----
 # Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins

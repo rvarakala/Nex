@@ -1,0 +1,406 @@
+/**
+ * QuickHASaleModal — single-form HA sale + fitting + invoice creator.
+ *
+ * Mounted from FittingLedgerPage. Calls POST /api/ha/quick-sale which
+ * atomically writes ha_quick_sales + ha_fittings + invoices docs.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+const HA_TYPES = ['BTE', 'RIC', 'ITE', 'ITC', 'CIC', 'IIC', 'OTHER'];
+const SIDES = [
+  { value: 'both',  label: 'Both ears' },
+  { value: 'left',  label: 'Left only' },
+  { value: 'right', label: 'Right only' },
+];
+const PAY_MODES = [
+  { value: 'cash',          label: 'Cash' },
+  { value: 'upi',           label: 'UPI' },
+  { value: 'card',          label: 'Card' },
+  { value: 'bank_transfer', label: 'Bank transfer' },
+  { value: 'cheque',        label: 'Cheque' },
+];
+const COMMON_BRANDS = ['Phonak', 'ReSound', 'Oticon', 'Signia', 'Widex', 'Starkey', 'Unitron'];
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+function Field({ label, required, hint, children }) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+        {label} {required && <span className="text-rose-500">*</span>}
+      </span>
+      {children}
+      {hint && <span className="block text-[10px] text-slate-400 mt-0.5">{hint}</span>}
+    </label>
+  );
+}
+
+export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId }) {
+  const [branches, setBranches] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [search, setSearch] = useState('');
+  const [picked, setPicked] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const [form, setForm] = useState({
+    branch_id: '',
+    brand: '', model: '', ha_type: 'BTE', serial_number: '', side: 'both',
+    fitting_date: todayISO(),
+    warranty_months: 12,
+    extended_warranty: false,
+    extended_warranty_months: '',
+    extended_warranty_source: 'manufacturer',
+    mrp: '', sale_price: '',
+    discount_amount: '',
+    gst_rate: 18,
+    payment_status: 'fully_paid',
+    payment_mode: 'cash',
+    payment_date: todayISO(),
+    advance_amount: '',
+    expected_payment_date: '',
+    notes: '',
+  });
+  const u = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const ub = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.checked }));
+
+  // Load branches + (optional) prefill patient
+  useEffect(() => {
+    (async () => {
+      try {
+        const b = await axios.get(`${API}/branches`);
+        setBranches(b.data);
+        if (b.data[0]) setForm((f) => ({ ...f, branch_id: b.data[0].branch_id }));
+      } catch { /* ignore */ }
+      if (prefillPatientId) {
+        try {
+          const p = await axios.get(`${API}/patients/${prefillPatientId}`);
+          setPicked(p.data);
+        } catch { /* ignore */ }
+      }
+    })();
+  }, [prefillPatientId]);
+
+  // Patient search (debounced)
+  useEffect(() => {
+    if (!search || search.length < 2) { setPatients([]); return; }
+    const h = setTimeout(async () => {
+      try {
+        const r = await axios.get(`${API}/patients`, { params: { search, limit: 10 } });
+        setPatients(Array.isArray(r.data) ? r.data : []);
+      } catch { setPatients([]); }
+    }, 200);
+    return () => clearTimeout(h);
+  }, [search]);
+
+  // Auto-calc discount = MRP - sale_price (only if user hasn't manually overridden)
+  const discountAuto = useMemo(() => {
+    const m = parseFloat(form.mrp || 0);
+    const s = parseFloat(form.sale_price || 0);
+    if (m > 0 && s >= 0 && m >= s) return Math.max(0, m - s).toFixed(2);
+    return '';
+  }, [form.mrp, form.sale_price]);
+
+  const balance = useMemo(() => {
+    const total = parseFloat(form.sale_price || 0);
+    if (form.payment_status === 'fully_paid') return 0;
+    if (form.payment_status === 'unpaid') return total;
+    return Math.max(0, total - parseFloat(form.advance_amount || 0));
+  }, [form.sale_price, form.payment_status, form.advance_amount]);
+
+  const submit = async () => {
+    setErr('');
+    if (!picked) { setErr('Please pick a patient.'); return; }
+    if (!form.branch_id) { setErr('Branch is required.'); return; }
+    if (!form.brand.trim()) { setErr('Brand (Make) is required.'); return; }
+    if (!form.model.trim()) { setErr('Model is required.'); return; }
+    if (!form.serial_number.trim()) { setErr('Serial number is required.'); return; }
+    const mrp = parseFloat(form.mrp);
+    const sale = parseFloat(form.sale_price);
+    if (!Number.isFinite(mrp) || mrp < 0) { setErr('Enter a valid MRP.'); return; }
+    if (!Number.isFinite(sale) || sale < 0) { setErr('Enter a valid sale price.'); return; }
+    if (sale > mrp + 0.5) { setErr('Sale price cannot exceed MRP.'); return; }
+    if (form.payment_status === 'advance_paid') {
+      const adv = parseFloat(form.advance_amount);
+      if (!Number.isFinite(adv) || adv <= 0) { setErr('Advance amount required when "Advance paid".'); return; }
+      if (adv > sale + 0.5) { setErr('Advance cannot exceed sale price.'); return; }
+    }
+    setSaving(true);
+    try {
+      const body = {
+        patient_id: picked.patient_id,
+        branch_id: form.branch_id,
+        brand: form.brand.trim(),
+        model: form.model.trim(),
+        ha_type: form.ha_type,
+        serial_number: form.serial_number.trim(),
+        side: form.side,
+        fitting_date: form.fitting_date,
+        warranty_months: parseInt(form.warranty_months) || 12,
+        extended_warranty: !!form.extended_warranty,
+        extended_warranty_months: form.extended_warranty && form.extended_warranty_months
+          ? parseInt(form.extended_warranty_months) : null,
+        extended_warranty_source: form.extended_warranty ? form.extended_warranty_source : null,
+        mrp, sale_price: sale,
+        discount_amount: form.discount_amount !== '' ? parseFloat(form.discount_amount) : null,
+        gst_rate: parseFloat(form.gst_rate) || 0,
+        payment_status: form.payment_status,
+        payment_mode: form.payment_mode || null,
+        payment_date: form.payment_date || null,
+        advance_amount: form.payment_status === 'advance_paid' ? parseFloat(form.advance_amount) : null,
+        expected_payment_date: form.expected_payment_date || null,
+        notes: form.notes || null,
+      };
+      const r = await axios.post(`${API}/ha/quick-sale`, body);
+      onCreated && onCreated(r.data);
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === 'string' ? d : (e?.message || 'Save failed.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+         data-testid="quick-ha-sale-modal">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-auto"
+           onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-5 py-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold">Add Hearing Aid Sale</h2>
+            <p className="text-[11px] opacity-90">Records a fitting, sale and invoice in one shot.</p>
+          </div>
+          <button onClick={onClose} className="text-white/90 hover:text-white text-2xl leading-none" aria-label="Close">×</button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {err && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded px-3 py-2" data-testid="quick-ha-err">{err}</div>}
+
+          {/* Patient + Branch */}
+          <section>
+            <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Patient & Branch</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Patient" required>
+                {picked ? (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 text-sm" data-testid="quick-ha-patient">
+                    <span className="flex-1 font-semibold">{picked.name}</span>
+                    <span className="text-[11px] text-slate-500">{picked.mrd_no || ''}</span>
+                    <button onClick={() => setPicked(null)} className="text-rose-500 text-xs hover:underline">✕</button>
+                  </div>
+                ) : (
+                  <>
+                    <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name / mobile / MRD…"
+                      data-testid="quick-ha-patient-search"
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-indigo-500" />
+                    {patients.length > 0 && (
+                      <div className="mt-1 max-h-40 overflow-auto border border-slate-200 rounded">
+                        {patients.map((p) => (
+                          <button key={p.patient_id} onClick={() => setPicked(p)}
+                            data-testid={`quick-ha-patient-pick-${p.patient_id}`}
+                            className="block w-full text-left text-xs px-2 py-1 hover:bg-indigo-50">
+                            <span className="font-semibold">{p.name}</span>{' '}
+                            <span className="text-slate-500">({p.mobile || '—'} · {p.mrd_no || '—'})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </Field>
+
+              <Field label="Branch" required>
+                <select value={form.branch_id} onChange={u('branch_id')}
+                  data-testid="quick-ha-branch"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                  {branches.map((b) => <option key={b.branch_id} value={b.branch_id}>{b.name}</option>)}
+                </select>
+              </Field>
+            </div>
+          </section>
+
+          {/* Hearing aid */}
+          <section>
+            <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Hearing Aid</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Make / Brand" required>
+                <input list="qha-brands" value={form.brand} onChange={u('brand')} data-testid="quick-ha-brand"
+                  placeholder="e.g. Phonak"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+                <datalist id="qha-brands">
+                  {COMMON_BRANDS.map((b) => <option key={b} value={b} />)}
+                </datalist>
+              </Field>
+              <Field label="Model" required>
+                <input value={form.model} onChange={u('model')} data-testid="quick-ha-model"
+                  placeholder="e.g. Audeo Paradise P50"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+              </Field>
+              <Field label="Type">
+                <select value={form.ha_type} onChange={u('ha_type')} data-testid="quick-ha-type"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                  {HA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+              <Field label="Serial number" required>
+                <input value={form.serial_number} onChange={u('serial_number')}
+                  data-testid="quick-ha-serial" placeholder="PHO-RIC-2026XXXX"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono uppercase" />
+              </Field>
+              <Field label="Side fitted">
+                <select value={form.side} onChange={u('side')} data-testid="quick-ha-side"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                  {SIDES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Fitting date" required>
+                <input type="date" value={form.fitting_date} onChange={u('fitting_date')}
+                  data-testid="quick-ha-fitting-date"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+              </Field>
+            </div>
+          </section>
+
+          {/* Warranty */}
+          <section>
+            <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Warranty</h3>
+            <div className="grid grid-cols-3 gap-3 items-end">
+              <Field label="Manufacturer warranty (months)">
+                <input type="number" min="0" max="240" value={form.warranty_months} onChange={u('warranty_months')}
+                  data-testid="quick-ha-warranty-months"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+              </Field>
+              <label className="flex items-center gap-2 text-sm pb-2 col-span-2 cursor-pointer">
+                <input type="checkbox" checked={form.extended_warranty} onChange={ub('extended_warranty')}
+                  data-testid="quick-ha-extended-warranty"
+                  className="rounded text-indigo-600" />
+                <span className="font-semibold text-slate-700">Extended warranty offered</span>
+              </label>
+              {form.extended_warranty && (
+                <>
+                  <Field label="Extended period (months)">
+                    <input type="number" min="0" max="240" value={form.extended_warranty_months} onChange={u('extended_warranty_months')}
+                      data-testid="quick-ha-ew-months"
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+                  </Field>
+                  <Field label="Source">
+                    <select value={form.extended_warranty_source} onChange={u('extended_warranty_source')}
+                      data-testid="quick-ha-ew-source"
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                      <option value="manufacturer">Manufacturer / Company</option>
+                      <option value="clinic">Clinic-offered</option>
+                    </select>
+                  </Field>
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* Pricing */}
+          <section>
+            <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Pricing (₹)</h3>
+            <div className="grid grid-cols-4 gap-3">
+              <Field label="MRP" required>
+                <input type="number" min="0" step="0.01" value={form.mrp} onChange={u('mrp')}
+                  data-testid="quick-ha-mrp"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm tabular-nums" />
+              </Field>
+              <Field label="Sale price" required hint="What the patient pays (incl. GST)">
+                <input type="number" min="0" step="0.01" value={form.sale_price} onChange={u('sale_price')}
+                  data-testid="quick-ha-sale-price"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm tabular-nums" />
+              </Field>
+              <Field label="Discount" hint={discountAuto ? `Auto: ₹${discountAuto}` : undefined}>
+                <input type="number" min="0" step="0.01" value={form.discount_amount}
+                  onChange={u('discount_amount')}
+                  data-testid="quick-ha-discount"
+                  placeholder={discountAuto || '0'}
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm tabular-nums" />
+              </Field>
+              <Field label="GST %">
+                <input type="number" min="0" max="28" step="0.5" value={form.gst_rate} onChange={u('gst_rate')}
+                  data-testid="quick-ha-gst"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm tabular-nums" />
+              </Field>
+            </div>
+          </section>
+
+          {/* Payment */}
+          <section>
+            <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Payment</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Status">
+                <select value={form.payment_status} onChange={u('payment_status')}
+                  data-testid="quick-ha-pay-status"
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                  <option value="fully_paid">Fully paid</option>
+                  <option value="advance_paid">Advance paid</option>
+                  <option value="unpaid">Unpaid (bill later)</option>
+                </select>
+              </Field>
+              <Field label="Mode">
+                <select value={form.payment_mode} onChange={u('payment_mode')}
+                  data-testid="quick-ha-pay-mode"
+                  disabled={form.payment_status === 'unpaid'}
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm disabled:bg-slate-100">
+                  {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Payment date">
+                <input type="date" value={form.payment_date} onChange={u('payment_date')}
+                  data-testid="quick-ha-pay-date"
+                  disabled={form.payment_status === 'unpaid'}
+                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm disabled:bg-slate-100" />
+              </Field>
+              {form.payment_status === 'advance_paid' && (
+                <>
+                  <Field label="Advance amount" required>
+                    <input type="number" min="0" step="0.01" value={form.advance_amount} onChange={u('advance_amount')}
+                      data-testid="quick-ha-advance"
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm tabular-nums" />
+                  </Field>
+                  <Field label="Balance due (auto)">
+                    <input value={`₹ ${balance.toLocaleString('en-IN')}`} readOnly
+                      data-testid="quick-ha-balance"
+                      className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-slate-50 tabular-nums" />
+                  </Field>
+                  <Field label="Expected payment date">
+                    <input type="date" value={form.expected_payment_date} onChange={u('expected_payment_date')}
+                      data-testid="quick-ha-expected"
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+                  </Field>
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* Notes */}
+          <section>
+            <Field label="Notes">
+              <textarea rows={2} value={form.notes} onChange={u('notes')}
+                data-testid="quick-ha-notes"
+                placeholder="e.g. patient prefers right-ear program 2 for restaurants…"
+                className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+            </Field>
+          </section>
+
+          {/* Footer */}
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 sticky bottom-0 bg-white">
+            <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded">
+              Cancel
+            </button>
+            <button onClick={submit} disabled={saving}
+              data-testid="quick-ha-submit"
+              className="px-4 py-2 text-xs font-bold bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white rounded shadow-md">
+              {saving ? 'Saving…' : 'Record Sale + Fit + Invoice'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

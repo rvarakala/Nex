@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import QuickHASaleModal from './QuickHASaleModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -22,11 +23,13 @@ export default function FittingLedgerPage() {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
+  const [quickSale, setQuickSale] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [me, setMe] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const prefillPatient = searchParams.get('patient_id') || '';
   const auto = searchParams.get('auto') === '1';
+  const quick = searchParams.get('quick') === '1';
 
   useEffect(() => { (async () => {
     try {
@@ -46,6 +49,18 @@ export default function FittingLedgerPage() {
       setCreating(true);
     }
   }, [auto, prefillPatient, me, canWrite]);
+
+  // Dashboard "Add HA Sale" Quick Action sends ?quick=1 → open the unified
+  // sale + fitting + invoice modal (also pre-fills patient if patient_id given).
+  useEffect(() => {
+    if (quick && me && canWrite) {
+      setQuickSale(true);
+      // Strip ?quick=1 from the URL so a back-nav doesn't re-open the modal.
+      const next = new URLSearchParams(searchParams);
+      next.delete('quick');
+      setSearchParams(next, { replace: true });
+    }
+  }, [quick, me, canWrite, searchParams, setSearchParams]);
 
   const load = useCallback(async () => {
     const params = status ? { status } : {};
@@ -70,7 +85,16 @@ export default function FittingLedgerPage() {
             {Object.keys(STATUS_STYLE).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           {canWrite && (
-            <button onClick={() => setCreating(true)} data-testid="ha-fit-new" className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm">+ New Fitting</button>
+            <>
+              <button onClick={() => setQuickSale(true)} data-testid="ha-fit-quick-sale-new"
+                className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-md shadow-sm">
+                + Add HA Sale
+              </button>
+              <button onClick={() => setCreating(true)} data-testid="ha-fit-new"
+                className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm">
+                + New Fitting
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -112,6 +136,18 @@ export default function FittingLedgerPage() {
       </div>
 
       {creating && <NewFittingModal onClose={() => setCreating(false)} onCreated={(f) => { setCreating(false); load(); setOpenId(f.fitting_id); }} />}
+      {quickSale && (
+        <QuickHASaleModal
+          prefillPatientId={prefillPatient || null}
+          onClose={() => setQuickSale(false)}
+          onCreated={(r) => {
+            setQuickSale(false);
+            load();
+            // The new doc is now visible in the ledger — open its detail pane.
+            if (r?.fitting_id) setOpenId(r.fitting_id);
+          }}
+        />
+      )}
       {openId && <FittingDetailDrawer fittingId={openId} onClose={() => setOpenId(null)} onChanged={load} canWrite={canWrite} />}
     </div>
   );

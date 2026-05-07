@@ -242,7 +242,6 @@ export default function AppShell({ children }) {
         { to: '/appointments',           Icon: CalendarDays, label: 'Calendar',     testid: 'nav-calendar' },
         isOwnerOrAdmin &&
           { to: '/settings/staff-schedule', Icon: BookOpen, label: 'Doctor Schedule', testid: 'nav-doctor-schedule' },
-        { to: '/patients/list?filter=recall', Icon: RotateCcw, label: 'Follow Ups & Recall', testid: 'nav-followups' },
       ].filter(Boolean),
     },
     {
@@ -269,6 +268,7 @@ export default function AppShell({ children }) {
     !isAudio && {
       label: 'Billing',
       items: [
+        { to: '/billing',          Icon: Receipt,     label: 'Invoices',           testid: 'nav-billing' },
         { to: '/billing/payments', Icon: IndianRupee, label: 'Payments & Refunds', testid: 'nav-payments' },
       ].filter(Boolean),
     },

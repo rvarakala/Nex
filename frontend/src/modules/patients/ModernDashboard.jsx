@@ -655,7 +655,7 @@ function QuickActions({ onNewAppt, navigate }) {
     { label: 'New Appointment',  icon: <Calendar size={16} />,        onClick: onNewAppt,                                        bg: 'bg-blue-50',     fg: 'text-blue-600',     testid: 'qa-new-appt' },
     { label: 'New Registration', icon: <UserPlus size={16} />,        onClick: () => navigate('/patients/new'),                  bg: 'bg-emerald-50',  fg: 'text-emerald-600',  testid: 'qa-new-reg' },
     { label: 'Hearing Test',     icon: <Ear size={16} />,             onClick: () => navigate('/test'),                          bg: 'bg-purple-50',   fg: 'text-purple-600',   testid: 'qa-test' },
-    { label: 'Add HA Sale',      icon: <ShoppingBag size={16} />,     onClick: () => navigate('/ha/sales'),                      bg: 'bg-amber-50',    fg: 'text-amber-600',    testid: 'qa-ha-sale' },
+    { label: 'Add HA Sale',      icon: <ShoppingBag size={16} />,     onClick: () => navigate('/ha/fittings?quick=1'),           bg: 'bg-amber-50',    fg: 'text-amber-600',    testid: 'qa-ha-sale' },
     { label: 'Send Recall',      icon: <MessageSquare size={16} />,   onClick: () => navigate('/patients/list?filter=recall'),   bg: 'bg-rose-50',     fg: 'text-rose-600',     testid: 'qa-recall' },
     { label: 'View Reports',     icon: <FileSpreadsheet size={16} />, onClick: () => navigate('/reports'),                       bg: 'bg-slate-100',   fg: 'text-slate-700',    testid: 'qa-reports' },
   ];

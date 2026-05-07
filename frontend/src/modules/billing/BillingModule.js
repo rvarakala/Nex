@@ -39,6 +39,8 @@ export default function BillingModule() {
     <div className="h-full flex flex-col" data-testid="billing-module">
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 flex-shrink-0">
         <h2 className="text-sm font-bold text-slate-800 mr-3">Billing</h2>
+        <Tab to="/billing" testid="bill-tab-invoices" label="Invoices" />
+        <Tab to="/billing/new" testid="bill-tab-new" label="+ New Invoice" />
         {canManageCatalog && <Tab to="/billing/catalog" testid="bill-tab-catalog" label="Service Catalog" />}
         {canSeeSubscription && <Tab to="/billing/my-subscription" testid="bill-tab-my-sub" label="My Subscription" />}
       </div>
