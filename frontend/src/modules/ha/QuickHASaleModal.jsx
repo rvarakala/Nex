@@ -48,7 +48,9 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
 
   const [form, setForm] = useState({
     branch_id: '',
-    brand: '', model: '', ha_type: 'BTE', serial_number: '', side: 'both',
+    brand: '', model: '', ha_type: 'BTE',
+    serial_left: '', serial_right: '',
+    side: 'both',
     fitting_date: todayISO(),
     warranty_months: 12,
     extended_warranty: false,
@@ -66,6 +68,10 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
   });
   const u = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const ub = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.checked }));
+
+  // Live inventory lookup state per side: {status, reason, state}
+  // status: 'available' | 'conflict' | 'not_found' | 'checking' | null
+  const [serialState, setSerialState] = useState({ left: null, right: null });
 
   // Load branches + (optional) prefill patient
   useEffect(() => {
@@ -96,6 +102,30 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
     return () => clearTimeout(h);
   }, [search]);
 
+  // Live serial lookup (debounced) — only for sides that are actually visible.
+  useEffect(() => {
+    const sides = form.side === 'both' ? ['left', 'right'] : [form.side];
+    const handles = [];
+    sides.forEach((s) => {
+      const v = (s === 'left' ? form.serial_left : form.serial_right).trim();
+      if (v.length < 3) {
+        setSerialState((p) => ({ ...p, [s]: null }));
+        return;
+      }
+      setSerialState((p) => ({ ...p, [s]: { status: 'checking' } }));
+      const h = setTimeout(async () => {
+        try {
+          const r = await axios.get(`${API}/ha/serials/lookup`, { params: { serial_no: v } });
+          setSerialState((p) => ({ ...p, [s]: r.data }));
+        } catch (e) {
+          setSerialState((p) => ({ ...p, [s]: { status: 'error', reason: e?.message } }));
+        }
+      }, 350);
+      handles.push(h);
+    });
+    return () => handles.forEach(clearTimeout);
+  }, [form.serial_left, form.serial_right, form.side]);
+
   // Auto-calc discount = MRP - sale_price (only if user hasn't manually overridden)
   const discountAuto = useMemo(() => {
     const m = parseFloat(form.mrp || 0);
@@ -117,7 +147,27 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
     if (!form.branch_id) { setErr('Branch is required.'); return; }
     if (!form.brand.trim()) { setErr('Brand (Make) is required.'); return; }
     if (!form.model.trim()) { setErr('Model is required.'); return; }
-    if (!form.serial_number.trim()) { setErr('Serial number is required.'); return; }
+
+    // Side-aware serial validation
+    const sLeft = form.serial_left.trim();
+    const sRight = form.serial_right.trim();
+    if (form.side === 'both') {
+      if (!sLeft || !sRight) { setErr('Both ears requires Left AND Right serial numbers.'); return; }
+      if (sLeft.toUpperCase() === sRight.toUpperCase()) { setErr('Left and Right serial numbers must be different.'); return; }
+    } else if (form.side === 'left' && !sLeft) {
+      setErr('Left serial number is required.'); return;
+    } else if (form.side === 'right' && !sRight) {
+      setErr('Right serial number is required.'); return;
+    }
+    // Block submit if any visible serial is in 'conflict' state (already SOLD)
+    const sidesToCheck = form.side === 'both' ? ['left', 'right'] : [form.side];
+    for (const s of sidesToCheck) {
+      const st = serialState[s];
+      if (st?.status === 'conflict') {
+        setErr(`${s.charAt(0).toUpperCase() + s.slice(1)} serial is unavailable: ${st.reason || st.state}`);
+        return;
+      }
+    }
     const mrp = parseFloat(form.mrp);
     const sale = parseFloat(form.sale_price);
     if (!Number.isFinite(mrp) || mrp < 0) { setErr('Enter a valid MRP.'); return; }
@@ -136,7 +186,8 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
         brand: form.brand.trim(),
         model: form.model.trim(),
         ha_type: form.ha_type,
-        serial_number: form.serial_number.trim(),
+        serial_left: form.side === 'right' ? null : (sLeft || null),
+        serial_right: form.side === 'left' ? null : (sRight || null),
         side: form.side,
         fitting_date: form.fitting_date,
         warranty_months: parseInt(form.warranty_months) || 12,
@@ -246,11 +297,6 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
                   {HA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </Field>
-              <Field label="Serial number" required>
-                <input value={form.serial_number} onChange={u('serial_number')}
-                  data-testid="quick-ha-serial" placeholder="PHO-RIC-2026XXXX"
-                  className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono uppercase" />
-              </Field>
               <Field label="Side fitted">
                 <select value={form.side} onChange={u('side')} data-testid="quick-ha-side"
                   className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
@@ -262,6 +308,30 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
                   data-testid="quick-ha-fitting-date"
                   className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
               </Field>
+            </div>
+
+            {/* Side-aware serial fields */}
+            <div className={`mt-3 grid gap-3 ${form.side === 'both' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {(form.side === 'both' || form.side === 'left') && (
+                <SerialInputField
+                  label={form.side === 'both' ? 'Left ear · Serial number' : 'Left ear · Serial number'}
+                  value={form.serial_left}
+                  onChange={u('serial_left')}
+                  state={serialState.left}
+                  testidPrefix="quick-ha-serial-left"
+                  placeholder="PHO-RIC-2026LXX"
+                />
+              )}
+              {(form.side === 'both' || form.side === 'right') && (
+                <SerialInputField
+                  label={form.side === 'both' ? 'Right ear · Serial number' : 'Right ear · Serial number'}
+                  value={form.serial_right}
+                  onChange={u('serial_right')}
+                  state={serialState.right}
+                  testidPrefix="quick-ha-serial-right"
+                  placeholder="PHO-RIC-2026RXX"
+                />
+              )}
             </div>
           </section>
 
@@ -404,3 +474,79 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
     </div>
   );
 }
+
+
+// ─── Serial input with live inventory badge ─────────────────────────
+
+function SerialInputField({ label, value, onChange, state, testidPrefix, placeholder }) {
+  // Status pill colour + copy
+  let pill = null;
+  if (state?.status === 'available') {
+    pill = (
+      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+        data-testid={`${testidPrefix}-badge-available`}>
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />In stock
+      </span>
+    );
+  } else if (state?.status === 'conflict') {
+    pill = (
+      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+        data-testid={`${testidPrefix}-badge-conflict`}
+        title={state.reason || state.state}>
+        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />{state.state || 'Unavailable'}
+      </span>
+    );
+  } else if (state?.status === 'not_found') {
+    pill = (
+      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+        data-testid={`${testidPrefix}-badge-untracked`}
+        title="Sale will be saved and flagged for inventory reconciliation">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Not in inventory
+      </span>
+    );
+  } else if (state?.status === 'checking') {
+    pill = (
+      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+        data-testid={`${testidPrefix}-badge-checking`}>
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />Checking…
+      </span>
+    );
+  }
+
+  // Border colour mirrors the status pill
+  const borderClass =
+    state?.status === 'available' ? 'border-emerald-400 focus:border-emerald-500'
+    : state?.status === 'conflict' ? 'border-rose-400 focus:border-rose-500'
+    : state?.status === 'not_found' ? 'border-amber-400 focus:border-amber-500'
+    : 'border-slate-300 focus:border-indigo-500';
+
+  // Helper text under the input — explains the consequence of the current state
+  let hint = null;
+  if (state?.status === 'conflict') {
+    hint = <span className="text-[10px] text-rose-700 mt-1 block">{state.reason || `Cannot sell — currently ${state.state}.`}</span>;
+  } else if (state?.status === 'not_found' && value && value.length >= 3) {
+    hint = <span className="text-[10px] text-amber-700 mt-1 block">Will be saved without inventory link — reconcile later via Inventory → Stock Receipt.</span>;
+  } else if (state?.status === 'available') {
+    hint = <span className="text-[10px] text-emerald-700 mt-1 block">Inventory will decrement by 1 when you submit.</span>;
+  }
+
+  return (
+    <label className="block">
+      <span className="flex items-center justify-between mb-1">
+        <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+          {label} <span className="text-rose-500">*</span>
+        </span>
+        {pill}
+      </span>
+      <input
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        data-testid={`${testidPrefix}-input`}
+        className={`w-full border rounded px-2 py-1.5 text-sm font-mono uppercase focus:outline-none focus:ring-1 ${borderClass}`}
+      />
+      {hint}
+    </label>
+  );
+}
+

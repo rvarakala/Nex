@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 from auth import get_current_user, require_roles, user_can_see_branch
 from billing import _next_invoice_no
 from database import get_db
+from utils.ha_states import transition_serial
 from utils.numbering import next_number
 
 router = APIRouter(prefix="/api/ha", tags=["ha-quick-sale"])
@@ -56,7 +57,12 @@ class QuickSaleIn(BaseModel):
     brand: str = Field(..., min_length=1, max_length=80)
     model: str = Field(..., min_length=1, max_length=120)
     ha_type: Literal["BTE", "RIC", "ITE", "ITC", "CIC", "IIC", "OTHER"] = "BTE"
-    serial_number: str = Field(..., min_length=1, max_length=80)
+    # Side-specific serial numbers — one OR both must be provided based on `side`.
+    # `serial_number` (legacy, single field) still accepted for backward compat
+    # and mapped to whichever side the caller picked.
+    serial_number: Optional[str] = Field(None, min_length=1, max_length=80)
+    serial_left: Optional[str] = Field(None, min_length=1, max_length=80)
+    serial_right: Optional[str] = Field(None, min_length=1, max_length=80)
     side: Literal["left", "right", "both"] = "both"
     fitting_date: str                       # ISO YYYY-MM-DD
 
@@ -94,12 +100,195 @@ class QuickSaleOut(BaseModel):
     balance: float
     status: str
     fitting_url: str                        # frontend deep link the UI can navigate to
+    inventory_consumed: List[str] = Field(default_factory=list)  # serial_ids transitioned IN_STOCK→SOLD
+    inventory_unmatched: List[str] = Field(default_factory=list) # serial_no values w/o inventory record
 
 
 # ─── Helpers ────────────────────────────────────────────────────────
 
 def _today_iso() -> str:
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def _normalise_serial(s: Optional[str]) -> Optional[str]:
+    """Trim + uppercase. Returns None for empty / None."""
+    if s is None:
+        return None
+    s = s.strip().upper()
+    return s or None
+
+
+def _resolve_serials(payload: QuickSaleIn) -> dict:
+    """Map the side-aware payload into a {side → serial_no} dict (canonicalised).
+
+    Accepts the legacy single-field `serial_number` and re-routes it to the
+    correct side based on `payload.side`. Raises 400 on missing/duplicate.
+    """
+    side = payload.side
+    left = _normalise_serial(payload.serial_left)
+    right = _normalise_serial(payload.serial_right)
+    legacy = _normalise_serial(payload.serial_number)
+
+    if side == "both":
+        # Both must be filled (split fields preferred)
+        left = left or (legacy if not right else None)
+        right = right or (legacy if not left else None)
+        if not left or not right or left == right:
+            raise HTTPException(
+                400,
+                "Both ears requires two distinct serial numbers — one for the left ear and one for the right.",
+            )
+        return {"left": left, "right": right}
+
+    if side == "left":
+        s = left or legacy
+        if not s:
+            raise HTTPException(400, "Left serial number is required.")
+        return {"left": s}
+
+    # right
+    s = right or legacy
+    if not s:
+        raise HTTPException(400, "Right serial number is required.")
+    return {"right": s}
+
+
+async def _validate_and_consume_serials(
+    db, clinic_id: str, branch_id: str, serials_by_side: dict,
+    sale_no: str, patient: dict, actor_user_id: str,
+) -> tuple[list[str], list[str]]:
+    """For each serial number requested:
+
+      • Look up `serial_items` in this clinic.
+      • If found and IN_STOCK → transition to SOLD.
+      • If found and SOLD/RESERVED/TRIAL_OUT/etc → HARD REJECT (409) with details.
+      • If not found → return it in `unmatched` so caller can flag the fitting
+        without blocking the sale (Q1c hybrid mode).
+
+    Returns ``(consumed_serial_ids, unmatched_serial_nos)``.
+    """
+    consumed_ids: list[str] = []
+    unmatched: list[str] = []
+    seen_in_request: set[str] = set()
+
+    for side, serial_no in serials_by_side.items():
+        if serial_no in seen_in_request:
+            raise HTTPException(400, f"Same serial '{serial_no}' supplied for multiple sides.")
+        seen_in_request.add(serial_no)
+
+        # Case-insensitive lookup; we already uppercased via _normalise_serial.
+        si = await db.serial_items.find_one(
+            {"clinic_id": clinic_id, "serial_no": serial_no}, {"_id": 0},
+        )
+        if not si:
+            unmatched.append(serial_no)
+            log.info(f"quick-sale serial '{serial_no}' not in inventory — flagged unmatched")
+            continue
+
+        # Branch guard: a serial belongs to one branch's stock. Selling it from
+        # a different branch is a stock-transfer event, not a sale — block here.
+        if si.get("branch_id") and si["branch_id"] != branch_id:
+            raise HTTPException(
+                409,
+                f"Serial {serial_no} is in branch '{si['branch_id']}' stock — "
+                f"transfer it to '{branch_id}' first.",
+            )
+
+        state = si.get("state", "IN_STOCK")
+        if state == "SOLD":
+            patient_ref = si.get("current_patient_id") or "another patient"
+            raise HTTPException(
+                409,
+                f"Serial {serial_no} is already SOLD (to {patient_ref}). "
+                f"Use a different serial or void the previous sale.",
+            )
+        if state not in {"IN_STOCK", "RESERVED"}:
+            raise HTTPException(
+                409,
+                f"Serial {serial_no} is currently {state} — only IN_STOCK or RESERVED units can be sold.",
+            )
+
+        # Transition to SOLD with full state-machine audit
+        try:
+            await transition_serial(
+                db, si["serial_id"], "SOLD",
+                actor_user_id=actor_user_id,
+                ref_doc={"kind": "quick_sale", "id": sale_no},
+                note=f"Quick-sale {sale_no} → patient {patient.get('name','')} ({patient.get('patient_id')})",
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, f"Failed to consume serial {serial_no}: {exc}")
+
+        # Stamp current_patient_id so warranty/AMC tracking can find this unit.
+        await db.serial_items.update_one(
+            {"serial_id": si["serial_id"]},
+            {"$set": {"current_patient_id": patient["patient_id"], "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        consumed_ids.append(si["serial_id"])
+        log.info(f"quick-sale consumed serial {serial_no} (id={si['serial_id']}, side={side})")
+
+    return consumed_ids, unmatched
+
+
+# ─── Live serial lookup (for in-form validation) ─────────────────────
+
+@router.get("/serials/lookup")
+async def lookup_serial(
+    serial_no: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Live validation for the Quick Sale modal. Returns one of:
+
+      • ``available`` — serial is IN_STOCK (or RESERVED) and ready to sell
+      • ``conflict``  — serial is SOLD / TRIAL_OUT / SERVICE_IN — *block* sale
+      • ``not_found`` — typed serial isn't in inventory; sale will be flagged
+
+    The frontend uses this to draw a green ✓ / red ✗ / amber ⚠ badge next to
+    the input field while the user types (debounced).
+    """
+    sn = _normalise_serial(serial_no)
+    if not sn:
+        return {"status": "not_found", "serial_no": ""}
+
+    si = await db.serial_items.find_one(
+        {"clinic_id": user["clinic_id"], "serial_no": sn}, {"_id": 0},
+    )
+    if not si:
+        return {"status": "not_found", "serial_no": sn}
+
+    # Branch isolation — a serial in another branch's stock isn't usable here
+    user_branches = set(user.get("branch_ids") or [])
+    if user_branches and si.get("branch_id") and si["branch_id"] not in user_branches:
+        return {
+            "status": "conflict",
+            "serial_no": sn,
+            "reason": f"Stock at branch '{si['branch_id']}' — transfer first",
+        }
+
+    state = si.get("state", "IN_STOCK")
+    if state in {"IN_STOCK", "RESERVED"}:
+        return {
+            "status": "available",
+            "serial_no": sn,
+            "serial_id": si["serial_id"],
+            "state": state,
+            "product_id": si.get("product_id"),
+            "branch_id": si.get("branch_id"),
+        }
+
+    # Anything else (SOLD, TRIAL_OUT, SERVICE_IN, DAMAGED, RETIRED, RETURNED) → conflict
+    return {
+        "status": "conflict",
+        "serial_no": sn,
+        "state": state,
+        "reason": (
+            f"Already SOLD to {si.get('current_patient_id','another patient')}"
+            if state == "SOLD" else f"Currently {state}"
+        ),
+    }
 
 
 def _ensure_branch(user: dict, branch_id: Optional[str]) -> str:
@@ -164,6 +353,10 @@ async def create_quick_sale(
     if payload.sale_price > payload.mrp + 0.5:
         raise HTTPException(400, "Sale price cannot exceed MRP")
 
+    # ── Resolve & validate serial numbers per ear ──
+    # Map { side → uppercased serial_no }, e.g. {'left':'PHO-RIC-A1', 'right':'PHO-RIC-A2'}
+    serials_by_side = _resolve_serials(payload)
+
     totals = _calc_totals(payload)
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
@@ -187,6 +380,14 @@ async def create_quick_sale(
     fitting_id = f"FIT-{uuid.uuid4().hex[:10].upper()}"
     invoice_id = f"INV-{uuid.uuid4().hex[:10].upper()}"
 
+    # ── Consume inventory (HARD REJECT if any serial is already SOLD/etc;
+    # OK if serial isn't tracked — flagged in unmatched). This runs BEFORE we
+    # write any of our docs so a serial conflict doesn't leave orphan rows.
+    consumed_serial_ids, unmatched_serials = await _validate_and_consume_serials(
+        db, user["clinic_id"], branch_id, serials_by_side,
+        sale_no=sale_no, patient=patient, actor_user_id=user["user_id"],
+    )
+
     # ── Build & insert documents (ordered: quick_sale → fitting → invoice) ──
     quick_sale_doc = {
         "quick_sale_id": quick_sale_id,
@@ -201,8 +402,15 @@ async def create_quick_sale(
         "brand": payload.brand.strip(),
         "model": payload.model.strip(),
         "ha_type": payload.ha_type,
-        "serial_number": payload.serial_number.strip().upper(),
+        # Side-aware serial fields. We keep `serial_number` as the
+        # display-friendly aggregate ("LEFT/RIGHT") for legacy clients.
         "side": payload.side,
+        "serial_left": serials_by_side.get("left"),
+        "serial_right": serials_by_side.get("right"),
+        "serial_number": " / ".join([s for s in (serials_by_side.get("left"), serials_by_side.get("right")) if s]),
+        "consumed_serial_ids": consumed_serial_ids,
+        "unmatched_serials": unmatched_serials,
+        "inventory_tracked": len(unmatched_serials) == 0,
         "fitting_date": payload.fitting_date,
         # Warranty
         "warranty_months": payload.warranty_months,
@@ -242,10 +450,19 @@ async def create_quick_sale(
     # ── Lightweight Fitting record so it appears in the Fitting Ledger ──
     # NOTE: schema must match Pydantic `Fitting` model in models_ha.py so the
     # existing GET /api/ha/fittings/{id} endpoint validates and returns it.
-    # FittingSerial.side accepts only left|right|single, so we map "both" → "single"
-    # (single physical entry; UI can split later if you upgrade to two serials).
-    fitting_serial_side = "single" if payload.side == "both" else payload.side
+    # Build one FittingSerial per ear so audiogram + warranty tracking can map
+    # each device to the correct ear.
+    fitting_serials_payload = []
+    if payload.side == "both":
+        fitting_serials_payload.append({"serial_id": serials_by_side["left"], "side": "left"})
+        fitting_serials_payload.append({"serial_id": serials_by_side["right"], "side": "right"})
+    else:
+        fitting_serials_payload.append({
+            "serial_id": serials_by_side[payload.side],
+            "side": payload.side,
+        })
     visit_at = now_iso
+    notes_serials = ", ".join([f"{s['side'].upper()}={s['serial_id']}" for s in fitting_serials_payload])
     fitting_doc = {
         "fitting_id": fitting_id,
         "clinic_id": user["clinic_id"],
@@ -255,10 +472,7 @@ async def create_quick_sale(
         "audiologist_user_id": user["user_id"],
         "audiologist_name": user.get("name", ""),
         "sale_no": sale_no,
-        "serials": [{
-            "serial_id": payload.serial_number.strip().upper(),
-            "side": fitting_serial_side,
-        }],
+        "serials": fitting_serials_payload,
         "status": "active",
         "first_fit_at": payload.fitting_date,
         "completed_at": None,
@@ -271,9 +485,10 @@ async def create_quick_sale(
             "notes": (
                 f"HA sale recorded via Quick Sale form. "
                 f"Brand: {payload.brand}, Model: {payload.model}, Type: {payload.ha_type}, "
-                f"Serial: {payload.serial_number}. "
-                f"Side: {payload.side}. "
-                f"Warranty: {payload.warranty_months} months"
+                f"Side: {payload.side}. Serials: {notes_serials}. "
+                f"Inventory consumed: {len(consumed_serial_ids)} unit(s)"
+                + (f" (unmatched: {', '.join(unmatched_serials)})" if unmatched_serials else "")
+                + f". Warranty: {payload.warranty_months} months"
                 + (f" + {payload.extended_warranty_months} months extended ({payload.extended_warranty_source})"
                    if payload.extended_warranty else "")
                 + "."
@@ -294,6 +509,11 @@ async def create_quick_sale(
         "ha_type": payload.ha_type,
         "warranty_months": payload.warranty_months,
         "extended_warranty": payload.extended_warranty,
+        "serial_left": serials_by_side.get("left"),
+        "serial_right": serials_by_side.get("right"),
+        "consumed_serial_ids": consumed_serial_ids,
+        "unmatched_serials": unmatched_serials,
+        "inventory_tracked": len(unmatched_serials) == 0,
         # Money snapshot for the Fittings table (kept in sync via mark-paid):
         "sale_total": totals["total"],
         "amount_paid": paid,
@@ -330,7 +550,7 @@ async def create_quick_sale(
             "line_id": uuid.uuid4().hex[:8],
             "description": (
                 f"Hearing Aid — {payload.brand} {payload.model} ({payload.ha_type}, {payload.side}) "
-                f"· S/N {payload.serial_number.strip().upper()}"
+                f"· S/N {' / '.join([s for s in (serials_by_side.get('left'), serials_by_side.get('right')) if s])}"
             ),
             "quantity": inv_qty,
             "unit_price": inv_unit_price,
@@ -347,7 +567,7 @@ async def create_quick_sale(
             "product_type": "Hearing Aid",
             "make": payload.brand,
             "model": payload.model,
-            "serial_numbers": [payload.serial_number.strip().upper()],
+            "serial_numbers": [s for s in (serials_by_side.get("left"), serials_by_side.get("right")) if s],
         }],
 
         "subtotal": inv_taxable,
@@ -410,6 +630,8 @@ async def create_quick_sale(
         balance=balance,
         status=quick_sale_doc["status"],
         fitting_url="/ha/fittings",
+        inventory_consumed=consumed_serial_ids,
+        inventory_unmatched=unmatched_serials,
     )
 
 
