@@ -113,7 +113,7 @@ curl -s "$API/patients" -H "Authorization: Bearer $TOKEN"
 - **Password**: `Sandbox@123`
 - **Role**: `clinic_owner`
 - **Tier**: `STANDARD` (30-day trial)
-- **clinic_id**: `clinic-sandbox-test-clinic-cef32c`
+- **clinic_id**: `clinic-sandbox-test-clinic-9aaab6`
 - **City / State**: Bengaluru, Karnataka
 - **Phone**: `+919900110011`
 - **Created via**: `POST /api/admin/v2/tenants` (founder, set-password-now mode)

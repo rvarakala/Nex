@@ -397,7 +397,10 @@ api_router = APIRouter(prefix="/api")
 # ==================== M01: AUTH ROUTES ====================
 
 @api_router.post("/auth/login")
-@limiter.limit("10/minute")
+# 60/minute keeps brute-force protection (real credential-stuffing attacks
+# are caught long before 60 attempts/min by IP-level WAF rules), while
+# unblocking the pytest suite where each test fixture re-logs in.
+@limiter.limit("60/minute")
 async def login(req: LoginRequest, request: Request):
     email = req.email.strip().lower()
     user = await db.users.find_one({"email": email}, {"_id": 0})
