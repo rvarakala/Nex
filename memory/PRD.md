@@ -1,5 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚨 HOTFIX BATCH 3 — Patient profile History showing OTHER patients' visits (2026-05-08)
+
+### Symptom (production blocker)
+On `/patients/{patient_id}` the History tab listed visits/sessions/invoices that did not belong to the open patient. For Harmony Hyderabad, patient Varakala's timeline showed dozens of `IMPORTED Visit · completed` entries belonging to entirely different people.
+
+### Root cause
+`GET /api/appointments` did **not** declare `patient_id` as a query parameter. The frontend `PatientProfilePage` correctly called `/api/appointments?patient_id={pid}`, but FastAPI silently dropped the unknown query and returned **every** appointment in the clinic. The auto-derived timeline `useMemo` then spread all of them across the open patient's profile.
+
+### Fix
+Added `patient_id: Optional[str] = Query(None, ...)` to `list_appointments` in `routers/appointments.py`. When provided it narrows the Mongo query before RBAC scoping. Sessions / invoices / service tickets / notes already accepted `patient_id` correctly — only the appointments endpoint had the bug.
+
+### Verified
+- Without `patient_id`: 58 appointments (full clinic) returned.
+- With `patient_id={specific_pid}`: only that patient's 5 appointments returned, zero cross-patient leakage.
+- Smoke 6/6 PASS · new regression `test_appointments_patient_filter.py` 2/2 PASS.
+
+### Files
+- Modified: `/app/backend/routers/appointments.py` (added `patient_id` query parameter)
+- New: `/app/backend/tests/test_appointments_patient_filter.py`
+
+### Production rollout
+Code-only fix. **Please redeploy preview → production** along with the other 3 pending hotfixes (index collision + bilateral quote + auto-invoice).
+
+---
+
 ## 🚨 HOTFIX BATCH 2 — Bilateral quotes + one-click invoice from sale (2026-05-08)
 
 ### Bug 1: "Binaural (L+R pair)" checkbox failed quote creation

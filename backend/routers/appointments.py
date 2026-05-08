@@ -395,10 +395,18 @@ async def list_appointments(
     room: Optional[str] = None,
     priority: Optional[str] = None,
     status: Optional[str] = None,
+    patient_id: Optional[str] = Query(
+        None,
+        description="Filter to a single patient. Used by the Patient Profile "
+                    "History tab — without this every imported visit in the "
+                    "clinic would flood every patient timeline.",
+    ),
     limit: int = 500,
     user=Depends(get_current_user), db=Depends(get_db),
 ):
     q: dict = {"clinic_id": user["clinic_id"]}
+    if patient_id:
+        q["patient_id"] = patient_id
     if from_date or to_date:
         rng: dict = {}
         if from_date:
