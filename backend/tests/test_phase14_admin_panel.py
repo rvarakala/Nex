@@ -17,11 +17,12 @@ import uuid
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 
 FOUNDER = ("founder@audinexa.com", "founder123")
-SUPER_ADMIN = ("admin@acs.in", "admin123")
+SUPER_ADMIN = (ADMIN_EMAIL, ADMIN_PASSWORD)
 KIMS_OWNER = ("support@kimshearing.in", "demo123")
 FRONT_DESK = ("frontdesk@acs.in", "frontdesk123")
 

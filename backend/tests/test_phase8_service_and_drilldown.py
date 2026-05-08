@@ -16,6 +16,7 @@ import pytest
 import requests
 
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 _url = os.environ.get("REACT_APP_BACKEND_URL")
 if not _url:
     with open("/app/frontend/.env") as _fh:
@@ -39,7 +40,7 @@ def hdr(tok):
 
 
 @pytest.fixture(scope="session")
-def admin_token(): return _login("admin@acs.in", "admin123")
+def admin_token(): return _login(ADMIN_EMAIL, ADMIN_PASSWORD)
 
 
 @pytest.fixture(scope="session")
@@ -184,7 +185,7 @@ class TestCancel:
         assert r.status_code == 403
         # cleanup: admin cancels
         requests.post(f"{API}/ha/service-tickets/{t['ticket_no']}/cancel",
-                      headers=hdr(requests.post(f"{API}/auth/login", json={"email": "admin@acs.in", "password": "admin123"}, timeout=15).json()["access_token"]))
+                      headers=hdr(requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}, timeout=15).json()["access_token"]))
 
 
 class TestKPIs:

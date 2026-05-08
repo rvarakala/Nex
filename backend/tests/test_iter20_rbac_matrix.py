@@ -12,12 +12,13 @@ import os
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 
 CREDS = {
     "founder":        ("founder@audinexa.com", "founder123"),
-    "super_admin":    ("admin@acs.in", "admin123"),
+    "super_admin":    (ADMIN_EMAIL, ADMIN_PASSWORD),
     "sales_manager":  ("sales@audinexa.com", "sales123"),
     "support_agent":  ("support@audinexa.com", "support123"),
     "finance_manager": ("finance@audinexa.com", "finance123"),

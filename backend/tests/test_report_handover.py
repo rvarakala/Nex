@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://careful-feedback.preview.emergentagent.com").rstrip("/")
 API = f"{BASE}/api"
 
@@ -36,7 +37,7 @@ def tokens():
         "fd": _login("frontdesk@acs.in", "frontdesk123"),
         "aud": _login("audiologist@acs.in", "audio123"),
         "accounts": _login("accounts@acs.in", "accounts123"),
-        "admin": _login("admin@acs.in", "admin123"),
+        "admin": _login(ADMIN_EMAIL, ADMIN_PASSWORD),
     }
 
 

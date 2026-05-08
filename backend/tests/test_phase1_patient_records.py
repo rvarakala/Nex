@@ -4,6 +4,7 @@ import time
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://careful-feedback.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -18,7 +19,7 @@ def _authenticate():
     Without this, every request returns 401 because `session` has no Authorization
     header. Uses super-admin so patient-records POST/DELETE are permitted.
     """
-    r = session.post(f"{API}/auth/login", json={"email": "admin@acs.in", "password": "admin123"})
+    r = session.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200, f"Login failed: {r.status_code} {r.text}"
     token = r.json()["access_token"]
     session.headers.update({"Authorization": f"Bearer {token}"})

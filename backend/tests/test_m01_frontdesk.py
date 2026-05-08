@@ -6,6 +6,7 @@ import pytest
 import requests
 from datetime import datetime
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -37,7 +38,7 @@ def audio_token():
 @pytest.fixture(scope="module")
 def admin_token():
     r = requests.post(f"{API}/auth/login", json={
-        "email": "admin@acs.in", "password": "admin123"
+        "email": ADMIN_EMAIL, "password": ADMIN_PASSWORD
     })
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
@@ -109,7 +110,7 @@ class TestAuth:
 
     def test_all_four_demo_users_login(self):
         creds = [
-            ("admin@acs.in", "admin123", "super_admin"),
+            (ADMIN_EMAIL, ADMIN_PASSWORD, "super_admin"),
             ("frontdesk@acs.in", "frontdesk123", "front_desk"),
             ("audiologist@acs.in", "audio123", "audiologist"),
             ("accounts@acs.in", "accounts123", "accounts"),

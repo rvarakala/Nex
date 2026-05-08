@@ -17,6 +17,7 @@ import jwt
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
@@ -64,7 +65,7 @@ def flush_rate_limits_once():
 
 @pytest.fixture(scope="module")
 def mumbai_admin():
-    return _login("admin@acs.in", "admin123")["access_token"]
+    return _login(ADMIN_EMAIL, ADMIN_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")

@@ -8,6 +8,7 @@ import asyncio
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 sys.path.insert(0, "/app/backend")  # allow importing util modules
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -25,7 +26,7 @@ def _login(email, password):
 
 @pytest.fixture(scope="module")
 def admin():
-    return _login("admin@acs.in", "admin123")
+    return _login(ADMIN_EMAIL, ADMIN_PASSWORD)
 
 
 @pytest.fixture(scope="module")

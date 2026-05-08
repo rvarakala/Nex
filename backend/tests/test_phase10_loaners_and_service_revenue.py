@@ -13,6 +13,7 @@ from datetime import date, timedelta
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 _url = os.environ.get("REACT_APP_BACKEND_URL")
 if not _url:
     with open("/app/frontend/.env") as fh:
@@ -37,7 +38,7 @@ def hdr(tok): return {"Authorization": f"Bearer {tok}"}
 
 
 @pytest.fixture(scope="session")
-def admin_token(): return _login("admin@acs.in", "admin123")
+def admin_token(): return _login(ADMIN_EMAIL, ADMIN_PASSWORD)
 
 
 @pytest.fixture(scope="session")

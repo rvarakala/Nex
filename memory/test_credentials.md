@@ -118,3 +118,24 @@ curl -s "$API/patients" -H "Authorization: Bearer $TOKEN"
 - **Phone**: `+919900110011`
 - **Created via**: `POST /api/admin/v2/tenants` (founder, set-password-now mode)
 - **Status**: Trial, ready for end-to-end testing of import + accounts + scheduling + billing flows.
+
+## Smoke Test Suite (added 2026-05-08)
+Fast (<5s) sanity check that confirms the platform boots and the canonical schemas haven't drifted. Useful before deploys / after large refactors.
+
+```bash
+# Either of these:
+cd /app/backend && bash scripts/smoke.sh
+cd /app/frontend && yarn test:smoke
+cd /app/backend && pytest -m smoke -x -q
+```
+
+Covers: `/api/health`, admin login, founder login, `/api/auth/me` shape, `/api/patients` listing, forgot-password endpoint mount.
+
+### Override identity at runtime
+The legacy admin (`admin@acs.in`) is still seeded by `conftest.py` for back-compat. To run the suite as a different identity:
+
+```bash
+TEST_ADMIN_EMAIL=founder@audinexa.com TEST_ADMIN_PASSWORD=founder123 pytest
+```
+
+All 39 legacy test files were migrated on 2026-05-08 to read these env vars (via shared `tests/_helpers.py`) instead of hardcoding the literal email/password. The shared helpers also expose `API`, `H(token)`, `login(email, password)`, `admin_token()`, and `founder_token()` for new tests.

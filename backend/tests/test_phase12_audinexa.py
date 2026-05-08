@@ -9,6 +9,7 @@ import pytest
 import requests
 
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL",
                          "https://careful-feedback.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
@@ -26,7 +27,7 @@ def h(tok):
 
 
 @pytest.fixture(scope="module")
-def admin(): return _login("admin@acs.in", "admin123")
+def admin(): return _login(ADMIN_EMAIL, ADMIN_PASSWORD)
 @pytest.fixture(scope="module")
 def fd(): return _login("frontdesk@acs.in", "frontdesk123")
 

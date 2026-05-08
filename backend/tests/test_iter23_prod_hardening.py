@@ -24,12 +24,13 @@ import uuid
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "admin@acs.in")
-ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", ADMIN_EMAIL)
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", ADMIN_PASSWORD)
 
 
 # ---------------- helpers ----------------

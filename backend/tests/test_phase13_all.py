@@ -4,6 +4,7 @@ import secrets
 import requests
 import pytest
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://careful-feedback.preview.emergentagent.com").rstrip("/")
 API = f"{BASE}/api"
 SUFFIX = secrets.token_hex(3).upper()
@@ -12,7 +13,7 @@ SUFFIX = secrets.token_hex(3).upper()
 # -------- shared fixtures --------
 @pytest.fixture(scope="module")
 def admin_token():
-    r = requests.post(f"{API}/auth/login", json={"email": "admin@acs.in", "password": "admin123"}, timeout=20)
+    r = requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}, timeout=20)
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 

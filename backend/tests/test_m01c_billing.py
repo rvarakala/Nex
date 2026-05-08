@@ -4,6 +4,7 @@ import pytest
 import requests
 from datetime import datetime
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://careful-feedback.preview.emergentagent.com').rstrip('/')
 API = f"{BASE_URL}/api"
 
@@ -26,7 +27,7 @@ def acct_tok():
 
 @pytest.fixture(scope="module")
 def admin_tok():
-    return _login("admin@acs.in", "admin123")
+    return _login(ADMIN_EMAIL, ADMIN_PASSWORD)
 
 
 def H(t): return {"Authorization": f"Bearer {t}"}

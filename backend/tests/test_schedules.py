@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -40,7 +41,7 @@ def fd_headers():
 def admin_headers():
     """super_admin role — full edit rights on this clinic."""
     r = requests.post(f"{API}/auth/login",
-                      json={"email": "admin@acs.in", "password": "admin123"})
+                      json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200, r.text
     return {"Content-Type": "application/json",
             "Authorization": f"Bearer {r.json()['access_token']}"}

@@ -1,5 +1,42 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Smoke test suite + legacy admin credential migration (2026-05-08)
+
+### What ships
+**Smoke test (`pytest -m smoke`)**
+- New `/app/backend/tests/test_smoke.py` — 6 thin checks (~3s) covering `/api/health`, admin login, founder login, `/api/auth/me` shape, `/api/patients?limit=1` reachability, `/api/auth/forgot-password` mount.
+- New `/app/backend/pytest.ini` registers the `smoke` marker.
+- New `/app/backend/scripts/smoke.sh` and `yarn test:smoke` (frontend) entrypoints.
+
+**Shared test helpers — `/app/backend/tests/_helpers.py`**
+- Single source of truth for `API`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_CLINIC_ID`, `FOUNDER_EMAIL`, `FOUNDER_PASSWORD`, plus `login(email, password)`, `admin_token()`, `founder_token()`, `H(token)`.
+- Reads `REACT_APP_BACKEND_URL` / `TEST_ADMIN_EMAIL` / `TEST_ADMIN_PASSWORD` env vars with safe back-compat defaults (`admin@acs.in` / `admin123`).
+
+**Legacy `admin@acs.in` migration (39 files)**
+- Wrote idempotent `/app/backend/scripts/migrate_test_admin_creds.py` and ran it across all `test_*.py` files.
+- 39 files now import `ADMIN_EMAIL`, `ADMIN_PASSWORD` from `_helpers` instead of hardcoding the literal `"admin@acs.in"`/`"admin123"`. Re-running the script is a no-op.
+- To execute the suite under a different identity: `TEST_ADMIN_EMAIL=founder@audinexa.com TEST_ADMIN_PASSWORD=founder123 pytest`.
+- `conftest.py` bootstrap is unchanged — still seeds `clinic-acs-demo` + the 4 demo users when `DISABLE_DEMO_SEED=1` strips them in production. The migration's value is not removing the bootstrap (yet) but unlocking env-var override so a future cleanup can drop `clinic-acs-demo` entirely.
+
+### Files
+- New: `/app/backend/tests/test_smoke.py`, `/app/backend/tests/_helpers.py`, `/app/backend/pytest.ini`, `/app/backend/scripts/smoke.sh`, `/app/backend/scripts/migrate_test_admin_creds.py`
+- Modified: `/app/frontend/package.json` (`yarn test:smoke` script), `/app/memory/test_credentials.md` (smoke runbook), 39 `test_*.py` files (literal → constant + helper import)
+
+### Testing
+- Smoke suite: 6/6 PASS in 2.2s.
+- Pytest collection: 981 tests collected, 0 import errors.
+- Migration spot-check: 44/44 PASS across `test_concurrency_versions.py`, `test_greetings.py`, `test_iter22_ha_serials_demo.py`, `test_phase1_patient_records.py`.
+- Pre-existing failure on `test_phase14_admin_panel.py::test_demo_tenants_seeded` (expects KIMS/Apollo/SoundCare/ENT-Plus tenants which were intentionally cleaned up in Phase 1 demo cleanup) — unrelated to this migration.
+
+### Backlog still open after this session
+- Legacy `clinic-acs-demo` bootstrap can now be removed (P3) once the Phase 14 admin tests are repointed to `beta-01`…`beta-10` instead of the deleted demo tenants.
+- `GET /api/ha/trials` 500 in `tenant-sound-clinic-blr` (P1, demo-screenshot blocker).
+- AUDINEXA Connect (MSG91 WhatsApp) Phase 2 — pending Hosted Sender Number from owner.
+- Auto-create AMC contracts when "Extended warranty offered" is checked on HA Sale (P2).
+- Migrate localStorage tokens → httpOnly cookies (P3).
+
+---
+
 ## ✅ COMPLETED — Demo / Test Data Cleanup Phase 1 (2026-05-06)
 
 ### What ran

@@ -62,6 +62,7 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
+    "test:smoke": "bash ../backend/scripts/smoke.sh",
     "test": "craco test"
   },
   "browserslist": {

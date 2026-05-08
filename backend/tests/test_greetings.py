@@ -22,6 +22,7 @@ from datetime import date, timedelta
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 API = (
     os.environ.get("API_URL")
     or open("/app/frontend/.env").read().split("REACT_APP_BACKEND_URL=")[1].split("\n")[0].strip() + "/api"
@@ -30,7 +31,7 @@ API = (
 
 @pytest.fixture(scope="module")
 def auth_headers():
-    r = requests.post(f"{API}/auth/login", json={"email": "admin@acs.in", "password": "admin123"})
+    r = requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

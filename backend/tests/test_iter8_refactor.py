@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 import requests
 
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/')
 API = f"{BASE_URL}/api"
 CLINIC_ID = "clinic-acs-demo"
@@ -17,7 +18,7 @@ CREDS = {
     "front_desk": ("frontdesk@acs.in", "frontdesk123"),
     "accounts":   ("accounts@acs.in",  "accounts123"),
     "audio":      ("audiologist@acs.in", "audio123"),
-    "admin":      ("admin@acs.in",     "admin123"),
+    "admin":      (ADMIN_EMAIL,     ADMIN_PASSWORD),
 }
 
 

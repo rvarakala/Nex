@@ -18,6 +18,7 @@ import pytest
 import requests
 
 # Load REACT_APP_BACKEND_URL from frontend/.env if not already in env
+from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
 if not os.environ.get("REACT_APP_BACKEND_URL"):
     env_path = Path("/app/frontend/.env")
     if env_path.exists():
@@ -61,7 +62,7 @@ def accounts_token(session):
 
 @pytest.fixture(scope="module")
 def admin_token(session):
-    return _login(session, "admin@acs.in", "admin123")
+    return _login(session, ADMIN_EMAIL, ADMIN_PASSWORD)
 
 
 @pytest.fixture(scope="module")
