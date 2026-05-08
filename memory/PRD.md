@@ -38,6 +38,12 @@ When **both** Slack + Email are empty → alerter is silently disabled (still ch
 - New: `/app/backend/utils/error_alerts.py`, `/app/backend/tests/test_error_alerter.py`
 - Modified: `/app/backend/routers/error_telemetry.py` (post-insert hook + 2 founder endpoints), `/app/backend/server.py` (cooldown index)
 
+### Configured & live in PREVIEW
+- `ERROR_ALERT_EMAIL_TO=lead@audinexa.com`
+- `ERROR_ALERT_FRONTEND_BASE_URL=https://audinexa.com` (so the email's deep-link button opens production)
+- Threshold/window/cooldown all at defaults (5/60/60).
+- Test alert dispatched successfully — ZeptoMail confirmed delivery (message_id logged).
+
 ### Production rollout
 **Code is shipped — to actually receive alerts you must set 1+ env var on production:**
 - Slack: paste `ERROR_ALERT_SLACK_WEBHOOK` into your prod env (Slack → Apps → Incoming Webhooks)
