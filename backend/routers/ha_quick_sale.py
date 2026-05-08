@@ -27,6 +27,7 @@ If `payment_status="fully_paid"` we also stamp the invoice as paid so
 revenue dashboards reflect it immediately.
 """
 import logging
+import re
 import uuid
 from datetime import datetime, timezone, date
 from typing import List, Literal, Optional
@@ -807,4 +808,195 @@ async def mark_balance_paid(
         balance_due=max(0.0, new_balance),
         payment_status=new_payment_status,
         invoice_status=new_inv_status,
+    )
+
+
+
+# ─── Sync inventory (back-fill missing serial_items from a quick-sale) ─
+
+class SyncInventoryOut(BaseModel):
+    quick_sale_id: str
+    created_serial_ids: List[str]
+    skipped: List[dict]                  # {serial_no, reason} for ones we couldn't create
+    inventory_tracked: bool
+
+
+@router.post("/quick-sales/{quick_sale_id}/sync-inventory", response_model=SyncInventoryOut)
+async def sync_inventory(
+    quick_sale_id: str,
+    user=Depends(require_roles(
+        "inventory_manager", "clinic_owner", "super_admin",
+    )),
+    db=Depends(get_db),
+):
+    """Back-fill ``serial_items`` rows for serials the audiologist typed in
+    the Quick Sale form that didn't already exist in inventory.
+
+    Each missing serial is created in state ``SOLD`` (because the unit has
+    obviously left the store), linked to the patient + brand/model from the
+    sale, and the parent quick-sale doc + fitting doc are flipped to
+    ``inventory_tracked=True``.
+
+    Idempotent: if a serial is already in inventory under another sale, we
+    skip it and return the reason rather than corrupting state."""
+    qs = await db.ha_quick_sales.find_one(
+        {"quick_sale_id": quick_sale_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0},
+    )
+    if not qs:
+        raise HTTPException(404, "Quick Sale not found")
+    if not user_can_see_branch(user, qs.get("branch_id")):
+        raise HTTPException(403, "Branch access denied")
+
+    unmatched: list[str] = list(qs.get("unmatched_serials") or [])
+    if not unmatched:
+        return SyncInventoryOut(
+            quick_sale_id=quick_sale_id,
+            created_serial_ids=[],
+            skipped=[],
+            inventory_tracked=True,
+        )
+
+    # Try to find a matching product in the catalogue (brand + model exact match,
+    # then brand-only). A product_id is optional on serial_items, so if we miss
+    # we still create the row.
+    brand = (qs.get("brand") or "").strip()
+    model = (qs.get("model") or "").strip()
+    product = None
+    if brand and model:
+        product = await db.ha_products.find_one(
+            {"clinic_id": user["clinic_id"], "make": {"$regex": f"^{re.escape(brand)}$", "$options": "i"},
+             "model": {"$regex": f"^{re.escape(model)}$", "$options": "i"}},
+            {"_id": 0, "product_id": 1},
+        )
+    if not product and brand:
+        product = await db.ha_products.find_one(
+            {"clinic_id": user["clinic_id"], "make": {"$regex": f"^{re.escape(brand)}$", "$options": "i"}},
+            {"_id": 0, "product_id": 1},
+        )
+    product_id = product["product_id"] if product else None
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    created_ids: list[str] = list(qs.get("consumed_serial_ids") or [])
+    new_created: list[str] = []
+    skipped: list[dict] = []
+    still_unmatched: list[str] = []
+
+    fitting_date = qs.get("fitting_date") or now_iso[:10]
+
+    for serial_no in unmatched:
+        serial_no_n = (serial_no or "").strip().upper()
+        if not serial_no_n:
+            continue
+
+        # If a row was created since the sale was logged, just link it instead
+        # of creating a duplicate.
+        existing = await db.serial_items.find_one(
+            {"clinic_id": user["clinic_id"], "serial_no": serial_no_n}, {"_id": 0},
+        )
+        if existing:
+            if existing.get("state") == "SOLD" and existing.get("current_patient_id") == qs.get("patient_id"):
+                # Already linked to this patient — silently absorb (idempotent retry).
+                if existing["serial_id"] not in created_ids:
+                    created_ids.append(existing["serial_id"])
+                continue
+            if existing.get("state") == "SOLD":
+                skipped.append({
+                    "serial_no": serial_no_n,
+                    "reason": f"Already SOLD to {existing.get('current_patient_id') or 'another patient'}; manual reconciliation needed.",
+                })
+                still_unmatched.append(serial_no_n)
+                continue
+            # IN_STOCK / RESERVED / etc — transition it to SOLD on this sale.
+            try:
+                await transition_serial(
+                    db, existing["serial_id"], "SOLD",
+                    actor_user_id=user["user_id"],
+                    ref_doc={"kind": "quick_sale", "id": qs.get("sale_no")},
+                    note=f"Back-filled via sync-inventory on quick-sale {quick_sale_id}",
+                )
+                await db.serial_items.update_one(
+                    {"serial_id": existing["serial_id"]},
+                    {"$set": {
+                        "current_patient_id": qs.get("patient_id"),
+                        "updated_at": now_iso,
+                    }},
+                )
+                created_ids.append(existing["serial_id"])
+            except Exception as exc:  # noqa: BLE001
+                skipped.append({"serial_no": serial_no_n, "reason": f"Transition failed: {exc}"})
+                still_unmatched.append(serial_no_n)
+            continue
+
+        # No existing row — create a fresh SOLD entry.
+        new_serial_id = f"SI-{uuid.uuid4().hex[:10].upper()}"
+        await db.serial_items.insert_one({
+            "serial_id": new_serial_id,
+            "clinic_id": user["clinic_id"],
+            "branch_id": qs.get("branch_id"),
+            "product_id": product_id,
+            "serial_no": serial_no_n,
+            "state": "SOLD",
+            "current_patient_id": qs.get("patient_id"),
+            "received_at": fitting_date,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "source": "quick_sale_sync",
+            "make": brand,
+            "model": model,
+            "ha_type": qs.get("ha_type"),
+            "history": [{
+                "at": now_iso,
+                "actor_user_id": user["user_id"],
+                "from_state": None,
+                "to_state": "SOLD",
+                "ref_doc": {"kind": "quick_sale", "id": qs.get("sale_no")},
+                "note": f"Back-filled via Sync Inventory on Quick Sale {quick_sale_id}.",
+            }],
+        })
+        created_ids.append(new_serial_id)
+        new_created.append(new_serial_id)
+        log.info(f"sync-inventory created serial_item {new_serial_id} for {serial_no_n} (qs={quick_sale_id})")
+
+    inv_tracked = len(still_unmatched) == 0
+
+    # Update parent docs
+    await db.ha_quick_sales.update_one(
+        {"quick_sale_id": quick_sale_id},
+        {"$set": {
+            "consumed_serial_ids": created_ids,
+            "unmatched_serials": still_unmatched,
+            "inventory_tracked": inv_tracked,
+            "inventory_synced_at": now_iso if new_created or not still_unmatched else None,
+            "inventory_synced_by": user["user_id"],
+        }},
+    )
+    await db.ha_fittings.update_one(
+        {"quick_sale_id": quick_sale_id},
+        {"$set": {
+            "consumed_serial_ids": created_ids,
+            "unmatched_serials": still_unmatched,
+            "inventory_tracked": inv_tracked,
+            "updated_at": now_iso,
+        }},
+    )
+
+    await db.audit_logs.insert_one({
+        "kind": "quick_sale_inventory_synced",
+        "quick_sale_id": quick_sale_id,
+        "clinic_id": user["clinic_id"],
+        "actor_user_id": user["user_id"],
+        "actor_name": user.get("name", ""),
+        "created_serial_ids": new_created,
+        "skipped_count": len(skipped),
+        "still_unmatched": still_unmatched,
+        "at": now_iso,
+    })
+
+    return SyncInventoryOut(
+        quick_sale_id=quick_sale_id,
+        created_serial_ids=new_created,
+        skipped=skipped,
+        inventory_tracked=inv_tracked,
     )

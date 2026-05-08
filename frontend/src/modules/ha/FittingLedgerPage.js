@@ -71,6 +71,35 @@ export default function FittingLedgerPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [syncMsg, setSyncMsg] = useState(null);   // {kind:'ok'|'err', text}
+  const [syncing, setSyncing] = useState(null);   // quick_sale_id currently syncing
+  const syncInventory = async (qsId) => {
+    if (!qsId || syncing) return;
+    setSyncing(qsId); setSyncMsg(null);
+    try {
+      const r = await axios.post(`${API}/ha/quick-sales/${qsId}/sync-inventory`);
+      const d = r.data || {};
+      const created = (d.created_serial_ids || []).length;
+      const skipped = (d.skipped || []).length;
+      if (d.inventory_tracked && created > 0) {
+        setSyncMsg({ kind: 'ok', text: `Inventory synced — ${created} serial${created === 1 ? '' : 's'} added & marked SOLD.` });
+      } else if (d.inventory_tracked) {
+        setSyncMsg({ kind: 'ok', text: 'Already in sync — no changes needed.' });
+      } else {
+        const reasons = (d.skipped || []).map((s) => `${s.serial_no}: ${s.reason}`).join(' · ');
+        setSyncMsg({ kind: 'err', text: `${skipped} serial(s) couldn't be synced: ${reasons}` });
+      }
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e.message || 'Sync failed.';
+      setSyncMsg({ kind: 'err', text: typeof msg === 'string' ? msg : 'Sync failed.' });
+    } finally {
+      setSyncing(null);
+      // Auto-clear toast after 6s
+      setTimeout(() => setSyncMsg(null), 6000);
+    }
+  };
+
   return (
     <div className="p-5" data-testid="ha-fittings-page">
       <div className="flex items-center justify-between mb-4">
@@ -100,6 +129,19 @@ export default function FittingLedgerPage() {
         </div>
       </div>
 
+      {syncMsg && (
+        <div
+          data-testid={syncMsg.kind === 'ok' ? 'sync-inv-ok' : 'sync-inv-err'}
+          className={`mb-3 text-[12px] px-3 py-2 rounded border ${
+            syncMsg.kind === 'ok'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+              : 'bg-amber-50 border-amber-300 text-amber-800'
+          }`}
+        >
+          {syncMsg.text}
+        </div>
+      )}
+
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-600">
@@ -123,6 +165,8 @@ export default function FittingLedgerPage() {
               const balanceDue = Number(f.balance_due || 0);
               const totalAmt = Number(f.sale_total || 0);
               const showMarkPaid = isQuickSale && balanceDue > 0.5 && canWrite;
+              const unmatched = Array.isArray(f.unmatched_serials) ? f.unmatched_serials : [];
+              const showSyncInv = isQuickSale && unmatched.length > 0 && canWrite;
               return (
               <tr key={f.fitting_id} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`ha-fit-row-${f.fitting_id}`}>
                 <td className="px-3 py-2 font-mono text-[11px] font-bold">{f.fitting_id}</td>
@@ -147,6 +191,17 @@ export default function FittingLedgerPage() {
                 <td className="px-3 py-2"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[f.status]}`}>{f.status.toUpperCase()}</span></td>
                 <td className="px-3 py-2 text-[10px] text-slate-500">{f.first_fit_at ? new Date(f.first_fit_at).toLocaleDateString('en-IN') : ''}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {showSyncInv && (
+                    <button
+                      onClick={() => syncInventory(f.quick_sale_id)}
+                      data-testid={`ha-fit-sync-inv-${f.fitting_id}`}
+                      className="text-[10px] font-semibold bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded mr-1.5 inline-flex items-center gap-1"
+                      title={`Back-fill ${unmatched.length} serial(s) into inventory: ${unmatched.join(', ')}`}
+                    >
+                      Sync inventory
+                      <span className="bg-white/20 text-[9px] font-bold px-1 rounded">{unmatched.length}</span>
+                    </button>
+                  )}
                   {showMarkPaid && (
                     <button
                       onClick={() => setMarkPaidFor(f)}

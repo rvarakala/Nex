@@ -453,6 +453,11 @@ class Fitting(BaseModel):
     ha_type: Optional[str] = None
     warranty_months: Optional[int] = None
     extended_warranty: Optional[bool] = None
+    serial_left: Optional[str] = None
+    serial_right: Optional[str] = None
+    consumed_serial_ids: Optional[List[str]] = None
+    unmatched_serials: Optional[List[str]] = None
+    inventory_tracked: Optional[bool] = None
 
 
 class FittingCreate(BaseModel):
