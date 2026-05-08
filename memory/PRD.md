@@ -1,5 +1,51 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✨ FEATURE — Error-spike alerter (Slack + Email) (2026-05-08)
+
+### What ships
+**Trigger:** Inline-on-write from `routers.error_telemetry._write_error()`. After every successful crash insert, count the same fingerprint over the last `ERROR_ALERT_WINDOW_MINUTES` (default 60). If ≥ `ERROR_ALERT_THRESHOLD` (default 5), and the same fingerprint hasn't been alerted in the last `ERROR_ALERT_COOLDOWN_MINUTES` (default 60) → dispatch.
+
+**Channels:**
+- **Slack** — POSTs a structured-block message to `ERROR_ALERT_SLACK_WEBHOOK` with type/kind/path/count/clinic/user/message + a "Open in Founder Panel" deep-link button.
+- **Email** — sends via existing ZeptoMail integration to `ERROR_ALERT_EMAIL_TO` (comma-separated). Same payload, HTML formatted.
+- Both run in parallel (`asyncio.gather`); either failing doesn't break the other.
+
+**Anti-spam:** `error_alert_state` collection records `last_alerted_at` per fingerprint. Same fingerprint won't re-alert within the cooldown window even if the live count keeps climbing.
+
+**Founder controls:**
+- `GET /api/admin/v2/errors-alert/config` — verify env vars are loaded (webhook URL is masked).
+- `POST /api/admin/v2/errors-alert/test` — synthesize a fake spike & dispatch to all channels. Bypasses cooldown.
+
+**Configuration (env vars only — set on production redeploy):**
+| Var | Default | Purpose |
+|---|---|---|
+| `ERROR_ALERT_THRESHOLD` | 5 | Min occurrences in window |
+| `ERROR_ALERT_WINDOW_MINUTES` | 60 | Counting window |
+| `ERROR_ALERT_COOLDOWN_MINUTES` | 60 | Re-alert suppression |
+| `ERROR_ALERT_SLACK_WEBHOOK` | _empty_ | Incoming-webhook URL |
+| `ERROR_ALERT_EMAIL_TO` | _empty_ | Comma-separated recipients |
+| `ERROR_ALERT_FRONTEND_BASE_URL` | _falls back to `REACT_APP_BACKEND_URL`_ | Used to build deep-link to Errors page |
+
+When **both** Slack + Email are empty → alerter is silently disabled (still cheap: just an early return).
+
+### Verified
+- `/errors-alert/config` returns shape with `enabled: false` (no channels yet configured).
+- `/errors-alert/test` insertion + dispatch round-trip: synthesized 5-row spike, hit `maybe_alert`, returned `dispatched: true`, all 5 rows visible in the Errors page.
+- Regression test `test_error_alerter.py` 3/3 PASS.
+- Smoke 6/6 PASS · Pyflakes/ESLint clean.
+
+### Files
+- New: `/app/backend/utils/error_alerts.py`, `/app/backend/tests/test_error_alerter.py`
+- Modified: `/app/backend/routers/error_telemetry.py` (post-insert hook + 2 founder endpoints), `/app/backend/server.py` (cooldown index)
+
+### Production rollout
+**Code is shipped — to actually receive alerts you must set 1+ env var on production:**
+- Slack: paste `ERROR_ALERT_SLACK_WEBHOOK` into your prod env (Slack → Apps → Incoming Webhooks)
+- OR email: set `ERROR_ALERT_EMAIL_TO=you@audinexa.com,ops@audinexa.com`
+- Then redeploy. Test from `POST /api/admin/v2/errors-alert/test`.
+
+---
+
 ## 🚨 HOTFIX — `/api/ha/trials` 500 (caught by new telemetry) (2026-05-08)
 
 ### Symptom

@@ -104,6 +104,15 @@ async def _write_error(db, doc: dict) -> None:
         await db.error_logs.insert_one(doc)
     except Exception as exc:  # noqa: BLE001
         _log.warning("error_logs insert failed: %s", exc)
+        return
+
+    # Spike alerter — best-effort. Runs after a successful insert so the
+    # threshold count includes this very row. Errors swallowed inside.
+    try:
+        from utils.error_alerts import maybe_alert
+        await maybe_alert(db, doc)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("alert dispatch failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -295,3 +304,58 @@ async def get_error(
     if not row:
         raise HTTPException(status_code=404, detail="Error log not found")
     return row
+
+
+@admin_errors_router.get("/errors-alert/config")
+async def alert_config(
+    user=Depends(require_roles("founder")),
+):
+    """Returns the current alerter configuration so the founder can verify
+    env vars loaded correctly. Webhook URL is masked."""
+    from utils.error_alerts import _config
+    cfg = _config()
+    return {
+        "threshold":         cfg["threshold"],
+        "window_minutes":    cfg["window_minutes"],
+        "cooldown_minutes":  cfg["cooldown_minutes"],
+        "slack_webhook_set": bool(cfg["slack_webhook"]),
+        "slack_webhook_preview": (cfg["slack_webhook"][:32] + "…") if cfg["slack_webhook"] else None,
+        "email_to":          cfg["email_to"],
+        "frontend_base":     cfg["frontend_base"],
+        "enabled":           bool(cfg["slack_webhook"] or cfg["email_to"]),
+    }
+
+
+@admin_errors_router.post("/errors-alert/test")
+async def alert_test(
+    user=Depends(require_roles("founder")),
+    db=Depends(get_db),
+):
+    """Synthesise a fake error spike and dispatch one alert to all
+    configured channels. Bypasses cooldown by clearing state for the test
+    fingerprint first."""
+    from utils.error_alerts import maybe_alert
+    fp = "TEST-ALERT-FINGERPRINT"
+    await db.error_alert_state.delete_one({"fingerprint": fp})
+    fake = {
+        "fingerprint": fp,
+        "kind": "backend",
+        "exception_type": "TestSpikeAlert",
+        "message": f"Synthetic spike triggered by founder {user['email']} at {datetime.now(timezone.utc).isoformat()}",
+        "path": "/api/_telemetry/test",
+        "clinic_id": user.get("clinic_id"),
+        "user_id": user.get("user_id"),
+    }
+    # Force the count check above the threshold by inserting `threshold` rows.
+    from utils.error_alerts import _config
+    threshold = _config()["threshold"]
+    now = datetime.now(timezone.utc)
+    await db.error_logs.insert_many([
+        {**fake,
+         "log_id": f"test-{uuid.uuid4().hex[:8]}-{i}",
+         "at": now,
+         "method": "TEST", "query_string": "", "client_ip": "127.0.0.1",
+         "user_agent": "test", "request_id": "test"} for i in range(threshold)
+    ])
+    await maybe_alert(db, fake)
+    return {"ok": True, "dispatched": True, "fingerprint": fp}

@@ -245,6 +245,8 @@ async def lifespan(_app: FastAPI):
         await db.error_logs.create_index([("clinic_id", 1), ("at", -1)])
         await db.error_logs.create_index([("fingerprint", 1), ("at", -1)])
         await db.error_logs.create_index("log_id", unique=True)
+        # Spike-alerter cooldown state (utils/error_alerts.py).
+        await db.error_alert_state.create_index("fingerprint", unique=True)
         # BYOK Phase 1 — Clinic Vault PoC
         await db.clinic_vaults.create_index("clinic_id", unique=True)
         await db.vault_test_records.create_index([("clinic_id", 1), ("created_at", -1)])
