@@ -85,6 +85,12 @@ async def invoice_prefill(
     """Returns a structured prefill payload for the Create Invoice form so that
     HA product details (make/model/serial/tier) auto-populate when generating
     an invoice from a sale. Read-only; does NOT create the invoice."""
+    return await _build_invoice_prefill(db, user, sale_no)
+
+
+async def _build_invoice_prefill(db, user: dict, sale_no: str) -> dict:
+    """Shared prefill builder used by `/sales/{sale_no}/invoice-prefill` (read-only)
+    and `/sales/{sale_no}/auto-invoice` (creates the invoice atomically)."""
     sale = await db.ha_sales.find_one(
         {"sale_no": sale_no, "clinic_id": user["clinic_id"]}, {"_id": 0},
     )
@@ -93,7 +99,6 @@ async def invoice_prefill(
     if not user_can_see_branch(user, sale["branch_id"]):
         raise HTTPException(status_code=403, detail="Branch access denied")
     if sale.get("invoice_no"):
-        # Sale already invoiced — surface to caller so UI can warn / link.
         return {
             "already_invoiced": True,
             "invoice_no": sale["invoice_no"],
@@ -178,6 +183,91 @@ async def invoice_prefill(
         "lines": lines_out,
         "notes": f"Generated from HA sale {sale_no}"
                  + (f" (quote {sale['quote_no']})" if sale.get("quote_no") else ""),
+    }
+
+
+@router.post("/sales/{sale_no}/auto-invoice")
+async def auto_invoice_from_sale(
+    sale_no: str,
+    user=Depends(require_roles(
+        "front_desk", "audiologist", "inventory_manager", "clinic_owner", "accounts",
+    )),
+    db=Depends(get_db),
+):
+    """One-click invoice generation from a sale.
+
+    Behaviour:
+      • Idempotent — if the sale already has an invoice, returns it (no dup).
+      • Otherwise builds an InvoiceCreate payload from the prefill and calls
+        billing.create_invoice() so the invoice goes through the same tax/audit
+        pipeline as a manually-typed invoice (incl. CGST/SGST vs IGST split).
+      • Returns `{ invoice_id, invoice_no, sale_no, status }` so the frontend
+        can route straight to `/billing/invoices/{invoice_id}` and Print.
+    """
+    prefill = await _build_invoice_prefill(db, user, sale_no)
+
+    # Idempotent re-entry: surface the existing invoice the same way as a
+    # fresh create, so the caller can navigate to the detail page.
+    if prefill.get("already_invoiced"):
+        inv = await db.invoices.find_one(
+            {"invoice_no": prefill["invoice_no"], "clinic_id": user["clinic_id"]},
+            {"_id": 0, "invoice_id": 1, "invoice_no": 1, "status": 1},
+        )
+        if inv:
+            return {
+                "invoice_id": inv["invoice_id"],
+                "invoice_no": inv["invoice_no"],
+                "sale_no": sale_no,
+                "status": inv.get("status"),
+                "already_invoiced": True,
+            }
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sale {sale_no} marked invoiced as {prefill['invoice_no']} but invoice missing",
+        )
+
+    # Build the InvoiceCreate payload from the prefill output. Imported lazily
+    # because billing depends on routers/* and we want to avoid a cycle at
+    # module-load time.
+    from billing import create_invoice
+    from models._canonical import InvoiceCreate, InvoiceLineCreate
+
+    line_models = [
+        InvoiceLineCreate(
+            service_id=ln.get("service_id"),
+            description=ln["description"],
+            quantity=ln["quantity"],
+            unit_price=ln["unit_price"],
+            discount_type=ln.get("discount_type", "flat"),
+            discount_value=ln.get("discount_value", 0),
+            is_taxable=ln.get("is_taxable", True),
+            gst_rate=ln.get("gst_rate", 18),
+            hsn_sac=ln.get("hsn_sac", "9021"),
+            product_type=ln.get("product_type"),
+            make=ln.get("make"),
+            model=ln.get("model"),
+            serial_numbers=ln.get("serial_numbers", []),
+            technology_tier=ln.get("technology_tier"),
+        )
+        for ln in prefill["lines"]
+    ]
+    payload = InvoiceCreate(
+        patient_id=prefill["patient"]["patient_id"],
+        lines=line_models,
+        notes=prefill.get("notes"),
+        from_sale_no=sale_no,
+    )
+
+    # Reuse the existing create_invoice path so tax-split, payment, audit,
+    # and ha_sales back-link logic stay in ONE place.
+    inv = await create_invoice(payload, user=user, db=db)
+
+    return {
+        "invoice_id": inv.invoice_id,
+        "invoice_no": inv.invoice_no,
+        "sale_no": sale_no,
+        "status": inv.status,
+        "already_invoiced": False,
     }
 
 

@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚨 HOTFIX BATCH 2 — Bilateral quotes + one-click invoice from sale (2026-05-08)
+
+### Bug 1: "Binaural (L+R pair)" checkbox failed quote creation
+**Symptom:** Clinic owner checks "Binaural" with a single `side="both"` line → backend's pair validator rejects (`got L=0, R=0`).
+
+**Fix (frontend only):** Toggling Binaural ON now auto-shapes the line table into one LEFT + one RIGHT row (qty=1 each, copying product/price from the existing first line). Toggling OFF collapses back to a single line. Helper text updated.
+- File: `/app/frontend/src/modules/ha/QuotationStudioPage.js`
+
+### Bug 2: After "Convert to Sale → Generate Invoice" the invoice didn't generate or print
+**Root cause:** Frontend just navigated to `/billing/invoices/new?from_sale=...` (a blank create form with prefilled data). User had to click Save themselves, then Print — easy to mistake the form for a no-op.
+
+**Fix:**
+1. New backend endpoint `POST /api/ha/sales/{sale_no}/auto-invoice` — atomically creates the invoice from the sale (reusing the existing prefill builder + `billing.create_invoice` so GST split / tax detail / `ha_sales` back-link logic stays in one place). **Idempotent**: re-call returns the existing invoice with `already_invoiced: true`.
+2. Frontend's "Convert → Sale" confirm dialog now POSTs to the new endpoint and routes to the printable invoice detail page (`/billing/invoice/{invoice_id}`) so Print is one click away.
+3. If the auto-invoice call fails for any reason, the UI surfaces the real backend reason and falls back to the legacy manual create form so the clinic owner can still proceed.
+
+**Verified end-to-end:**
+- Bilateral quote create → 200 OK (`QTE-2026-0004`).
+- Quote → accepted → convert to sale (`SAL-2026-0012`) → auto-invoice → `INV/2026/000023`, status `draft`.
+- Re-call auto-invoice → returns same `INV/2026/000023` with `already_invoiced: true` (idempotent).
+- Sale `invoice_no` and `status=invoiced` back-link populated by `billing.create_invoice`.
+
+**Files:**
+- Modified: `/app/backend/routers/ha_sales.py` (factored prefill into helper + new `auto-invoice` POST endpoint), `/app/frontend/src/modules/ha/QuotationStudioPage.js` (Binaural auto-shaping + auto-invoice flow + correct `/billing/invoice/:id` route).
+
+### Production rollout
+Code-only fixes. **Please redeploy preview → production** to ship both fixes plus yesterday's index-collision hotfix to https://audinexa.com.
+
+---
+
 ## 🚨 HOTFIX — Cross-tenant numbering collision on quote_no/sale_no/po_no/trial_no/contract_no (2026-05-08)
 
 ### Symptom (reported on production)

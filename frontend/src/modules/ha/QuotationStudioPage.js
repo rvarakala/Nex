@@ -191,8 +191,28 @@ function NewQuoteModal({ onClose, onCreated }) {
         </div>
 
         <label className="inline-flex items-center gap-2 text-sm mb-3">
-          <input type="checkbox" checked={isPair} onChange={(e) => setIsPair(e.target.checked)} data-testid="ha-quote-is-pair" />
-          <span className="font-semibold">Binaural (L+R pair)</span> <span className="text-[11px] text-slate-500">— requires exactly one LEFT &amp; one RIGHT serialised line</span>
+          <input type="checkbox" checked={isPair} onChange={(e) => {
+            const next = e.target.checked;
+            setIsPair(next);
+            // Auto-shape lines so the backend pair validator (exactly one
+            // LEFT qty=1 + one RIGHT qty=1) is satisfied without making the
+            // clinic owner figure out the rule.
+            if (next) {
+              setLines(prev => {
+                const base = prev[0] || { _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 };
+                const left  = { ...base, _key: `${Math.random().toString(36).slice(2)}-L`, side: 'left',  qty: 1 };
+                const right = { ...base, _key: `${Math.random().toString(36).slice(2)}-R`, side: 'right', qty: 1 };
+                return [left, right];
+              });
+            } else {
+              // Collapse back to a single line keyed off the existing first row.
+              setLines(prev => {
+                const first = prev[0] || { _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 };
+                return [{ ...first, _key: Math.random().toString(36).slice(2), side: 'single', qty: 1 }];
+              });
+            }
+          }} data-testid="ha-quote-is-pair" />
+          <span className="font-semibold">Binaural (L+R pair)</span> <span className="text-[11px] text-slate-500">— auto-creates one LEFT &amp; one RIGHT line</span>
         </label>
 
         <div className="border border-slate-200 rounded-md overflow-hidden">
@@ -327,11 +347,31 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
       setConverting(false);
       setTradeInId('');
       const goInvoice = window.confirm(
-        `Sale ${saleNo} created — serial(s) RESERVED.${tradeMsg}\n\nGenerate the invoice now? Make/model/serial/tier will be pre-filled.`
+        `Sale ${saleNo} created — serial(s) RESERVED.${tradeMsg}\n\nGenerate the invoice now? (Make/model/serial/tier are pre-filled — you'll land on the printable invoice page.)`
       );
       if (goInvoice) {
-        navigate(`/billing/invoices/new?from_sale=${encodeURIComponent(saleNo)}`);
-        return;
+        // One-click: server generates the invoice atomically (including
+        // GST split + ha_sales back-link), then we navigate to the detail
+        // page so the clinic owner can hit Print immediately.
+        try {
+          const ai = await axios.post(`${API}/ha/sales/${encodeURIComponent(saleNo)}/auto-invoice`);
+          const invoiceId = ai.data?.invoice_id;
+          if (invoiceId) {
+            navigate(`/billing/invoice/${invoiceId}`);
+            return;
+          }
+          // Fallback: legacy prefill route if the auto-invoice response is
+          // somehow missing the id.
+          navigate(`/billing/invoices/new?from_sale=${encodeURIComponent(saleNo)}`);
+          return;
+        } catch (autoErr) {
+          // Surface the real backend reason; fall back to the manual create
+          // form so the clinic owner can still proceed.
+          const det = autoErr?.response?.data?.detail;
+          setErr(typeof det === 'string' ? det : (det ? JSON.stringify(det) : 'Auto-invoice failed — opening manual form'));
+          navigate(`/billing/invoices/new?from_sale=${encodeURIComponent(saleNo)}`);
+          return;
+        }
       }
       await load();
       onChanged && onChanged();
