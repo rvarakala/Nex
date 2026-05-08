@@ -1,5 +1,34 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚨 HOTFIX — `/api/ha/trials` 500 (caught by new telemetry) (2026-05-08)
+
+### Symptom
+Long-standing P1 bug. `GET /api/ha/trials` returned 500 for `tenant-sound-clinic-blr`, blocking the Trials page in the premium demo clinic.
+
+### Root cause (caught by new error telemetry within 30 seconds of going live)
+3 seeded demo trials predated the `created_by_user_id: str` requirement on the `Trial` Pydantic response model. FastAPI's `response_model=List[Trial]` strictness raised `ResponseValidationError: 3 validation errors: missing 'created_by_user_id'`.
+
+### Fix
+Made `created_by_user_id: Optional[str] = None` in `models_ha.py` (matches the same pattern used elsewhere in the file for backwards-compat). New trials always set the field via `routers/ha_trials.create_trial`; only legacy seeded docs round-trip with `None`.
+
+### Verified
+- `GET /api/ha/trials` → 200 with all 3 seeded trials.
+- 3 consecutive calls → zero new errors in the Errors page (was burning ~1 entry per page load).
+- New regression test `test_ha_trials_legacy_fields.py` PASS.
+- Smoke 6/6 PASS.
+
+### Files
+- Modified: `/app/backend/models_ha.py` (`Trial.created_by_user_id` → Optional)
+- New: `/app/backend/tests/test_ha_trials_legacy_fields.py`
+
+### Telemetry validates itself
+The error telemetry shipped earlier today caught this bug end-to-end: surfaced the precise validation error, the affected clinic, and the exact field — fix took ~2 minutes once we saw the message. Demonstrates the value of the self-hosted crash log.
+
+### Production rollout
+Code-only fix. **Please redeploy preview → production** to ship along with the prior 6 changes.
+
+---
+
 ## ✨ FEATURE — Self-hosted error telemetry (Option A) (2026-05-08)
 
 ### Why

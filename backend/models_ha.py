@@ -517,7 +517,10 @@ class Trial(BaseModel):
     notes: Optional[str] = None
     source: Optional[str] = "demo"  # "demo" (all picks from demo pool) | "external" (at least one non-demo — see notes)
     converted_sale_no: Optional[str] = None                    # if trial converted to sale
-    created_by_user_id: str
+    # Optional because legacy trials seeded before this field was required
+    # (e.g. demo cohort) won't carry it. New trials always set it via
+    # `routers/ha_trials.create_trial`.
+    created_by_user_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
     closed_at: Optional[str] = None                            # set on converted/returned/lost
