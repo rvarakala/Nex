@@ -98,8 +98,28 @@ async def lifespan(_app: FastAPI):
         )
         await db.serial_items.create_index([("clinic_id", 1), ("branch_id", 1), ("state", 1)])
         await db.serial_events.create_index([("serial_id", 1), ("at", -1)])
-        await db.purchase_orders.create_index("po_no", unique=True)
         await db.purchase_orders.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
+        # Numbering identifiers minted via `utils.numbering.next_number` are
+        # CLINIC-SCOPED (counter is keyed by `(kind, clinic_id, year)`), so the
+        # same `PO-2026-0001` legitimately exists in two tenants. Drop legacy
+        # global unique indexes if present and replace with compound
+        # (clinic_id, <number>) unique keys.
+        for coll, field in (
+            ("purchase_orders", "po_no"),
+            ("quotations", "quote_no"),
+            ("ha_sales", "sale_no"),
+            ("ha_trials", "trial_no"),
+            ("ha_amc_contracts", "contract_no"),
+        ):
+            try:
+                await db[coll].drop_index(f"{field}_1")
+            except Exception:
+                pass
+            await db[coll].create_index(
+                [("clinic_id", 1), (field, 1)],
+                unique=True,
+                name=f"uniq_clinic_{field}",
+            )
         # Numbering identifiers are clinic-scoped — same `GRN-YYYY-NNNN` may legitimately
         # exist in two different tenants. Use a compound (clinic_id, grn_no) unique key
         # and drop the legacy global index if present (safe: only blocks cross-tenant dupes).
@@ -112,10 +132,8 @@ async def lifespan(_app: FastAPI):
         await db.accessory_stock.create_index("sku_id", unique=True)
         await db.accessory_stock.create_index([("clinic_id", 1), ("branch_id", 1), ("product_id", 1), ("variant", 1)], name="uniq_accessory_variant", unique=True)
         # HA module Phase 3 — transactions
-        await db.quotations.create_index("quote_no", unique=True)
         await db.quotations.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.quotations.create_index("patient_id")
-        await db.ha_sales.create_index("sale_no", unique=True)
         await db.ha_sales.create_index([("clinic_id", 1), ("status", 1), ("created_at", -1)])
         await db.ha_sales.create_index("patient_id")
         # HA module Phase 4 — clinical fittings
@@ -124,7 +142,6 @@ async def lifespan(_app: FastAPI):
         await db.ha_fittings.create_index([("clinic_id", 1), ("patient_id", 1), ("created_at", -1)])
         await db.ha_fittings.create_index("sale_no")
         # HA module Phase 4.5 — trials
-        await db.ha_trials.create_index("trial_no", unique=True)
         await db.ha_trials.create_index([("clinic_id", 1), ("status", 1), ("return_date", 1)])
         await db.ha_trials.create_index([("clinic_id", 1), ("patient_id", 1), ("created_at", -1)])
         # HA module Phase 6 — CRM
@@ -182,7 +199,6 @@ async def lifespan(_app: FastAPI):
         # AMC (Phase 13.A)
         await db.ha_amc_plans.create_index("plan_id", unique=True)
         await db.ha_amc_plans.create_index([("clinic_id", 1), ("active", 1)])
-        await db.ha_amc_contracts.create_index("contract_no", unique=True)
         await db.ha_amc_contracts.create_index([("clinic_id", 1), ("status", 1), ("amc_expiry_date", 1)])
         await db.ha_amc_contracts.create_index([("clinic_id", 1), ("patient_id", 1)])
         await db.ha_amc_contracts.create_index([("clinic_id", 1), ("serial_id", 1), ("status", 1)])

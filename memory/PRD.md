@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚨 HOTFIX — Cross-tenant numbering collision on quote_no/sale_no/po_no/trial_no/contract_no (2026-05-08)
+
+### Symptom (reported on production)
+Clinic owner Ravindar at "Harmony" Hyderabad attempted to create a quotation for patient Varakala (2x Phonak L 30, side=both, ₹1,10,000). UI showed a generic "Save failed" toast. Same code path affected every newer tenant trying to mint their first numbered document.
+
+### Root cause
+`utils.numbering.next_number()` correctly mints sequence numbers scoped to `(kind, clinic_id, year)` — so Tenant A and Tenant B both legitimately receive `QTE-2026-0001`. But the Mongo unique index on `quotations.quote_no` was GLOBAL (single-field), so the second tenant's first quote crashed with `E11000 duplicate key error collection: ... index: quote_no_1 dup key: { quote_no: "QTE-2026-0001" }`. The frontend's "Save failed" toast hid the structured 500 because the global axios handler swallowed it.
+
+Same latent bug affected `purchase_orders.po_no`, `ha_sales.sale_no`, `ha_trials.trial_no`, `ha_amc_contracts.contract_no` — every counter minted via `next_number()` without a tenant prefix in the printed identifier.
+
+### Fix
+- `server.py` `_ensure_indexes` now drops the legacy single-field unique indexes (`po_no_1`, `quote_no_1`, `sale_no_1`, `trial_no_1`, `contract_no_1`) and recreates them as compound `(clinic_id, <number>)` unique indexes. Idempotent — safe to re-run.
+- Verified at startup: `Indexes ensured` log clean. Index list: `uniq_clinic_quote_no`, `uniq_clinic_sale_no`, `uniq_clinic_po_no`, `uniq_clinic_trial_no`, `uniq_clinic_contract_no`.
+
+### Reproduction → Fix verification
+- Pre-fix: `POST /api/ha/quotations` from `tenant-sound-clinic-blr` (which would mint `QTE-2026-0001`) → 500 with `DuplicateKeyError` because `clinic-delhi-test` already had `QTE-2026-0001`.
+- Post-fix: same call now succeeds and returns `QTE-2026-0002` for sound-clinic-blr (continuing its own counter independently).
+
+### Regression test
+`/app/backend/tests/test_cross_tenant_numbering_collision.py` logs into 2 different tenants and creates quotes — both succeed. Runs in ~2s.
+
+### Production rollout
+Code-only fix. **User must redeploy preview → production** for `audinexa.com` to pick up the fix. The `_ensure_indexes` migration runs automatically on first backend boot of the new build.
+
+### Files
+- Modified: `/app/backend/server.py` (5 indexes refactored to compound)
+- New: `/app/backend/tests/test_cross_tenant_numbering_collision.py`
+
+---
+
 ## ✅ COMPLETED — Phase 14 admin tests repointed + clinic-acs-demo bootstrap dropped (2026-05-08)
 
 ### What ships
