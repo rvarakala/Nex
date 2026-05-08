@@ -1,5 +1,50 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✨ FEATURE — Self-hosted error telemetry (Option A) (2026-05-08)
+
+### Why
+Customer-facing crash visibility was the single biggest "you can't see what's happening in production" gap. Today: when a clinic crashes, the most you could do was ask Emergent Support to grep container logs (~30 min round-trip per incident, no frontend coverage).
+
+### What ships
+**Backend (`/app/backend/routers/error_telemetry.py`)**
+- `ErrorLoggerMiddleware` — catches every uncaught 5xx. Writes `error_logs` doc with `{exception_type, traceback, method, path, query_string, user_id, clinic_id, request_id, client_ip, user_agent, fingerprint, at}`. HTTPException 4xx (business validation) NOT logged.
+- `POST /api/_telemetry/frontend-error` — ingests crash reports from React error boundary + global handlers. Auth optional (anonymous login-page crashes still useful).
+- `GET /api/admin/v2/errors` — founder/super_admin reader. Returns recent rows + fingerprint roll-up groups + window stats.
+- `GET /api/admin/v2/errors/{log_id}` — single-row detail.
+- TTL index on `error_logs.at` — auto-purges after `ERROR_LOG_RETENTION_DAYS` (default 30) so PII-containing crash payloads don't pile up.
+- `auth.get_current_user` now stashes user on `request.state.user` so middleware-caught crashes have `clinic_id`/`user_id` correlation.
+
+**Frontend (`/app/frontend/src/shell/crashReporter.js`)**
+- `<AppErrorBoundary>` — top-level boundary wrapping `<App />`. Catches React render crashes via `componentDidCatch` and posts to backend. Renders a friendly fallback (with Reload + Go-Home buttons) instead of a blank screen.
+- `setupGlobalErrorHandlers()` — installs `window.error` + `unhandledrejection` listeners. Idempotent.
+- All reports use plain `fetch` (not axios) so a crashing axios doesn't double-fault. `keepalive: true` so reports survive the tab unloading.
+- Per-tab `session_id` in `sessionStorage` so the founder can group crashes from a single user session.
+
+**Founder Panel — Errors page (`/app/frontend/src/modules/admin/panel/ErrorsPage.jsx`)**
+- New **Ops > Errors** tab in the admin sidebar.
+- Filters: time window (1h / 6h / 24h / 7d / 30d), kind (backend/frontend), `clinic_id`, fingerprint.
+- "Top patterns in this window" panel — fingerprint roll-up sorted by count, click to drill in.
+- Recent occurrences table with kind/type/path/clinic/user/message columns.
+- Detail drawer with full traceback + component stack + extra context + UA + IP.
+
+### Bonus discovery
+The `/api/ha/trials` 500 on `tenant-sound-clinic-blr` (long-standing P1 bug) was caught by the new middleware and now has a known root cause: **`ResponseValidationError`: missing `created_by_user_id` on legacy trial documents**. Fix is a 1-line schema migration / `Optional[str]` on the response model — to be addressed next.
+
+### Verified end-to-end
+- Backend 500 on `/api/ha/trials` → captured with `clinic_id=tenant-sound-clinic-blr` + `user_id=USR-E6CDBEC5` + `ResponseValidationError` + full traceback.
+- Frontend boundary crash → captured with same correlation.
+- Founder reader returned both with grouped roll-up.
+- Smoke 6/6 PASS · ESLint clean · Pyflakes clean.
+
+### Files
+- New: `/app/backend/routers/error_telemetry.py`, `/app/frontend/src/shell/crashReporter.js`, `/app/frontend/src/modules/admin/panel/ErrorsPage.jsx`
+- Modified: `/app/backend/server.py` (middleware + routers + indexes), `/app/backend/auth.py` (request.state stashing), `/app/frontend/src/index.js` (AppErrorBoundary wrap + global handlers), `/app/frontend/src/modules/admin/panel/AdminPanel.jsx` (nav + route)
+
+### Production rollout
+**Please redeploy preview → production** to ship error telemetry along with the 5 prior pending hotfixes.
+
+---
+
 ## ✨ FEATURE — Multi-test appointments (chips drive everything) (2026-05-08)
 
 ### Reported issue

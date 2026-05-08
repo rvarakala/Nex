@@ -2,11 +2,19 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@/index.css";
 import App from "@/App";
+import { AppErrorBoundary, setupGlobalErrorHandlers } from "@/shell/crashReporter";
+
+// Self-hosted crash reporter — installs window.onerror +
+// unhandledrejection handlers that POST to /api/_telemetry/frontend-error.
+// The Founder Panel's "Errors" page shows what arrives.
+setupGlobalErrorHandlers();
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </React.StrictMode>,
 );
 

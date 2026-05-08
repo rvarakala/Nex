@@ -140,7 +140,7 @@ async def get_current_user(request: Request):
         await record_heartbeat(db, user["user_id"], request)
     except Exception:
         pass
-    return {
+    user_ctx = {
         "user_id": user["user_id"],
         "email": user["email"],
         "name": user.get("name", ""),
@@ -154,6 +154,14 @@ async def get_current_user(request: Request):
         "license_no": user.get("license_no"),
         "appointment_color": user.get("appointment_color"),
     }
+    # Stash on `request.state` so the global error-logger middleware can
+    # correlate any crashes raised AFTER auth succeeded (e.g. response
+    # validation errors, NPEs in the route body) to the actual user.
+    try:
+        request.state.user = user_ctx
+    except Exception:
+        pass
+    return user_ctx
 
 
 def require_roles(*roles: str):

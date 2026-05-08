@@ -230,6 +230,21 @@ async def lifespan(_app: FastAPI):
         await db.admin_audit_logs.create_index([("at", -1)])
         await db.admin_audit_logs.create_index([("actor_user_id", 1), ("at", -1)])
         await db.admin_audit_logs.create_index("log_id", unique=True)
+        # Self-hosted error telemetry (routers/error_telemetry.py).
+        # TTL index — auto-purges old crash docs after `ERROR_LOG_RETENTION_DAYS`
+        # so crash payloads (which can embed PII via URL/body) don't pile up.
+        try:
+            await db.error_logs.drop_index("at_ttl")
+        except Exception:
+            pass
+        ttl_seconds = int(os.environ.get("ERROR_LOG_RETENTION_DAYS", "30")) * 86400
+        await db.error_logs.create_index(
+            [("at", 1)], name="at_ttl", expireAfterSeconds=ttl_seconds,
+        )
+        await db.error_logs.create_index([("kind", 1), ("at", -1)])
+        await db.error_logs.create_index([("clinic_id", 1), ("at", -1)])
+        await db.error_logs.create_index([("fingerprint", 1), ("at", -1)])
+        await db.error_logs.create_index("log_id", unique=True)
         # BYOK Phase 1 — Clinic Vault PoC
         await db.clinic_vaults.create_index("clinic_id", unique=True)
         await db.vault_test_records.create_index([("clinic_id", 1), ("created_at", -1)])
@@ -402,6 +417,19 @@ from rate_limit import limiter  # noqa: E402
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ==================== Self-hosted error telemetry ====================
+# Catches every uncaught 5xx + ingests frontend crashes from the React error
+# boundary. See routers/error_telemetry.py for the full rationale.
+from routers.error_telemetry import (  # noqa: E402
+    ErrorLoggerMiddleware,
+    router as error_telemetry_router,
+    admin_errors_router,
+)
+
+# Middleware order matters: this must be FIRST (added last → runs outermost)
+# so it sees exceptions raised by every other middleware/route.
+app.add_middleware(ErrorLoggerMiddleware)
 
 # Expose db to dependency (used by auth.get_current_user)
 app.state.db = db
@@ -671,6 +699,9 @@ async def k8s_health_probe():
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(billing_module.billing_router)
+# Self-hosted error telemetry endpoints (POST + reader)
+app.include_router(error_telemetry_router)
+app.include_router(admin_errors_router)
 
 from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402
