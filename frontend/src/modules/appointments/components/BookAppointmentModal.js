@@ -15,16 +15,34 @@ const DURATIONS = [15, 30, 45, 60, 90];
 // `defaultMin` is the fallback per-test minutes when the catalog row doesn't
 // expose `duration_minutes`. Used to auto-sum the appointment block so front
 // desk doesn't have to guess "PTA + IMP + OAE = how long?".
+//
+// `catalogCodes` and `catalogNameHints` map a chip to the canonical service
+// catalogue (seeded from `DEFAULT_SERVICES` in backend/billing.py). Codes
+// match first (precise), then name substrings — covers clinics that have
+// renamed e.g. "Immittance" → "Impedance" or vice versa.
+//
+// `defaultPrice` is the fallback used to draft an invoice line when the
+// clinic's catalogue is missing this test entirely (so reception still sees
+// every selected test on the invoice — they can edit the price inline).
 const FRONTDESK_TEST_OPTIONS = [
-  { key: 'pta',        label: 'PTA',           defaultMin: 30 },
-  { key: 'impedance',  label: 'Impedance',     defaultMin: 15 },
-  { key: 'speech',     label: 'Speech',        defaultMin: 20 },
-  { key: 'oae',        label: 'OAE',           defaultMin: 15 },
-  { key: 'abr',        label: 'ABR',           defaultMin: 45 },
-  { key: 'soundfield', label: 'Sound Field',   defaultMin: 20 },
-  { key: 'special',    label: 'Special Tests', defaultMin: 30 },
-  { key: 'tinnitus',   label: 'Tinnitus',      defaultMin: 30 },
-  { key: 'pediatric',  label: 'Pediatric',     defaultMin: 30 },
+  { key: 'pta',        label: 'PTA',           defaultMin: 30, defaultPrice: 800,
+    catalogCodes: ['PTA'],     catalogNameHints: ['pure tone', 'pta'] },
+  { key: 'impedance',  label: 'Impedance',     defaultMin: 15, defaultPrice: 600,
+    catalogCodes: ['IMM'],     catalogNameHints: ['immittance', 'impedance', 'tymp', 'reflex'] },
+  { key: 'speech',     label: 'Speech',        defaultMin: 20, defaultPrice: 800,
+    catalogCodes: ['SPEECH'],  catalogNameHints: ['speech'] },
+  { key: 'oae',        label: 'OAE',           defaultMin: 15, defaultPrice: 1000,
+    catalogCodes: ['OAE'],     catalogNameHints: ['oae', 'otoacoustic'] },
+  { key: 'abr',        label: 'ABR',           defaultMin: 45, defaultPrice: 2500,
+    catalogCodes: ['ABR'],     catalogNameHints: ['abr', 'bera'] },
+  { key: 'soundfield', label: 'Sound Field',   defaultMin: 20, defaultPrice: 800,
+    catalogCodes: ['SF', 'SOUNDFIELD'], catalogNameHints: ['sound field', 'soundfield', 'free field'] },
+  { key: 'special',    label: 'Special Tests', defaultMin: 30, defaultPrice: 1500,
+    catalogCodes: ['SPECIAL'], catalogNameHints: ['special'] },
+  { key: 'tinnitus',   label: 'Tinnitus',      defaultMin: 30, defaultPrice: 1000,
+    catalogCodes: ['TINN'],    catalogNameHints: ['tinnitus'] },
+  { key: 'pediatric',  label: 'Pediatric',     defaultMin: 30, defaultPrice: 1500,
+    catalogCodes: ['PEDS'],    catalogNameHints: ['pediatric', 'paediatric', 'voa', 'play audiometry'] },
 ];
 const TEST_BY_KEY = Object.fromEntries(FRONTDESK_TEST_OPTIONS.map((t) => [t.key, t]));
 
@@ -86,33 +104,45 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     })();
   }, []);
 
-  // Map front-desk test chips → canonical catalog service names (fuzzy match).
-  // The chip "pta" may hit a service named "Pure Tone Audiometry", "PTA",
-  // "Pure Tone Audiometry (PTA)" etc — we prefer exact code, then substring.
+  // Map front-desk test chips → canonical catalog service rows.
+  // Lookup priority:
+  //   1. exact `code` match against the chip's `catalogCodes` (strongest)
+  //   2. exact `name` match (case-insensitive) against the chip label
+  //   3. fuzzy name `includes` against the chip's `catalogNameHints`
+  // Returns `null` only if ALL strategies miss — handled by the invoice
+  // auto-sync below (which then drafts a line with the chip's `defaultPrice`).
   const matchService = useCallback((chipKey) => {
     if (!catalog.length) return null;
-    const name = (FRONTDESK_TEST_OPTIONS.find((o) => o.key === chipKey) || {}).label || chipKey;
-    const n = name.toLowerCase();
-    const k = chipKey.toLowerCase();
-    return (
-      catalog.find((s) => (s.name || '').toLowerCase() === n) ||
-      catalog.find((s) => (s.code || '').toLowerCase() === k) ||
-      catalog.find((s) => (s.name || '').toLowerCase().includes(n)) ||
-      catalog.find((s) => (s.name || '').toLowerCase().includes(k)) ||
-      null
-    );
+    const meta = TEST_BY_KEY[chipKey];
+    if (!meta) return null;
+    const lc = (s) => (s || '').toLowerCase().trim();
+    const codes = (meta.catalogCodes || []).map((c) => c.toUpperCase());
+    if (codes.length) {
+      const byCode = catalog.find((s) => codes.includes((s.code || '').toUpperCase()));
+      if (byCode) return byCode;
+    }
+    const exactName = catalog.find((s) => lc(s.name) === lc(meta.label));
+    if (exactName) return exactName;
+    const hints = (meta.catalogNameHints || []).map(lc);
+    if (hints.length) {
+      const fuzzy = catalog.find((s) => hints.some((h) => lc(s.name).includes(h)));
+      if (fuzzy) return fuzzy;
+    }
+    return null;
   }, [catalog]);
 
   // ---- Inline invoice draft (auto-filled from ticked tests, FD-editable) ----
   const [raiseInvoice, setRaiseInvoice] = useState(existing?.visit_type !== 'consultation');
   const [invoiceLines, setInvoiceLines] = useState([]);
 
-  // Per-chip price (looked up from catalog) for the inline chip label.
-  // Falls back to "—" if the catalog hasn't loaded yet (rare but harmless).
+  // Per-chip price for the chip label. Prefers the clinic's catalogue, but
+  // falls back to the chip's `defaultPrice` so reception always sees a price
+  // (even on tenants whose catalogue is incomplete — like fresh signups).
   const chipPrice = useCallback((chipKey) => {
     const svc = matchService(chipKey);
-    if (!svc || svc.price == null) return null;
-    return Number(svc.price);
+    if (svc && svc.price != null) return Number(svc.price);
+    const meta = TEST_BY_KEY[chipKey];
+    return meta && meta.defaultPrice ? Number(meta.defaultPrice) : null;
   }, [matchService]);
 
   // Auto-derive a single `service` string for the appointment row from the
@@ -150,10 +180,14 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   }, [recommendedTests, visitType, matchService, durationManuallySet]);
 
   // Auto-sync invoice lines to ticked tests (consultation → no invoice).
+  // We ALWAYS draft a line per chip — even when the catalog is missing
+  // the entry — so reception sees every test on the invoice. Missing
+  // catalog entries fall back to the chip's hard-coded `defaultPrice`
+  // and are flagged with `_unmapped: true` so the table can hint that
+  // the price is editable.
   useEffect(() => {
     if (isEdit) return;
     if (visitType === 'consultation') { setInvoiceLines([]); return; }
-    if (!catalog.length) return;
     setInvoiceLines((prev) => {
       // Preserve user edits on already-present lines; add missing; drop unticked.
       const kept = prev.filter((l) => recommendedTests.includes(l._chip));
@@ -161,20 +195,37 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
       const additions = recommendedTests
         .filter((k) => !existingChips.has(k))
         .map((k) => {
+          const meta = TEST_BY_KEY[k] || {};
           const svc = matchService(k);
-          if (!svc) return null;
+          if (svc) {
+            return {
+              _key: Math.random().toString(36).slice(2),
+              _chip: k,
+              _unmapped: false,
+              service_id: svc.service_id,
+              name: svc.name,
+              unit_price: svc.price,
+              quantity: 1,
+              discount_type: 'flat',
+              discount_value: 0,
+            };
+          }
+          // Catalog miss → still add the line so reception sees the test
+          // on the invoice. Price defaults to the chip's typical rate;
+          // FD edits inline. service_id stays null and the backend
+          // honours the description + unit_price as an ad-hoc line.
           return {
             _key: Math.random().toString(36).slice(2),
             _chip: k,
-            service_id: svc.service_id,
-            name: svc.name,
-            unit_price: svc.price,
+            _unmapped: true,
+            service_id: null,
+            name: meta.label || k,
+            unit_price: meta.defaultPrice || 0,
             quantity: 1,
             discount_type: 'flat',
             discount_value: 0,
           };
-        })
-        .filter(Boolean);
+        });
       return [...kept, ...additions];
     });
   }, [recommendedTests, visitType, catalog, matchService, isEdit]);
@@ -347,6 +398,10 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
           raise_invoice: raiseInvoice && invoiceLines.length > 0,
           invoice_lines: invoiceLines.map((l) => ({
             service_id: l.service_id,
+            // Send `description` so ad-hoc lines (catalog miss) still print
+            // a meaningful row on the invoice. Backend prefers service.name
+            // over description when service_id resolves, so this is safe.
+            description: l.name || undefined,
             quantity: Number(l.quantity) || 1,
             unit_price: l.unit_price !== '' && l.unit_price != null ? Number(l.unit_price) : null,
             discount_type: l.discount_type || 'flat',
@@ -707,7 +762,14 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
                         const amount = Math.max(0, gross - disc);
                         return (
                           <tr key={l._key} className="border-t border-slate-100" data-testid={`bk-inv-line-${l._chip}`}>
-                            <td className="px-2 py-1 truncate max-w-[140px]" title={l.name}>{l.name}</td>
+                            <td className="px-2 py-1 truncate max-w-[140px]" title={l._unmapped ? `${l.name} — not in service catalog; ad-hoc line, edit price as needed` : l.name}>
+                              {l.name}
+                              {l._unmapped && (
+                                <span className="ml-1 text-[8px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded px-1 align-middle" title="This test isn't in your service catalog yet — line price is a default, edit it as needed.">
+                                  AD-HOC
+                                </span>
+                              )}
+                            </td>
                             <td className="px-1 py-1">
                               <input
                                 type="number" min="1" step="1" value={l.quantity}
