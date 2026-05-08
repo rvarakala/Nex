@@ -1,5 +1,69 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ FEATURE — Mongo backup + tested restore (P0 #1) (2026-05-08)
+
+### Why
+Single most launch-critical task. Without backups, one corrupt write or fat-fingered admin action = company-ending data loss.
+
+### What ships
+**Backup pipeline** (`/app/backend/scripts/backup_mongo.py`)
+- Wraps `mongodump --gzip --archive` to produce a single restorable BSON stream per run.
+- Names archives `audinexa-<DB>-YYYYMMDDTHHMMSSZ.archive.gz` under `BACKUP_DIR` (default `/app/backups`).
+- Optional offsite mirror to any S3-compatible bucket (AWS / B2 / R2 / Wasabi) via `BACKUP_S3_BUCKET` + boto3.
+- Retention rotation — auto-deletes local archives older than `BACKUP_RETENTION_DAYS` (default 14).
+- One-line JSON status output for cleanly piping into log scrapers / the founder UI.
+
+**Restore pipeline** (`/app/backend/scripts/restore_mongo.py`)
+- `mongorestore --drop` against the same DB. **Refuses** to run without `--confirm I-UNDERSTAND-THIS-WIPES-DATA` flag (or `--dry-run`).
+- ALWAYS takes a fresh "safety backup" of current state before destructive restore (skip with `--no-safety-backup` — *NOT recommended*).
+- Supports `--archive <path>` for local restores and `--s3-key <key>` for offsite restores.
+
+**Founder admin endpoints** (`/app/backend/routers/backup_admin.py`)
+- `GET /api/admin/v2/backups/config` — current schedule + paths + S3 status
+- `GET /api/admin/v2/backups` — local archives + history table + S3 listing
+- `POST /api/admin/v2/backups/run-now` — synchronous one-off backup, founder-only
+- All gated behind `require_roles("founder")` / `("founder", "super_admin")` for the read endpoint.
+
+**In-process scheduler**
+- APScheduler daily cron at `BACKUP_DAILY_TIME_IST=03:00` (Asia/Kolkata).
+- Skipped entirely when `BACKUP_DISABLED=1`.
+- Persists each run to `backup_history` collection for the listing endpoint.
+- Idempotent — restart-safe.
+
+**Documented restore runbook** (`/app/memory/RUNBOOK_BACKUP_RESTORE.md`)
+- Written for "panicked you at 2am". Step-by-step verify / trigger / restore / S3 / failure scenarios / quarterly drill checklist.
+
+### Verified end-to-end
+- Backup script ran against preview Mongo: 211KB compressed archive in 0.19s.
+- Founder `POST /run-now`: returned `ok=true`, file appeared in listing, `backup_history` row persisted.
+- **Full restore drill:** inserted sentinel patient `PT-RESTORE-TEST` → ran restore → confirmed sentinel was wiped + counts matched original (89 patients / 19 clinics / 58 users) → safety-backup auto-created. **Restore took 3.94s.**
+- Regression suite `test_backup_admin.py` 3/3 PASS.
+- Smoke 6/6 + error alerter 3/3 PASS · Pyflakes clean.
+
+### Configuration (env vars)
+| Var | Default | Purpose |
+|---|---|---|
+| `BACKUP_DIR` | `/app/backups` | Local archive directory |
+| `BACKUP_RETENTION_DAYS` | `14` | Auto-delete older local files |
+| `BACKUP_DAILY_TIME_IST` | `03:00` | Scheduler cron time (Asia/Kolkata) |
+| `BACKUP_DISABLED` | `0` | Set `1` to disable scheduler |
+| `BACKUP_S3_BUCKET` | _empty_ | Offsite mirror bucket (optional) |
+| `BACKUP_S3_ENDPOINT_URL` | _empty_ | For S3-compatible (B2/R2/Wasabi) |
+| `BACKUP_S3_PREFIX` | `audinexa-backups/` | Key prefix |
+| `BACKUP_S3_REGION` | `ap-south-1` | AWS region |
+
+### Files
+- New: `/app/backend/scripts/backup_mongo.py`, `/app/backend/scripts/restore_mongo.py`, `/app/backend/scripts/__init__.py`, `/app/backend/routers/backup_admin.py`, `/app/backend/tests/test_backup_admin.py`, `/app/memory/RUNBOOK_BACKUP_RESTORE.md`
+- Modified: `/app/backend/server.py` (lifespan startup/shutdown wiring + router registration)
+
+### Production rollout
+**Code-only fix → safe to deploy.** On first boot in production:
+1. Daily backup scheduler will activate at 03:00 IST.
+2. First archive lands at `/app/backups/` immediately if you hit `POST /run-now` after deploy.
+3. **STILL TO DO:** set `BACKUP_S3_BUCKET` + AWS keys in production env to enable offsite mirror — local backups die when the container dies, this is essential before opening to 500 clinics.
+
+---
+
 ## ✨ FEATURE — Error-spike alerter (Slack + Email) (2026-05-08)
 
 ### What ships

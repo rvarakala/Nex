@@ -392,8 +392,15 @@ async def lifespan(_app: FastAPI):
         res = await migrate_legacy_report_statuses(db)
         if res.get("merged_into_completed"):
             _log.info(f"report_status migration: {res}")
+    except Exception as e:        _log.warning(f"report_status migration skipped: {e}")
+
+    # Daily Mongo backup scheduler — see routers/backup_admin.py for config.
+    # Idempotent + skipped entirely when BACKUP_DISABLED=1.
+    try:
+        from routers.backup_admin import setup_backup_scheduler
+        setup_backup_scheduler(db)
     except Exception as e:
-        _log.warning(f"report_status migration skipped: {e}")
+        _log.warning(f"Backup scheduler skipped: {e}")
 
     yield
 
@@ -403,6 +410,11 @@ async def lifespan(_app: FastAPI):
             scheduler.shutdown(wait=False)
         except Exception:
             pass
+    try:
+        from routers.backup_admin import shutdown_backup_scheduler
+        shutdown_backup_scheduler()
+    except Exception:
+        pass
     client.close()
     _log.info("MongoDB client closed")
 
@@ -704,6 +716,9 @@ app.include_router(billing_module.billing_router)
 # Self-hosted error telemetry endpoints (POST + reader)
 app.include_router(error_telemetry_router)
 app.include_router(admin_errors_router)
+# Founder backup admin (list / run-now / config)
+from routers.backup_admin import router as backup_admin_router  # noqa: E402
+app.include_router(backup_admin_router)
 
 from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402
