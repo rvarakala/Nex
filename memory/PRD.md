@@ -1,5 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✨ FEATURE — Multi-test appointments (chips drive everything) (2026-05-08)
+
+### Reported issue
+On the Book Appointment modal, the SERVICE dropdown only allowed picking ONE test (PTA, Immittance, OAE etc.), but visits often need multiple tests. The "Select recommended tests" chips below were doing a parallel job — overlapping UX, confusing for reception.
+
+### Solution shipped (frontend only)
+- **Removed the SERVICE dropdown.** Chips are now the single source of truth.
+- **Each chip shows price inline:** "PTA · ₹1,250", "Impedance · ₹500", "OAE · ₹800". Front desk sees totals at a glance.
+- **Toggling a chip drives both:** (a) the audiologist's pre-checked test tabs in TestProceduresModule, and (b) one inline invoice draft line per chip (auto-priced from the catalogue, FD-editable).
+- **Auto-summed duration** with manual override: total snaps to nearest 15 min from the catalog `duration_minutes` (or per-chip `defaultMin` fallback). Once FD touches the dropdown, auto-sync stops.
+- **Auto-derived `service` field** for backend / calendar tooltip compatibility: 1 chip → "PTA"; 2-3 chips → "PTA + Impedance + OAE"; 4+ chips → "PTA + Impedance +N more". Consultation visits always show "Consultation".
+- **Validation tightened:** new appointments require ≥1 chip (or visit_type = consultation). Edits stay tolerant of legacy single-`service` rows.
+
+### Verified
+- Backend `POST /api/appointments/with-invoice` accepts the new multi-line payload (sample created `APT-265F9286-9` with `service: "PTA + Impedance + OAE"` + 1 invoice line).
+- Smoke 6/6 PASS · Phase 14 regression 23/23 PASS · ESLint clean.
+
+### Files
+- Modified: `/app/frontend/src/modules/appointments/components/BookAppointmentModal.js` (removed SERVICE dropdown, added chip-pricing + auto-duration + auto-derived service)
+
+### Production rollout
+Frontend-only change. **Please redeploy preview → production** along with the other 4 pending hotfixes.
+
+---
+
 ## 🚨 HOTFIX BATCH 3 — Patient profile History showing OTHER patients' visits (2026-05-08)
 
 ### Symptom (production blocker)

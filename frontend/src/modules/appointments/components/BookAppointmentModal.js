@@ -5,24 +5,28 @@ import ErrorToast, { describeError } from '../../../components/ErrorToast';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const SERVICES = ['Consultation', 'PTA', 'Immittance', 'OAE', 'ABR/BERA', 'ASSR', 'Vestibular Tests', 'Follow-up', 'Speech Audiometry', 'Hearing Aid Fitting'];
 const ROOMS = ['Room 1', 'Room 2', 'Sound Booth'];
 const DURATIONS = [15, 30, 45, 60, 90];
 
 // Front-desk "what tests to perform" chip picker. Kept in sync with the
 // RECOMMENDED_TAB_MAP in TestProceduresModule — the audiologist sees the
 // matching tab pre-highlighted.
+//
+// `defaultMin` is the fallback per-test minutes when the catalog row doesn't
+// expose `duration_minutes`. Used to auto-sum the appointment block so front
+// desk doesn't have to guess "PTA + IMP + OAE = how long?".
 const FRONTDESK_TEST_OPTIONS = [
-  { key: 'pta',        label: 'PTA' },
-  { key: 'impedance',  label: 'Impedance' },
-  { key: 'speech',     label: 'Speech' },
-  { key: 'oae',        label: 'OAE' },
-  { key: 'abr',        label: 'ABR' },
-  { key: 'soundfield', label: 'Sound Field' },
-  { key: 'special',    label: 'Special Tests' },
-  { key: 'tinnitus',   label: 'Tinnitus' },
-  { key: 'pediatric',  label: 'Pediatric' },
+  { key: 'pta',        label: 'PTA',           defaultMin: 30 },
+  { key: 'impedance',  label: 'Impedance',     defaultMin: 15 },
+  { key: 'speech',     label: 'Speech',        defaultMin: 20 },
+  { key: 'oae',        label: 'OAE',           defaultMin: 15 },
+  { key: 'abr',        label: 'ABR',           defaultMin: 45 },
+  { key: 'soundfield', label: 'Sound Field',   defaultMin: 20 },
+  { key: 'special',    label: 'Special Tests', defaultMin: 30 },
+  { key: 'tinnitus',   label: 'Tinnitus',      defaultMin: 30 },
+  { key: 'pediatric',  label: 'Pediatric',     defaultMin: 30 },
 ];
+const TEST_BY_KEY = Object.fromEntries(FRONTDESK_TEST_OPTIONS.map((t) => [t.key, t]));
 
 export default function BookAppointmentModal({ audiologists, initialDate, initialTime, existing, onClose, onSaved }) {
   const isEdit = !!existing?.appointment_id;
@@ -45,10 +49,13 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audiologists]);
-  const [service, setService] = useState(existing?.service || 'PTA');
   const [room, setRoom] = useState(existing?.room || '');
   const [priority, setPriority] = useState(existing?.priority || 'normal');
+  // `duration` auto-syncs to the sum of selected chip defaults (or catalog
+  // `duration_minutes` when present), but front desk can still override via
+  // the dropdown. Once they touch the dropdown we stop auto-resyncing.
   const [duration, setDuration] = useState(existing?.duration_minutes || 30);
+  const [durationManuallySet, setDurationManuallySet] = useState(!!existing);
   const [date, setDate] = useState(existing?.start_at ? existing.start_at.slice(0, 10) : today);
   const [time, setTime] = useState(existing?.start_at ? existing.start_at.slice(11, 16) : (initialTime || '10:00'));
   const [notes, setNotes] = useState(existing?.notes || '');
@@ -99,6 +106,48 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   // ---- Inline invoice draft (auto-filled from ticked tests, FD-editable) ----
   const [raiseInvoice, setRaiseInvoice] = useState(existing?.visit_type !== 'consultation');
   const [invoiceLines, setInvoiceLines] = useState([]);
+
+  // Per-chip price (looked up from catalog) for the inline chip label.
+  // Falls back to "—" if the catalog hasn't loaded yet (rare but harmless).
+  const chipPrice = useCallback((chipKey) => {
+    const svc = matchService(chipKey);
+    if (!svc || svc.price == null) return null;
+    return Number(svc.price);
+  }, [matchService]);
+
+  // Auto-derive a single `service` string for the appointment row from the
+  // selected chips. The backend still expects one `service` field for
+  // calendar tooltips / staff dashboards, but the user mental model is now
+  // "I'll do PTA + Impedance + OAE today" — so we collapse the chip list
+  // into a friendly summary like "PTA + Impedance + OAE". For edits of
+  // legacy appointments with no chips, preserve the original `service`.
+  const derivedService = useMemo(() => {
+    if (visitType === 'consultation') return 'Consultation';
+    if (visitType === 'referral' && recommendedTests.length === 0) {
+      return existing?.service || 'Referral';
+    }
+    if (recommendedTests.length === 0) return existing?.service || '';
+    const labels = recommendedTests.map((k) => (TEST_BY_KEY[k] || {}).label || k);
+    if (labels.length <= 3) return labels.join(' + ');
+    return `${labels.slice(0, 2).join(' + ')} +${labels.length - 2} more`;
+  }, [visitType, recommendedTests, existing]);
+
+  // Auto-sum duration from selected chips (catalog `duration_minutes` first,
+  // else the static defaultMin). Front desk can still override the dropdown.
+  useEffect(() => {
+    if (durationManuallySet) return;
+    if (visitType === 'consultation') { setDuration(30); return; }
+    if (recommendedTests.length === 0) return;
+    const total = recommendedTests.reduce((sum, k) => {
+      const svc = matchService(k);
+      const fromCatalog = Number(svc?.duration_minutes || 0);
+      const fallback = (TEST_BY_KEY[k] || {}).defaultMin || 15;
+      return sum + (fromCatalog > 0 ? fromCatalog : fallback);
+    }, 0);
+    // Snap to the nearest 15 min so the dropdown stays consistent.
+    const snapped = Math.max(15, Math.round(total / 15) * 15);
+    setDuration(snapped);
+  }, [recommendedTests, visitType, matchService, durationManuallySet]);
 
   // Auto-sync invoice lines to ticked tests (consultation → no invoice).
   useEffect(() => {
@@ -247,7 +296,12 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   }, [audiologistId, date, duration, override]);
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
-  const valid = selectedPatient && audiologistId && service && date && time;
+  const valid =
+    selectedPatient && audiologistId && date && time &&
+    // For new appointments, require ≥1 chip (or consultation). For edits we
+    // accept the legacy single-`service` value the row was created with so
+    // older appointments don't get blocked from being edited.
+    (isEdit || visitType === 'consultation' || recommendedTests.length > 0);
 
   // Collect human-readable reasons the form isn't submittable yet.
   // Surfaced both under the Patient field and next to the Book button so
@@ -255,9 +309,11 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   const missing = [];
   if (!selectedPatient) missing.push('patient');
   if (!audiologistId) missing.push('audiologist');
-  if (!service) missing.push('service');
   if (!date) missing.push('date');
   if (!time) missing.push('time');
+  if (!isEdit && visitType !== 'consultation' && recommendedTests.length === 0) {
+    missing.push('at least one test');
+  }
 
   // Patient-field helper states (not a *blocking* error — just UX nudges).
   const patientQueryTrimmed = patientQuery.trim();
@@ -271,7 +327,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
       const startIso = `${date}T${time}:00`;
       if (isEdit) {
         await axios.put(`${API}/appointments/${existing.appointment_id}`, {
-          audiologist_id: audiologistId, service, room: room || null, priority,
+          audiologist_id: audiologistId, service: derivedService, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
           visit_type: visitType,
           recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
@@ -283,7 +339,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
         // below) but FD can edit them inline before clicking Save & Send.
         const payload = {
           patient_id: selectedPatient.patient_id, audiologist_id: audiologistId,
-          service, room: room || null, priority,
+          service: derivedService, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
           visit_type: visitType,
           recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
@@ -488,17 +544,18 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             </div>
           )}
 
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">Service</label>
-              <select value={service} onChange={(e) => setService(e.target.value)} data-testid="bk-service"
-                className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white">
-                {SERVICES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">Duration</label>
-              <select value={duration} onChange={(e) => setDuration(parseInt(e.target.value, 10))} data-testid="bk-duration"
+              <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">
+                Duration
+                {!durationManuallySet && recommendedTests.length > 0 && (
+                  <span className="ml-1 text-[9px] font-normal text-emerald-700 normal-case">· auto</span>
+                )}
+              </label>
+              <select
+                value={duration}
+                onChange={(e) => { setDuration(parseInt(e.target.value, 10)); setDurationManuallySet(true); }}
+                data-testid="bk-duration"
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white">
                 {DURATIONS.map((d) => <option key={d} value={d}>{d} min</option>)}
               </select>
@@ -562,22 +619,35 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
               />
             )}
 
-            {/* Test chip-picker — hidden for consultation (audiologist decides) */}
+            {/* Test chip-picker — hidden for consultation (audiologist decides).
+                Each chip shows the catalog price inline (looked up via
+                `chipPrice`) so reception sees totals at a glance. Toggling
+                a chip drives BOTH (a) the audiologist's pre-checked test
+                tabs and (b) the inline invoice draft. */}
             {visitType !== 'consultation' ? (
               <div>
-                <div className="text-[10px] text-slate-500 mb-1">Select recommended tests (audiologist will see these pre-selected):</div>
+                <div className="text-[10px] text-slate-500 mb-1">
+                  Pick the tests for this visit — auto-fills the invoice and pre-checks the audiologist's tabs.
+                </div>
                 <div className="flex flex-wrap gap-1" data-testid="bk-recommended-tests">
                   {FRONTDESK_TEST_OPTIONS.map((t) => {
                     const on = recommendedTests.includes(t.key);
+                    const price = chipPrice(t.key);
                     return (
                       <button key={t.key} type="button" onClick={() => toggleRecTest(t.key)}
                         data-testid={`bk-rec-${t.key}`}
+                        title={price != null ? `${t.label} · ₹${price.toLocaleString('en-IN')}` : t.label}
                         className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border transition-colors ${
                           on
                             ? 'bg-sky-600 text-white border-sky-700'
                             : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400 hover:bg-sky-50'
                         }`}>
                         {on ? '✓ ' : ''}{t.label}
+                        {price != null && (
+                          <span className={`ml-1 tabular-nums ${on ? 'text-sky-100' : 'text-slate-400'}`}>
+                            · ₹{price.toLocaleString('en-IN')}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
