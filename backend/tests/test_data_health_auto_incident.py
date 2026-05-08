@@ -26,7 +26,7 @@ async def _seed_bad_patient():
     db = cli[DBN]
     bad = {
         "patient_id": f"TEST-BAD-{uuid.uuid4().hex[:6]}",
-        "clinic_id": "clinic-acs-demo",
+        "clinic_id": "clinic-pytest-suite",
         # intentionally missing required fields like first_name/last_name
         "created_at": "2030-01-01T00:00:00+00:00",
     }

@@ -4,7 +4,13 @@ import pytest
 import requests
 from datetime import datetime
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://careful-feedback.preview.emergentagent.com').rstrip('/')
 API = f"{BASE_URL}/api"
 
@@ -17,12 +23,12 @@ def _login(email, pwd):
 
 @pytest.fixture(scope="module")
 def front_tok():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="module")
 def acct_tok():
-    return _login("accounts@acs.in", "accounts123")
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
 
 
 @pytest.fixture(scope="module")

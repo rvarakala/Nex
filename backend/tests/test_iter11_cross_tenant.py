@@ -17,7 +17,13 @@ import jwt
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
@@ -49,17 +55,17 @@ def mumbai_admin():
 
 @pytest.fixture(scope="module")
 def mumbai_frontdesk():
-    return _login("frontdesk@acs.in", "frontdesk123")["access_token"]
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")
 def mumbai_accounts():
-    return _login("accounts@acs.in", "accounts123")["access_token"]
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")
 def mumbai_audio():
-    return _login("audiologist@acs.in", "audio123")["access_token"]
+    return _login(AUDIO_EMAIL, AUDIO_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")

@@ -14,7 +14,13 @@ import pytest
 import requests
 
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 _url = os.environ.get("REACT_APP_BACKEND_URL")
 if not _url:
     with open("/app/frontend/.env") as _fh:
@@ -45,17 +51,17 @@ def admin_token():
 
 @pytest.fixture(scope="session")
 def frontdesk_token():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="session")
 def audiologist_token():
-    return _login("audiologist@acs.in", "audio123")
+    return _login(AUDIO_EMAIL, AUDIO_PASSWORD)
 
 
 @pytest.fixture(scope="session")
 def accounts_token():
-    return _login("accounts@acs.in", "accounts123")
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
 
 
 @pytest.fixture(scope="session")

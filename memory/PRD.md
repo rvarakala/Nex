@@ -1,5 +1,45 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ COMPLETED — Phase 14 admin tests repointed + clinic-acs-demo bootstrap dropped (2026-05-08)
+
+### What ships
+**Phase 14 admin test repointing**
+- `test_phase14_admin_panel.py` and `test_phase14b_admin_panel.py` no longer reference the deleted KIMS / Apollo / SoundCare / ENT-Plus demo tenants:
+  - List/detail/impersonate/feature-flags/invoice tests now use seeded `beta-01`.
+  - PATCH city test → `beta-04`. Suspend/activate → `beta-05`. Delete-blocked-for-super-admin → `beta-06`.
+  - PREMIUM filter check → `tenant-sound-clinic-blr`.
+  - Lead update test reads the first row from `/admin/v2/leads` dynamically (skips if empty) instead of expecting `rahul@prodigymedical.in`.
+  - **Delete-allowed-for-founder** now mints a throwaway tenant via `POST /admin/v2/tenants` and deletes it — no real fixture is destroyed.
+  - Phase 14B's `KIMS_OWNER` fixture replaced by `SOUND_CLINIC_OWNER` (`owner@thesoundclinic.in` / `demo123`, the seeded PREMIUM tenant).
+
+**Bootstrap migrated from `clinic-acs-demo` → `clinic-pytest-suite`**
+- `conftest.py` no longer re-seeds the demo `clinic-acs-demo` tenant. It now bootstraps a dedicated test tenant `clinic-pytest-suite` with 4 role users, 1 branch (`Mumbai HQ`), 1 patient, and the default service catalogue (12 services).
+- 4 role users seeded: `pytest.admin@audinexa.test` (super_admin), `pytest.frontdesk@audinexa.test` (front_desk), `pytest.audio@audinexa.test` (audiologist), `pytest.accounts@audinexa.test` (accounts) — all share password `Pytest@123`. Branch-restricted roles auto-granted `branch_ids=[BR-PYTEST-001]`.
+- Legacy `clinic-acs-demo` tenant + 4 demo users (`admin@acs.in`, `frontdesk@acs.in`, `audiologist@acs.in`, `accounts@acs.in`) physically deleted from preview/prod DB.
+
+**Migration mass-rewrite**
+- Extended `scripts/migrate_test_admin_creds.py` to also handle the front-desk, audiologist, and accounts literals — re-ran across 39 files. All 4 role credentials now resolve through `_helpers.py` env-overridable constants (`ADMIN_*`, `FRONTDESK_*`, `AUDIO_*`, `ACCOUNTS_*`).
+- Bulk-replaced all `clinic-acs-demo` literals across 19 test files with `clinic-pytest-suite`.
+
+### Files
+- New: (none — built on existing tooling)
+- Modified: `/app/backend/tests/conftest.py` (full rewrite — new bootstrap), `/app/backend/tests/_helpers.py` (sub-role constants + new defaults), `/app/backend/scripts/migrate_test_admin_creds.py` (4-role aware), `/app/backend/tests/test_phase14_admin_panel.py` (repointed to beta tenants), `/app/backend/tests/test_phase14b_admin_panel.py` (KIMS → SOUND_CLINIC_OWNER + beta-01), 39 test files (creds via constants), 19 test files (clinic_id literal swap)
+
+### Testing
+- Smoke suite: 6/6 PASS in 2.4s.
+- Phase 14a + 14b: 60/60 PASS.
+- Broader regression sweep (11 suites): **172/172 PASS** in 134s.
+- Pytest collection: 981 tests collect cleanly, 0 import errors.
+
+### Backlog still open after this session
+- `GET /api/ha/trials` 500 in `tenant-sound-clinic-blr` (P1, demo-screenshot blocker).
+- AUDINEXA Connect (MSG91 WhatsApp) Phase 2 — pending Hosted Sender Number from owner.
+- Auto-create AMC contracts when "Extended warranty offered" is checked on HA Sale (P2).
+- Migrate localStorage tokens → httpOnly cookies (P3).
+- Repoint the few remaining `iter20_rbac_matrix` tests away from `kims_owner` (currently auto-skipped — non-blocking).
+
+---
+
 ## ✅ COMPLETED — Smoke test suite + legacy admin credential migration (2026-05-08)
 
 ### What ships

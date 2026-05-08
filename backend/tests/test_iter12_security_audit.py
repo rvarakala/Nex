@@ -17,7 +17,13 @@ import jwt
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
@@ -70,17 +76,17 @@ def mumbai_admin():
 
 @pytest.fixture(scope="module")
 def mumbai_frontdesk():
-    return _login("frontdesk@acs.in", "frontdesk123")["access_token"]
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")
 def mumbai_accounts():
-    return _login("accounts@acs.in", "accounts123")["access_token"]
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")
 def mumbai_audio():
-    return _login("audiologist@acs.in", "audio123")["access_token"]
+    return _login(AUDIO_EMAIL, AUDIO_PASSWORD)["access_token"]
 
 
 @pytest.fixture(scope="module")
@@ -151,7 +157,7 @@ class TestShareAudit:
                       "last_accessed_at", "last_accessed_ip"):
             assert field in latest, f"missing field {field}"
         assert latest["session_id"] == mumbai_session_id
-        assert latest["clinic_id"] == "clinic-acs-demo"
+        assert latest["clinic_id"] == "clinic-pytest-suite"
 
         # DESC ordering
         if len(rows) >= 2:
@@ -200,7 +206,7 @@ class TestForensicLog:
         matched = False
         for ln in hits[::-1]:
             if (mumbai_session_id in ln and "clinic-delhi-test" in ln
-                    and "clinic-acs-demo" in ln and "ip=" in ln):
+                    and "clinic-pytest-suite" in ln and "ip=" in ln):
                 matched = True
                 break
         assert matched, f"expected structured fields in log. Last hit: {hits[-1]}"
@@ -255,7 +261,7 @@ class TestRateLimitSharedReports:
 class TestRateLimitPublicQueue:
     def test_125_requests_last_five_are_429(self):
         _restart_backend()
-        url = f"{API}/queue/public/clinic-acs-demo"
+        url = f"{API}/queue/public/clinic-pytest-suite"
         # Pin X-Forwarded-For to keep the limiter's bucket key stable across
         # CF edge rotation.
         xff_hdrs = {"X-Forwarded-For": "203.0.113.42"}
@@ -277,7 +283,7 @@ class TestRateLimitPublicQueue:
 class TestRateLimitFailOpen:
     def test_malformed_xff_doesnt_crash(self):
         _restart_backend()
-        url = f"{API}/queue/public/clinic-acs-demo"
+        url = f"{API}/queue/public/clinic-pytest-suite"
         # Send odd X-Forwarded-For values — only those the `requests` library
         # will actually encode (truly invalid ones are rejected client-side).
         for xff in ["127.0.0.1,,,", "not-an-ip", "::1,::2,::3", "0.0.0.0"]:

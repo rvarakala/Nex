@@ -3,21 +3,20 @@ common request boilerplate.
 
 Why this exists
 ---------------
-~40 legacy test files duplicate the same `_login("admin@acs.in", "admin123")`
+~40 legacy test files duplicated the same `_login("admin@acs.in", "admin123")`
 boilerplate, hardcoding the demo admin email/password in every file. That
-makes it impossible to drop the legacy `clinic-acs-demo` seed without
+made it impossible to drop the legacy `clinic-acs-demo` seed without
 rewriting every file.
 
-Migration policy (P2)
----------------------
-New tests SHOULD import from this module:
+Migration policy
+----------------
+All `test_*.py` files now import from this module:
 
-    from ._helpers import API, ADMIN_EMAIL, ADMIN_PASSWORD, login, H
+    from _helpers import API, ADMIN_EMAIL, ADMIN_PASSWORD, login, H
 
-Legacy tests will be migrated incrementally to the same pattern. The defaults
-preserve back-compat (`admin@acs.in`/`admin123`) so existing tests keep
-passing during the migration window. To run the suite against a different
-identity, export at the shell:
+The defaults bootstrap a clean `clinic-pytest-suite` tenant via
+`conftest.py`. To run the suite under a different identity, export at the
+shell:
 
     export TEST_ADMIN_EMAIL=founder@audinexa.com
     export TEST_ADMIN_PASSWORD=founder123
@@ -29,7 +28,7 @@ Environment variables read
 * `API_URL`               — older alias, still honoured.
 * `TEST_ADMIN_EMAIL`      — admin login for the seeded test clinic.
 * `TEST_ADMIN_PASSWORD`   — password for that admin.
-* `TEST_CLINIC_ID`        — clinic_id the bootstrap should populate (rarely needed).
+* `TEST_CLINIC_ID`        — clinic_id the bootstrap should populate.
 """
 from __future__ import annotations
 
@@ -59,9 +58,17 @@ def _resolve_api_url() -> str:
 
 
 API: str = _resolve_api_url()
-ADMIN_EMAIL: str = os.environ.get("TEST_ADMIN_EMAIL", "admin@acs.in")
-ADMIN_PASSWORD: str = os.environ.get("TEST_ADMIN_PASSWORD", "admin123")
-ADMIN_CLINIC_ID: str = os.environ.get("TEST_CLINIC_ID", "clinic-acs-demo")
+ADMIN_EMAIL: str = os.environ.get("TEST_ADMIN_EMAIL", "pytest.admin@audinexa.test")
+ADMIN_PASSWORD: str = os.environ.get("TEST_ADMIN_PASSWORD", "Pytest@123")
+ADMIN_CLINIC_ID: str = os.environ.get("TEST_CLINIC_ID", "clinic-pytest-suite")
+
+# Sub-role accounts seeded into the same pytest tenant.
+FRONTDESK_EMAIL: str = os.environ.get("TEST_FRONTDESK_EMAIL", "pytest.frontdesk@audinexa.test")
+FRONTDESK_PASSWORD: str = os.environ.get("TEST_FRONTDESK_PASSWORD", "Pytest@123")
+AUDIO_EMAIL: str = os.environ.get("TEST_AUDIO_EMAIL", "pytest.audio@audinexa.test")
+AUDIO_PASSWORD: str = os.environ.get("TEST_AUDIO_PASSWORD", "Pytest@123")
+ACCOUNTS_EMAIL: str = os.environ.get("TEST_ACCOUNTS_EMAIL", "pytest.accounts@audinexa.test")
+ACCOUNTS_PASSWORD: str = os.environ.get("TEST_ACCOUNTS_PASSWORD", "Pytest@123")
 
 # Founder is always seeded (even when DISABLE_DEMO_SEED=1) so smoke tests
 # and platform-level checks can rely on it.
@@ -103,6 +110,12 @@ __all__ = [
     "ADMIN_EMAIL",
     "ADMIN_PASSWORD",
     "ADMIN_CLINIC_ID",
+    "FRONTDESK_EMAIL",
+    "FRONTDESK_PASSWORD",
+    "AUDIO_EMAIL",
+    "AUDIO_PASSWORD",
+    "ACCOUNTS_EMAIL",
+    "ACCOUNTS_PASSWORD",
     "FOUNDER_EMAIL",
     "FOUNDER_PASSWORD",
     "login",

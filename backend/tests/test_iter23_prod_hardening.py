@@ -83,7 +83,7 @@ class TestAuth:
         assert isinstance(body.get("access_token"), str) and len(body["access_token"]) > 20
         assert body.get("user", {}).get("email") == ADMIN_EMAIL
         assert body.get("user", {}).get("role") == "super_admin"
-        assert body.get("clinic", {}).get("clinic_id") == "clinic-acs-demo"
+        assert body.get("clinic", {}).get("clinic_id") == "clinic-pytest-suite"
 
     def test_login_invalid_credentials(self):
         r = _login_with_xff(ADMIN_EMAIL, "wrong-pwd-XYZ", "203.0.113.12")
@@ -109,7 +109,7 @@ class TestAuth:
         assert r.status_code == 200
         body = r.json()
         assert body.get("user", {}).get("email") == ADMIN_EMAIL
-        assert body.get("clinic", {}).get("clinic_id") == "clinic-acs-demo"
+        assert body.get("clinic", {}).get("clinic_id") == "clinic-pytest-suite"
 
     def test_auth_me_no_token(self):
         r = requests.get(f"{API}/auth/me", timeout=10)

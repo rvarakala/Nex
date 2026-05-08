@@ -18,7 +18,13 @@ import pytest
 import requests
 
 # Load REACT_APP_BACKEND_URL from frontend/.env if not already in env
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 if not os.environ.get("REACT_APP_BACKEND_URL"):
     env_path = Path("/app/frontend/.env")
     if env_path.exists():
@@ -57,7 +63,7 @@ def _login(session, email, password):
 
 @pytest.fixture(scope="module")
 def accounts_token(session):
-    return _login(session, "accounts@acs.in", "accounts123")
+    return _login(session, ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
 
 
 @pytest.fixture(scope="module")
@@ -67,12 +73,12 @@ def admin_token(session):
 
 @pytest.fixture(scope="module")
 def front_desk_token(session):
-    return _login(session, "frontdesk@acs.in", "frontdesk123")
+    return _login(session, FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="module")
 def audiologist_token(session):
-    return _login(session, "audiologist@acs.in", "audio123")
+    return _login(session, AUDIO_EMAIL, AUDIO_PASSWORD)
 
 
 def _h(token):
@@ -104,7 +110,7 @@ class TestAuthGating:
         r = session.post(f"{API}/closeouts/generate", headers=_h(accounts_token), json={}, timeout=10)
         assert r.status_code == 200
         data = r.json()
-        assert data["clinic_id"] == "clinic-acs-demo"
+        assert data["clinic_id"] == "clinic-pytest-suite"
         assert "closeout_id" in data and data["closeout_id"].startswith("CO-")
         assert "_id" not in data
 
@@ -126,7 +132,7 @@ class TestGenerateAndCompute:
                     "collections_total", "collections_by_method", "pending_reports",
                     "invoices_pending_due", "pending_due_amount", "read"):
             assert key in d, f"missing key {key}"
-        assert d["clinic_id"] == "clinic-acs-demo"
+        assert d["clinic_id"] == "clinic-pytest-suite"
         assert d["closeout_id"].startswith("CO-")
         assert isinstance(d["walkins_today"], int) and d["walkins_today"] >= 0
         assert isinstance(d["collections_total"], (int, float)) and d["collections_total"] >= 0
@@ -157,7 +163,7 @@ class TestReadEndpoints:
             assert rows[0]["date"] >= rows[1]["date"]
         for row in rows:
             assert "_id" not in row
-            assert row["clinic_id"] == "clinic-acs-demo"
+            assert row["clinic_id"] == "clinic-pytest-suite"
 
     def test_latest_returns_today(self, session, accounts_token):
         # ensure today exists
@@ -237,7 +243,7 @@ class TestTenantIsolation:
             r2 = session.get(f"{API}/closeouts/2026-04-22", headers=_h(accounts_token), timeout=10)
             # demo-clinic's row exists for that date — must not be the seeded other clinic one
             if r2.status_code == 200:
-                assert r2.json()["clinic_id"] == "clinic-acs-demo"
+                assert r2.json()["clinic_id"] == "clinic-pytest-suite"
                 assert r2.json()["closeout_id"] != "CO-OTHER01"
         finally:
             asyncio.run(cleanup())

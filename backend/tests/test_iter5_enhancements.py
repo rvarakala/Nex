@@ -13,14 +13,20 @@ import time
 import pytest
 import requests
 
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/')
 API = f"{BASE_URL}/api"
-CLINIC_ID = "clinic-acs-demo"
+CLINIC_ID = "clinic-pytest-suite"
 
 
 @pytest.fixture(scope="module")
 def fd_token():
-    r = requests.post(f"{API}/auth/login", json={"email": "frontdesk@acs.in", "password": "frontdesk123"}, timeout=15)
+    r = requests.post(f"{API}/auth/login", json={"email": FRONTDESK_EMAIL, "password": FRONTDESK_PASSWORD}, timeout=15)
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 

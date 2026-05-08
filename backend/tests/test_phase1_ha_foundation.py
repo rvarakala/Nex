@@ -8,7 +8,13 @@ import asyncio
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 sys.path.insert(0, "/app/backend")  # allow importing util modules
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -31,7 +37,7 @@ def admin():
 
 @pytest.fixture(scope="module")
 def frontdesk():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="module")
@@ -182,10 +188,10 @@ class TestVendors:
             c = AsyncIOMotorClient(mongo_url)
             db = c[db_name]
             # Find Mumbai HQ primary branch_id
-            br = await db.branches.find_one({"clinic_id": "clinic-acs-demo", "is_primary": True})
+            br = await db.branches.find_one({"clinic_id": "clinic-pytest-suite", "is_primary": True})
             u = {
                 "user_id": "USR-TESTINV01",
-                "clinic_id": "clinic-acs-demo",
+                "clinic_id": "clinic-pytest-suite",
                 "email": "test_inv@acs.in",
                 "name": "Test Inv Mgr",
                 "role": "inventory_manager",
@@ -311,7 +317,7 @@ class TestStateMachine:
             await db.serial_items.delete_one({"serial_id": sid})
             await db.serial_events.delete_many({"serial_id": sid})
             await db.serial_items.insert_one({
-                "serial_id": sid, "state": "IN_STOCK", "clinic_id": "clinic-acs-demo",
+                "serial_id": sid, "state": "IN_STOCK", "clinic_id": "clinic-pytest-suite",
             })
             # Legal transition
             await transition_serial(db, sid, "TRIAL_OUT", "USR-TEST",
@@ -394,11 +400,11 @@ class TestSeedIdempotency:
             c = AsyncIOMotorClient(mongo_url)
             db = c[db_name]
             mumbai = await db.branches.count_documents(
-                {"clinic_id": "clinic-acs-demo", "name": "Mumbai HQ"})
+                {"clinic_id": "clinic-pytest-suite", "name": "Mumbai HQ"})
             delhi = await db.branches.count_documents(
                 {"clinic_id": "clinic-delhi-test", "name": "Delhi"})
             mumbai_primaries = await db.branches.count_documents(
-                {"clinic_id": "clinic-acs-demo", "is_primary": True, "active": True})
+                {"clinic_id": "clinic-pytest-suite", "is_primary": True, "active": True})
             delhi_primaries = await db.branches.count_documents(
                 {"clinic_id": "clinic-delhi-test", "is_primary": True, "active": True})
             c.close()

@@ -30,21 +30,63 @@ SKIP = {"conftest.py", "_helpers.py", "__init__.py"}
 # Token replacements (literal Python source). Order matters — strings are
 # replaced first, then we ensure the `_helpers` import is in place.
 LITERAL_REPLACEMENTS = [
+    # super_admin / generic admin
     ('"admin@acs.in"', "ADMIN_EMAIL"),
     ("'admin@acs.in'", "ADMIN_EMAIL"),
     ('"admin123"', "ADMIN_PASSWORD"),
     ("'admin123'", "ADMIN_PASSWORD"),
+    # front_desk
+    ('"frontdesk@acs.in"', "FRONTDESK_EMAIL"),
+    ("'frontdesk@acs.in'", "FRONTDESK_EMAIL"),
+    ('"frontdesk123"', "FRONTDESK_PASSWORD"),
+    ("'frontdesk123'", "FRONTDESK_PASSWORD"),
+    # audiologist
+    ('"audiologist@acs.in"', "AUDIO_EMAIL"),
+    ("'audiologist@acs.in'", "AUDIO_EMAIL"),
+    ('"audio123"', "AUDIO_PASSWORD"),
+    ("'audio123'", "AUDIO_PASSWORD"),
+    # accounts
+    ('"accounts@acs.in"', "ACCOUNTS_EMAIL"),
+    ("'accounts@acs.in'", "ACCOUNTS_EMAIL"),
+    ('"accounts123"', "ACCOUNTS_PASSWORD"),
+    ("'accounts123'", "ACCOUNTS_PASSWORD"),
 ]
 
-IMPORT_LINE = "from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)"
+IMPORT_LINE = (
+    "from _helpers import (  # legacy creds (env-overridable)\n"
+    "    ADMIN_EMAIL, ADMIN_PASSWORD,\n"
+    "    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,\n"
+    "    AUDIO_EMAIL, AUDIO_PASSWORD,\n"
+    "    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,\n"
+    ")"
+)
 
 
 def needs_migration(src: str) -> bool:
     return any(lit in src for lit, _ in LITERAL_REPLACEMENTS)
 
 
-def already_imports(src: str) -> bool:
-    return ("from _helpers import" in src) and ("ADMIN_EMAIL" in src)
+_OLD_IMPORT_PATTERNS = [
+    re.compile(r"^from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD\s*#[^\n]*$", re.MULTILINE),
+    re.compile(r"^from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD\s*$", re.MULTILINE),
+]
+
+
+def _strip_legacy_import(src: str) -> str:
+    """Remove our previous (single-line) `_helpers` import so we can re-emit
+    the comprehensive multi-line version."""
+    for pat in _OLD_IMPORT_PATTERNS:
+        src = pat.sub("", src)
+    return src
+
+
+def _has_new_import(src: str) -> bool:
+    """True if the file already has the multi-line comprehensive import."""
+    return (
+        "from _helpers import (" in src
+        and "ADMIN_EMAIL" in src
+        and "FRONTDESK_EMAIL" in src
+    )
 
 
 def rewrite_one(src: str) -> str:
@@ -52,41 +94,43 @@ def rewrite_one(src: str) -> str:
     for lit, sub in LITERAL_REPLACEMENTS:
         out = out.replace(lit, sub)
 
-    # Ensure import is present. Insert AFTER the last `import` / `from ...
-    # import` line near the top, but BEFORE any non-import code.
-    if not already_imports(out):
-        lines = out.splitlines(keepends=True)
-        insert_at = 0
-        # Skip module docstring + future imports + standard imports.
-        in_docstring = False
-        docstring_quote = None
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            # Track triple-quoted docstring at module top
-            if i == 0 and (stripped.startswith('"""') or stripped.startswith("'''")):
-                docstring_quote = stripped[:3]
-                if stripped.count(docstring_quote) >= 2:
-                    insert_at = i + 1
-                    continue
-                in_docstring = True
-                insert_at = i + 1
-                continue
-            if in_docstring:
-                insert_at = i + 1
-                if docstring_quote and docstring_quote in stripped:
-                    in_docstring = False
-                continue
-            if stripped.startswith("import ") or stripped.startswith("from "):
-                insert_at = i + 1
-                continue
-            if stripped == "" or stripped.startswith("#"):
-                insert_at = i + 1
-                continue
-            break
+    # If the comprehensive import is already present, leave imports alone.
+    if _has_new_import(out):
+        return out
 
-        lines.insert(insert_at, IMPORT_LINE + "\n")
-        out = "".join(lines)
-    return out
+    # Strip any legacy single-line import we previously inserted, so the
+    # multi-line version isn't duplicated.
+    out = _strip_legacy_import(out)
+
+    lines = out.splitlines(keepends=True)
+    insert_at = 0
+    in_docstring = False
+    docstring_quote = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if i == 0 and (stripped.startswith('"""') or stripped.startswith("'''")):
+            docstring_quote = stripped[:3]
+            if stripped.count(docstring_quote) >= 2:
+                insert_at = i + 1
+                continue
+            in_docstring = True
+            insert_at = i + 1
+            continue
+        if in_docstring:
+            insert_at = i + 1
+            if docstring_quote and docstring_quote in stripped:
+                in_docstring = False
+            continue
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            insert_at = i + 1
+            continue
+        if stripped == "" or stripped.startswith("#"):
+            insert_at = i + 1
+            continue
+        break
+
+    lines.insert(insert_at, IMPORT_LINE + "\n")
+    return "".join(lines)
 
 
 def main() -> int:

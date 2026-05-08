@@ -38,14 +38,14 @@ def delhi_h(delhi_token):
 
 @pytest.fixture(scope="module")
 def patient(admin_h):
-    """Use any existing patient in clinic-acs-demo (has mobile)."""
+    """Use any existing patient in clinic-pytest-suite (has mobile)."""
     r = requests.get(f"{API}/patients", headers=admin_h, params={"limit": 50}, timeout=20)
     assert r.status_code == 200
     items = r.json() if isinstance(r.json(), list) else r.json().get("items", [])
     for p in items:
         if p.get("mobile"):
             return p
-    pytest.skip("No patient with mobile in clinic-acs-demo")
+    pytest.skip("No patient with mobile in clinic-pytest-suite")
 
 
 # ============ AMC ============
@@ -208,7 +208,7 @@ class TestPartners:
     def test_self_signup(self):
         email = f"TEST_signup_{SUFFIX.lower()}@test.in"
         r = requests.post(f"{API}/referral-partners/public/signup", json={
-            "clinic_id": "clinic-acs-demo", "name": f"TEST_Signup_{SUFFIX}",
+            "clinic_id": "clinic-pytest-suite", "name": f"TEST_Signup_{SUFFIX}",
             "email": email, "password": "SignupPass123!",
         }, timeout=20)
         assert r.status_code == 200, r.text
@@ -264,7 +264,7 @@ class TestPartners:
 class TestPatientPortal:
     patient_token = None
     patient_id = None
-    clinic_id = "clinic-acs-demo"
+    clinic_id = "clinic-pytest-suite"
 
     def test_request_otp_returns_dev_otp(self, patient):
         TestPatientPortal.patient_id = patient["patient_id"]

@@ -6,7 +6,13 @@ import pytest
 import requests
 
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL",
                          "https://careful-feedback.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
@@ -30,7 +36,7 @@ def admin_token():
 
 @pytest.fixture(scope="module")
 def fd_token():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 class TestPublicTiers:
@@ -105,22 +111,22 @@ class TestAdminClinics:
         rows = r.json()
         assert isinstance(rows, list) and len(rows) >= 1
         # Demo clinic was seeded PREMIUM
-        demo = [c for c in rows if c["clinic_id"] == "clinic-acs-demo"]
+        demo = [c for c in rows if c["clinic_id"] == "clinic-pytest-suite"]
         assert len(demo) == 1
         assert demo[0]["subscription_tier"] == "PREMIUM"
 
     def test_flip_tier_and_revert(self, admin_token):
         # Flip demo clinic to BASIC then back to PREMIUM
-        r = requests.patch(f"{API}/admin/clinics/clinic-acs-demo/tier",
+        r = requests.patch(f"{API}/admin/clinics/clinic-pytest-suite/tier",
                            headers=h(admin_token),
                            json={"subscription_tier": "STANDARD"}, timeout=10)
         assert r.status_code == 200
-        r = requests.patch(f"{API}/admin/clinics/clinic-acs-demo/tier",
+        r = requests.patch(f"{API}/admin/clinics/clinic-pytest-suite/tier",
                            headers=h(admin_token),
                            json={"subscription_tier": "PREMIUM"}, timeout=10)
         assert r.status_code == 200
         # Invalid tier rejected
-        r = requests.patch(f"{API}/admin/clinics/clinic-acs-demo/tier",
+        r = requests.patch(f"{API}/admin/clinics/clinic-pytest-suite/tier",
                            headers=h(admin_token),
                            json={"subscription_tier": "DIAMOND"}, timeout=10)
         assert r.status_code == 400
@@ -132,7 +138,7 @@ class TestAdminClinics:
         assert r.status_code == 404
 
     def test_extend_trial(self, admin_token):
-        r = requests.post(f"{API}/admin/clinics/clinic-acs-demo/extend-trial?days=30",
+        r = requests.post(f"{API}/admin/clinics/clinic-pytest-suite/extend-trial?days=30",
                           headers=h(admin_token), timeout=10)
         assert r.status_code == 200
         assert r.json()["days"] == 30

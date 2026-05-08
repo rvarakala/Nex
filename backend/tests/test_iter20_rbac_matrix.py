@@ -12,7 +12,13 @@ import os
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -24,7 +30,7 @@ CREDS = {
     "finance_manager": ("finance@audinexa.com", "finance123"),
     "product_ops":    ("ops@audinexa.com", "ops123"),
     "read_only":      ("analyst@audinexa.com", "analyst123"),
-    "frontdesk":      ("frontdesk@acs.in", "frontdesk123"),
+    "frontdesk":      (FRONTDESK_EMAIL, FRONTDESK_PASSWORD),
     "kims_owner":     ("support@kimshearing.in", "demo123"),
 }
 

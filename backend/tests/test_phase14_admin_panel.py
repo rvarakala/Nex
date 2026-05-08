@@ -17,21 +17,28 @@ import uuid
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 
 FOUNDER = ("founder@audinexa.com", "founder123")
 SUPER_ADMIN = (ADMIN_EMAIL, ADMIN_PASSWORD)
-KIMS_OWNER = ("support@kimshearing.in", "demo123")
-FRONT_DESK = ("frontdesk@acs.in", "frontdesk123")
+FRONT_DESK = (FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
-DEMO_TENANTS = [
-    "tenant-kims-hearing",
-    "tenant-apollo-audiology",
-    "tenant-soundcare-hyd",
-    "tenant-ent-plus",
-]
+# Real seeded tenants used as read/light-touch fixtures (replaces deleted
+# KIMS / Apollo / SoundCare / ENT-Plus demo tenants).
+BETA_READ_TENANT = "beta-01"          # detail / impersonate / feature-flags
+BETA_UPDATE_TENANT = "beta-04"        # PATCH city / non-destructive
+BETA_SUSPEND_TENANT = "beta-05"       # suspend → activate cycle
+BETA_DELETE_BLOCK_TENANT = "beta-06"  # super_admin must be 403'd here
+PREMIUM_TENANT = "tenant-sound-clinic-blr"  # PREMIUM tier filter check
+EXPECTED_BETA_TENANTS = [f"beta-{i:02d}" for i in range(1, 11)]
 
 
 def login(email: str, password: str) -> str:
@@ -76,8 +83,8 @@ def test_demo_tenants_seeded(founder_tok):
     assert r.status_code == 200, r.text
     rows = r.json()["rows"]
     cids = {t["clinic_id"] for t in rows}
-    for c in DEMO_TENANTS:
-        assert c in cids, f"missing demo tenant {c}"
+    for c in EXPECTED_BETA_TENANTS:
+        assert c in cids, f"missing seeded beta tenant {c}"
 
 
 # ---------- 1. dashboard ----------
@@ -102,38 +109,39 @@ def test_tenants_filters(founder_tok):
     assert r.status_code == 200
     for row in r.json()["rows"]:
         assert row["subscription_tier"] == "PREMIUM"
+    # The seeded PREMIUM tenant must appear in the PREMIUM filter.
+    assert any(row["clinic_id"] == PREMIUM_TENANT for row in r.json()["rows"])
 
     r = requests.get(f"{API}/admin/v2/tenants", headers=H(founder_tok),
-                     params={"q": "KIMS"}, timeout=30)
+                     params={"q": "Beta"}, timeout=30)
     assert r.status_code == 200
-    assert any("KIMS" in t.get("name", "") for t in r.json()["rows"])
+    assert any("Beta" in t.get("name", "") for t in r.json()["rows"])
 
 
 def test_tenant_detail_shape(founder_tok):
-    r = requests.get(f"{API}/admin/v2/tenants/tenant-kims-hearing",
+    r = requests.get(f"{API}/admin/v2/tenants/{BETA_READ_TENANT}",
                      headers=H(founder_tok), timeout=30)
     assert r.status_code == 200, r.text
     d = r.json()
     for k in ("tenant", "users", "branches", "usage", "invoices",
               "feature_flags", "audit_trail"):
         assert k in d
-    assert d["tenant"]["clinic_id"] == "tenant-kims-hearing"
+    assert d["tenant"]["clinic_id"] == BETA_READ_TENANT
     assert "effective_tier" in d["tenant"]
 
 
 def test_tenant_update_audit(founder_tok):
     new_city = f"TestCity-{uuid.uuid4().hex[:4]}"
-    r = requests.patch(f"{API}/admin/v2/tenants/tenant-soundcare-hyd",
+    r = requests.patch(f"{API}/admin/v2/tenants/{BETA_UPDATE_TENANT}",
                        headers=H(founder_tok), json={"city": new_city}, timeout=30)
     assert r.status_code == 200, r.text
-    # verify
-    g = requests.get(f"{API}/admin/v2/tenants/tenant-soundcare-hyd",
+    g = requests.get(f"{API}/admin/v2/tenants/{BETA_UPDATE_TENANT}",
                      headers=H(founder_tok), timeout=30)
     assert g.json()["tenant"]["city"] == new_city
 
 
 def test_suspend_then_activate(founder_tok):
-    cid = "tenant-apollo-audiology"
+    cid = BETA_SUSPEND_TENANT
     s = requests.post(f"{API}/admin/v2/tenants/{cid}/suspend",
                       headers=H(founder_tok), timeout=30)
     assert s.status_code == 200
@@ -145,14 +153,13 @@ def test_suspend_then_activate(founder_tok):
 
 
 def test_impersonate_returns_working_token(founder_tok):
-    cid = "tenant-kims-hearing"
+    cid = BETA_READ_TENANT
     r = requests.post(f"{API}/admin/v2/tenants/{cid}/impersonate",
                       headers=H(founder_tok), timeout=30)
     assert r.status_code == 200, r.text
     body = r.json()
     assert "access_token" in body and body["access_token"]
     new_tok = body["access_token"]
-    # use it on a tenant-scoped endpoint
     me = requests.get(f"{API}/auth/me", headers=H(new_tok), timeout=20)
     assert me.status_code == 200
     user = me.json().get("user", me.json())
@@ -161,23 +168,39 @@ def test_impersonate_returns_working_token(founder_tok):
 
 # ---------- 3. delete: founder vs super_admin ----------
 def test_delete_blocked_for_super_admin(admin_tok):
-    r = requests.delete(f"{API}/admin/v2/tenants/tenant-soundcare-hyd",
+    r = requests.delete(f"{API}/admin/v2/tenants/{BETA_DELETE_BLOCK_TENANT}",
                         headers=H(admin_tok), timeout=30)
     assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
 
 
 def test_delete_allowed_for_founder(founder_tok):
-    # Create a throwaway tenant via direct insert is overkill; reuse seeded ent-plus
-    # but only delete if not the demo-protected one. We will create a temp clinic
-    # via direct DB? No DB access here — instead delete the seeded ENT Plus.
-    cid = "tenant-ent-plus"
+    """Mints a throwaway tenant via the public admin endpoint, then deletes
+    it — avoids destroying any real beta or seeded fixture."""
+    suffix = uuid.uuid4().hex[:6]
+    create = requests.post(
+        f"{API}/admin/v2/tenants",
+        headers=H(founder_tok),
+        json={
+            "clinic_name": f"Pytest Throwaway {suffix}",
+            "city": "Mumbai",
+            "state": "Maharashtra",
+            "phone": "+91-9000099001",
+            "owner_email": f"throwaway-{suffix}@example.com",
+            "owner_name": "Throwaway Owner",
+            "subscription_tier": "BASIC",
+        },
+        timeout=30,
+    )
+    assert create.status_code in (200, 201), create.text
+    cid = create.json().get("clinic_id") or create.json().get("tenant", {}).get("clinic_id")
+    assert cid, f"throwaway tenant missing clinic_id: {create.json()}"
+
     r = requests.delete(f"{API}/admin/v2/tenants/{cid}",
                         headers=H(founder_tok), timeout=30)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True
     assert "deleted" in body
-    # confirm gone
     g = requests.get(f"{API}/admin/v2/tenants/{cid}",
                      headers=H(founder_tok), timeout=30)
     assert g.status_code == 404
@@ -210,7 +233,7 @@ def test_plan_override_persists(founder_tok):
 
 
 def test_create_invoice_and_mark_paid(founder_tok):
-    cid = "tenant-kims-hearing"
+    cid = BETA_READ_TENANT
     r = requests.post(f"{API}/admin/v2/subscriptions/invoices",
                       headers=H(founder_tok),
                       json={"clinic_id": cid, "tier": "PREMIUM",
@@ -246,28 +269,32 @@ def test_leads_list_has_stages(founder_tok):
     d = r.json()
     assert "stages" in d and "counts" in d and "rows" in d
     assert "Lead" in d["stages"]
-    assert any(row.get("email") == "rahul@prodigymedical.in" for row in d["rows"])
 
 
 def test_lead_stage_update(founder_tok):
-    email = "rahul@prodigymedical.in"
-    r = requests.patch(f"{API}/admin/v2/leads/{email}",
+    """Picks the first row from the leads list (if any) and tries to flip
+    its stage. Skips if no leads have been seeded."""
+    r = requests.get(f"{API}/admin/v2/leads", headers=H(founder_tok), timeout=20)
+    rows = r.json().get("rows", [])
+    if not rows:
+        pytest.skip("no leads seeded — nothing to update")
+    email = rows[0]["email"]
+    p = requests.patch(f"{API}/admin/v2/leads/{email}",
                        headers=H(founder_tok),
                        json={"stage": "Active Trial", "notes": "TEST_phase14"},
                        timeout=20)
-    assert r.status_code == 200, r.text
-    assert r.json()["stage"] == "Active Trial"
+    assert p.status_code == 200, p.text
+    assert p.json()["stage"] == "Active Trial"
 
 
 # ---------- 7. feature flags ----------
 def test_feature_flags_additive(founder_tok):
-    cid = "tenant-soundcare-hyd"  # STANDARD tier
+    cid = BETA_READ_TENANT  # STANDARD tier beta tenant
     r = requests.get(f"{API}/admin/v2/feature-flags/{cid}",
                      headers=H(founder_tok), timeout=20)
     assert r.status_code == 200
     body = r.json()
     assert "base_modules" in body and "effective_modules" in body
-    # add 'analytics' as extra
     p = requests.put(f"{API}/admin/v2/feature-flags/{cid}",
                      headers=H(founder_tok),
                      json={"extra_modules": ["analytics"],

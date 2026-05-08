@@ -10,6 +10,12 @@ from datetime import datetime, timezone, timedelta
 import pytest
 import requests
 
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/') if 'REACT_APP_BACKEND_URL' in os.environ else None
 if not BASE_URL:
     # Fallback: read frontend/.env
@@ -19,7 +25,7 @@ if not BASE_URL:
                 BASE_URL = line.split('=', 1)[1].strip().rstrip('/')
                 break
 
-CLINIC_ID = "clinic-acs-demo"
+CLINIC_ID = "clinic-pytest-suite"
 IST = timezone(timedelta(hours=5, minutes=30))
 
 sys.path.insert(0, '/app/backend')
@@ -51,7 +57,7 @@ class TestISTHelpers:
 @pytest.fixture(scope="module")
 def fd_token():
     r = requests.post(f"{BASE_URL}/api/auth/login",
-                      json={"email": "frontdesk@acs.in", "password": "frontdesk123"}, timeout=10)
+                      json={"email": FRONTDESK_EMAIL, "password": FRONTDESK_PASSWORD}, timeout=10)
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 
@@ -141,7 +147,7 @@ class TestBillingCollectionsIST:
         # Endpoint may require accounts role; accept 200 or 403
         if r.status_code == 403:
             ra = requests.post(f"{BASE_URL}/api/auth/login",
-                               json={"email": "accounts@acs.in", "password": "accounts123"}, timeout=10)
+                               json={"email": ACCOUNTS_EMAIL, "password": ACCOUNTS_PASSWORD}, timeout=10)
             assert ra.status_code == 200
             tok = ra.json()["access_token"]
             r = requests.get(f"{BASE_URL}/api/billing/collections",

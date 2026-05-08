@@ -5,6 +5,12 @@ import pytest
 import requests
 from datetime import datetime, timedelta
 
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -13,7 +19,7 @@ _created = {"patients": [], "appointments": [], "waitlist": []}
 
 @pytest.fixture(scope="module")
 def fd_token():
-    r = requests.post(f"{API}/auth/login", json={"email": "frontdesk@acs.in", "password": "frontdesk123"})
+    r = requests.post(f"{API}/auth/login", json={"email": FRONTDESK_EMAIL, "password": FRONTDESK_PASSWORD})
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 

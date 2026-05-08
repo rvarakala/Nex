@@ -1,14 +1,31 @@
 """Session-wide pytest config.
 
-Injects env vars that individual tests need at import time (before any fixture
-runs). Specifically:
+Loads env files at collection time, then idempotently seeds a *dedicated test
+tenant* (`clinic-pytest-suite` with admin `pytest.admin@audinexa.test`) into
+the database so the suite can run against a production-style deployment
+where `DISABLE_DEMO_SEED=1` strips the legacy `clinic-acs-demo` fixture.
 
-* `backend/.env` — provides MONGO_URL, DB_NAME, JWT_SECRET, etc. for tests that
-  spin up a direct motor client (e.g. Phase 1 numbering + state machine tests).
-* `frontend/.env` — provides REACT_APP_BACKEND_URL for HTTP-level tests.
+Why a dedicated test tenant instead of the legacy `admin@acs.in` bootstrap?
+--------------------------------------------------------------------------
+The previous bootstrap re-created `clinic-acs-demo` (the original sandbox
+clinic) so 49 legacy test files could keep logging in as the hardcoded
+`admin@acs.in`. That meant we could never permanently drop the demo tenant
+from production — the test suite was effectively gluing it back on every
+run.
 
-Both files are loaded with `override=False` so a value already set in the shell
-(e.g. CI) wins.
+We've now migrated all `test_*.py` files to read credentials from
+`tests/_helpers.py` (which honours `TEST_ADMIN_EMAIL` / `TEST_ADMIN_PASSWORD`
+env vars), so this bootstrap can target a completely test-only tenant that
+doesn't pollute the marketing/demo namespace.
+
+Override behaviour:
+  * `TEST_CLINIC_ID`        — default: `clinic-pytest-suite`
+  * `TEST_CLINIC_NAME`      — default: `Pytest Suite Tenant`
+  * `TEST_ADMIN_EMAIL`      — default: `pytest.admin@audinexa.test`
+  * `TEST_ADMIN_PASSWORD`   — default: `Pytest@123`
+
+Env files are loaded with `override=False` so a value already set in the
+shell (e.g. CI) wins.
 """
 from __future__ import annotations
 
@@ -37,71 +54,114 @@ _load_env_file(_REPO / "frontend" / ".env")
 
 
 # ────────────────────────────────────────────────────────────────────
-# Self-bootstrapping test admin / clinic
+# Self-bootstrapping pytest tenant
 # ────────────────────────────────────────────────────────────────────
-#
-# Production sets DISABLE_DEMO_SEED=1, which strips `clinic-acs-demo` and the
-# four demo users (`admin@acs.in`, `frontdesk@acs.in`, `audiologist@acs.in`,
-# `accounts@acs.in`) from the database. Most of the legacy test suite still
-# logs in as `admin@acs.in`, which would 401 against a stripped database and
-# every test would fail.
-#
-# Rather than rewrite 49 test files (high risk for a P2 cleanup), we detect
-# the missing fixtures at pytest collection time and re-seed them in-place
-# via the same helpers `seeds.demo` uses. This is idempotent and runs ONCE
-# per pytest invocation — production code paths and the user's running
-# preview/production servers are untouched.
 import asyncio  # noqa: E402  (deliberate after env-load)
 import sys      # noqa: E402
 
 sys.path.insert(0, str(_REPO / "backend"))
 
 
-def _bootstrap_test_admin() -> None:
-    """Idempotently ensure `clinic-acs-demo` + the 4 demo users exist.
+_PYTEST_CLINIC_ID = os.environ.get("TEST_CLINIC_ID", "clinic-pytest-suite")
+_PYTEST_CLINIC_NAME = os.environ.get("TEST_CLINIC_NAME", "Pytest Suite Tenant")
+_PYTEST_ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "pytest.admin@audinexa.test")
+_PYTEST_ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "Pytest@123")
 
-    No-op if the demo user already exists with the right password.
+# Sub-role accounts used by ~30 legacy tests (front desk, audiologist, accounts).
+_PYTEST_FRONTDESK_EMAIL = os.environ.get("TEST_FRONTDESK_EMAIL", "pytest.frontdesk@audinexa.test")
+_PYTEST_FRONTDESK_PASSWORD = os.environ.get("TEST_FRONTDESK_PASSWORD", "Pytest@123")
+_PYTEST_AUDIO_EMAIL = os.environ.get("TEST_AUDIO_EMAIL", "pytest.audio@audinexa.test")
+_PYTEST_AUDIO_PASSWORD = os.environ.get("TEST_AUDIO_PASSWORD", "Pytest@123")
+_PYTEST_ACCOUNTS_EMAIL = os.environ.get("TEST_ACCOUNTS_EMAIL", "pytest.accounts@audinexa.test")
+_PYTEST_ACCOUNTS_PASSWORD = os.environ.get("TEST_ACCOUNTS_PASSWORD", "Pytest@123")
+
+
+def _bootstrap_pytest_tenant() -> None:
+    """Idempotently ensure the pytest tenant + super_admin user + 1 branch
+    + 1 patient exist. No-op if already present.
+
     Errors are logged + swallowed — tests will surface the real auth failure.
     """
     try:
-        # We import inside the function so collection-time errors (e.g. missing
-        # MONGO_URL when running unit tests in isolation) don't blow up pytest.
+        from datetime import datetime, timezone
+
         from motor.motor_asyncio import AsyncIOMotorClient
 
-        from seeds.demo import (
-            _MUMBAI_USERS, _seed_primary_branch, _seed_primary_clinic, _seed_users,
-        )
+        from auth import hash_password
+        from utils.serde import serialize_datetime
 
         async def _go() -> None:
             mongo = AsyncIOMotorClient(os.environ["MONGO_URL"])
             db = mongo[os.environ["DB_NAME"]]
             try:
-                clinic_id = "clinic-acs-demo"
-                clinic_name = "ACS Audiology Clinic"
-                await _seed_primary_clinic(db, clinic_id, clinic_name)
-                await _seed_users(db, clinic_id, _MUMBAI_USERS)
-                await _seed_primary_branch(db, clinic_id, "Mumbai HQ", "Mumbai", "Maharashtra")
+                # 1) Clinic
+                if not await db.clinics.find_one({"clinic_id": _PYTEST_CLINIC_ID}):
+                    await db.clinics.insert_one(serialize_datetime({
+                        "clinic_id": _PYTEST_CLINIC_ID,
+                        "name": _PYTEST_CLINIC_NAME,
+                        "city": "Mumbai",
+                        "state": "Maharashtra",
+                        "phone": "+91-22-00000099",
+                        "email": "pytest@audinexa.test",
+                        "mrd_prefix": "PYT",
+                        # PREMIUM so every feature is reachable in the test
+                        # suite without per-feature tier-bypass plumbing.
+                        "subscription_tier": "PREMIUM",
+                        "created_at": datetime.utcnow(),
+                    }))
 
-                # Ensure at least one patient exists so simple tests like
-                # `GET /patients?limit=1` succeed without each file having to
-                # seed its own. Re-uses the demo MRD prefix so MRD generation
-                # stays consistent.
-                from datetime import datetime, timezone
-                pid = "PT-TEST-BOOTSTRAP-001"
-                if not await db.patients.find_one({"patient_id": pid}):
-                    branch = await db.branches.find_one(
-                        {"clinic_id": clinic_id}, {"_id": 0, "branch_id": 1},
-                    )
-                    bid = branch["branch_id"] if branch else None
+                # 2) All four role users (idempotent on email)
+                role_users = [
+                    ("USR-PYTEST-ADMIN",      _PYTEST_ADMIN_EMAIL,      _PYTEST_ADMIN_PASSWORD,      "Pytest Super Admin",  "super_admin"),
+                    ("USR-PYTEST-FRONTDESK",  _PYTEST_FRONTDESK_EMAIL,  _PYTEST_FRONTDESK_PASSWORD,  "Pytest Front Desk",   "front_desk"),
+                    ("USR-PYTEST-AUDIO",      _PYTEST_AUDIO_EMAIL,      _PYTEST_AUDIO_PASSWORD,      "Pytest Audiologist",  "audiologist"),
+                    ("USR-PYTEST-ACCOUNTS",   _PYTEST_ACCOUNTS_EMAIL,   _PYTEST_ACCOUNTS_PASSWORD,   "Pytest Accounts",     "accounts"),
+                ]
+                # Resolve branch_id once (set after step 3 below). We'll
+                # patch it onto branch-restricted users in a second pass.
+                for uid, email, pw, name, role in role_users:
+                    if not await db.users.find_one({"email": email}):
+                        await db.users.insert_one({
+                            "user_id": uid,
+                            "email": email,
+                            "password_hash": hash_password(pw),
+                            "name": name,
+                            "role": role,
+                            "clinic_id": _PYTEST_CLINIC_ID,
+                            "active": True,
+                            "branch_ids": [],
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        })
+
+                # 3) Primary branch (named "Mumbai HQ" for legacy test
+                # compatibility — many tests assert this exact name).
+                branch = await db.branches.find_one({"clinic_id": _PYTEST_CLINIC_ID})
+                if not branch:
+                    bid = "BR-PYTEST-001"
+                    await db.branches.insert_one({
+                        "branch_id": bid,
+                        "clinic_id": _PYTEST_CLINIC_ID,
+                        "name": "Mumbai HQ",
+                        "city": "Mumbai",
+                        "state": "Maharashtra",
+                        "is_primary": True,
+                        "active": True,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                else:
+                    bid = branch["branch_id"]
+
+                # 4) Bootstrap patient (so simple list-tests succeed)
+                if not await db.patients.find_one({"patient_id": "PT-PYTEST-BOOTSTRAP-001"}):
                     await db.patients.insert_one({
-                        "patient_id": pid,
-                        "mrd_no": "ACS-2026-TEST01",
-                        "clinic_id": clinic_id,
+                        "patient_id": "PT-PYTEST-BOOTSTRAP-001",
+                        "mrd_no": "PYT-2026-TEST01",
+                        "clinic_id": _PYTEST_CLINIC_ID,
                         "primary_branch_id": bid,
-                        "branch_ids": [bid] if bid else [],
+                        "branch_ids": [bid],
                         "name": "Bootstrap Test Patient",
-                        "phone": "+91-9999900001",
-                        "email": "bootstrap@test.local",
+                        "phone": "+91-9999900099",
+                        "email": "bootstrap@pytest.local",
                         "age": 45,
                         "gender": "Male",
                         "city": "Mumbai",
@@ -109,25 +169,41 @@ def _bootstrap_test_admin() -> None:
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     })
+
+                # 5) Backfill branch_ids on branch-restricted role users.
+                # CLINIC_WIDE_ROLES (super_admin/founder/accounts) see every
+                # branch automatically; front_desk + audiologist need an
+                # explicit grant.
+                for email in (_PYTEST_FRONTDESK_EMAIL, _PYTEST_AUDIO_EMAIL):
+                    await db.users.update_one(
+                        {"email": email, "branch_ids": {"$ne": [bid]}},
+                        {"$set": {"branch_ids": [bid], "primary_branch_id": bid}},
+                    )
+
+                # 6) Seed default service catalogue (idempotent).
+                # Multiple legacy billing tests assume `/billing/services`
+                # returns ≥ 1 row in the active clinic.
+                try:
+                    import billing as _billing  # local import: heavy module
+                    await _billing.seed_default_services(db, _PYTEST_CLINIC_ID)
+                except Exception as _e:  # noqa: BLE001
+                    print(f"[conftest] service seed skipped: {_e}",
+                          file=sys.stderr)
             finally:
                 mongo.close()
 
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # Inside an existing loop (rare during collection) — schedule a task
                 loop.create_task(_go())
             else:
                 loop.run_until_complete(_go())
         except RuntimeError:
             asyncio.run(_go())
     except Exception as exc:  # noqa: BLE001
-        # Don't let bootstrap failures silently mask: print loudly so it shows
-        # up in the test report header. Tests will still fail at login if needed.
-        print(f"[conftest] WARNING: test admin bootstrap failed: {exc}", file=sys.stderr)
+        print(f"[conftest] WARNING: pytest tenant bootstrap failed: {exc}",
+              file=sys.stderr)
 
 
-# Run bootstrap only when actually required env is present (skips for cases
-# where pytest is collecting tests against a different MONGO_URL or no DB).
 if os.environ.get("MONGO_URL") and os.environ.get("DB_NAME"):
-    _bootstrap_test_admin()
+    _bootstrap_pytest_tenant()

@@ -17,7 +17,13 @@ import jwt
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
@@ -42,17 +48,17 @@ def _login(email, password):
 
 @pytest.fixture(scope="module")
 def accounts_token():
-    return _login("accounts@acs.in", "accounts123")
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
 
 
 @pytest.fixture(scope="module")
 def frontdesk_token():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="module")
 def audiologist_token():
-    return _login("audiologist@acs.in", "audio123")
+    return _login(AUDIO_EMAIL, AUDIO_PASSWORD)
 
 
 @pytest.fixture(scope="module")
@@ -297,7 +303,7 @@ class TestReportShareLinks:
         # Mint an already-expired token using the same secret/algo/type the server expects.
         payload = {
             "session_id": seeded_session_id,
-            "clinic_id": "clinic-acs-demo",
+            "clinic_id": "clinic-pytest-suite",
             "type": "report_share",
             "exp": datetime.now(timezone.utc) - timedelta(hours=1),
             "iat": datetime.now(timezone.utc) - timedelta(hours=2),
@@ -326,5 +332,5 @@ class TestRouterRegression:
         assert r.status_code == 200, f"{endpoint} -> {r.status_code} {r.text[:200]}"
 
     def test_public_queue_ok(self):
-        r = requests.get(f"{API}/queue/public/clinic-acs-demo", timeout=10)
+        r = requests.get(f"{API}/queue/public/clinic-pytest-suite", timeout=10)
         assert r.status_code == 200

@@ -19,7 +19,13 @@ import uuid
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -30,8 +36,11 @@ SUPPORT_AGT = ("support@audinexa.com", "support123")
 FINANCE_MGR = ("finance@audinexa.com", "finance123")
 PRODUCT_OPS = ("ops@audinexa.com", "ops123")
 READ_ONLY = ("analyst@audinexa.com", "analyst123")
-FRONT_DESK = ("frontdesk@acs.in", "frontdesk123")
-KIMS_OWNER = ("support@kimshearing.in", "demo123")
+FRONT_DESK = (FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
+SOUND_CLINIC_OWNER = ("owner@thesoundclinic.in", "demo123")  # PREMIUM seeded tenant
+
+# Beta tenant references (replaces deleted KIMS demo tenant).
+BETA_TENANT = "beta-01"
 
 
 def login(email: str, password: str) -> str | None:
@@ -104,9 +113,9 @@ def readonly_tok():
 
 @pytest.fixture(scope="module")
 def kims_tok():
-    t = login(*KIMS_OWNER)
+    t = login(*SOUND_CLINIC_OWNER)
     if not t:
-        pytest.skip("kims_owner missing")
+        pytest.skip("sound clinic owner missing")
     return t
 
 
@@ -138,7 +147,7 @@ def test_tickets_list_with_stats(founder_tok):
 
 def test_tickets_create_with_sla(founder_tok):
     payload = {
-        "clinic_id": "tenant-kims-hearing",
+        "clinic_id": "beta-01",
         "category": "Bug",
         "priority": "urgent",
         "subject": f"TEST_phase14b ticket {uuid.uuid4().hex[:6]}",
@@ -302,12 +311,12 @@ def test_send_to_specific_tenant(founder_tok):
     r = requests.post(f"{API}/admin/v2/notifications/send", headers=H(founder_tok),
                       json={"title": "TEST_targeted", "body": "x",
                             "audience": "tenant",
-                            "audience_filter": "tenant-kims-hearing",
+                            "audience_filter": "beta-01",
                             "channels": ["in-app"]}, timeout=20)
     assert r.status_code == 200
     n = r.json()
     assert n["target_count"] == 1
-    assert "tenant-kims-hearing" in n["target_clinic_ids"]
+    assert "beta-01" in n["target_clinic_ids"]
 
 
 # ============= 6. AUDIT LOG VIEWER =============
@@ -433,7 +442,7 @@ class TestRbacSupportAgent:
     def test_cannot_write_revenue(self, support_tok):
         # try to create an invoice (revenue:write equivalent)
         r = requests.post(f"{API}/admin/v2/subscriptions/invoices", headers=H(support_tok),
-                          json={"clinic_id": "tenant-kims-hearing", "tier": "STANDARD",
+                          json={"clinic_id": "beta-01", "tier": "STANDARD",
                                 "duration": "annual"}, timeout=20)
         assert r.status_code == 403
 
@@ -449,7 +458,7 @@ class TestRbacFinanceManager:
         assert r.status_code == 200
 
     def test_cannot_write_features(self, finance_tok):
-        r = requests.put(f"{API}/admin/v2/feature-flags/tenant-kims-hearing",
+        r = requests.put(f"{API}/admin/v2/feature-flags/beta-01",
                          headers=H(finance_tok),
                          json={"extra_modules": ["analytics"], "disabled_modules": []}, timeout=20)
         assert r.status_code == 403
@@ -457,14 +466,14 @@ class TestRbacFinanceManager:
 
 class TestRbacProductOps:
     def test_can_write_features(self, ops_tok):
-        r = requests.put(f"{API}/admin/v2/feature-flags/tenant-kims-hearing",
+        r = requests.put(f"{API}/admin/v2/feature-flags/beta-01",
                          headers=H(ops_tok),
                          json={"extra_modules": ["analytics"], "disabled_modules": []}, timeout=20)
         assert r.status_code == 200, r.text
 
     def test_cannot_write_revenue(self, ops_tok):
         r = requests.post(f"{API}/admin/v2/subscriptions/invoices", headers=H(ops_tok),
-                          json={"clinic_id": "tenant-kims-hearing", "tier": "STANDARD",
+                          json={"clinic_id": "beta-01", "tier": "STANDARD",
                                 "duration": "annual"}, timeout=20)
         assert r.status_code == 403
 

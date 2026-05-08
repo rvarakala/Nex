@@ -9,9 +9,15 @@ from datetime import datetime, timedelta
 import pytest
 import requests
 
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
-CLINIC_ID = "clinic-acs-demo"
+CLINIC_ID = "clinic-pytest-suite"
 
 
 def _login(email, password):
@@ -22,12 +28,12 @@ def _login(email, password):
 
 @pytest.fixture(scope="module")
 def fd_token():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="module")
 def acc_token():
-    return _login("accounts@acs.in", "accounts123")
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
 
 
 @pytest.fixture(scope="module")
@@ -237,7 +243,7 @@ class TestRegressionSmoke:
     def test_auth_me(self, fd_headers):
         r = requests.get(f"{API}/auth/me", headers=fd_headers, timeout=15)
         assert r.status_code == 200
-        assert r.json()["user"]["email"] == "frontdesk@acs.in"
+        assert r.json()["user"]["email"] == FRONTDESK_EMAIL
 
     def test_billing_services_list(self, fd_headers):
         r = requests.get(f"{API}/billing/services", headers=fd_headers, timeout=15)

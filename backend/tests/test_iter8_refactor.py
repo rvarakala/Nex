@@ -9,15 +9,21 @@ from datetime import datetime, timezone, timedelta
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/')
 API = f"{BASE_URL}/api"
-CLINIC_ID = "clinic-acs-demo"
+CLINIC_ID = "clinic-pytest-suite"
 
 CREDS = {
-    "front_desk": ("frontdesk@acs.in", "frontdesk123"),
-    "accounts":   ("accounts@acs.in",  "accounts123"),
-    "audio":      ("audiologist@acs.in", "audio123"),
+    "front_desk": (FRONTDESK_EMAIL, FRONTDESK_PASSWORD),
+    "accounts":   (ACCOUNTS_EMAIL,  ACCOUNTS_PASSWORD),
+    "audio":      (AUDIO_EMAIL, AUDIO_PASSWORD),
     "admin":      (ADMIN_EMAIL,     ADMIN_PASSWORD),
 }
 
@@ -185,7 +191,7 @@ class TestTrendCollections:
             assert r["wow_delta_pct"] is None, f"expected null but got {r['wow_delta_pct']}"
 
     def test_tenant_scoped(self, s, tok_accounts):
-        # All series totals should sum to <= sum of clinic-acs-demo payments only.
+        # All series totals should sum to <= sum of clinic-pytest-suite payments only.
         # Practical check: this_week_total > 0 (seed has ₹55,500)
         r = s.get(f"{API}/closeouts/trend/collections", headers=H(tok_accounts)).json()
         # sum of last 7 must equal this_week_total exactly

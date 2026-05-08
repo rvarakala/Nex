@@ -6,7 +6,13 @@ import json
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://careful-feedback.preview.emergentagent.com').rstrip('/')
 API = f"{BASE_URL}/api"
 
@@ -27,12 +33,12 @@ def admin_tok():
 
 @pytest.fixture(scope="module")
 def accounts_tok():
-    return _login("accounts@acs.in", "accounts123")
+    return _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
 
 
 @pytest.fixture(scope="module")
 def frontdesk_tok():
-    return _login("frontdesk@acs.in", "frontdesk123")
+    return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 class TestExportPreview:
@@ -40,7 +46,7 @@ class TestExportPreview:
         r = requests.get(f"{API}/export/preview", headers=H(admin_tok), timeout=15)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["clinic_id"] == "clinic-acs-demo"
+        assert d["clinic_id"] == "clinic-pytest-suite"
         assert "clinic_name" in d
         assert d["total_rows"] >= 0
         assert "per_collection" in d
@@ -49,7 +55,7 @@ class TestExportPreview:
     def test_preview_ok_for_accounts(self, accounts_tok):
         r = requests.get(f"{API}/export/preview", headers=H(accounts_tok), timeout=15)
         assert r.status_code == 200
-        assert r.json()["clinic_id"] == "clinic-acs-demo"
+        assert r.json()["clinic_id"] == "clinic-pytest-suite"
 
     def test_preview_denied_for_frontdesk(self, frontdesk_tok):
         r = requests.get(f"{API}/export/preview", headers=H(frontdesk_tok), timeout=15)
@@ -66,7 +72,7 @@ class TestExportFull:
         assert r.status_code == 200, r.text
         assert r.headers.get("content-type", "").startswith("application/zip")
         cd = r.headers.get("content-disposition", "")
-        assert 'filename=' in cd and 'audinexa-clinic-acs-demo-' in cd
+        assert 'filename=' in cd and 'audinexa-clinic-pytest-suite-' in cd
 
         z = zipfile.ZipFile(io.BytesIO(r.content))
         names = z.namelist()
@@ -83,7 +89,7 @@ class TestExportFull:
         assert r.status_code == 200
         z = zipfile.ZipFile(io.BytesIO(r.content))
         m = json.loads(z.read("metadata.json"))
-        assert m["clinic"]["clinic_id"] == "clinic-acs-demo"
+        assert m["clinic"]["clinic_id"] == "clinic-pytest-suite"
         assert "exported_at" in m
         assert m["exported_by"]["email"] == ADMIN_EMAIL
         assert "record_counts" in m
@@ -105,7 +111,7 @@ class TestExportFull:
             if not rows:
                 continue
             clinic_ids = {row.get("clinic_id") for row in rows}
-            assert clinic_ids == {"clinic-acs-demo"}, f"{fn} leaked clinics: {clinic_ids}"
+            assert clinic_ids == {"clinic-pytest-suite"}, f"{fn} leaked clinics: {clinic_ids}"
 
     def test_full_denied_for_frontdesk(self, frontdesk_tok):
         r = requests.get(f"{API}/export/full", headers=H(frontdesk_tok), timeout=15)

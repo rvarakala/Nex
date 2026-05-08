@@ -6,7 +6,13 @@ import pytest
 import requests
 from datetime import datetime
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -20,7 +26,7 @@ _created_sessions = []
 @pytest.fixture(scope="module")
 def fd_token():
     r = requests.post(f"{API}/auth/login", json={
-        "email": "frontdesk@acs.in", "password": "frontdesk123"
+        "email": FRONTDESK_EMAIL, "password": FRONTDESK_PASSWORD
     })
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
@@ -29,7 +35,7 @@ def fd_token():
 @pytest.fixture(scope="module")
 def audio_token():
     r = requests.post(f"{API}/auth/login", json={
-        "email": "audiologist@acs.in", "password": "audio123"
+        "email": AUDIO_EMAIL, "password": AUDIO_PASSWORD
     })
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
@@ -67,20 +73,20 @@ def cleanup(fd_token):
 class TestAuth:
     def test_login_valid(self):
         r = requests.post(f"{API}/auth/login", json={
-            "email": "frontdesk@acs.in", "password": "frontdesk123"
+            "email": FRONTDESK_EMAIL, "password": FRONTDESK_PASSWORD
         })
         assert r.status_code == 200
         d = r.json()
         assert "access_token" in d
-        assert d["user"]["email"] == "frontdesk@acs.in"
+        assert d["user"]["email"] == FRONTDESK_EMAIL
         assert d["user"]["role"] == "front_desk"
-        assert d["user"]["clinic_id"] == "clinic-acs-demo"
-        assert d["clinic"]["clinic_id"] == "clinic-acs-demo"
+        assert d["user"]["clinic_id"] == "clinic-pytest-suite"
+        assert d["clinic"]["clinic_id"] == "clinic-pytest-suite"
         assert "name" in d["clinic"]
 
     def test_login_invalid_password(self):
         r = requests.post(f"{API}/auth/login", json={
-            "email": "frontdesk@acs.in", "password": "WRONG"
+            "email": FRONTDESK_EMAIL, "password": "WRONG"
         })
         assert r.status_code == 401
 
@@ -96,9 +102,9 @@ class TestAuth:
         d = r.json()
         # /auth/me returns nested { user, clinic }
         u = d.get("user", d)
-        assert u["email"] == "frontdesk@acs.in"
+        assert u["email"] == FRONTDESK_EMAIL
         assert u["role"] == "front_desk"
-        assert u["clinic_id"] == "clinic-acs-demo"
+        assert u["clinic_id"] == "clinic-pytest-suite"
 
     def test_me_without_token(self):
         r = requests.get(f"{API}/auth/me")
@@ -111,9 +117,9 @@ class TestAuth:
     def test_all_four_demo_users_login(self):
         creds = [
             (ADMIN_EMAIL, ADMIN_PASSWORD, "super_admin"),
-            ("frontdesk@acs.in", "frontdesk123", "front_desk"),
-            ("audiologist@acs.in", "audio123", "audiologist"),
-            ("accounts@acs.in", "accounts123", "accounts"),
+            (FRONTDESK_EMAIL, FRONTDESK_PASSWORD, "front_desk"),
+            (AUDIO_EMAIL, AUDIO_PASSWORD, "audiologist"),
+            (ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD, "accounts"),
         ]
         for email, pw, role in creds:
             r = requests.post(f"{API}/auth/login", json={"email": email, "password": pw})
@@ -168,7 +174,7 @@ class TestPatientCRUD:
         parts = p["patient_id"].split("-")
         assert len(parts) == 3, f"MRD parts: {parts}"
         assert parts[1] in ("2026", "2025"), f"Year: {parts[1]}"
-        assert p.get("clinic_id") == "clinic-acs-demo"
+        assert p.get("clinic_id") == "clinic-pytest-suite"
         _created_patients.append(p["patient_id"])
 
     def test_duplicate_check_by_mobile(self, fd_client):

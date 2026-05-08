@@ -18,7 +18,13 @@ from datetime import datetime, timedelta
 import pytest
 import requests
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -31,7 +37,7 @@ _created = {"patients": [], "appointments": []}
 def fd_headers():
     """Front desk role — should be BLOCKED from editing hours."""
     r = requests.post(f"{API}/auth/login",
-                      json={"email": "frontdesk@acs.in", "password": "frontdesk123"})
+                      json={"email": FRONTDESK_EMAIL, "password": FRONTDESK_PASSWORD})
     assert r.status_code == 200, r.text
     return {"Content-Type": "application/json",
             "Authorization": f"Bearer {r.json()['access_token']}"}
@@ -51,7 +57,7 @@ def admin_headers():
 def audiologist_headers():
     """audiologist role — can edit OWN schedule, not someone else's."""
     r = requests.post(f"{API}/auth/login",
-                      json={"email": "audiologist@acs.in", "password": "audio123"})
+                      json={"email": AUDIO_EMAIL, "password": AUDIO_PASSWORD})
     assert r.status_code == 200, r.text
     return {"Content-Type": "application/json",
             "Authorization": f"Bearer {r.json()['access_token']}"}

@@ -9,7 +9,13 @@ import pytest
 import requests
 
 
-from _helpers import ADMIN_EMAIL, ADMIN_PASSWORD  # legacy creds (env-overridable)
+
+from _helpers import (  # legacy creds (env-overridable)
+    ADMIN_EMAIL, ADMIN_PASSWORD,
+    FRONTDESK_EMAIL, FRONTDESK_PASSWORD,
+    AUDIO_EMAIL, AUDIO_PASSWORD,
+    ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD,
+)
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL",
                          "https://careful-feedback.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
@@ -29,7 +35,7 @@ def h(tok):
 @pytest.fixture(scope="module")
 def admin(): return _login(ADMIN_EMAIL, ADMIN_PASSWORD)
 @pytest.fixture(scope="module")
-def fd(): return _login("frontdesk@acs.in", "frontdesk123")
+def fd(): return _login(FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 
 
 @pytest.fixture(scope="module")
@@ -95,7 +101,7 @@ class TestStateMachine:
         assert r.status_code == 200
 
     def test_role_gate_accounts_blocked(self, admin, fresh_ticket):
-        acc = _login("accounts@acs.in", "accounts123")
+        acc = _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
         r = requests.post(
             f"{API}/ha/service-tickets/{fresh_ticket}/transition",
             headers=h(acc), json={"to_status": "INSPECTED"}, timeout=10,
@@ -292,7 +298,7 @@ class TestRepairAnalytics:
 
     def test_analytics_role_gate_accounts_allowed(self):
         # Accounts role has access to analytics
-        tok = _login("accounts@acs.in", "accounts123")
+        tok = _login(ACCOUNTS_EMAIL, ACCOUNTS_PASSWORD)
         r = requests.get(f"{API}/ha/repair/analytics", headers=h(tok), timeout=10)
         assert r.status_code == 200
 
