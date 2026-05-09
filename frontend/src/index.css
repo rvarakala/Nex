@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==================================================================
+   AUDINEXA Landing — Cabinet Grotesk (display) + Manrope (body).
+   Loaded from Fontshare — no API key needed, free for commercial use.
+   ================================================================== */
+@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&f[]=manrope@400,500,600,700&display=swap");
+
+.font-display { font-family: "Cabinet Grotesk", "Inter", system-ui, sans-serif; }
+.font-body    { font-family: "Manrope", "Inter", system-ui, sans-serif; }
+
+/* Editorial accents reused across landing sections. */
+.tracking-supertight { letter-spacing: -0.04em; }
+
+/* Subtle 1-degree skew + delayed slide for editorial hero flourishes. */
+@keyframes audinexa-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: audinexa-fade-up 0.7s ease-out both; }
+.animate-fade-up-delay-1 { animation: audinexa-fade-up 0.7s ease-out 0.1s both; }
+.animate-fade-up-delay-2 { animation: audinexa-fade-up 0.7s ease-out 0.2s both; }
+.animate-fade-up-delay-3 { animation: audinexa-fade-up 0.7s ease-out 0.3s both; }
+
 body {
     margin: 0;
     font-family:

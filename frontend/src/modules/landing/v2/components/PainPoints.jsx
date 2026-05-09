@@ -1,192 +1,88 @@
-/**
- * PainPoints — side-by-side "Outdated vs Modern" comparison.
- *
- * Left card (light rose): list of unsafe/outdated practices with red X icons.
- * Center: animated gradient arrow.
- * Right card (light emerald): list of AUDINEXA secure workflows with green checks.
- * Stacks vertically on mobile, with a downward arrow between cards.
- */
 import React from 'react';
-import { Check, X, ArrowRight, ArrowDown } from 'lucide-react';
+import SectionHeading from './SectionHeading';
+import { X, Check } from 'lucide-react';
 
-const OUTDATED = [
-  'Excel sheets & paper files',
-  'Shared passwords',
-  'No encryption',
-  'Data loss risk',
-  'Weak backups',
-  'No activity tracking',
+const OLD_WAY = [
+  'Patient files in physical folders + 4 different WhatsApp groups',
+  'HA serials tracked on a sticky note (until it falls off the desk)',
+  'GST invoices typed by hand in Word — half are missing HSN codes',
+  'No idea who needs a 30-day follow-up call until they re-walk in',
+  'AMC contracts? "I think we have one… let me check the email…"',
+  'When a patient asks for a year of past visits, you panic-search Drive',
 ];
 
-const MODERN = [
-  'Fully encrypted cloud',
-  'Role-based access',
-  'Audit logs & tracking',
-  'Secure backups',
-  'Anywhere access',
-  'Built for audiology clinics',
+const AUDINEXA_WAY = [
+  'One MRD per patient. Search by name, phone or MRD — finds in <1s',
+  'Every fitting auto-decrements stock. Side-aware (L / R / both) serials',
+  'GST-ready invoices in 60s. CGST/SGST/IGST split happens automatically',
+  'Smart triggers send the SMS / WhatsApp on day 30 — without you remembering',
+  'AMC tracked from sale day with auto-renewal reminders 60 / 30 / 7 days out',
+  'Patient profile shows every visit, fitting, invoice, payment — exportable PDF',
 ];
 
 export default function PainPoints() {
   return (
-    <section className="relative py-20 md:py-24 bg-white" data-testid="landing-pain">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="relative grid lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-8 items-stretch">
-          {/* LEFT — Outdated systems (rose) */}
-          <div
-            className="relative rounded-2xl p-7 md:p-8 bg-rose-50 border border-rose-100 overflow-hidden"
-            data-testid="pain-outdated-card"
-          >
-            <h3 className="font-[Manrope,Inter,sans-serif] font-extrabold text-[22px] md:text-2xl text-[#9F1239] leading-snug max-w-[18ch]">
-              Still Using Unsafe & Outdated Systems?
+    <section
+      data-testid="pain-section"
+      className="py-24 md:py-32 bg-[#F8FAFC]"
+    >
+      <div className="max-w-7xl mx-auto px-6 md:px-12">
+        <SectionHeading
+          eyebrow="The everyday clinic chaos"
+          title="You didn't open a clinic to wrestle with spreadsheets."
+          lede="Every audiology clinic we've spoken to runs into the same six bottlenecks. Here's what changes when you stop fighting them — and let AUDINEXA absorb them."
+          testid="pain-heading"
+          align="left"
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-slate-200 rounded-3xl overflow-hidden border border-slate-200 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.18)]">
+          {/* Old way */}
+          <div className="bg-white p-8 md:p-12">
+            <div className="inline-flex items-center gap-2 mb-7 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-[11px] font-semibold tracking-[0.16em] uppercase text-rose-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> The old way
+            </div>
+            <h3 className="font-display tracking-supertight font-bold text-slate-900 text-2xl sm:text-3xl mb-6">
+              Today, your clinic runs on guesswork.
             </h3>
-            <ul className="mt-6 space-y-3">
-              {OUTDATED.map((label) => (
-                <li key={label} className="flex items-center gap-3 text-[14px] md:text-[15px] text-[#7F1D1D] font-medium">
-                  <span className="w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center shrink-0">
-                    <X size={12} strokeWidth={3.5} />
+            <ul className="space-y-4">
+              {OLD_WAY.map((p, i) => (
+                <li key={i} className="flex items-start gap-3 group" data-testid={`pain-old-${i}`}>
+                  <span className="flex-shrink-0 mt-0.5 h-5 w-5 rounded-full bg-rose-100 text-rose-700 inline-flex items-center justify-center">
+                    <X size={12} strokeWidth={2.5} />
                   </span>
-                  {label}
+                  <span className="font-body text-[15px] text-slate-700 leading-relaxed">{p}</span>
                 </li>
               ))}
             </ul>
-
-            {/* Stylised illustration: stressed person at laptop with floating excel/file icons */}
-            <OutdatedIllustration />
           </div>
 
-          {/* MIDDLE arrow — desktop only */}
-          <div className="hidden lg:flex items-center justify-center" aria-hidden>
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#0B5FFF] to-[#00C2A8] text-white flex items-center justify-center shadow-xl shadow-[#0B5FFF]/30">
-              <ArrowRight size={22} strokeWidth={2.6} />
+          {/* New way */}
+          <div className="relative bg-slate-900 text-white p-8 md:p-12 overflow-hidden">
+            <div
+              aria-hidden="true"
+              className="absolute -right-32 -top-32 w-80 h-80 rounded-full bg-[#0F52BA]/30 blur-3xl"
+            />
+            <div className="relative">
+              <div className="inline-flex items-center gap-2 mb-7 px-3 py-1.5 rounded-full bg-[#0F52BA]/20 border border-[#0F52BA]/30 text-[11px] font-semibold tracking-[0.16em] uppercase text-sky-200">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> The AUDINEXA way
+              </div>
+              <h3 className="font-display tracking-supertight font-bold text-white text-2xl sm:text-3xl mb-6">
+                One screen runs the entire clinic day.
+              </h3>
+              <ul className="space-y-4">
+                {AUDINEXA_WAY.map((p, i) => (
+                  <li key={i} className="flex items-start gap-3" data-testid={`pain-new-${i}`}>
+                    <span className="flex-shrink-0 mt-0.5 h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-300 inline-flex items-center justify-center">
+                      <Check size={12} strokeWidth={2.5} />
+                    </span>
+                    <span className="font-body text-[15px] text-slate-200 leading-relaxed">{p}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </div>
-
-          {/* MIDDLE arrow — mobile only */}
-          <div className="lg:hidden flex justify-center" aria-hidden>
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#0B5FFF] to-[#00C2A8] text-white flex items-center justify-center shadow-xl shadow-[#0B5FFF]/25">
-              <ArrowDown size={20} strokeWidth={2.6} />
-            </div>
-          </div>
-
-          {/* RIGHT — Modern AUDINEXA workflows (emerald) */}
-          <div
-            className="relative rounded-2xl p-7 md:p-8 bg-emerald-50 border border-emerald-100 overflow-hidden"
-            data-testid="pain-modern-card"
-          >
-            <h3 className="font-[Manrope,Inter,sans-serif] font-extrabold text-[22px] md:text-2xl text-emerald-900 leading-snug max-w-[20ch]">
-              AUDINEXA Brings Secure & Modern Workflows
-            </h3>
-            <ul className="mt-6 space-y-3">
-              {MODERN.map((label) => (
-                <li key={label} className="flex items-center gap-3 text-[14px] md:text-[15px] text-emerald-900 font-medium">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                    <Check size={12} strokeWidth={3.5} />
-                  </span>
-                  {label}
-                </li>
-              ))}
-            </ul>
-
-            <ModernIllustration />
           </div>
         </div>
       </div>
     </section>
-  );
-}
-
-/* ---------- Inline SVG illustrations ---------- */
-
-function OutdatedIllustration() {
-  return (
-    <svg
-      viewBox="0 0 240 160"
-      aria-hidden
-      className="absolute right-2 bottom-2 w-[180px] sm:w-[210px] opacity-95 pointer-events-none"
-    >
-      {/* desk */}
-      <rect x="40" y="120" width="180" height="6" rx="2" fill="#E5C2C2" />
-      {/* laptop */}
-      <rect x="80" y="86" width="110" height="38" rx="3" fill="#1F2937" />
-      <rect x="84" y="90" width="102" height="28" rx="2" fill="#FFE4E6" />
-      <rect x="88" y="94" width="40" height="3" rx="1" fill="#9F1239" opacity="0.5" />
-      <rect x="88" y="100" width="60" height="3" rx="1" fill="#9F1239" opacity="0.4" />
-      <rect x="88" y="106" width="48" height="3" rx="1" fill="#9F1239" opacity="0.4" />
-      {/* person body */}
-      <path d="M118 104 q14 -22 36 0 v16 h-36 z" fill="#94A3B8" />
-      {/* head */}
-      <circle cx="136" cy="78" r="14" fill="#FBCFE8" />
-      {/* hair */}
-      <path d="M122 76 q14 -22 28 0 q-4 -10 -14 -10 q-12 0 -14 10 z" fill="#1F2937" />
-      {/* glasses */}
-      <circle cx="131" cy="80" r="3.2" stroke="#1F2937" strokeWidth="1.2" fill="none" />
-      <circle cx="141" cy="80" r="3.2" stroke="#1F2937" strokeWidth="1.2" fill="none" />
-      <line x1="134.2" y1="80" x2="137.8" y2="80" stroke="#1F2937" strokeWidth="1.2" />
-      {/* worried mouth */}
-      <path d="M132 86 q4 -3 8 0" stroke="#1F2937" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-      {/* sweat drop */}
-      <path d="M122 70 q-2 4 0 6 q2 -2 0 -6 z" fill="#60A5FA" />
-      {/* floating excel icon */}
-      <g transform="translate(28 28)">
-        <rect width="34" height="42" rx="3" fill="#16A34A" />
-        <text x="17" y="28" textAnchor="middle" fontFamily="Arial" fontSize="14" fontWeight="800" fill="#fff">X</text>
-      </g>
-      {/* alert bubble */}
-      <g transform="translate(190 30)">
-        <circle r="14" fill="#F59E0B" />
-        <text textAnchor="middle" y="5" fontFamily="Arial" fontSize="18" fontWeight="800" fill="#fff">!</text>
-      </g>
-      {/* speech ellipsis */}
-      <g transform="translate(200 70)">
-        <rect x="-22" y="-10" width="40" height="20" rx="10" fill="#fff" stroke="#FCA5A5" strokeWidth="1" />
-        <circle cx="-10" cy="0" r="2" fill="#9F1239" />
-        <circle cx="-2" cy="0" r="2" fill="#9F1239" />
-        <circle cx="6" cy="0" r="2" fill="#9F1239" />
-      </g>
-    </svg>
-  );
-}
-
-function ModernIllustration() {
-  return (
-    <svg
-      viewBox="0 0 240 160"
-      aria-hidden
-      className="absolute right-2 bottom-2 w-[180px] sm:w-[210px] opacity-95 pointer-events-none"
-    >
-      <rect x="40" y="120" width="180" height="6" rx="2" fill="#A7F3D0" />
-      {/* laptop */}
-      <rect x="80" y="86" width="110" height="38" rx="3" fill="#0F172A" />
-      <rect x="84" y="90" width="102" height="28" rx="2" fill="#ECFDF5" />
-      <rect x="88" y="94" width="60" height="3" rx="1" fill="#0B5FFF" opacity="0.6" />
-      <rect x="88" y="100" width="48" height="3" rx="1" fill="#10B981" opacity="0.6" />
-      <rect x="88" y="106" width="55" height="3" rx="1" fill="#10B981" opacity="0.6" />
-      {/* person body in green tee */}
-      <path d="M118 104 q14 -22 36 0 v16 h-36 z" fill="#10B981" />
-      {/* head */}
-      <circle cx="136" cy="78" r="14" fill="#FCD5B5" />
-      {/* hair */}
-      <path d="M122 76 q14 -20 28 0 q-4 -10 -14 -10 q-12 0 -14 10 z" fill="#1F2937" />
-      {/* smile */}
-      <path d="M131 84 q5 4 10 0" stroke="#1F2937" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      {/* eyes */}
-      <circle cx="131" cy="79" r="1.4" fill="#1F2937" />
-      <circle cx="141" cy="79" r="1.4" fill="#1F2937" />
-      {/* shield badge floating */}
-      <g transform="translate(196 32)">
-        <path d="M0 -14 L12 -8 v10 q0 10 -12 16 q-12 -6 -12 -16 v-10 z" fill="#0B5FFF" />
-        <path d="M-5 0 l3 3 l8 -8" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" />
-      </g>
-      {/* lock chip */}
-      <g transform="translate(28 36)">
-        <rect width="34" height="34" rx="6" fill="#0B5FFF" />
-        <rect x="11" y="14" width="12" height="10" rx="2" fill="#fff" />
-        <path d="M13 14 v-3 a4 4 0 0 1 8 0 v3" stroke="#fff" strokeWidth="2" fill="none" />
-      </g>
-      {/* sparkle */}
-      <circle cx="80" cy="40" r="2" fill="#10B981" />
-      <circle cx="200" cy="100" r="2" fill="#0B5FFF" />
-    </svg>
   );
 }

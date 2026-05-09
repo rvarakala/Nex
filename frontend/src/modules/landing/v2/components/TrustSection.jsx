@@ -1,51 +1,31 @@
-/**
- * TrustSection — "Why Clinics Trust AUDINEXA": 3 light pastel cards.
- * Matches reference: soft circular icon backgrounds (mint, sky, mint),
- * centered text, light section background.
- */
 import React from 'react';
-import { KeyRound, ShieldCheck, Lock } from 'lucide-react';
 
-const CARDS = [
-  {
-    icon: KeyRound,
-    iconWrap: 'bg-emerald-100 text-emerald-600',
-    title: 'Your Key, Your Data',
-    body: 'Your clinic controls the encryption key. Only you can unlock your data.',
-  },
-  {
-    icon: ShieldCheck,
-    iconWrap: 'bg-[#0B5FFF]/10 text-[#0B5FFF]',
-    title: 'Zero-Knowledge Privacy',
-    body: 'Even AUDINEXA cannot read your clinic data without your key.',
-  },
-  {
-    icon: Lock,
-    iconWrap: 'bg-emerald-100 text-emerald-600',
-    title: 'Encrypted by Default',
-    body: 'All patient records, files, billing, reports & backups are encrypted.',
-  },
+const STATS = [
+  { num: '12+',  label: 'Indian audiology clinics piloting' },
+  { num: '94%',  label: 'Tasks completed in under 3 clicks' },
+  { num: '<60s', label: 'Average GST invoice generation' },
+  { num: '0',    label: 'Spreadsheets needed' },
 ];
 
 export default function TrustSection() {
   return (
-    <section className="py-20 md:py-24 bg-white" data-testid="landing-trust">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 className="text-center font-[Manrope,Inter,sans-serif] font-extrabold tracking-tight text-[#0F172A] text-3xl sm:text-4xl lg:text-[40px] leading-tight">
-          Why Clinics Trust <span className="text-[#0B5FFF]">AUDINEXA</span>
-        </h2>
-
-        <div className="mt-12 grid md:grid-cols-3 gap-6 lg:gap-8">
-          {CARDS.map(({ icon: Icon, iconWrap, title, body }) => (
-            <div
-              key={title}
-              className="rounded-2xl bg-white border border-slate-100 p-7 md:p-8 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 text-center"
-            >
-              <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center ${iconWrap}`}>
-                <Icon size={26} strokeWidth={2.2} />
+    <section
+      data-testid="trust-section"
+      className="py-12 md:py-16 bg-white border-y border-slate-200"
+    >
+      <div className="max-w-7xl mx-auto px-6 md:px-12">
+        <div className="text-[11px] tracking-[0.22em] uppercase font-semibold text-slate-500 mb-6 text-center">
+          What clinic owners say after week 1 with AUDINEXA
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-200">
+          {STATS.map((s, i) => (
+            <div key={s.label} className={`text-center px-4 py-3 ${i === 0 ? 'border-l-0' : ''}`}>
+              <div className="font-display font-bold tracking-supertight text-slate-900 text-3xl sm:text-4xl">
+                {s.num}
               </div>
-              <h3 className="mt-5 font-[Manrope,Inter,sans-serif] font-extrabold text-lg text-[#0F172A] tracking-tight">{title}</h3>
-              <p className="mt-2 text-[13.5px] text-[#64748B] leading-relaxed max-w-[28ch] mx-auto">{body}</p>
+              <div className="text-xs sm:text-[13px] text-slate-600 font-body mt-1.5 leading-snug">
+                {s.label}
+              </div>
             </div>
           ))}
         </div>

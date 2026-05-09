@@ -1,68 +1,18 @@
-/**
- * Sticky landing-page navbar with glassmorphism.
- * Smooth-scrolls to anchor sections; CTA opens the demo modal.
- *
- * Auth-aware: shows "Open Dashboard" + "Sign Out" only when the stored
- * JWT in localStorage is still valid (not expired). An expired token is
- * silently cleared and the user sees the regular "Sign in" CTA — fixes
- * the bug where users couldn't get back to the login page after their
- * session expired.
- */
-import React, { useEffect, useState } from 'react';
-import { Shield, Menu, X, LogOut } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 
-const links = [
-  { label: 'Security',  href: '#security' },
-  { label: 'Features',  href: '#features' },
-  { label: 'Pricing',   href: '#pricing' },
-  { label: 'FAQ',       href: '#faq' },
+const NAV_LINKS = [
+  { href: '#features',  label: 'Features' },
+  { href: '#how',       label: 'How it works' },
+  { href: '#pricing',   label: 'Pricing' },
+  { href: '#security',  label: 'Security' },
+  { href: '#faq',       label: 'FAQ' },
 ];
-
-/** Validate JWT exp without verifying signature. Server still enforces auth. */
-function isTokenValid(raw) {
-  if (!raw || typeof raw !== 'string') return false;
-  const parts = raw.split('.');
-  if (parts.length < 2) return false;
-  try {
-    const payload = JSON.parse(
-      atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')),
-    );
-    if (!payload?.exp) return true;            // no exp claim → assume valid
-    return payload.exp * 1000 > Date.now();
-  } catch {
-    return false;
-  }
-}
-
-function clearStaleAuth() {
-  try {
-    localStorage.removeItem('acs.token');
-    localStorage.removeItem('acs.user');
-    localStorage.removeItem('acs.activeTest');
-  } catch { /* ignore */ }
-}
 
 export default function Navbar({ onBookDemo }) {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [isAuthed, setIsAuthed] = useState(false);
-
-  useEffect(() => {
-    // Re-evaluate on mount + on every window focus so an expired token
-    // automatically flips the CTA back to "Sign in".
-    const check = () => {
-      const t = typeof window !== 'undefined' ? localStorage.getItem('acs.token') : null;
-      if (t && !isTokenValid(t)) {
-        clearStaleAuth();
-        setIsAuthed(false);
-      } else {
-        setIsAuthed(!!t);
-      }
-    };
-    check();
-    window.addEventListener('focus', check);
-    return () => window.removeEventListener('focus', check);
-  }, []);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -71,148 +21,99 @@ export default function Navbar({ onBookDemo }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const handleAnchor = (href) => (e) => {
-    e.preventDefault();
-    document.querySelector(href)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setMobileOpen(false);
-  };
-
-  const signOut = () => {
-    clearStaleAuth();
-    setIsAuthed(false);
-    // Stay on the landing page so the user can sign in fresh.
-    window.location.href = '/login';
-  };
-
   return (
     <header
       data-testid="landing-navbar"
-      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+      className={`fixed top-0 inset-x-0 z-50 transition-[background,backdrop-filter,border-color] duration-300 ${
         scrolled
-          ? 'bg-white/85 backdrop-blur-xl border-b border-slate-100 shadow-sm'
-          : 'bg-transparent'
+          ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,82,186,0.04)]'
+          : 'bg-transparent border-b border-transparent'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <a href="#top" onClick={handleAnchor('#top')} className="flex items-center gap-2.5 group">
-          <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0B5FFF] to-[#00C2A8] flex items-center justify-center shadow-md shadow-[#0B5FFF]/30 group-hover:scale-105 transition">
-            <Shield size={18} className="text-white" strokeWidth={2.5} />
+      <div className="max-w-7xl mx-auto px-6 md:px-12 h-16 flex items-center justify-between">
+        {/* Logo */}
+        <Link to="/" data-testid="nav-logo" className="flex items-center gap-2 group">
+          <span className="relative inline-flex items-center justify-center h-8 w-8 rounded-lg bg-[#0F52BA] text-white font-display font-bold text-sm tracking-tight ring-1 ring-[#0F52BA]/30">
+            A
+            <span className="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-white" />
           </span>
-          <span className="leading-tight">
-            <span className="block font-[Manrope,Inter,sans-serif] font-extrabold text-lg tracking-tight text-[#111827]">AUDINEXA</span>
-            <span className="hidden sm:block text-[10px] text-slate-500 -mt-0.5 tracking-wide">Clinic. Secure. Simplified.</span>
+          <span className="font-display font-bold tracking-supertight text-slate-900 text-lg">
+            AUDINEXA
           </span>
-        </a>
+        </Link>
 
-        <nav className="hidden md:flex items-center gap-1" aria-label="Primary">
-          {links.map((l) => (
+        {/* Desktop nav */}
+        <nav className="hidden lg:flex items-center gap-9 text-[14px] font-body font-medium text-slate-600">
+          {NAV_LINKS.map((l) => (
             <a
               key={l.href}
               href={l.href}
-              onClick={handleAnchor(l.href)}
-              className="px-3.5 py-2 text-sm text-[#475569] hover:text-[#0B5FFF] font-medium rounded-md transition-colors"
+              data-testid={`nav-${l.label.toLowerCase().replace(' ', '-')}`}
+              className="relative hover:text-slate-900 transition-colors py-2"
             >
               {l.label}
+              <span className="absolute inset-x-0 -bottom-px h-px bg-[#0F52BA] scale-x-0 origin-left transition-transform duration-300 group-hover:scale-x-100 hover:scale-x-100" />
             </a>
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-2">
-          {isAuthed ? (
-            <>
-              <a
-                href="/dashboard"
-                data-testid="navbar-open-dashboard"
-                className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg font-semibold text-sm transition"
-              >
-                Open Dashboard
-              </a>
-              <button
-                onClick={signOut}
-                data-testid="navbar-signout"
-                title="Sign out and use a different account"
-                className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800 px-2 py-2 rounded-lg text-sm transition"
-              >
-                <LogOut size={14} />
-              </button>
-            </>
-          ) : (
-            <a
-              href="/login"
-              data-testid="navbar-login"
-              className="inline-flex items-center gap-1.5 text-[#0B5FFF] hover:bg-[#0B5FFF]/8 border border-[#0B5FFF]/30 hover:border-[#0B5FFF]/50 px-4 py-2 rounded-lg font-semibold text-sm transition"
-            >
-              Sign in
-            </a>
-          )}
+        {/* Right cluster */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Link
+            to="/login"
+            data-testid="nav-login"
+            className="hidden sm:inline-flex items-center px-3.5 py-2 text-sm font-semibold text-slate-700 hover:text-slate-900 transition-colors"
+          >
+            Sign in
+          </Link>
           <button
             onClick={onBookDemo}
-            data-testid="navbar-book-demo"
-            className="bg-[#0B5FFF] hover:bg-[#094acf] text-white px-5 py-2.5 rounded-xl font-medium text-sm shadow-md shadow-[#0B5FFF]/25 hover:shadow-lg hover:shadow-[#0B5FFF]/30 transition-all"
+            data-testid="nav-book-demo"
+            className="hidden sm:inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-[#0F52BA] rounded-lg hover:bg-[#0C4399] active:scale-[0.98] transition shadow-[0_8px_20px_-8px_rgba(15,82,186,0.6)]"
           >
-            Book Free Demo
+            Book demo
+            <span className="ml-1.5 opacity-80">→</span>
+          </button>
+          <button
+            onClick={() => setOpen((v) => !v)}
+            data-testid="nav-mobile-toggle"
+            aria-label="Toggle menu"
+            className="lg:hidden p-2 rounded-lg text-slate-700 hover:bg-slate-100"
+          >
+            {open ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
-
-        <button
-          className="md:hidden p-2 text-[#111827]"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label="Toggle menu"
-          aria-expanded={mobileOpen}
-        >
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
       </div>
 
-      {mobileOpen && (
-        <div className="md:hidden bg-white border-t border-slate-100 shadow-lg">
-          <nav className="px-4 py-3 flex flex-col gap-1">
-            {links.map((l) => (
+      {/* Mobile drawer */}
+      {open && (
+        <div className="lg:hidden bg-white/95 backdrop-blur-xl border-t border-slate-200" data-testid="nav-mobile-drawer">
+          <div className="px-6 py-4 flex flex-col gap-1">
+            {NAV_LINKS.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
-                onClick={handleAnchor(l.href)}
-                className="px-3 py-2 text-[#475569] hover:bg-slate-50 rounded-md text-sm font-medium"
+                onClick={() => setOpen(false)}
+                className="font-body text-slate-700 px-3 py-3 rounded-lg hover:bg-slate-100"
               >
                 {l.label}
               </a>
             ))}
-            <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
-              {isAuthed ? (
-                <>
-                  <a
-                    href="/dashboard"
-                    data-testid="navbar-mobile-dashboard"
-                    className="text-center bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2.5 rounded-lg font-semibold text-sm"
-                  >
-                    Open Dashboard
-                  </a>
-                  <button
-                    onClick={signOut}
-                    data-testid="navbar-mobile-signout"
-                    className="text-center text-slate-600 border border-slate-200 px-3 py-2.5 rounded-lg font-semibold text-sm"
-                  >
-                    Sign Out
-                  </button>
-                </>
-              ) : (
-                <a
-                  href="/login"
-                  data-testid="navbar-mobile-login"
-                  className="text-center text-[#0B5FFF] border border-[#0B5FFF]/30 px-3 py-2.5 rounded-lg font-semibold text-sm"
-                >
-                  Sign in
-                </a>
-              )}
-              <button
-                onClick={() => { setMobileOpen(false); onBookDemo?.(); }}
-                data-testid="navbar-mobile-book-demo"
-                className="bg-[#0B5FFF] text-white px-3 py-2.5 rounded-lg font-semibold text-sm"
-              >
-                Book Demo
-              </button>
-            </div>
-          </nav>
+            <Link
+              to="/login"
+              data-testid="nav-mobile-login"
+              className="font-body text-slate-700 px-3 py-3 rounded-lg hover:bg-slate-100 border-t border-slate-100 mt-1 pt-3"
+            >
+              Sign in
+            </Link>
+            <button
+              onClick={() => { setOpen(false); onBookDemo(); }}
+              data-testid="nav-mobile-book-demo"
+              className="mt-2 px-4 py-3 text-sm font-semibold text-white bg-[#0F52BA] rounded-lg"
+            >
+              Book demo →
+            </button>
+          </div>
         </div>
       )}
     </header>

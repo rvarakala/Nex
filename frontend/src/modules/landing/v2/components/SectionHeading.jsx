@@ -1,26 +1,37 @@
-/**
- * Section header used across landing sections — small kicker + headline + sub.
- * Centralised so spacing and typography stay perfectly consistent.
- */
 import React from 'react';
 
-export default function SectionHeading({ kicker, title, subtitle, align = 'center', accentTo = 'right' }) {
-  const wrap = align === 'left' ? 'text-left max-w-2xl' : 'text-center max-w-3xl mx-auto';
+/**
+ * Editorial section heading — overline + display title + lede.
+ * Used across PainPoints, Features, HowItWorks, Pricing, etc. so every
+ * section opens with the same rhythm: tiny eyebrow → big tracked-tight H2 → calm lede.
+ */
+export default function SectionHeading({
+  eyebrow,
+  title,
+  lede,
+  align = 'left',
+  testid,
+  children,
+}) {
+  const alignment = align === 'center' ? 'text-center mx-auto' : 'text-left';
   return (
-    <div className={`${wrap}`}>
-      {kicker && (
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-[#0B5FFF]/8 text-[#0B5FFF]">
-          {kicker}
+    <div className={`max-w-3xl mb-12 md:mb-16 ${alignment}`} data-testid={testid}>
+      {eyebrow && (
+        <div className="text-xs tracking-[0.22em] uppercase font-semibold text-[#0F52BA] mb-4">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-px w-8 bg-[#0F52BA]" /> {eyebrow}
+          </span>
         </div>
       )}
-      <h2 className="mt-4 font-[Manrope,Inter,sans-serif] font-extrabold tracking-tight text-[#111827] text-3xl sm:text-4xl lg:text-5xl leading-tight">
+      <h2 className="font-display tracking-supertight font-bold text-slate-900 text-3xl sm:text-4xl lg:text-5xl leading-[1.05]">
         {title}
       </h2>
-      {subtitle && (
-        <p className={`mt-4 text-base sm:text-lg text-[#475569] leading-relaxed ${align === 'left' ? '' : 'mx-auto'}`}>
-          {subtitle}
+      {lede && (
+        <p className="font-body text-base sm:text-lg text-slate-600 leading-relaxed mt-5 max-w-2xl">
+          {lede}
         </p>
       )}
+      {children}
     </div>
   );
 }
