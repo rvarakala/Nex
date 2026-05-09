@@ -1,45 +1,87 @@
 /**
- * FinalCTA — slim full-width blue strip with logo on the left,
- * headline + sub in the middle, and a white "Book Free Demo" button on the right.
- * Used as the very last persuasion bar before the footer.
+ * FinalCTA — full-bleed sapphire panel with massive editorial typography.
+ * The last persuasion bar before the footer.
  */
 import React from 'react';
-import { ArrowRight, Shield } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 
 export default function FinalCTA({ onBookDemo }) {
   return (
-    <section className="py-10 md:py-12 bg-white" data-testid="landing-final-cta">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0B5FFF] to-[#1A3FB8] px-6 sm:px-8 md:px-10 py-6 md:py-7 flex flex-col md:flex-row items-center justify-between gap-5">
-          {/* subtle pattern overlay */}
+    <section
+      data-testid="landing-final-cta"
+      className="py-20 md:py-24 bg-[#FDFDFD]"
+    >
+      <div className="max-w-7xl mx-auto px-6 md:px-12">
+        <div
+          className="relative overflow-hidden rounded-3xl bg-slate-900 text-white px-8 sm:px-12 md:px-16 py-16 md:py-24"
+        >
+          {/* Texture */}
           <div
-            aria-hidden
-            className="absolute inset-0 opacity-25 [background-image:radial-gradient(rgba(255,255,255,0.15)_1px,transparent_1px)] [background-size:18px_18px]"
+            aria-hidden="true"
+            className="absolute inset-0 opacity-30 [background-image:radial-gradient(rgba(255,255,255,0.18)_1px,transparent_1px)] [background-size:22px_22px]"
+          />
+          {/* Glow accents */}
+          <div
+            aria-hidden="true"
+            className="absolute -top-40 -right-32 w-[28rem] h-[28rem] rounded-full bg-[#0F52BA]/40 blur-[120px]"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute -bottom-40 -left-32 w-[22rem] h-[22rem] rounded-full bg-emerald-500/15 blur-[100px]"
           />
 
-          {/* Left — logo + copy */}
-          <div className="relative flex items-center gap-4 text-center md:text-left">
-            <span className="hidden sm:flex shrink-0 w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm border border-white/25 items-center justify-center text-white shadow-md">
-              <Shield size={22} strokeWidth={2.4} />
-            </span>
-            <div className="leading-tight">
-              <div className="font-[Manrope,Inter,sans-serif] font-extrabold text-white text-lg md:text-xl tracking-tight">
-                Choose the Clinic Software Built on Trust
-              </div>
-              <div className="mt-1 text-blue-100 text-[13px] md:text-sm">
-                Modern workflows. Premium security. Clinic-owned privacy.
-              </div>
+          <div className="relative max-w-4xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[11px] font-semibold tracking-[0.18em] uppercase text-emerald-300">
+              <Sparkles size={12} /> One screen. Three workflows. Zero leakage.
             </div>
-          </div>
 
-          {/* Right — CTA */}
-          <button
-            onClick={onBookDemo}
-            data-testid="final-cta-book-demo"
-            className="relative shrink-0 inline-flex items-center justify-center gap-2 bg-white text-[#0B5FFF] hover:bg-blue-50 px-6 py-3 rounded-xl font-bold text-[14px] md:text-[15px] shadow-lg shadow-black/15 hover:shadow-xl hover:-translate-y-0.5 transition-all"
-          >
-            Book Free Demo <ArrowRight size={18} />
-          </button>
+            <h2 className="font-display tracking-supertight font-bold text-4xl sm:text-5xl lg:text-6xl leading-[1.02] mt-6">
+              Stop juggling apps. Run your clinic the way it deserves —
+              <span className="text-emerald-300"> securely.</span>
+            </h2>
+
+            <p className="font-body text-base sm:text-lg text-slate-300 leading-relaxed mt-6 max-w-2xl">
+              30-minute demo. We'll plot a sample audiogram, generate a GST
+              invoice, and walk through your data security — all in one screen.
+              No card, no commitment.
+            </p>
+
+            <div className="mt-9 flex flex-wrap items-center gap-3">
+              <button
+                onClick={onBookDemo}
+                data-testid="final-cta-book-demo"
+                className="group inline-flex items-center gap-2 px-7 py-4 text-[15px] font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 active:scale-[0.98] transition shadow-[0_18px_40px_-12px_rgba(255,255,255,0.35)]"
+              >
+                Book your 30-min demo
+                <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+              </button>
+              <a
+                href="#security"
+                data-testid="final-cta-security"
+                className="inline-flex items-center gap-2 px-5 py-4 text-[15px] font-semibold text-white border border-white/30 rounded-xl hover:bg-white/10 transition"
+              >
+                <ShieldCheck size={16} className="text-emerald-300" />
+                Read security architecture
+              </a>
+            </div>
+
+            <ul className="mt-9 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-2xl">
+              {[
+                'No card needed',
+                'No data lock-in',
+                'India-resident',
+                'DPDPA-aligned',
+              ].map((p) => (
+                <li
+                  key={p}
+                  className="text-[12px] font-medium text-slate-300 inline-flex items-center gap-1.5"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </section>

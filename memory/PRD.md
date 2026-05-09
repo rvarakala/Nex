@@ -1,5 +1,58 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ FEATURE — Landing Page B2B redesign — pain points + 12-step Product Tour (2026-05-09)
+
+### What ships
+**Hero — `Hero.jsx` + new `LivePlotShowcase.jsx`**
+- New centered editorial Swiss-style layout with massive Cabinet Grotesk headline: "Plot the audiogram. Print the bill. Track the hearing aid. All on one screen."
+- Subhead directly names the three things every clinic does in three different apps: paper audiograms / Excel billing / spreadsheet inventory.
+- New `LivePlotShowcase` component — a CSS-only "GIF" replacement that demonstrates AUDINEXA plotting an audiogram + tympanogram **in real-time** inside a dual-pane laptop frame. Markers pop in sequentially, the connecting polylines draw via `stroke-dashoffset`, the tymp Type-A bell curve sweeps in over 6s, the cycle loops forever.
+- Trust band under the showcase calls out: "Encrypted at rest · Daily backups · India-resident · Role-based access · Tamper-proof audit log".
+
+**PainPoints — rewritten around the user's exact 3 bottlenecks + the silent data-security worry**
+- 3 cards (Manual audiograms · Billing in Excel · Inventory in spreadsheets) — each split into "Today" (rose) vs "With AUDINEXA" (white).
+- Bottom slate-900 trust band: *"Three apps means three places my patient data could leak from."* — with a 4-tile grid (India-resident, Encrypted at rest, Role-based access, Tamper-proof log).
+
+**Product Tour Modal — restructured to the user's 12-step flow**
+- Step 1 — Sign in to your clinic workspace
+- Step 2 — Create the patient (with auto-MRD + dedupe)
+- Step 3 — Book the appointment (multi-test chips, auto-duration)
+- Step 4 — Run testing — audiogram + tympanogram **inside** the app (live PTA + Tymp visual)
+- Step 5 — Issue a hearing-aid trial (side-aware, deposit, serial flips to "On trial")
+- Step 6 — Generate the quotation (bilateral pair, WhatsApp/PDF)
+- Step 7 — Fitting → Sale → GST invoice (one-click conversion, AMC starts)
+- Step 8 — Patient's clinic-visit timeline (vertical chronology, exportable PDF)
+- Step 9 — Settings → assign roles (RBAC matrix view)
+- Step 10 — Import existing data (Excel / CSV / Tally with MRD preservation)
+- Step 11 — Analytics that answer questions (KPIs + revenue chart + top referrer)
+- Step 12 — Your data — secure, private, yours (security checklist)
+- Each slide has a custom inline SVG visual (no external assets). 8.5s auto-advance · pause/play · prev/next · ESC · arrow keys.
+
+**Pricing · FAQ · SecurityShowcase · FinalCTA · Footer — refactored to the new design tokens**
+- Cabinet Grotesk + Manrope typography across the board.
+- Sapphire `#0F52BA` primary; emerald `#10B981` accent for security/trust.
+- Pricing: middle Growth tier now uses dark slate-900 "pop-out" treatment instead of the old gradient.
+- FAQ: minimalist Swiss-style accordion (bottom-border-only, 9 questions, no surrounding boxes).
+- SecurityShowcase: dark slate-900 brutalist section with bento grid (1 large + 9 compact) on a sapphire/emerald glow backdrop.
+- FinalCTA: massive editorial typography on rich slate-900 panel.
+- Footer: redesigned with sapphire logo, 3 link columns, "All systems operational" status pill.
+
+### Files
+- New: `/app/frontend/src/modules/landing/v2/components/LivePlotShowcase.jsx`
+- Modified: `Hero.jsx`, `PainPoints.jsx`, `ProductTourModal.jsx`, `Pricing.jsx`, `FAQ.jsx`, `SecurityShowcase.jsx`, `FinalCTA.jsx`, `Footer.jsx`
+- Modified: `/app/frontend/src/index.css` (added `plot-point`, `plot-line`, `tymp-curve`, `audinexa-cursor` keyframe animations)
+
+### Verified
+- All sections render at 1440×900 — Hero, PainPoints (3 cards), Pricing, FAQ, SecurityShowcase, FinalCTA, Footer.
+- Product Tour modal opens, auto-plays, pauses, navigates step 1 → 4 → 8 → 12 with custom visuals at each step.
+- ESLint clean across all 8 components.
+- All interactive elements have `data-testid`.
+
+### Production rollout
+Frontend-only change. **Please redeploy preview → production** to ship the new B2B landing page.
+
+---
+
 ## ✅ FEATURE — Mongo backup + tested restore (P0 #1) (2026-05-08)
 
 ### Why

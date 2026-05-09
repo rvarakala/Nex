@@ -24,6 +24,50 @@
 .animate-fade-up-delay-2 { animation: audinexa-fade-up 0.7s ease-out 0.2s both; }
 .animate-fade-up-delay-3 { animation: audinexa-fade-up 0.7s ease-out 0.3s both; }
 
+/* ==================================================================
+   AUDINEXA — Live audiogram + tympanogram plotting animation.
+   Used by the Hero "Watch your software work" panel as a CSS-only
+   stand-in for a recorded GIF. Each marker pops in sequentially,
+   the connecting polyline draws via stroke-dashoffset, then the loop
+   resets so the visual shows software plotting the chart in real-time.
+   ================================================================== */
+@keyframes audinexa-plot-point {
+  0%, 8%       { opacity: 0; transform: scale(0.4); }
+  12%, 100%    { opacity: 1; transform: scale(1); }
+}
+@keyframes audinexa-plot-line {
+  0%, 50%      { stroke-dashoffset: 600; }
+  85%, 100%    { stroke-dashoffset: 0; }
+}
+@keyframes audinexa-tymp-draw {
+  0%, 30%      { stroke-dashoffset: 800; }
+  80%, 100%    { stroke-dashoffset: 0; }
+}
+@keyframes audinexa-cursor-sweep {
+  0%   { transform: translateX(-10%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(105%); opacity: 0; }
+}
+.plot-point {
+  opacity: 0;
+  transform-origin: center;
+  animation: audinexa-plot-point 6s ease-out infinite;
+}
+.plot-line {
+  stroke-dasharray: 600;
+  stroke-dashoffset: 600;
+  animation: audinexa-plot-line 6s ease-in-out infinite;
+}
+.tymp-curve {
+  stroke-dasharray: 800;
+  stroke-dashoffset: 800;
+  animation: audinexa-tymp-draw 6s ease-in-out infinite;
+}
+.audinexa-cursor {
+  animation: audinexa-cursor-sweep 6s linear infinite;
+}
+
 body {
     margin: 0;
     font-family:
