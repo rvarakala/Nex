@@ -10,6 +10,8 @@
 import React, { useState, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
+import NumbersStrip from './components/NumbersStrip';
+import ComplianceBadges from './components/ComplianceBadges';
 import TrustSection from './components/TrustSection';
 import PainPoints from './components/PainPoints';
 import SecurityShowcase from './components/SecurityShowcase';
@@ -33,29 +35,30 @@ export default function LandingPage() {
   const closeTour = useCallback(() => setTourOpen(false), []);
 
   return (
-    <div className="bg-white text-[#111827] font-[Inter,system-ui,sans-serif] antialiased selection:bg-[#0B5FFF] selection:text-white" data-testid="landing-page">
+    <div className="bg-white text-[#111827] font-[Inter,system-ui,sans-serif] antialiased selection:bg-[#0F52BA] selection:text-white" data-testid="landing-page">
       <Navbar onBookDemo={() => openDemo()} />
       <main>
         <Hero onBookDemo={() => openDemo()} onWatchTour={openTour} />
-        <TrustSection />
+        <NumbersStrip />
+        <ComplianceBadges />
         <PainPoints />
-        <Features onBookDemo={() => openDemo()} />
         <HowItWorks />
+        <Features onBookDemo={() => openDemo()} />
         <Testimonials />
         <Pricing onBookDemo={openDemo} />
-        <FAQ />
         <SecurityShowcase />
+        <FAQ />
         <FinalCTA onBookDemo={() => openDemo()} />
       </main>
       <Footer />
 
-      {/* Mobile-only sticky CTA — only visible on small screens, hides on scroll-up */}
+      {/* Mobile-only sticky CTA */}
       <div className="fixed bottom-3 inset-x-3 z-40 md:hidden" data-testid="landing-mobile-cta">
         <button
           onClick={() => openDemo()}
-          className="w-full bg-[#0B5FFF] hover:bg-[#094acf] text-white py-3.5 rounded-xl font-semibold shadow-2xl shadow-[#0B5FFF]/40 active:scale-[0.98] transition"
+          className="w-full bg-[#0F52BA] hover:bg-[#0C4399] text-white py-3.5 rounded-xl font-semibold shadow-2xl shadow-[#0F52BA]/40 active:scale-[0.98] transition"
         >
-          Book Free Demo
+          Schedule a demo
         </button>
       </div>
 

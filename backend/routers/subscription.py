@@ -137,6 +137,46 @@ async def visitor_count(db=Depends(get_db)):
     }
 
 
+@router.get("/public/landing-stats")
+async def landing_stats(db=Depends(get_db)):
+    """Public landing-page social proof — live, honest counts.
+
+    Excludes platform-internal + sandbox tenants and pytest seed data so the
+    numbers reflect real beta clinics. Cached client-side; cheap to recompute
+    so we don't bother caching server-side.
+    """
+    EXCLUDED_CLINIC_PREFIXES = (
+        "audinexa-platform",
+        "clinic-pytest-",
+        "clinic-sandbox-",
+        "clinic-test-",
+        "clinic-smoke-",
+        "clinic-direct-test-",
+        "clinic-invite-test-",
+        "clinic-ui-direct-",
+    )
+    clinic_filter = {
+        "$nor": [{"clinic_id": {"$regex": f"^{p}"}} for p in EXCLUDED_CLINIC_PREFIXES]
+        + [{"_id": {"$regex": f"^{p}"}} for p in EXCLUDED_CLINIC_PREFIXES]
+    }
+    record_filter = {
+        "$nor": [{"clinic_id": {"$regex": f"^{p}"}} for p in EXCLUDED_CLINIC_PREFIXES]
+    }
+
+    clinics = await db.clinics.count_documents(clinic_filter)
+    patients = await db.patients.count_documents(record_filter)
+    ha_sales = await db.ha_sales.count_documents(record_filter)
+    appointments = await db.appointments.count_documents(record_filter)
+    return {
+        "clinics_onboarded": clinics,
+        "patients_managed": patients,
+        "hearing_aids_tracked": ha_sales,
+        "appointments_run": appointments,
+        "data_sovereign_pct": 100,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ==================== PUBLIC CLINIC SIGNUP ====================
 
 class ClinicSignup(BaseModel):

@@ -1,5 +1,56 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ FEATURE — Landing Page Phase 2: Real product hero + live numbers + compliance + journey ribbon (2026-05-09)
+
+### Why
+A reference Genspark concept showed 4 patterns we didn't have: real product screenshot in the hero, hard-numbers trust strip, compliance badges row, and a horizontal journey ribbon. Reviewed the concept honestly — borrowed the 4 worth-stealing ideas, kept our editorial Swiss spine + dark security architecture, dropped the AI-slop bits (HIPAA badge for an India product, fake 120,000+ counts, AI-fluff headline).
+
+### What ships
+**Hero — `Hero.jsx` (rewritten dark slate-900)**
+- Dropped the CSS-animated `LivePlotShowcase` from the hero. Replaced with a **real screenshot** of the AUDINEXA dashboard captured from the live `tenant-sound-clinic-blr` demo tenant (KPIs, sparklines, sidebar, real "Sound Clinic Bengaluru" branding all visible).
+- Genspark-style asymmetric layout — text col-span-6 left, screenshot col-span-6 right with sapphire backdrop slab + emerald geometric accents.
+- New headline: *"Run your entire audiology clinic in **one secure system** — from audiogram to AMC."*
+- Floating glass card overlay on the screenshot showing live KPIs (7 hearing tests, 12 aids sold, "Encrypted at rest · audit-logged"). DPDPA · Live badge top-right.
+- Primary CTA emerald (Schedule a demo), secondary glass (Explore features).
+- Saved screenshot to `/app/frontend/public/landing/hero-dashboard.jpeg` (71 KB, optimized).
+
+**NumbersStrip — `NumbersStrip.jsx` (NEW)**
+- Pulled from new public endpoint `GET /api/public/landing-stats` — returns real, honest counts after excluding pytest / sandbox / smoke-test / platform-internal tenants.
+- Current live values: 13 clinics onboarded, 39 patients managed, 12 hearing aids tracked, 100% data sovereign.
+- Pulsing emerald "LIVE COUNT" badge + footer disclaimer: *"Numbers update every page load · pulled from production database · never inflated. Early-access beta · onboarding 1 new clinic per week."* The honesty itself is a moat vs. the typical SaaS "120,000+ patients" placeholder fluff.
+
+**ComplianceBadges — `ComplianceBadges.jsx` (NEW)**
+- 6-tile India-first trust row: **DPDPA-aligned · ISO 27001-aligned · India-resident · AES-256 at rest · Daily backups · Razorpay-secured**.
+- Deliberately swaps HIPAA (US-only, irrelevant) for DPDPA (India 2023 Act). ISO 27001 is labelled "controls implemented" not "certified" — honest.
+- Footer line: *"We don't claim certifications we don't have."* with deep link to security architecture.
+
+**HowItWorks — rewritten as horizontal Journey Ribbon**
+- Replaces the old 4-step text-heavy "How it works" with an 8-step horizontal flow: **New patient → Appointment → Audiogram + Tymp → HA trial → Quotation → Fitting → GST invoice → Follow-up**.
+- Slate-900 dark section, sapphire glow accent, each step has an icon tile + emerald step-number badge + label + sub-description + connecting arrow.
+- Mobile collapses to a vertical timeline.
+- Headline: *"One patient. One platform. **Eight clicks.**"*
+
+**LandingPage composition reordered**
+- New flow: Hero → NumbersStrip → ComplianceBadges → PainPoints → HowItWorks (Journey) → Features → Testimonials → Pricing → SecurityShowcase → FAQ → FinalCTA.
+- `TrustSection` removed from rendering (NumbersStrip + ComplianceBadges replace its job).
+
+### Files
+- New: `/app/frontend/src/modules/landing/v2/components/NumbersStrip.jsx`, `ComplianceBadges.jsx`
+- New: `/app/frontend/public/landing/hero-dashboard.jpeg` (real product screenshot)
+- New endpoint: `GET /api/public/landing-stats` in `/app/backend/routers/subscription.py`
+- Modified: `Hero.jsx` (dark slate-900 + real screenshot, dropped LivePlotShowcase usage), `HowItWorks.jsx` (rewritten as Journey Ribbon), `LandingPage.jsx` (new section ordering)
+- Note: `LivePlotShowcase.jsx` retained in repo — can be reused inside Features or HowItWorks deeper drill-in if useful later.
+
+### Verified
+- `/api/public/landing-stats` returns live JSON: `{clinics_onboarded: 13, patients_managed: 39, hearing_aids_tracked: 12, ...}`
+- All 4 sections render correctly at 1440×900 — Hero (with real dashboard screenshot + glass KPI card), NumbersStrip ("13+ / 39+ / 12+ / 100%"), ComplianceBadges (6 tiles), Journey Ribbon (8-step horizontal flow with arrows).
+- ESLint clean across all landing components.
+
+### Production rollout
+Frontend + 1 backend route. **Please redeploy preview → production** to ship the new B2B landing page.
+
+---
+
 ## ✅ FEATURE — Landing Page B2B redesign — pain points + 12-step Product Tour (2026-05-09)
 
 ### What ships
