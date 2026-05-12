@@ -264,6 +264,16 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
               </button>
             ))}
           </div>
+          {/* AWB-required hint when the only legal next step is DISPATCHED */}
+          {curStatus === 'AWAITING_DISPATCH' && (
+            <div
+              data-testid="audinexa-dispatch-awb-hint"
+              className="mt-2 text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-relaxed"
+            >
+              <b>Note:</b> Marking <b>Dispatched</b> requires an Outbound courier with an
+              AWB / tracking number. Book the shipment below first.
+            </div>
+          )}
         </div>
       )}
 

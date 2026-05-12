@@ -1,5 +1,56 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚨 HOTFIX — Service Ticket "No HA units found" + Mandatory AWB for Dispatched (2026-05-09)
+
+### Symptoms (reported on production audinexa.com)
+1. **"No HA units found for this patient"** when creating a Service Ticket for a patient who had purchased a hearing aid through the full Quotation → Sale → Invoice flow. Front desk couldn't pick the unit being serviced.
+2. **Service Job pipeline** allowed advancing `Awaiting Dispatch → Dispatched` via the next-step button without first booking an Outbound courier with an AWB — leaving repaired/return-to-vendor jobs with no tracking record.
+
+### Root causes
+**Bug 1 — three layers compounded:**
+- `GET /api/ha/serial-items` accepted `branch_id`, `state`, `pool`, `product_id`, `search`, `limit` — but **not** `current_patient_id`. Frontend's `/ha/serial-items?current_patient_id={pid}` filter was silently dropped by FastAPI, so the endpoint returned the clinic's full inventory (or empty, depending on branch scope).
+- `ha_quick_sale.py` correctly stamped `current_patient_id` on the serial when a sale completed, but the full `ha_sales.mark_sale_paid_internal()` path (used for Quotation → Sale → Invoice) **never stamped** it. So every formal sale left the link missing.
+- The `transition_serial()` helper doesn't touch `current_patient_id` at all — only state.
+
+**Bug 2:** `POST /api/ha/service-tickets/{n}/transition` to `DISPATCHED` had no guard requiring a linked outbound shipment. The auto-advance path via `POST /api/ha/couriers` works correctly, but the legacy "→ Dispatched" next-step button bypassed it.
+
+### Fix
+**Backend**
+- `routers/ha_inventory.py:list_serial_items` — added `current_patient_id: Optional[str]` query parameter that filters server-side.
+- `routers/ha_sales.py:mark_sale_paid_internal` — now stamps `current_patient_id = sale.patient_id` on every serial transitioned to SOLD. **Also backfills** the field for serials already in SOLD state with a missing `current_patient_id` (handles legacy data on re-mark-paid or new payment).
+- `routers/ha_service_v2.py:transition_service_job` — new guard: blocks `AWAITING_DISPATCH → DISPATCHED` with HTTP 422 *"Book an outbound courier (with AWB / tracking number) before marking this job Dispatched."* unless either (a) an `ha_courier_shipments` row with `direction=OUTBOUND` + non-empty `awb_number` already exists for the ticket, or (b) the transition itself carries a fresh `shipment_id` (auto-advance path).
+
+**Frontend**
+- `modules/ha/ServiceTicketsPage.js` — when the primary `current_patient_id` lookup returns zero, falls back to listing all `state=SOLD` units in the clinic and shows an amber hint "*No unit auto-linked to this patient — showing all SOLD units in the clinic. Pick the right one manually (legacy sale).*" — so front desk is never stuck on legacy data even before the backfill runs.
+- `modules/repair/AudinexaPipelineDrawer.jsx` — adds an amber hint under the "Next step" buttons when status is `AWAITING_DISPATCH`: *"Marking Dispatched requires an Outbound courier with an AWB / tracking number. Book the shipment below first."*
+
+**One-shot production backfill** — `scripts/backfill_serial_current_patient_id.py`
+- Dry-run by default. `--apply` writes.
+- Scans every `serial_items` row in `{SOLD, AT_SERVICE, DISPATCHED_TO_VENDOR, RETURNED}` with a missing `current_patient_id`, finds the matching `ha_sales` (paid/invoiced/reserved) or `quick_sales` row, and stamps `current_patient_id` from the sale.
+- Dry-run on preview found 32 candidates inside `clinic-pytest-suite` (all matched successfully). **Run this on production after the redeploy** to fix the Harmony Hyderabad / AarVee case + every similar legacy sale.
+
+### Verified
+- New regression `tests/test_service_ticket_units_and_awb_guard.py` — 2/2 PASS:
+  1. `GET /ha/serial-items?current_patient_id=<fake>` returns `[]` (proves filter wired)
+  2. `AWAITING_DISPATCH → DISPATCHED` without booking a courier returns 422 with the right error message; subsequently booking an outbound courier auto-advances the job.
+- Smoke 6/6 PASS · Pyflakes/ESLint clean.
+
+### Files
+- New: `/app/backend/scripts/backfill_serial_current_patient_id.py`, `/app/backend/tests/test_service_ticket_units_and_awb_guard.py`
+- Modified: `/app/backend/routers/ha_inventory.py` (new `current_patient_id` query param), `/app/backend/routers/ha_sales.py` (stamp + backfill on mark-paid), `/app/backend/routers/ha_service_v2.py` (AWB guard), `/app/frontend/src/modules/ha/ServiceTicketsPage.js` (fallback + hint), `/app/frontend/src/modules/repair/AudinexaPipelineDrawer.jsx` (AWB-required hint)
+
+### Production rollout
+1. Redeploy preview → production for the code fixes to take effect on audinexa.com.
+2. After redeploy, run the one-time backfill against production:
+   ```bash
+   # SSH into your production backend container
+   cd /app/backend && set -a && source .env && set +a
+   python3 scripts/backfill_serial_current_patient_id.py            # dry-run first
+   python3 scripts/backfill_serial_current_patient_id.py --apply    # then apply
+   ```
+
+---
+
 ## ✅ FEATURE — Landing Page Phase 2: Real product hero + live numbers + compliance + journey ribbon (2026-05-09)
 
 ### Why

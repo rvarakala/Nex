@@ -43,6 +43,7 @@ async def list_serial_items(
     state: Optional[str] = None,
     pool: Optional[str] = None,
     product_id: Optional[str] = None,
+    current_patient_id: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = 200,
     user=Depends(get_current_user),
@@ -59,6 +60,8 @@ async def list_serial_items(
         q["pool"] = pool
     if product_id:
         q["product_id"] = product_id
+    if current_patient_id:
+        q["current_patient_id"] = current_patient_id
     if search:
         safe = re.escape(search.strip())
         if safe:

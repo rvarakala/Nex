@@ -98,6 +98,27 @@ async def transition_service_job(
     cur = normalise_status(t["status"])
     assert_job_transition(cur, payload.to_status)
 
+    # ── Guard: must have an Outbound shipment with AWB before moving to
+    # DISPATCHED. Front desk often hits the "→ Dispatched" next-step button
+    # without first booking a courier — block that, otherwise the customer
+    # has no tracking record. Skip when the transition already carries a
+    # fresh shipment_id (i.e. the courier booking flow auto-advances).
+    if cur == "AWAITING_DISPATCH" and payload.to_status == "DISPATCHED" and not payload.shipment_id:
+        outbound = await db.ha_courier_shipments.find_one(
+            {
+                "clinic_id": user["clinic_id"],
+                "ticket_no": ticket_no,
+                "direction": "OUTBOUND",
+                "awb_number": {"$nin": [None, ""]},
+            },
+            {"_id": 0, "shipment_id": 1},
+        )
+        if not outbound:
+            raise HTTPException(
+                status_code=422,
+                detail="Book an outbound courier (with AWB / tracking number) before marking this job Dispatched.",
+            )
+
     now_iso = datetime.now(timezone.utc).isoformat()
     upd: dict = {"status": payload.to_status, "updated_at": now_iso}
 

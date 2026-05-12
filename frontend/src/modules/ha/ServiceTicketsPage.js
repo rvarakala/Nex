@@ -224,6 +224,7 @@ function NewTicketModal({ onClose, onCreated }) {
   const [patients, setPatients] = useState([]);
   const [search, setSearch] = useState('');
   const [serials, setSerials] = useState([]);
+  const [serialFallback, setSerialFallback] = useState(false);
   const [serialId, setSerialId] = useState('');
   const [kind, setKind] = useState('repair');
   const [complaint, setComplaint] = useState('');
@@ -249,14 +250,26 @@ function NewTicketModal({ onClose, onCreated }) {
     return () => { cancelled = true; clearTimeout(h); };
   }, [search]);
 
-  // When patient picked, fetch their serials
+  // When patient picked, fetch their serials. Primary lookup by
+  // current_patient_id. If empty (legacy sale predating the patient-stamp
+  // fix), fall back to listing the clinic's SOLD units so the front desk can
+  // still pick the right one manually instead of being stuck.
   useEffect(() => {
-    if (!patient) { setSerials([]); return; }
+    if (!patient) { setSerials([]); setSerialFallback(false); return; }
     (async () => {
       try {
         const r = await axios.get(`${API}/ha/serial-items`, { params: { current_patient_id: patient, limit: 50 } });
-        setSerials(Array.isArray(r.data) ? r.data : []);
-      } catch { setSerials([]); }
+        const owned = Array.isArray(r.data) ? r.data : [];
+        if (owned.length > 0) {
+          setSerials(owned);
+          setSerialFallback(false);
+          return;
+        }
+        // Fallback — show clinic's SOLD/AT_SERVICE units (manual pick).
+        const f = await axios.get(`${API}/ha/serial-items`, { params: { state: 'SOLD', limit: 100 } });
+        setSerials(Array.isArray(f.data) ? f.data : []);
+        setSerialFallback(true);
+      } catch { setSerials([]); setSerialFallback(false); }
     })();
   }, [patient]);
 
@@ -318,7 +331,16 @@ function NewTicketModal({ onClose, onCreated }) {
               <option value="">— (no specific unit / lost unit)</option>
               {serials.map(s => <option key={s.serial_id} value={s.serial_id}>{s.serial_no} · {s.state}</option>)}
             </select>
-            {serials.length === 0 && <div className="text-[10px] italic text-slate-400 mt-0.5">No HA units found for this patient.</div>}
+            {serials.length === 0 && (
+              <div className="text-[10px] italic text-amber-700 mt-0.5">
+                No hearing aids on file for this patient yet. Pick "(no specific unit)" if it's a lost / legacy device — or record the sale in HA Sales first.
+              </div>
+            )}
+            {serialFallback && serials.length > 0 && (
+              <div className="text-[10px] italic text-amber-700 mt-0.5">
+                No unit auto-linked to this patient — showing all <b>SOLD</b> units in the clinic. Pick the right one manually (legacy sale).
+              </div>
+            )}
           </div>
         )}
 

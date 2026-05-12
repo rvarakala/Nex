@@ -533,7 +533,30 @@ async def mark_sale_paid_internal(
                 ref_doc={"kind": "sale", "id": sale_no},
                 note=f"Sold via {sale_no}",
             )
+            # Stamp current_patient_id so Service Tickets / warranty / AMC can
+            # find this unit by patient. Mirrors ha_quick_sale behaviour.
+            if sale.get("patient_id"):
+                await db.serial_items.update_one(
+                    {"serial_id": sid},
+                    {"$set": {
+                        "current_patient_id": sale["patient_id"],
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
         elif s["state"] == "SOLD":
+            # Already sold — still backfill current_patient_id if missing
+            # (handles legacy sales that pre-date this fix).
+            if sale.get("patient_id"):
+                await db.serial_items.update_one(
+                    {"serial_id": sid, "$or": [
+                        {"current_patient_id": None},
+                        {"current_patient_id": {"$exists": False}},
+                    ]},
+                    {"$set": {
+                        "current_patient_id": sale["patient_id"],
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
             continue  # already sold (idempotent)
         else:
             raise HTTPException(
