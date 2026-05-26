@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useVault } from '../../crypto/VaultContext';
 import { buildVaultSetupPayload } from '../../crypto/clinicVault';
+import MfaSetupCard from './MfaSetupCard';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND}/api/vault`;
@@ -107,6 +108,14 @@ export default function SecurityPrivacyTab() {
         <p className="leading-relaxed">
           You can switch security models at any time. Switching <em>off</em> Vault Mode permanently destroys data encrypted under it. We recommend running Vault Mode for 1-2 weeks before deciding to expand to all your clinic data.
         </p>
+      </section>
+
+      {/* ── Two-factor authentication (TOTP) ── */}
+      <section className="mt-10">
+        <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-3">
+          Sign-in protection
+        </div>
+        <MfaSetupCard />
       </section>
     </div>
   );

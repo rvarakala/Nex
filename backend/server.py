@@ -464,6 +464,14 @@ async def login(req: LoginRequest, request: Request):
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not user.get("active", True) or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # ── 2FA gate ── If the user has MFA enabled, hand back a short-lived
+    # `mfa_token` instead of an access token. The client then POSTs the
+    # 6-digit TOTP (or a recovery code) to /api/auth/mfa/verify-login to
+    # exchange the challenge for the real access_token.
+    if user.get("mfa_enabled"):
+        return issue_mfa_challenge(user["user_id"])
+
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
         token_version=int(user.get("token_version", 0) or 0),
@@ -719,6 +727,17 @@ app.include_router(admin_errors_router)
 # Founder backup admin (list / run-now / config)
 from routers.backup_admin import router as backup_admin_router  # noqa: E402
 app.include_router(backup_admin_router)
+
+from routers.mfa import (  # noqa: E402
+    router as mfa_router,
+    auth_router as mfa_auth_router,
+    issue_mfa_challenge,
+)
+app.include_router(mfa_router)
+app.include_router(mfa_auth_router)
+
+from routers.dpdpa import router as dpdpa_router  # noqa: E402
+app.include_router(dpdpa_router)
 
 from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402

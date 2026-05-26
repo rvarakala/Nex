@@ -41,6 +41,22 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const r = await axios.post(`${API}/auth/login`, { email, password });
+    // Two-step MFA flow: server returns a short-lived challenge instead of
+    // the access token. Caller (LoginPage) detects `mfa_token` and prompts
+    // the user for the 6-digit code, then calls `loginVerifyMfa()`.
+    if (r.data?.requires_mfa) {
+      return { requiresMfa: true, mfaToken: r.data.mfa_token };
+    }
+    localStorage.setItem(TOKEN_KEY, r.data.access_token);
+    setUser(r.data.user);
+    setClinic(r.data.clinic);
+    return r.data.user;
+  };
+
+  const loginVerifyMfa = async (mfaToken, code, useRecoveryCode = false) => {
+    const r = await axios.post(`${API}/auth/mfa/verify-login`, {
+      mfa_token: mfaToken, code, use_recovery_code: useRecoveryCode,
+    });
     localStorage.setItem(TOKEN_KEY, r.data.access_token);
     setUser(r.data.user);
     setClinic(r.data.clinic);
@@ -107,7 +123,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, clinic, loading, login, loginWithToken, logout, switchClinic, hasRole }}>
+    <AuthContext.Provider value={{ user, clinic, loading, login, loginVerifyMfa, loginWithToken, logout, switchClinic, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

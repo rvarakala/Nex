@@ -16,6 +16,7 @@ import {
   CalendarDays, StickyNote, Repeat, Receipt, FileText, Wrench,
   Cake, Heart, Send,
 } from 'lucide-react';
+import DpdpaActions from './DpdpaActions';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -274,7 +275,7 @@ export default function PatientProfilePage() {
       </div>
 
       {/* Content */}
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6 space-y-4">
         {tab === 'history' && <HistoryTab events={timeline} />}
         {tab === 'appointments' && <AppointmentsTab rows={appointments} />}
         {tab === 'notes' && <NotesTab rows={notes} />}
@@ -282,6 +283,9 @@ export default function PatientProfilePage() {
         {tab === 'payments' && <PaymentsTab invoices={invoices} />}
         {tab === 'reports' && <ReportsTab sessions={sessions} tickets={tickets} />}
         {tab === 'service' && <ServiceTab tickets={tickets} />}
+
+        {/* Owner-only DPDPA actions — collapsed by default */}
+        <DpdpaActions patient={patient} />
       </div>
     </div>
   );

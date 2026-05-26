@@ -1,5 +1,109 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚀 LAUNCH READINESS — 3 Hard P0 Blockers shipped (2026-05-26)
+
+User asked: *"What's left before I can ship to 500 users?"* — assessed honestly,
+3 items were genuine launch blockers. All three shipped + tested.
+
+### Block 1 — Async email sends (~30 min)
+**Why**: `send_email` uses synchronous `smtplib` — every appointment confirmation,
+OTP, password reset call would block a FastAPI worker thread for 1–3s. At 500
+concurrent users + ~10 emails/hr each = worker pool exhaustion in minutes.
+
+**Ship**: Added `enqueue_email()` and `send_email_background()` to `utils/email.py`.
+Both wrap the SMTP work in `asyncio.to_thread(...)` + `loop.create_task(...)`,
+so SMTP runs on a thread pool worker and the API returns immediately. Migrated
+the hottest user-facing path (`password_reset._send_reset_email`) to
+`enqueue_email`.
+
+Files: `utils/email.py`, `routers/password_reset.py`.
+
+### Block 2 — 2FA / TOTP on owner + super_admin + founder (~2 hr)
+**Why**: One leaked owner password = full patient DB compromise. India audiology
+clinics get phished. Without 2FA you can't deliver on DPDPA's "reasonable
+security safeguards" obligation.
+
+**Ship**: New `routers/mfa.py` + new `routers/auth/mfa/verify-login` second-step
+endpoint. Storage: TOTP secret is Fernet-encrypted at rest (key derived from
+`MFA_SECRET_ENC_KEY` env or JWT_SECRET fallback). 10 single-use recovery codes
+(bcrypt-hashed). Login flow returns `{requires_mfa, mfa_token}` to MFA-enabled
+accounts; client posts the 6-digit TOTP (or recovery code) to exchange for the
+real access token. Gated to `clinic_owner` + `super_admin` + `founder` only.
+
+Frontend: New `MfaSetupCard` embedded in Settings → Security & Privacy. Full
+wizard with QR code (`qrcode.react`) + manual base32 fallback + 6-digit code
+verify + one-time recovery codes (download .txt + copy-all + "I've saved these"
+confirmation gate). LoginPage now handles the 2-step flow with a recovery-code
+fallback toggle. Compatible with Google Authenticator, Microsoft Authenticator,
+Authy, 1Password, Bitwarden.
+
+Endpoints: `GET /api/mfa/status`, `POST /api/mfa/setup/init`,
+`POST /api/mfa/setup/verify`, `POST /api/mfa/disable`,
+`POST /api/auth/mfa/verify-login`.
+
+Files: `routers/mfa.py` (new), `server.py` (login fork on `mfa_enabled`),
+`frontend/AuthContext.js` (`loginVerifyMfa`), `pages/LoginPage.js` (2-step UI),
+`modules/settings/MfaSetupCard.jsx` (new), `modules/settings/SecurityPrivacyTab.jsx`.
+
+Dependencies: `pyotp==2.9.0` (backend), `qrcode.react@4.2.0` (frontend).
+
+### Block 3 — DPDPA patient export + erase (~2 hr)
+**Why**: India's DPDP Act, 2023 ss. 12 (right to access) + 13 (right to erasure)
+are non-optional. Without these endpoints you're non-compliant the moment any
+patient asks.
+
+**Ship**: New `routers/dpdpa.py`:
+- `GET /api/patients/{id}/dpdpa-export.zip` — streams a ZIP with `manifest.json`,
+  `patient.json`, `README.txt`, plus one JSON file per linked collection
+  (appointments, hearing_tests, pta_tests, ha_quotes, ha_sales, quick_sales,
+  invoices, ha_service_tickets, ha_trials, ha_fittings, communications,
+  patient_files, patient_consents, repair_jobs). Uses `bson.json_util` to
+  preserve Mongo-specific types.
+- `POST /api/patients/{id}/dpdpa-forget` — requires literal phrase
+  `ERASE PATIENT DATA` in the body. Replaces identifying fields
+  (name, mobile, email, address, complaints, free-text notes) with one-way
+  salted SHA-256 hashes; preserves non-identifying demographics
+  (`age`, `gender`) for aggregate analytics; writes `dpdpa_forgotten_at`
+  marker and `dpdpa_audit_id`. Scrubs free-text fields on every linked
+  collection. Erased patients return 410 GONE from export.
+- `GET /api/patients/dpdpa/audit-log` — read-only tamper-evident log of
+  every export + erase action (who, when, IP, reason).
+
+Frontend: New `DpdpaActions` accordion at the bottom of `PatientProfilePage`
+(owner-only). Export button streams the ZIP. Erase requires typing
+`ERASE PATIENT DATA` literally to enable the destroy button (deliberate
+friction so nobody triggers an irreversible action by mistake).
+
+Files: `routers/dpdpa.py` (new), `modules/patients/DpdpaActions.jsx` (new),
+`modules/patients/PatientProfilePage.jsx`.
+
+### Verified
+New regression `tests/test_launch_blockers_async_mfa_dpdpa.py` — **4/4 PASS**:
+  1. Async email helpers importable + callable
+  2. MFA full lifecycle: init → verify → login challenge → verify-login →
+     recovery code accepted once → recovery code reuse rejected → disable
+  3. DPDPA export: ZIP contains manifest + patient + linked collections;
+     audit log records the export
+  4. DPDPA forget: rejects wrong phrase, accepts correct phrase, anonymises
+     name + mobile, returns 410 on export of erased patient, refuses re-erase
+Smoke suite 6/6 PASS. ESLint + Ruff clean.
+
+### Production rollout
+Restart the backend (already done in preview). Run `pip install pyotp` on the
+production worker after redeploy. Frontend installs `qrcode.react` via the
+existing `package.json` lockfile. **No DB migration needed** — new fields are
+added lazily on first use.
+
+### What's left to be safe at 500 concurrent users
+The 3 hard blockers are **DONE**. From the original P0 list:
+  - 🟠 Per-tenant rate limiting (slowapi keyed on `X-Clinic-Id`) — P1, defensive
+  - 🟠 localStorage JWT → httpOnly cookies — P1, XSS hardening
+  - 🟢 Public status page — P2, trust posture
+  - 🟢 Documented incident runbook — P2, ops hygiene
+None of these block launch. Ship when ready.
+
+---
+
 ## ✅ FEATURE — Settings → Print Templates → Blank Audiogram (PTA) (2026-05-26)
 
 ### Why

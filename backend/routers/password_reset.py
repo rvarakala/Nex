@@ -84,38 +84,42 @@ def _is_strong_enough(pw: str) -> Optional[str]:
 
 
 async def _send_reset_email(to_email: str, name: str, reset_url: str, clinic_name: str) -> bool:
-    """Best-effort email send — returns True/False so caller can log."""
+    """Best-effort email send — returns True/False so caller can log.
+
+    Uses `enqueue_email` so the SMTP work runs on a background thread
+    and the API returns immediately (no 1–3s blocker per reset).
+    """
+    html = f"""
+    <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:540px;margin:0 auto">
+      <div style="background:linear-gradient(135deg,#0B5FFF,#00C2A8);color:#fff;padding:24px;border-radius:12px 12px 0 0">
+        <h2 style="margin:0;font-size:22px">Reset your AUDINEXA password</h2>
+        <p style="margin:6px 0 0;opacity:0.9;font-size:13px">{clinic_name}</p>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-top:0;padding:28px;border-radius:0 0 12px 12px">
+        <p style="font-size:15px">Hi {name or "there"},</p>
+        <p>We received a request to reset the password for <b>{to_email}</b>. Click the button below to choose a new one:</p>
+        <p style="margin:24px 0;text-align:center">
+          <a href="{reset_url}" style="background:#0B5FFF;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:600;display:inline-block;font-size:15px">Reset Password</a>
+        </p>
+        <p style="font-size:12px;color:#64748b">If the button doesn't work, copy this link into your browser:<br>
+          <a href="{reset_url}" style="color:#0B5FFF;word-break:break-all">{reset_url}</a></p>
+        <p style="font-size:12px;color:#94a3b8;margin-top:24px">
+          This link expires in <b>1 hour</b>. If you didn't request this, you can safely ignore this email — your password won't change.
+        </p>
+        <hr style="border:0;border-top:1px solid #e2e8f0;margin:24px 0">
+        <p style="font-size:11px;color:#94a3b8;text-align:center">AUDINEXA · Audiology clinic management · audinexa.com</p>
+      </div>
+    </div>
+    """
     try:
-        from utils.email import send_email
-        html = f"""
-        <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:540px;margin:0 auto">
-          <div style="background:linear-gradient(135deg,#0B5FFF,#00C2A8);color:#fff;padding:24px;border-radius:12px 12px 0 0">
-            <h2 style="margin:0;font-size:22px">Reset your AUDINEXA password</h2>
-            <p style="margin:6px 0 0;opacity:0.9;font-size:13px">{clinic_name}</p>
-          </div>
-          <div style="background:#fff;border:1px solid #e5e7eb;border-top:0;padding:28px;border-radius:0 0 12px 12px">
-            <p style="font-size:15px">Hi {name or "there"},</p>
-            <p>We received a request to reset the password for <b>{to_email}</b>. Click the button below to choose a new one:</p>
-            <p style="margin:24px 0;text-align:center">
-              <a href="{reset_url}" style="background:#0B5FFF;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:600;display:inline-block;font-size:15px">Reset Password</a>
-            </p>
-            <p style="font-size:12px;color:#64748b">If the button doesn't work, copy this link into your browser:<br>
-              <a href="{reset_url}" style="color:#0B5FFF;word-break:break-all">{reset_url}</a></p>
-            <p style="font-size:12px;color:#94a3b8;margin-top:24px">
-              This link expires in <b>1 hour</b>. If you didn't request this, you can safely ignore this email — your password won't change.
-            </p>
-            <hr style="border:0;border-top:1px solid #e2e8f0;margin:24px 0">
-            <p style="font-size:11px;color:#94a3b8;text-align:center">AUDINEXA · Audiology clinic management · audinexa.com</p>
-          </div>
-        </div>
-        """
-        result = send_email(
+        from utils.email import enqueue_email
+        enqueue_email(
             to=to_email,
             subject="Reset your AUDINEXA password",
             html_body=html,
             purpose="password_reset",
         )
-        return (result or {}).get("status") == "sent"
+        return True
     except Exception as exc:  # noqa: BLE001 — email is best-effort, never breaks the flow
         log.warning(f"reset email failed to {to_email}: {exc}")
         return False

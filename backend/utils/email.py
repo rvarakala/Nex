@@ -198,4 +198,61 @@ def _html_to_text(html: str) -> str:
     return text or "(HTML-only email — open in an HTML-capable client to view)"
 
 
-__all__ = ["send_email"]
+__all__ = ["send_email", "send_email_background", "enqueue_email"]
+
+
+# ---------- Async / background variants -------------------------------------
+#
+# `send_email` above is synchronous SMTP — fine for cron jobs and CLI scripts,
+# but a 1–3 second blocker if called from a FastAPI request handler. Two
+# safer variants are exposed:
+#
+#   send_email_background(bg, ...)   — wires it into FastAPI's BackgroundTasks.
+#                                      Email fires AFTER the response is sent.
+#   enqueue_email(...)               — fire-and-forget; returns immediately.
+#                                      Use when you don't have a BackgroundTasks
+#                                      handle (e.g. inside a deeper service).
+#
+# Both run the SMTP work on a worker thread via asyncio.to_thread() so the
+# event loop is never blocked.
+
+import asyncio
+
+
+def send_email_background(background_tasks, *args, **kwargs) -> None:
+    """Schedule `send_email` to run after the current FastAPI response is sent.
+
+    Usage:
+        @router.post("/something")
+        async def endpoint(bg: BackgroundTasks):
+            send_email_background(bg, to=..., subject=..., html_body=...)
+            return {"ok": True}
+    """
+    background_tasks.add_task(send_email, *args, **kwargs)
+
+
+def enqueue_email(*args, **kwargs) -> None:
+    """Fire-and-forget background email send. Returns immediately.
+
+    Use when you can't accept a `BackgroundTasks` dependency (deeply nested
+    service helpers, scheduled jobs called from async context, etc.).
+
+    Safe to call from any async context; silently no-ops with a log line
+    if not inside a running event loop (extremely rare — only matters for
+    direct unit-test invocation).
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Not in an async context — fall back to synchronous send.
+        # This branch only fires from CLI scripts / tests.
+        send_email(*args, **kwargs)
+        return
+
+    async def _runner():
+        try:
+            await asyncio.to_thread(send_email, *args, **kwargs)
+        except Exception as exc:  # pragma: no cover — should never escape
+            log.error("email.enqueue_email_unexpected err=%s", exc)
+
+    loop.create_task(_runner())
