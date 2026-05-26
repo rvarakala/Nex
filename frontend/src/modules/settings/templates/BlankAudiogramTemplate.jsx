@@ -17,7 +17,7 @@
  */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import axios from 'axios';
-import { Printer, Settings as SettingsIcon, Sliders } from 'lucide-react';
+import { Printer, Settings as SettingsIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -183,7 +183,7 @@ function Field({ label, w = 'w-44', placeholder = '' }) {
 }
 
 /* -------- Symbol legend cell -------- */
-function LegendRow({ sym, label, color = '#000', style = 'plain' }) {
+function LegendRow({ sym, label, color = '#000' }) {
   return (
     <div className="flex items-center gap-2 text-[10px]">
       <span
@@ -205,12 +205,17 @@ export default function BlankAudiogramTemplate() {
 
   useEffect(() => {
     axios
-      .get(`${API}/clinics/me`)
+      .get(`${API}/settings/clinic`)
       .then((r) => setClinic(r.data))
       .catch(() => setClinic(null));
   }, []);
 
   const handlePrint = () => window.print();
+
+  const logoSrc = useMemo(
+    () => (clinic ? `${API}/settings/clinic/logo?v=${Date.now()}` : null),
+    [clinic],
+  );
 
   const headerLine2 = useMemo(() => {
     if (!clinic) return '';
@@ -222,29 +227,39 @@ export default function BlankAudiogramTemplate() {
 
   return (
     <div className="bg-slate-100 min-h-full">
-      {/* ── Print-mode CSS ── */}
+      {/* ── Print-mode CSS ──
+          Canonical "print only this element" pattern: hide *everything*
+          via visibility:hidden, then bring back only the printable A4
+          page and its descendants. This sidesteps the shell's
+          `h-screen overflow-hidden` flexbox constraints reliably.       */}
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm 10mm 10mm 10mm; }
-          html, body { background: white !important; }
-          .print-hide { display: none !important; }
-          .print-page {
-            box-shadow: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-            max-width: none !important;
-          }
-          /* Hide the global shell */
-          aside, header, nav, [data-testid="app-shell-sidebar"],
-          [data-testid="app-shell-topbar"], [data-testid="settings-module"] > aside {
-            display: none !important;
-          }
-          [data-testid="settings-module"] {
-            display: block !important;
-          }
-          [data-testid="settings-module"] > main {
+          @page { size: A4 portrait; margin: 0; }
+
+          html, body, #root {
+            background: white !important;
+            height: auto !important;
             overflow: visible !important;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+          .print-page,
+          .print-page * {
+            visibility: visible !important;
+          }
+
+          .print-page {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-shadow: none !important;
+            width: 210mm !important;
+            min-height: 297mm !important;
+            background: white !important;
           }
         }
       `}</style>
@@ -303,10 +318,11 @@ export default function BlankAudiogramTemplate() {
         >
           {/* ── Header (clinic letterhead) ── */}
           <header className="flex items-start gap-3 pb-2 border-b-2 border-black">
-            {clinic?.logo_url && (
+            {logoSrc && (
               <img
-                src={clinic.logo_url}
-                alt="Clinic logo"
+                src={logoSrc}
+                alt=""
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 style={{ height: '46px', objectFit: 'contain' }}
               />
             )}

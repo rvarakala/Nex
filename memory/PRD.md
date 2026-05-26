@@ -1,5 +1,64 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✅ FEATURE — Settings → Print Templates → Blank Audiogram (PTA) (2026-05-26)
+
+### Why
+Audiologists routinely print blank audiograms ahead of test sessions to plot results by hand (especially during pediatric / pseudo-hypoacusis screening, trainee supervision, or when the clinic PC is in use). They asked for a clinic-branded, blank, hand-fillable A4 audiogram under Settings — one click → browser **Print → Save as PDF**.
+
+### What ships
+**New Settings tab — `Print Templates`** (`/settings/templates`)
+- Index grid of clinic stationery templates. 3 cards seeded:
+  1. **Blank Audiogram (PTA)** — Ready
+  2. Blank Tympanogram — Coming soon
+  3. Blank Case History — Coming soon
+- Future-proof for additional templates (consent, OPD slip, fitting acknowledgement, etc.).
+- Restricted to `clinic_owner` + `super_admin` (same role gate as the rest of Settings/admin).
+
+**Blank Audiogram template** (`/settings/templates/audiogram`)
+A4 portrait, hand-fillable, clinic-branded. Contains:
+- Clinic letterhead — logo + name + address + phone + email + GSTIN (pulled live from `GET /api/settings/clinic`).
+- `AUDIOGRAM · PTA` badge + ANSI S3.6 · 2010 reference.
+- Demographic row — Name, MRD #, Date, Age, Sex, Referred By, Audiologist — empty horizontal-line fields.
+- Chief Complaint / Brief History strip (3 dotted lines).
+- Two side-by-side audiograms: **Right ear** (red, symbol `O / Δ`) and **Left ear** (blue, symbol `X / ☐`).
+- Full frequency axis 125 → 8000 Hz with inter-octaves 750 / 1500 / 3000 / 6000 (dotted), octave grid (solid).
+- Full dB axis -10 → 120 dB HL with major lines at 0 / 20 / 40 / 60 / 80 / 100 / 120, dotted minors at 10s.
+- Standard 9-symbol legend (AC/BC, masked/unmasked, NR) colour-coded.
+- PTA Summary panel: Right/Left PTA (.5/1/2k), SRT R/L, WRS R/L — fields lined for handwriting.
+- Impressions/Diagnosis + Recommendations side-by-side boxes (3 dotted lines each).
+- Audiologist signature line + footer credit.
+- "Print / Save as PDF" button triggers `window.print()` → user picks **Save as PDF** in the OS dialog.
+
+### Technical notes — print CSS
+The app shell uses `h-screen overflow-hidden` flexbox layout, which clips anything that escapes the viewport. The first 2 attempts at print CSS (display-based hiding, then `position: fixed`) produced empty PDFs (999 bytes). The canonical fix that worked:
+```css
+@media print {
+  body * { visibility: hidden !important; }
+  .print-page, .print-page * { visibility: visible !important; }
+  .print-page {
+    position: absolute !important; left: 0; top: 0;
+    width: 210mm; min-height: 297mm;
+    padding: 8mm; box-shadow: none; background: white;
+  }
+}
+```
+This visibility-based mask sidesteps every shell-flexbox / overflow constraint reliably.
+
+### Verified
+- DOM screenshot: full template renders with real clinic data (THE SOUND CLINIC — BANGALURU letterhead, demographic fields, both audiograms with proper axes/grid, PTA summary, signature line).
+- Playwright `page.pdf()` generated a 78 KB A4 PDF; preview via `pdftocairo` confirms: letterhead present, demographic fields present, both Right + Left audiograms with full axes rendered, shell sidebar/topbar hidden, nothing clipped.
+- ESLint clean.
+
+### Files
+- New: `/app/frontend/src/modules/settings/PrintTemplatesTab.jsx`
+- New: `/app/frontend/src/modules/settings/templates/BlankAudiogramTemplate.jsx`
+- Modified: `/app/frontend/src/modules/settings/SettingsModule.js` (added Printer icon import, sidebar link, and 2 routes)
+
+### Production rollout
+Frontend-only — redeploy preview → production.
+
+---
+
 ## 🚨 HOTFIX — Service Ticket "No HA units found" + Mandatory AWB for Dispatched (2026-05-09)
 
 ### Symptoms (reported on production audinexa.com)
