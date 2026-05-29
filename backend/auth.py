@@ -66,7 +66,21 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str, role: str, clinic_id: str, token_version: int = 0) -> str:
+def create_access_token(
+    user_id: str,
+    email: str,
+    role: str,
+    clinic_id: str,
+    token_version: int = 0,
+    session_id: Optional[str] = None,
+) -> str:
+    """Mint a signed JWT.
+
+    `session_id` is embedded as the `sid` claim. When present, every
+    authenticated request looks up the session row and refuses tokens whose
+    session has been revoked. Pass `None` for legacy callers (the resulting
+    token works but cannot be individually revoked).
+    """
     payload = {
         "sub": user_id,
         "email": email,
@@ -76,6 +90,8 @@ def create_access_token(user_id: str, email: str, role: str, clinic_id: str, tok
         "exp": datetime.now(timezone.utc) + ACCESS_TOKEN_TTL,
         "type": "access",
     }
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
@@ -224,6 +240,20 @@ async def get_current_user(request: Request):
     token_tv = int(payload.get("tv", 0) or 0)
     if token_tv < current_tv:
         raise HTTPException(status_code=401, detail="Session revoked, please sign in again")
+
+    # ── Per-session revocation ──
+    # Tokens minted before per-session tracking shipped have no `sid` claim
+    # and stay valid until they expire (legacy compatibility). Newer tokens
+    # carry `sid` → we look up the session row and refuse if it was revoked.
+    sid = payload.get("sid")
+    if sid:
+        sess = await db.user_sessions.find_one(
+            {"session_id": sid, "user_id": user["user_id"]},
+            {"_id": 0, "revoked_at": 1},
+        )
+        if sess and sess.get("revoked_at"):
+            raise HTTPException(status_code=401, detail="This sign-in was revoked")
+
     # ── MFA enforcement for platform admins (super_admin + founder) ──
     # We give them a 7-day grace window from first authenticated request,
     # then block all non-MFA traffic until they enable 2FA.
@@ -232,7 +262,7 @@ async def get_current_user(request: Request):
     # Heartbeat — fire-and-forget, never blocks the request
     try:
         from utils.activity import record_heartbeat
-        await record_heartbeat(db, user["user_id"], request)
+        await record_heartbeat(db, user["user_id"], request, session_id=sid)
     except Exception:
         pass
     user_ctx = {
@@ -249,6 +279,7 @@ async def get_current_user(request: Request):
         "license_no": user.get("license_no"),
         "appointment_color": user.get("appointment_color"),
         "mfa_enforcement": enforcement,
+        "session_id": sid,
     }
     # Stash on `request.state` so the global error-logger middleware can
     # correlate any crashes raised AFTER auth succeeded (e.g. response

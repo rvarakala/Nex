@@ -1,5 +1,57 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔐 SECURITY — Sessions & Devices (Gmail-style) (2026-05-29)
+
+### Why
+After hard 2FA enforcement on platform admins, the next obvious gap was visibility: "Where am I signed in right now?" Owners need to be able to see every active session for their account and **sign out a stolen / forgotten device in one click** — the same UX Gmail has had for a decade.
+
+### How
+**Per-session JWT tracking.** Every issued JWT now carries a `sid` (session_id) claim. On every authenticated request, `get_current_user` looks up the row in `user_sessions` and refuses the token if the row's `revoked_at` is set. Legacy tokens issued before this shipped don't carry a `sid` claim and stay valid until their natural expiry — no force-logout on the day this ships.
+
+**`mint_session_row()`** is called from every login path (`/api/auth/login`, `/api/auth/mfa/verify-login`, `/api/auth/switch-clinic`) right before `create_access_token`. Each row captures: `session_id`, `user_id`, `clinic_id`, `created_at`, `last_seen_at`, `ip` (x-forwarded-for aware), `user_agent` (first 300 chars), a **humanised device_label** (e.g. "Chrome on macOS", "Safari on iPhone", parsed by a dependency-free regex), and `purpose` (`login` / `mfa` / `switch_clinic`).
+
+**`last_seen_at` is kept fresh** via the existing `record_heartbeat` (already throttled to 1 write/min/user) — no new write per request. The Sessions UI shows truthful "last active 3 min ago" labels.
+
+**Endpoints (all scoped to the authenticated user):**
+- `GET    /api/auth/sessions` — list active sessions, newest first; current one marked `current: true`.
+- `POST   /api/auth/sessions/{session_id}/revoke` — sign out one device. Refuses to revoke your own current session (must use Sign Out button → keeps the UX honest about "you're signing yourself out now"). 404 if already revoked.
+- `POST   /api/auth/sessions/revoke-others` — sign out every other device in one click.
+
+### Frontend UX
+**New `SessionsList.jsx`**, mounted in Settings → Security & Privacy under a "SESSIONS & DEVICES" section right below the 2FA card.
+- Card header: "Active sessions (N)", + "Refresh" + "Sign out other devices" (only visible when there are other devices).
+- Each row: device icon (Monitor / Smartphone / Tablet / Globe based on UA label), device label, "THIS DEVICE" emerald badge for the current row, "Last active N ago", IP (monospace), "Signed in N ago", and a per-row "Sign out" button (hidden on the current row).
+- Click "Sign out" → revoked session → list refreshes; the revoked device's next request gets HTTP 401 immediately.
+- "Sign out other devices" → bulk revoke confirmed in one round-trip.
+
+### Files
+**Backend**
+- `routers/user_sessions.py` (new) — list / revoke-one / revoke-others + `mint_session_row()` + `touch_session_last_seen()` + UA parser.
+- `auth.py` — `create_access_token()` now accepts `session_id`; `get_current_user()` decodes the `sid` claim and refuses revoked sessions (legacy tokens with no `sid` continue to work).
+- `utils/activity.py` — `record_heartbeat()` extended to accept `session_id` and bump `user_sessions.last_seen_at`.
+- `server.py` — `/auth/login` + `/auth/switch-clinic` now mint session rows.
+- `routers/mfa.py` — `/auth/mfa/verify-login` mints a session row with `purpose=mfa`.
+- `routers/sessions.py` → renamed `routers/test_sessions.py` (was the hearing-test sessions module, freed the filename).
+
+**Frontend**
+- `modules/settings/SessionsList.jsx` (new).
+- `modules/settings/SecurityPrivacyTab.jsx` — mounts the new section.
+
+**Tests** — `tests/test_user_sessions.py` (new), 3 tests, all PASS:
+1. Two logins from different UAs produce two rows with correct humanised labels; revoking one immediately 401s that token; cannot revoke own current session (400); re-revoking is 404.
+2. `revoke-others` invalidates every other token but keeps the caller's.
+3. Backward-compat: a token minted with no `sid` still authenticates.
+
+### Verified
+- 10/10 cumulative new tests PASS (3 sessions + 3 enforcement + 4 launch-blocker).
+- Smoke 6/6 PASS. ESLint + Ruff clean.
+- Live UI verified: two parallel logins (Chrome on Linux current, Chrome on macOS other) listed correctly with timestamps + IPs; revoke flow works end-to-end.
+
+### Production rollout
+Frontend + backend hot-reload. **No DB migration needed** — `user_sessions` is created lazily; existing tokens stay valid until they expire (no `sid` claim → legacy path).
+
+---
+
 ## 🔒 SECURITY — 2FA enforcement for platform admins (super_admin + founder) (2026-05-29)
 
 ### Why

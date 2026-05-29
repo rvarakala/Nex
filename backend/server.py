@@ -472,9 +472,11 @@ async def login(req: LoginRequest, request: Request):
     if user.get("mfa_enabled"):
         return issue_mfa_challenge(user["user_id"])
 
+    sid = await mint_session_row(db, user, request, purpose="login")
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
         token_version=int(user.get("token_version", 0) or 0),
+        session_id=sid,
     )
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0})
     # Fire-and-forget login audit (never blocks or fails the login)
@@ -563,12 +565,18 @@ async def switch_clinic(
     udoc = await db.users.find_one(
         {"user_id": user["user_id"]}, {"_id": 0, "token_version": 1},
     )
+    sid = await mint_session_row(
+        db,
+        {**user, "clinic_id": target},   # log the *new* clinic on the session row
+        request, purpose="switch_clinic",
+    )
     token = create_access_token(
         user_id=user["user_id"],
         email=user["email"],
         role=user["role"],
         clinic_id=target,
         token_version=int((udoc or {}).get("token_version") or 0),
+        session_id=sid,
     )
 
     # --- Audit trail (fire-and-forget, not critical path) ---------------
@@ -739,6 +747,9 @@ app.include_router(mfa_auth_router)
 from routers.dpdpa import router as dpdpa_router  # noqa: E402
 app.include_router(dpdpa_router)
 
+from routers.user_sessions import router as user_sessions_router, mint_session_row  # noqa: E402
+app.include_router(user_sessions_router)
+
 from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402
 from routers import patients as patients_router       # noqa: E402
@@ -747,7 +758,7 @@ from routers import invitations as invitations_router  # noqa: E402
 from routers import care_support as care_support_router  # noqa: E402
 from routers import appointments as appointments_router  # noqa: E402
 from routers import tokens as tokens_router           # noqa: E402
-from routers import sessions as sessions_router       # noqa: E402
+from routers import test_sessions as sessions_router       # noqa: E402
 from routers import diagnostics_queue as diagnostics_queue_router  # noqa: E402
 from routers import ref_docs as ref_docs_router       # noqa: E402
 from routers import branches as branches_router       # noqa: E402

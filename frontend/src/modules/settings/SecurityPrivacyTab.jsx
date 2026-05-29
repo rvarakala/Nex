@@ -17,6 +17,7 @@ import {
 import { useVault } from '../../crypto/VaultContext';
 import { buildVaultSetupPayload } from '../../crypto/clinicVault';
 import MfaSetupCard from './MfaSetupCard';
+import SessionsList from './SessionsList';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND}/api/vault`;
@@ -116,6 +117,14 @@ export default function SecurityPrivacyTab() {
           Sign-in protection
         </div>
         <MfaSetupCard />
+      </section>
+
+      {/* ── Sessions & devices (Gmail-style) ── */}
+      <section className="mt-10">
+        <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-3">
+          Sessions &amp; devices
+        </div>
+        <SessionsList />
       </section>
     </div>
   );

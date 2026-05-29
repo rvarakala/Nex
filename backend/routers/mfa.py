@@ -305,9 +305,12 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, db=Depen
         if not pyotp.TOTP(secret).verify(payload.code.strip(), valid_window=1):
             raise HTTPException(status_code=401, detail="Invalid code")
 
+    from routers.user_sessions import mint_session_row
+    sid = await mint_session_row(db, user, request, purpose="mfa")
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
         token_version=int(user.get("token_version", 0) or 0),
+        session_id=sid,
     )
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0})
 

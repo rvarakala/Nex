@@ -108,11 +108,15 @@ def _extract_ip(request: Optional[Request]) -> Optional[str]:
     return request.client.host if request.client else None
 
 
-async def record_heartbeat(db, user_id: str, request: Optional[Request] = None) -> None:
+async def record_heartbeat(db, user_id: str, request: Optional[Request] = None, session_id: Optional[str] = None) -> None:
     """Update user.last_seen_at. Throttled to 1 write/min per user, per process.
 
     This powers the "Who's online now" widget — anyone with a last_seen_at
     within ONLINE_WINDOW_SECONDS is considered currently active.
+
+    When `session_id` is supplied (every recent JWT carries one), we also
+    bump `user_sessions.last_seen_at` so the Sessions & Devices page shows
+    a fresh "last activity" without a separate write on every request.
     """
     now = datetime.now(timezone.utc)
     last = _last_heartbeat_written.get(user_id)
@@ -126,6 +130,9 @@ async def record_heartbeat(db, user_id: str, request: Optional[Request] = None) 
             {"user_id": user_id},
             {"$set": {"last_seen_at": now, "last_seen_ip": ip, "last_seen_ua": ua}},
         )
+        if session_id:
+            from routers.user_sessions import touch_session_last_seen
+            await touch_session_last_seen(db, session_id)
     except Exception:
         # Never break an authenticated request because of heartbeat write failure
         pass
