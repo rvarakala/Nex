@@ -50,6 +50,13 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem(TOKEN_KEY, r.data.access_token);
     setUser(r.data.user);
     setClinic(r.data.clinic);
+    // Enrich the in-memory user with fields only returned by /auth/me
+    // (e.g. `mfa_enforcement` for the platform-admin grace banner).
+    try {
+      const me = await axios.get(`${API}/auth/me`);
+      setUser(me.data.user);
+      setClinic(me.data.clinic);
+    } catch { /* keep the post-login user */ }
     return r.data.user;
   };
 
@@ -60,6 +67,11 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem(TOKEN_KEY, r.data.access_token);
     setUser(r.data.user);
     setClinic(r.data.clinic);
+    try {
+      const me = await axios.get(`${API}/auth/me`);
+      setUser(me.data.user);
+      setClinic(me.data.clinic);
+    } catch { /* keep the post-login user */ }
     return r.data.user;
   };
 

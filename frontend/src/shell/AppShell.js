@@ -14,6 +14,7 @@ import ClinicSwitcher from './ClinicSwitcher';
 import { useTestContext } from '../TestContext';
 import CommandPalette from './CommandPalette';
 import SignatureNudgeBanner from './SignatureNudgeBanner';
+import MfaEnforcementBanner from './MfaEnforcementBanner';
 import AppSwitcher from './AppSwitcher';
 import { useSubscription } from '../SubscriptionContext';
 import ConnectivityIndicator from '../connectivity/ConnectivityIndicator';
@@ -563,6 +564,7 @@ export default function AppShell({ children }) {
         {/* Content */}
         <main className="flex-1 overflow-auto bg-slate-50" data-testid="app-main">
           <OfflineBanner />
+          <MfaEnforcementBanner />
           <SignatureNudgeBanner />
           {children}
         </main>

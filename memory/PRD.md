@@ -1,5 +1,83 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔒 SECURITY — 2FA enforcement for platform admins (super_admin + founder) (2026-05-29)
+
+### Why
+A stolen platform-admin password compromises **every clinic on AUDINEXA**.
+Optional 2FA isn't enough — internal team accounts need a forced enrolment
+window so the door doesn't stay propped open forever.
+
+### How
+**7-day grace window.** First time a `super_admin` or `founder` makes an
+authenticated request without `mfa_enabled=true`, the backend stamps
+`mfa_grace_started_at` on the user doc. From that moment they have 7 days to
+enable 2FA. After 7 days, every non-MFA endpoint returns **HTTP 403** with
+`code = MFA_ENFORCEMENT_REQUIRED`. The MFA setup endpoints stay reachable so
+the admin can still finish enrolment.
+
+Allowlist (always reachable, even when blocked):
+  `/api/mfa/*`, `/api/auth/mfa/verify-login`, `/api/auth/me`,
+  `/api/auth/logout`, `/api/auth/switch-clinic`, `/api/health`,
+  `/api/_telemetry/*`.
+
+### Frontend UX
+**New `MfaEnforcementBanner`** wired into both `AppShell` and
+`AdminPanel` (founder's command center):
+  - Inside grace → amber banner with countdown ("Your account needs 2FA
+    within N days") + "Set up 2FA →" CTA + dismiss button.
+  - Past grace → rose banner ("Two-factor authentication is required. Your
+    7-day grace window has elapsed…") with non-dismissible CTA.
+Hidden on `/settings/security`, `/login`, `/forgot-password` so it doesn't
+get in the way of the setup flow.
+
+The `/auth/me` response now ships `user.mfa_enforcement` =
+`{required, enabled, blocked, grace_days_left, must_enable_by}`. Login flow
+in `AuthContext` now refreshes from `/auth/me` after login so the banner
+appears immediately on first sign-in (the bare `/auth/login` response
+doesn't include enforcement state).
+
+### Files
+- `backend/auth.py` — `MFA_ENFORCED_ROLES`, `MFA_GRACE_DAYS = 7`,
+  `_mfa_enforcement_check()`, allowlist, blocked-path 403 with
+  `MFA_ENFORCEMENT_REQUIRED` code. `mfa_enforcement` added to
+  `get_current_user()` return value.
+- `backend/tests/test_mfa_enforcement.py` (new) — 3 tests:
+  grace lazily stamped, fresh stamp shows 7 days, past-grace blocks normal
+  endpoints but allowlist works.
+- `frontend/shell/MfaEnforcementBanner.jsx` (new).
+- `frontend/shell/AppShell.js` — banner mounted after `OfflineBanner`.
+- `frontend/modules/admin/panel/AdminPanel.jsx` — banner mounted at top of
+  main.
+- `frontend/AuthContext.js` — refresh from `/auth/me` after login + MFA
+  verify so the banner sees `mfa_enforcement`.
+
+### Verified
+- 7/7 tests PASS (3 new enforcement + 4 launch-blocker from prior session).
+- Smoke 6/6 PASS. ESLint + Ruff clean.
+- Live UI screenshots prove: amber countdown banner inside grace, rose
+  blocked banner with dashboard widgets failing (real 403s) after grace
+  elapsed, sidebar nav still works so user can navigate to Settings →
+  Security to enroll.
+
+### Production rollout
+Frontend + backend hot-reload. **No DB migration needed** — `mfa_grace_started_at`
+is stamped lazily on first sighting. Existing super_admin / founder
+accounts get a fresh 7-day window from "the day this code ships", not
+retroactively expired.
+
+### What this changes operationally
+- Every new internal hire must enrol 2FA within 7 days of their first
+  authenticated request.
+- If a current super_admin / founder is on holiday and crosses 7 days
+  without enrolling, they can still reach `/api/mfa/*` + `/api/auth/me`,
+  so they can finish enrolment from a fresh device and recover.
+- A leaked super_admin password is now useless for read/write access after
+  the 7-day grace — attacker can only hit MFA-setup endpoints, which
+  require already being authenticated as the rightful user *and* the user's
+  next TOTP code.
+
+---
+
 ## 🚀 LAUNCH READINESS — 3 Hard P0 Blockers shipped (2026-05-26)
 
 User asked: *"What's left before I can ship to 500 users?"* — assessed honestly,

@@ -79,6 +79,96 @@ def create_access_token(user_id: str, email: str, role: str, clinic_id: str, tok
     return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# MFA enforcement for platform admins (super_admin + founder)
+# ──────────────────────────────────────────────────────────────────────
+#
+# Platform admins can read/write every clinic on the platform. We give them
+# a 7-day grace from "first sighting" to enable 2FA, then refuse every
+# non-MFA endpoint until they do. A stolen super_admin password
+# therefore compromises *nothing* once the grace has elapsed.
+
+MFA_ENFORCED_ROLES = {"super_admin", "founder"}
+MFA_GRACE_DAYS = 7
+
+# Paths a blocked platform-admin can still hit, so they can enable 2FA + see
+# who they are + log out. Everything else returns 403.
+_MFA_ENFORCEMENT_ALLOWLIST_PREFIXES = (
+    "/api/mfa/",                  # /setup/init, /setup/verify, /disable, /status
+    "/api/auth/mfa/verify-login",
+    "/api/auth/me",
+    "/api/auth/logout",
+    "/api/auth/switch-clinic",    # harmless and read-only-ish
+    "/api/health",
+    "/api/_telemetry/",           # let the UI keep reporting JS crashes
+)
+
+
+def _is_path_mfa_setup_only(path: str) -> bool:
+    return any(path == p or path.startswith(p) for p in _MFA_ENFORCEMENT_ALLOWLIST_PREFIXES)
+
+
+async def _mfa_enforcement_check(db, user: dict, request: Request) -> dict:
+    """Returns `{required, enabled, grace_days_left, blocked, must_enable_by}`.
+
+    Side effects: lazily stamps `mfa_grace_started_at` on the user doc the
+    first time we see a platform admin without 2FA.
+
+    Raises 403 when the user is past grace and the path isn't on the
+    allowlist of "setup-only" endpoints.
+    """
+    role = user.get("role")
+    if role not in MFA_ENFORCED_ROLES:
+        return {"required": False, "enabled": bool(user.get("mfa_enabled")), "blocked": False}
+
+    if user.get("mfa_enabled"):
+        return {"required": True, "enabled": True, "blocked": False, "grace_days_left": None}
+
+    now = datetime.now(timezone.utc)
+    started_iso = user.get("mfa_grace_started_at")
+    if not started_iso:
+        # First sighting — stamp the start of the grace window.
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"mfa_grace_started_at": now.isoformat()}},
+        )
+        started = now
+    else:
+        try:
+            started = datetime.fromisoformat(str(started_iso).replace("Z", "+00:00"))
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+        except (ValueError, AttributeError):
+            started = now
+
+    elapsed = now - started
+    grace_left = max(0, MFA_GRACE_DAYS - elapsed.days)
+    must_enable_by = (started + timedelta(days=MFA_GRACE_DAYS)).isoformat()
+    blocked = elapsed >= timedelta(days=MFA_GRACE_DAYS)
+
+    if blocked and not _is_path_mfa_setup_only(request.url.path):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "MFA_ENFORCEMENT_REQUIRED",
+                "message": (
+                    "Two-factor authentication is mandatory for platform admin "
+                    "accounts. The 7-day grace period has elapsed — enable 2FA "
+                    "in Settings → Security & Privacy to continue."
+                ),
+                "must_enable_by": must_enable_by,
+            },
+        )
+
+    return {
+        "required": True,
+        "enabled": False,
+        "blocked": blocked,
+        "grace_days_left": grace_left,
+        "must_enable_by": must_enable_by,
+    }
+
+
 def _extract_token(request: Request) -> str:
     header = request.headers.get("Authorization", "")
     if header.startswith("Bearer "):
@@ -134,6 +224,11 @@ async def get_current_user(request: Request):
     token_tv = int(payload.get("tv", 0) or 0)
     if token_tv < current_tv:
         raise HTTPException(status_code=401, detail="Session revoked, please sign in again")
+    # ── MFA enforcement for platform admins (super_admin + founder) ──
+    # We give them a 7-day grace window from first authenticated request,
+    # then block all non-MFA traffic until they enable 2FA.
+    enforcement = await _mfa_enforcement_check(db, user, request)
+
     # Heartbeat — fire-and-forget, never blocks the request
     try:
         from utils.activity import record_heartbeat
@@ -153,6 +248,7 @@ async def get_current_user(request: Request):
         "signature_image_fs_id": user.get("signature_image_fs_id"),
         "license_no": user.get("license_no"),
         "appointment_color": user.get("appointment_color"),
+        "mfa_enforcement": enforcement,
     }
     # Stash on `request.state` so the global error-logger middleware can
     # correlate any crashes raised AFTER auth succeeded (e.g. response

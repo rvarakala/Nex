@@ -35,6 +35,7 @@ const ClinicSwitchAuditPage = lazy(() => import('./ClinicSwitchAuditPage'));
 const ErrorsPage         = lazy(() => import('./ErrorsPage'));
 
 import AdminGlobalSearch from './AdminGlobalSearch';
+import MfaEnforcementBanner from '../../../shell/MfaEnforcementBanner';
 
 const NAV_GROUPS = [
   {
@@ -198,6 +199,7 @@ export default function AdminPanel() {
         </header>
 
         <main className="flex-1 overflow-auto bg-slate-50">
+          <MfaEnforcementBanner />
           <Suspense fallback={
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-2 text-slate-400">
