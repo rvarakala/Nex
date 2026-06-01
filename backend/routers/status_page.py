@@ -17,7 +17,6 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -48,14 +47,14 @@ async def _probe_mongo(db) -> dict:
 async def _probe_backups(db) -> dict:
     """Look at the most recent successful backup row. Stale = degraded."""
     try:
-        row = await db.backup_runs.find_one(
-            {"status": "success"},
-            sort=[("finished_at", -1)],
+        row = await db.backup_history.find_one(
+            {"ok": True},
+            sort=[("at", -1)],
         )
         if not row:
             return {"name": "Daily backups", "status": "unknown",
                     "detail": "No completed runs yet"}
-        finished = row.get("finished_at")
+        finished = row.get("at")
         if isinstance(finished, str):
             try:
                 finished = datetime.fromisoformat(finished.replace("Z", "+00:00"))
@@ -82,7 +81,10 @@ async def _probe_email() -> dict:
     """ZeptoMail uses SMTP; we can't easily ping without sending mail. We
     surface configuration status only — actually-delivering-mail is reported
     via the per-day success-rate we log to `email_audit`."""
-    has_creds = bool(os.environ.get("ZEPTOMAIL_HOST") and os.environ.get("ZEPTOMAIL_PASS"))
+    has_creds = bool(
+        os.environ.get("ZEPTO_SMTP_HOST")
+        and os.environ.get("ZEPTO_SMTP_PASSWORD")
+    )
     return {
         "name": "Email (ZeptoMail)",
         "status": "operational" if has_creds else "unknown",

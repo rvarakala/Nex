@@ -1,5 +1,100 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚀 LAUNCH READINESS — 4 "strongly recommended" 500-user items shipped (2026-06-01)
+
+### Why
+After the 3 hard P0 blockers (Async email, 2FA, DPDPA) plus 2FA enforcement and
+Sessions & Devices shipped in May, four "strongly recommended" defensive items
+were the only thing standing between AUDINEXA and a confident 500-clinic open
+beta. User asked to ship all four in one batch — done.
+
+### 1. Per-tenant rate limiting
+- `backend/rate_limit.py` exports a single `Limiter` keyed by
+  `_tenant_aware_key()` which prefers `clinic:<clinic_id>` from the JWT and
+  falls back to `_proxy_aware_key()` (XFF-aware client IP) for
+  unauthenticated requests.
+- Default ceiling: **600 req/min/clinic**. Login + auth endpoints keep their
+  tighter per-IP bucket via direct `_proxy_aware_key` so brute force can't
+  shelter behind a tenant key.
+- Net effect: a runaway UI loop in *one* clinic gets throttled to that clinic,
+  not the entire shared NAT. Innocent neighbours in the same office building
+  keep full quota.
+
+### 2. New-device email alert
+- `backend/utils/new_device_alert.py:maybe_alert_new_device()` runs after every
+  `mint_session_row()`. Compares the new UA against the user's session history
+  — if unseen, fires a ZeptoMail asking "Was this you?" with a one-click
+  Review-my-sessions link to `/settings/security`.
+- Skips the very first session (signup self-confirmation noise) and rows
+  without a UA (curl / internal tooling).
+- Best-effort, never raises — a Zepto outage can't break login.
+
+### 3. Public Status Page
+- `backend/routers/status_page.py` → `GET /api/status/public` (anonymous,
+  cached 30s). Probes API, MongoDB, Daily backups, ZeptoMail credentials,
+  Twilio credentials, MSG91 credentials, Razorpay live endpoint. Returns
+  `{overall, components, as_of, cache_ttl_seconds}` with status =
+  `operational | degraded | outage | unknown`.
+- `frontend/src/pages/StatusPage.jsx` — public `/status` route (wired in
+  `App.js`). Auto-refresh every 30s, banner + components list + 30s footer
+  hint. No login required. Linkable from marketing footer + Help menu.
+- Probe corrections during build: switched to actual `backup_history`
+  collection + `ok:true` flag + `at` timestamp; switched email probe to
+  `ZEPTO_SMTP_HOST` / `ZEPTO_SMTP_PASSWORD` env vars (matched real names).
+
+### 4. Incident Runbook
+- `/app/memory/INCIDENT_RUNBOOK.md` — 13-section "what do I do at 2am"
+  playbook covering: triage, backend 5xx, frontend white-screen, MongoDB
+  failover/restore, ZeptoMail outage, Twilio outage, MSG91 stub, Razorpay,
+  daily backup misses, admin lockout / 2FA recovery, rate-limit floods,
+  error-spike alerter follow-up, production script execution, and
+  after-action.
+- Primary on-call: `lead@audinexa.com`. Single source of truth for
+  re-onboarding future Emergent Support staff or new internal hires.
+
+### Verified
+- `/api/status/public` returned real component status — Mongo=operational
+  (25ms), Email=operational (creds present), SMS=operational, Razorpay=
+  operational, Backups=outage (preview last run was 2026-05-08, expected),
+  MSG91=unknown (Phase 2 pending). Banner correctly displayed "Service
+  disruption detected" because of the stale backup (truthful — production
+  scheduler will green this).
+- Live UI at `/status` rendered cleanly: AUDINEXA header, banner, 7
+  components with icons, status dots, latency, footer.
+- Smoke 6/6 PASS. Sessions + MFA + launch-blocker regression 10/10 PASS.
+  ESLint + Ruff clean.
+
+### Files
+**Backend**
+- `rate_limit.py` (tenant-aware key + IP fallback)
+- `utils/new_device_alert.py` (new — Zepto-backed alert)
+- `routers/status_page.py` (new — `/api/status/public`)
+- `server.py` (registers status_page router)
+- `routers/user_sessions.py` (calls `maybe_alert_new_device` after mint)
+
+**Frontend**
+- `pages/StatusPage.jsx` (new — public status UI)
+- `App.js` (`/status` route)
+
+**Docs**
+- `/app/memory/INCIDENT_RUNBOOK.md` (new)
+
+### Production rollout
+**Code-only fix. Redeploy preview → production.** No DB migration, no env
+changes required (status probes adapt to whatever credentials are or aren't
+present on prod). On first prod boot, the daily backup cron will run at
+03:00 IST and the Status Page will flip Backups to green within 24h.
+
+### What's left after this
+- 🟠 `localStorage` JWT → `httpOnly` cookies (P1 — XSS hardening)
+- 🟢 Cursor pagination on big lists (P2 — Scalability)
+- 🟢 Loading skeletons (P2 — UX)
+- 🟢 Production backfill of legacy `serial_items.current_patient_id`
+  (script ready; needs Support ticket OR a founder admin endpoint)
+- 🟢 AUDINEXA Connect (MSG91 WhatsApp) Phase 2 (awaiting Hosted Sender Number)
+
+---
+
 ## 🔐 SECURITY — Sessions & Devices (Gmail-style) (2026-05-29)
 
 ### Why

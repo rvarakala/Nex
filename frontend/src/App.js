@@ -38,6 +38,7 @@ import AudinexaCarePage from './modules/care/AudinexaCarePage';
 import LegalPage from './modules/legal/LegalPage';
 import PatientsModule from './modules/patients/PatientsModule';
 import CloseoutPage from './modules/closeout/CloseoutPage';
+import StatusPage from './pages/StatusPage';
 
 // Post-login redirect by role
 const INTERNAL_ADMIN_ROLES = ['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'];
@@ -113,6 +114,7 @@ function AppRoutes() {
               <Route path="/queue/:clinicId" element={<QueueTVPage />} />
               <Route path="/patient-portal" element={<PatientPortal />} />
               <Route path="/patient-portal/:clinicId" element={<PatientPortal />} />
+              <Route path="/status" element={<StatusPage />} />
 
               {/* PUBLIC LEGAL — required for Razorpay / payment gateway KYC */}
               <Route path="/terms" element={<LegalPage />} />
