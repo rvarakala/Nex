@@ -105,6 +105,15 @@ async def mint_session_row(
         "revoked_at":    None,
     }
     await db.user_sessions.insert_one(doc)
+
+    # Best-effort: alert the user if this is a device they've never signed in
+    # from before. Skips the very first session and unknown-UA traffic.
+    try:
+        from utils.new_device_alert import maybe_alert_new_device
+        await maybe_alert_new_device(db, user, doc)
+    except Exception:
+        pass
+
     return sid
 
 
