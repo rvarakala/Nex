@@ -3,6 +3,7 @@ import axios from 'axios';
 import { clearOfflineCache } from './connectivity/offlineCache';
 import { clearOutbox } from './connectivity/outbox';
 import { getCsrfTokenFromCookie, hasCookieSession } from './auth/cookies';
+import { rewriteToSameOriginIfNeeded } from './auth/sameOriginRewriter';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -25,8 +26,26 @@ const LEGACY_TOKEN_KEY = 'acs.token';
 
 axios.defaults.withCredentials = true;
 
+// ----------------------------------------------------------------------------
+// Same-origin auto-correction (production safety net) — implementation lives
+// in `./auth/sameOriginRewriter.js` so it stays pure-JS + unit-testable
+// without dragging axios + React imports into the test runtime.
+//
+// REACT_APP_BACKEND_URL is baked into the bundle at build time, so a misconfig
+// in the deploy pipeline (e.g. shipping audinexa.com with the preview backend
+// URL) causes EVERY API call to go cross-site. Cookies don't attach across
+// hosts → user sees "Not authenticated" on every page even though backend is
+// healthy. The interceptor + window.fetch patch below catch that failure mode
+// at runtime and rewrite cross-origin `/api/*` URLs to the page origin so
+// cookies always attach.
+// ----------------------------------------------------------------------------
+
 axios.interceptors.request.use((config) => {
   config.withCredentials = true;
+  // Rewrite cross-origin API URLs to same-origin so cookies attach. See the
+  // long comment block above for the failure mode this defends against.
+  if (config.url) config.url = rewriteToSameOriginIfNeeded(config.url);
+  if (config.baseURL) config.baseURL = rewriteToSameOriginIfNeeded(config.baseURL);
   const headers = { ...(config.headers || {}) };
   // Legacy bearer for users whose browser still has a localStorage token
   // from before this change shipped. Authorization beats cookies for
@@ -39,6 +58,27 @@ axios.interceptors.request.use((config) => {
   config.headers = headers;
   return config;
 });
+
+// Also patch the global `fetch` so the 2 places that use raw fetch (the
+// connectivity health-pinger + the public waitlist signup) benefit from the
+// same same-origin correction. Limited to `/api/*` URLs — third-party calls
+// (Razorpay, fonts, analytics) pass through untouched.
+if (typeof window !== 'undefined' && window.fetch && !window.__audinexaFetchPatched) {
+  const _origFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    try {
+      if (typeof input === 'string') {
+        input = rewriteToSameOriginIfNeeded(input);
+      } else if (input && typeof input === 'object' && 'url' in input) {
+        // `Request` object — rebuild it with rewritten URL if needed.
+        const rewritten = rewriteToSameOriginIfNeeded(input.url);
+        if (rewritten !== input.url) input = new Request(rewritten, input);
+      }
+    } catch { /* fall through with the original input */ }
+    return _origFetch(input, init);
+  };
+  window.__audinexaFetchPatched = true;
+}
 
 const AuthContext = createContext(null);
 
