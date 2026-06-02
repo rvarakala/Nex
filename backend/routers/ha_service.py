@@ -239,6 +239,7 @@ async def create_ticket(
         technician_user_id=payload.technician_user_id,
         technician_name=tech_name,
         warranty_covered=payload.warranty_covered,
+        repair_location=payload.repair_location,
         created_by_user_id=user["user_id"],
         updated_at=now_iso,
     )

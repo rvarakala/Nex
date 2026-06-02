@@ -77,7 +77,7 @@ class VendorCreate(BaseModel):
 
 SerialState = Literal[
     "IN_STOCK", "RESERVED", "TRIAL_OUT", "SOLD",
-    "LOANER", "SERVICE_IN", "RETURNED", "DAMAGED", "RETIRED",
+    "LOANER", "ON_LOAN", "SERVICE_IN", "RETURNED", "DAMAGED", "RETIRED",
 ]
 
 SerialPool = Literal[
@@ -696,6 +696,31 @@ class ServiceTicket(BaseModel):
     cost_to_patient: float = 0.0
     warranty_covered: bool = False
     loaner_serial_id: Optional[str] = None                      # if a LOANER was issued
+    # ── Loaner lifecycle (Phase 14 — clinical workflow) ─────────────
+    # When a loaner HA is handed to the patient while their own unit
+    # is at the manufacturer, we move the loaner serial IN_STOCK →
+    # ON_LOAN. On return (at patient pickup), ON_LOAN → IN_STOCK and
+    # any refundable deposit is marked refunded.
+    loaner_issued_at: Optional[str] = None
+    loaner_returned_at: Optional[str] = None
+    # Refundable security deposit — clinic-discretion. Blank by default
+    # (your team types it case-by-case, not a per-clinic pre-set). The
+    # 3 timestamps form a deposit lifecycle audit trail.
+    loaner_deposit_amount: Optional[float] = None
+    loaner_deposit_collected_at: Optional[str] = None
+    loaner_deposit_refunded_at: Optional[str] = None
+    loaner_deposit_forfeited_at: Optional[str] = None          # patient walked off + never returned
+    # ── Repair location decision (in-clinic vs send-to-vendor) ──────
+    # Set IN_CLINIC if the audiologist rectifies on-site (steps 1a/1b
+    # of the workflow); set VENDOR if the unit will be shipped to
+    # manufacturer (steps 2-11). Drives whether courier + estimate +
+    # approval flows are even available on the ticket.
+    repair_location: Literal["IN_CLINIC", "VENDOR"] = "IN_CLINIC"
+    # Patient declined the vendor estimate → unit returned without
+    # repair. No invoice / no charge. Reception flags this when the
+    # vendor's return courier reaches us.
+    return_unrepaired: bool = False
+    return_unrepaired_at: Optional[str] = None
     created_by_user_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
@@ -730,7 +755,7 @@ class ServiceTicket(BaseModel):
 # ==================== COURIERS · ESTIMATES · APPROVALS (Phase 12.B) ====================
 
 ShipmentDirection = Literal["OUTBOUND", "INBOUND"]
-ShipmentStatus = Literal["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED",
+ShipmentStatus = Literal["PENDING_AWB", "BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED",
                           "EXCEPTION", "CANCELLED"]
 ApprovalDecision = Literal["PENDING", "APPROVED", "REJECTED"]
 
@@ -743,7 +768,11 @@ class CourierShipment(BaseModel):
     ticket_no: str
     direction: ShipmentDirection
     courier_partner: str                                        # Bluedart, DTDC, Delhivery, Custom
-    awb_number: str
+    # AWB is optional on first booking — courier guys often promise the
+    # number "tomorrow" and reception books the shipment with the unit
+    # already packed. Status sits at PENDING_AWB until the number
+    # arrives; PATCH /couriers/{id}/awb fills it in and flips to BOOKED.
+    awb_number: Optional[str] = None
     dispatch_date: Optional[str] = None
     eta_date: Optional[str] = None
     from_address: Optional[str] = None
@@ -762,7 +791,10 @@ class CourierShipmentCreate(BaseModel):
     ticket_no: str
     direction: ShipmentDirection
     courier_partner: str
-    awb_number: str
+    # AWB-later case: courier guy promised the number "tomorrow".
+    # Reception books with awb_number=None; status sits at PENDING_AWB
+    # until PATCH /couriers/{id}/awb fills it in.
+    awb_number: Optional[str] = None
     dispatch_date: Optional[str] = None
     eta_date: Optional[str] = None
     from_address: Optional[str] = None
@@ -840,6 +872,10 @@ class ServiceTicketCreate(BaseModel):
     complaint: str
     technician_user_id: Optional[str] = None
     warranty_covered: bool = False
+    # IN_CLINIC = audiologist rectifies on-site (steps 1a/1b). VENDOR = ship
+    # to manufacturer (steps 2-11). Defaults to IN_CLINIC because most
+    # tickets start with an in-clinic inspection.
+    repair_location: Literal["IN_CLINIC", "VENDOR"] = "IN_CLINIC"
 
 
 class ServiceTicketUpdate(BaseModel):

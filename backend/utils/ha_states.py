@@ -14,18 +14,20 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
-# 9 legal states
+# 10 legal states. ON_LOAN added in Phase 14 for the loaner lifecycle —
+# IN_STOCK → ON_LOAN at handover, ON_LOAN → IN_STOCK at patient return.
 STATES = frozenset({
     "IN_STOCK", "RESERVED", "TRIAL_OUT", "SOLD",
-    "LOANER", "SERVICE_IN", "RETURNED", "DAMAGED", "RETIRED",
+    "LOANER", "ON_LOAN", "SERVICE_IN", "RETURNED", "DAMAGED", "RETIRED",
 })
 
 # Every other (from, to) pair → 409.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    "IN_STOCK":   frozenset({"RESERVED", "TRIAL_OUT", "SOLD", "LOANER", "SERVICE_IN", "DAMAGED"}),
+    "IN_STOCK":   frozenset({"RESERVED", "TRIAL_OUT", "SOLD", "LOANER", "ON_LOAN", "SERVICE_IN", "DAMAGED"}),
     "RESERVED":   frozenset({"SOLD", "IN_STOCK"}),
     "TRIAL_OUT":  frozenset({"SOLD", "IN_STOCK", "DAMAGED"}),
     "LOANER":     frozenset({"IN_STOCK", "DAMAGED"}),
+    "ON_LOAN":    frozenset({"IN_STOCK", "DAMAGED"}),
     "SERVICE_IN": frozenset({"IN_STOCK", "RETURNED", "DAMAGED"}),
     "SOLD":       frozenset({"SERVICE_IN", "RETURNED"}),
     "DAMAGED":    frozenset({"SERVICE_IN", "RETIRED"}),

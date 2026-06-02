@@ -189,16 +189,20 @@ async def create_shipment(
     if not user_can_see_branch(user, t["branch_id"]):
         raise HTTPException(status_code=403, detail="Ticket not in your branch")
 
-    # Uniqueness: same AWB cannot be booked twice on the same direction
-    dup = await db.ha_courier_shipments.find_one({
-        "clinic_id": user["clinic_id"], "awb_number": payload.awb_number,
-        "direction": payload.direction,
-    }, {"_id": 0, "shipment_id": 1})
-    if dup:
-        raise HTTPException(
-            status_code=409,
-            detail=f"AWB {payload.awb_number} already booked ({dup['shipment_id']})",
-        )
+    # Uniqueness: same AWB cannot be booked twice on the same direction.
+    # Skip uniqueness check when AWB is missing (PENDING_AWB case — the
+    # courier guy promised the number "tomorrow"); we'll re-validate
+    # when the AWB arrives via PATCH /couriers/{id}/awb.
+    if payload.awb_number:
+        dup = await db.ha_courier_shipments.find_one({
+            "clinic_id": user["clinic_id"], "awb_number": payload.awb_number,
+            "direction": payload.direction,
+        }, {"_id": 0, "shipment_id": 1})
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"AWB {payload.awb_number} already booked ({dup['shipment_id']})",
+            )
 
     shid = await next_number(db, "courier", user["clinic_id"])
     doc = CourierShipment(
@@ -215,7 +219,9 @@ async def create_shipment(
         to_address=payload.to_address,
         recipient_name=payload.recipient_name,
         notes=payload.notes,
-        status="BOOKED",
+        # PENDING_AWB while the number is missing; reception will PATCH
+        # it in when the courier guy comes back with the slip.
+        status="BOOKED" if payload.awb_number else "PENDING_AWB",
         created_by_user_id=user["user_id"],
     )
     await db.ha_courier_shipments.insert_one(serialize_datetime(doc.model_dump()))
@@ -695,3 +701,403 @@ async def generate_service_invoice(
         }, "$inc": {"version": 1}},
     )
     return deserialize_datetime(inv.model_dump())
+
+
+# ==================== Phase 14 — Clinical workflow extensions ====================
+
+class AwbStampIn(BaseModel):
+    awb_number: str
+    courier_partner: Optional[str] = None
+    dispatch_date: Optional[str] = None
+    eta_date: Optional[str] = None
+
+
+@router.patch("/couriers/{shipment_id}/awb")
+async def patch_courier_awb(
+    shipment_id: str,
+    payload: AwbStampIn,
+    user=Depends(require_roles(*WRITE_ROLES)),
+    db=Depends(get_db),
+):
+    """Stamp the AWB on a shipment that was booked in PENDING_AWB mode
+    (courier guy promised the number 'tomorrow'). Auto-flips status to
+    BOOKED and re-checks AWB uniqueness within (clinic, direction)."""
+    s = await db.ha_courier_shipments.find_one(
+        {"clinic_id": user["clinic_id"], "shipment_id": shipment_id},
+        {"_id": 0},
+    )
+    if not s:
+        raise HTTPException(404, "Shipment not found")
+    if not user_can_see_branch(user, s["branch_id"]):
+        raise HTTPException(403, "Shipment not in your branch")
+
+    awb = (payload.awb_number or "").strip()
+    if not awb:
+        raise HTTPException(422, "awb_number is required")
+
+    dup = await db.ha_courier_shipments.find_one(
+        {"clinic_id": user["clinic_id"], "awb_number": awb,
+         "direction": s["direction"], "shipment_id": {"$ne": shipment_id}},
+        {"_id": 0, "shipment_id": 1},
+    )
+    if dup:
+        raise HTTPException(
+            status_code=409,
+            detail=f"AWB {awb} already booked ({dup['shipment_id']})",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    upd: dict = {"awb_number": awb, "updated_at": now}
+    if s.get("status") == "PENDING_AWB":
+        upd["status"] = "BOOKED"
+    if payload.courier_partner:
+        upd["courier_partner"] = payload.courier_partner
+    if payload.dispatch_date:
+        upd["dispatch_date"] = payload.dispatch_date
+    if payload.eta_date:
+        upd["eta_date"] = payload.eta_date
+    await db.ha_courier_shipments.update_one(
+        {"clinic_id": user["clinic_id"], "shipment_id": shipment_id},
+        {"$set": upd},
+    )
+    return {**s, **upd}
+
+
+class LoanerIssueIn(BaseModel):
+    loaner_serial_id: str
+    deposit_amount: Optional[float] = None  # blank by default — clinic types it case-by-case
+
+
+@router.post("/service-tickets/{ticket_no}/loaner/issue", status_code=200)
+async def issue_loaner(
+    ticket_no: str,
+    payload: LoanerIssueIn,
+    user=Depends(require_roles(*WRITE_ROLES)),
+    db=Depends(get_db),
+):
+    """Hand a loaner HA to the patient while their unit is at the
+    manufacturer. Moves the loaner serial IN_STOCK → ON_LOAN and stamps
+    the ticket with the loaner_serial_id + optional refundable deposit."""
+    from routers.ha_inventory import transition_serial
+    t = await _ticket(db, user["clinic_id"], ticket_no)
+    if not user_can_see_branch(user, t["branch_id"]):
+        raise HTTPException(403, "Ticket not in your branch")
+    if t.get("loaner_serial_id"):
+        raise HTTPException(409, "Loaner already issued for this ticket")
+    sid = payload.loaner_serial_id
+    serial = await db.serial_items.find_one(
+        {"serial_id": sid, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "state": 1, "serial_no": 1, "pool": 1},
+    )
+    if not serial:
+        raise HTTPException(404, "Loaner serial not found")
+    if serial["state"] != "IN_STOCK":
+        raise HTTPException(409, f"Loaner serial is {serial['state']}, expected IN_STOCK")
+
+    await transition_serial(
+        db, sid, "ON_LOAN",
+        actor_user_id=user["user_id"],
+        ref_doc={"kind": "loaner", "id": ticket_no},
+        note=f"Issued as loaner on ticket {ticket_no}",
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    patch: dict = {
+        "loaner_serial_id": sid,
+        "loaner_issued_at": now,
+        "version_updated_at": now,
+    }
+    if payload.deposit_amount is not None and payload.deposit_amount > 0:
+        patch["loaner_deposit_amount"] = float(payload.deposit_amount)
+        patch["loaner_deposit_collected_at"] = now
+    await db.service_tickets.update_one(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
+        {"$set": patch, "$inc": {"version": 1}},
+    )
+    return {"ok": True, "loaner_serial_id": sid,
+            "loaner_serial_no": serial.get("serial_no"),
+            "deposit_amount": patch.get("loaner_deposit_amount"),
+            "loaner_issued_at": now}
+
+
+class LoanerReturnIn(BaseModel):
+    forfeit_deposit: bool = False  # patient walked off / never returned
+    notes: Optional[str] = None
+
+
+@router.post("/service-tickets/{ticket_no}/loaner/return", status_code=200)
+async def return_loaner(
+    ticket_no: str,
+    payload: LoanerReturnIn,
+    user=Depends(require_roles(*WRITE_ROLES)),
+    db=Depends(get_db),
+):
+    """Patient returns the loaner. Moves serial ON_LOAN → IN_STOCK and
+    refunds the deposit (unless `forfeit_deposit=true` — used when the
+    7-day program expiry hit and patient never showed)."""
+    from routers.ha_inventory import transition_serial
+    t = await _ticket(db, user["clinic_id"], ticket_no)
+    sid = t.get("loaner_serial_id")
+    if not sid:
+        raise HTTPException(409, "No loaner issued on this ticket")
+    if t.get("loaner_returned_at"):
+        raise HTTPException(409, "Loaner already returned")
+
+    await transition_serial(
+        db, sid, "IN_STOCK",
+        actor_user_id=user["user_id"],
+        ref_doc={"kind": "loaner_return", "id": ticket_no},
+        note=f"Loaner returned on ticket {ticket_no}",
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    patch: dict = {"loaner_returned_at": now, "version_updated_at": now}
+    if t.get("loaner_deposit_amount") and not t.get("loaner_deposit_refunded_at"):
+        if payload.forfeit_deposit:
+            patch["loaner_deposit_forfeited_at"] = now
+        else:
+            patch["loaner_deposit_refunded_at"] = now
+    await db.service_tickets.update_one(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
+        {"$set": patch, "$inc": {"version": 1}},
+    )
+    return {"ok": True, **patch}
+
+
+@router.post("/service-tickets/{ticket_no}/mark-return-unrepaired", status_code=200)
+async def mark_return_unrepaired(
+    ticket_no: str,
+    user=Depends(require_roles(*WRITE_ROLES)),
+    db=Depends(get_db),
+):
+    """Patient declined the vendor estimate. Vendor books the return
+    courier (reception fills the AWB later via the courier endpoint).
+    This action flags the ticket as no-charge and creates a placeholder
+    INBOUND courier shell so reception can fill in the AWB when the
+    vendor's courier reaches them."""
+    t = await _ticket(db, user["clinic_id"], ticket_no)
+    if not user_can_see_branch(user, t["branch_id"]):
+        raise HTTPException(403, "Ticket not in your branch")
+    if t.get("return_unrepaired"):
+        raise HTTPException(409, "Already flagged as return-unrepaired")
+
+    # Pre-create inbound courier shell (AWB blank — vendor will book,
+    # reception fills the AWB later via PATCH /couriers/{id}/awb).
+    if not t.get("inbound_shipment_id"):
+        shid = await next_number(db, "courier", user["clinic_id"])
+        doc = CourierShipment(
+            shipment_id=shid,
+            clinic_id=user["clinic_id"],
+            branch_id=t["branch_id"],
+            ticket_no=ticket_no,
+            direction="INBOUND",
+            courier_partner="(pending)",
+            awb_number=None,
+            status="PENDING_AWB",
+            notes="Auto-created on return-unrepaired flag. Awaiting AWB from vendor.",
+            created_by_user_id=user["user_id"],
+        )
+        await db.ha_courier_shipments.insert_one(serialize_datetime(doc.model_dump()))
+    else:
+        shid = t["inbound_shipment_id"]
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.service_tickets.update_one(
+        {"clinic_id": user["clinic_id"], "ticket_no": ticket_no},
+        {"$set": {
+            "return_unrepaired": True,
+            "return_unrepaired_at": now,
+            "warranty_covered": False,  # no charges
+            "cost_to_patient": 0.0,
+            "inbound_shipment_id": shid,
+            "version_updated_at": now,
+        }, "$inc": {"version": 1}},
+    )
+    return {"ok": True, "ticket_no": ticket_no,
+            "inbound_shipment_id": shid, "return_unrepaired_at": now}
+
+
+
+# ==================== SERVICE NOTE PDF ====================
+
+@router.get("/service-tickets/{ticket_no}/service-note.pdf")
+async def service_note_pdf(
+    ticket_no: str,
+    user=Depends(require_roles(*WRITE_ROLES)),
+    db=Depends(get_db),
+):
+    """A4 acknowledgement printed at the moment a HA leaves the clinic
+    for the manufacturer (or is held at the clinic for in-house repair).
+    Doubles as the patient's claim slip + loaner deposit receipt.
+    """
+    from fastapi.responses import Response
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    )
+    from reportlab.lib import colors
+    import io
+
+    t = await _ticket(db, user["clinic_id"], ticket_no)
+    if not user_can_see_branch(user, t["branch_id"]):
+        raise HTTPException(403, "Ticket not in your branch")
+
+    clinic = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "name": 1, "address": 1, "phone": 1, "gstin": 1},
+    ) or {}
+    patient = await db.patients.find_one(
+        {"patient_id": t["patient_id"]},
+        {"_id": 0, "name": 1, "mobile": 1, "mrd": 1},
+    ) or {}
+    serial = None
+    if t.get("serial_id"):
+        serial = await db.serial_items.find_one(
+            {"serial_id": t["serial_id"]},
+            {"_id": 0, "serial_no": 1, "product_id": 1, "warranty_end_date": 1},
+        )
+    product = None
+    if serial and serial.get("product_id"):
+        product = await db.ha_products.find_one(
+            {"product_id": serial["product_id"]},
+            {"_id": 0, "brand": 1, "model": 1},
+        )
+    loaner_serial = None
+    if t.get("loaner_serial_id"):
+        loaner_serial = await db.serial_items.find_one(
+            {"serial_id": t["loaner_serial_id"]},
+            {"_id": 0, "serial_no": 1},
+        )
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+    styles = getSampleStyleSheet()
+    body = styles["BodyText"]
+    body.fontSize = 10
+    flow = []
+
+    flow.append(Paragraph(
+        f"<b>{clinic.get('name', 'Audiology Clinic')}</b>", styles["Title"]
+    ))
+    if clinic.get("address"):
+        flow.append(Paragraph(clinic["address"], body))
+    meta = []
+    if clinic.get("phone"):
+        meta.append(f"Phone: {clinic['phone']}")
+    if clinic.get("gstin"):
+        meta.append(f"GSTIN: {clinic['gstin']}")
+    if meta:
+        flow.append(Paragraph(" &nbsp;·&nbsp; ".join(meta), body))
+    flow.append(Spacer(1, 6 * mm))
+
+    flow.append(Paragraph("<b>SERVICE ACKNOWLEDGEMENT</b>", styles["Heading2"]))
+    flow.append(Spacer(1, 2 * mm))
+
+    header_rows = [
+        ["Ticket No.", t["ticket_no"], "Date", (str(t.get("created_at") or ""))[:10]],
+        ["Patient", patient.get("name", "—"), "Mobile", patient.get("mobile", "—")],
+        ["MRD", patient.get("mrd", "—"), "Repair Location", t.get("repair_location", "—")],
+    ]
+    tbl = Table(header_rows, colWidths=[35 * mm, 55 * mm, 30 * mm, 50 * mm])
+    tbl.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+        ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
+        ("FONT", (2, 0), (2, -1), "Helvetica-Bold", 9),
+        ("BOX", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("INNERGRID", (0, 0), (-1, -1), 0.2, colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    flow.append(tbl)
+    flow.append(Spacer(1, 4 * mm))
+
+    flow.append(Paragraph("<b>Hearing Aid Details</b>", body))
+    unit_lines = []
+    if product:
+        unit_lines.append(f"Make / Model: {product.get('brand', '')} {product.get('model', '')}")
+    if serial:
+        unit_lines.append(f"Serial No.: {serial.get('serial_no', '—')}")
+        if serial.get("warranty_end_date"):
+            unit_lines.append(f"Warranty till: {serial['warranty_end_date']}")
+    if not unit_lines:
+        unit_lines.append("(No HA unit linked)")
+    flow.append(Paragraph("<br/>".join(unit_lines), body))
+    flow.append(Spacer(1, 3 * mm))
+
+    flow.append(Paragraph("<b>Complaint as recorded</b>", body))
+    flow.append(Paragraph(t.get("complaint") or "—", body))
+    flow.append(Spacer(1, 3 * mm))
+
+    if t.get("repair_location") == "VENDOR":
+        msg = ("This unit will be sent to the manufacturer for service. "
+               "We will contact you with the repair estimate once received.")
+    else:
+        msg = ("This unit is held at the clinic for inspection / repair. "
+               "We will contact you with the outcome.")
+    flow.append(Paragraph(f"<i>{msg}</i>", body))
+    flow.append(Spacer(1, 4 * mm))
+
+    if loaner_serial:
+        flow.append(Paragraph("<b>Loaner Hearing Aid Issued</b>", body))
+        ldata = [["Loaner Serial No.", loaner_serial.get("serial_no", "—")]]
+        if t.get("loaner_deposit_amount"):
+            ldata.append([
+                "Refundable Deposit",
+                f"INR {t['loaner_deposit_amount']:.2f}",
+            ])
+        ldata.append([
+            "Notice",
+            "Loaner programmed for ~7 days. Please return on collection of repaired unit.",
+        ])
+        ltbl = Table(ldata, colWidths=[45 * mm, 125 * mm])
+        ltbl.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+            ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
+            ("BOX", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("INNERGRID", (0, 0), (-1, -1), 0.2, colors.lightgrey),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        flow.append(ltbl)
+        flow.append(Spacer(1, 4 * mm))
+
+    flow.append(Paragraph(
+        "<i>Estimated turnaround 10-14 working days, subject to "
+        "manufacturer's availability of spares.</i>", body,
+    ))
+    flow.append(Spacer(1, 10 * mm))
+
+    sig = Table(
+        [["Received by (Clinic)", "Patient / Authorised Signatory"],
+         ["", ""], ["", ""]],
+        colWidths=[85 * mm, 85 * mm], rowHeights=[6 * mm, 14 * mm, 4 * mm],
+    )
+    sig.setStyle(TableStyle([
+        ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
+        ("LINEBELOW", (0, 1), (-1, 1), 0.4, colors.grey),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    flow.append(sig)
+
+    doc.build(flow)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="service-note-{ticket_no}.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+

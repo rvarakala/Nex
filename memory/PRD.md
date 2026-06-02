@@ -1,5 +1,121 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🩺 PHASE 14 — Clinical workflow extensions (2026-06-02)
+
+User walked through the full real-world service flow (Patient brings HA
+in → inspect at clinic → fixable here OR ship to manufacturer → loaner
+issued → courier booked → vendor estimates → patient approves or
+declines → repair / return un-repaired → handover → loaner returned →
+deposit refunded). 5 gaps surfaced vs what was built. All shipped in
+one batch.
+
+### Gap 1 — Decision: in-clinic vs. send-to-vendor
+New `repair_location: Literal["IN_CLINIC", "VENDOR"]` field on
+`ServiceTicketCreate` + persistence model. Defaults `IN_CLINIC` (most
+tickets start that way). Drives downstream UX (whether to show
+courier/estimate flows).
+
+### Gap 2 — AWB-later courier booking
+Real workflow: courier guy promises "AWB tomorrow" — clinic books the
+shipment with the unit packed, AWB filled in later.
+
+- `CourierShipmentCreate.awb_number` + `CourierShipment.awb_number`
+  → `Optional[str]`.
+- New `PENDING_AWB` status in `ShipmentStatus` enum. Status auto-set on
+  booking when AWB is missing; flips to `BOOKED` on PATCH.
+- New endpoint `PATCH /api/ha/couriers/{shipment_id}/awb` →
+  body `{awb_number, courier_partner?, dispatch_date?, eta_date?}`.
+  Validates AWB uniqueness within (clinic, direction) at stamp-time
+  (skipped at create-time when AWB is missing).
+- Server-side uniqueness check made conditional on AWB presence
+  (`if payload.awb_number:`).
+
+### Gap 3 — Loaner state machine
+**New** `ON_LOAN` state added to `SerialState` enum + `STATES` set +
+`ALLOWED_TRANSITIONS` table in `utils/ha_states.py`:
+- `IN_STOCK ↔ ON_LOAN` (issue + return)
+- `ON_LOAN → DAMAGED` (loaner abuse / loss)
+
+New endpoint `POST /api/ha/service-tickets/{tno}/loaner/issue`
+- Body: `{loaner_serial_id, deposit_amount?}` (deposit blank by default
+  per your preference — clinic types it case-by-case).
+- Moves loaner serial `IN_STOCK → ON_LOAN`.
+- Stamps `loaner_serial_id`, `loaner_issued_at`,
+  `loaner_deposit_amount`, `loaner_deposit_collected_at` on the ticket.
+- 409 if a loaner is already issued.
+
+New endpoint `POST /api/ha/service-tickets/{tno}/loaner/return`
+- Body: `{forfeit_deposit?}` (default `false` → refund; `true` →
+  forfeit when 7-day program window hit and patient never returned).
+- Moves loaner serial `ON_LOAN → IN_STOCK`.
+- Stamps `loaner_returned_at` and either `loaner_deposit_refunded_at`
+  or `loaner_deposit_forfeited_at`.
+
+### Gap 4 — Service Note PDF (acknowledgement)
+**New endpoint** `GET /api/ha/service-tickets/{tno}/service-note.pdf` —
+A4 reportlab PDF, served inline. Contents:
+- Clinic header (name, address, phone, GSTIN)
+- "SERVICE ACKNOWLEDGEMENT" title
+- Ticket no., date, patient (name + mobile + MRD), repair_location
+- HA details (make/model/serial/warranty_end_date)
+- Complaint as recorded
+- Italic statement of next steps (VENDOR vs IN_CLINIC variant)
+- Loaner block (serial + ₹ deposit + 7-day notice) if loaner issued
+- Turnaround estimate (10-14 working days)
+- Signature lines (clinic + patient)
+
+### Gap 5 — Return un-repaired
+New endpoint `POST /api/ha/service-tickets/{tno}/mark-return-unrepaired`
+- Sets ticket `return_unrepaired=true`, `warranty_covered=false`,
+  `cost_to_patient=0` (no charges).
+- Auto-creates an **INBOUND CourierShipment** in `PENDING_AWB` state
+  (vendor books the return courier; reception fills the AWB later via
+  the same PATCH endpoint as Gap 2).
+- 409 if already flagged.
+
+### Files
+- New: `/app/backend/tests/test_phase14_service_workflow.py`
+  (9 PASS — full workflow walk).
+- Modified: `/app/backend/models_ha.py` (SerialState +ON_LOAN,
+  ShipmentStatus +PENDING_AWB, CourierShipment{Create}.awb_number
+  Optional, ServiceTicket loaner+deposit+return_unrepaired+
+  repair_location fields, ServiceTicketCreate +repair_location),
+  `/app/backend/utils/ha_states.py` (ON_LOAN in STATES +
+  ALLOWED_TRANSITIONS), `/app/backend/routers/ha_service.py`
+  (repair_location wired into create_ticket),
+  `/app/backend/routers/ha_service_v2.py` (PATCH awb endpoint,
+  loaner issue/return endpoints, mark-return-unrepaired endpoint,
+  service-note PDF endpoint, conditional AWB uniqueness).
+
+### Verified
+- 9/9 Phase 14 workflow tests PASS (covers VENDOR-route ticket,
+  loaner issue/return with deposit lifecycle, AWB-later booking +
+  PATCH + duplicate rejection, mark-return-unrepaired auto-creating
+  inbound shell, Service Note PDF endpoint returning real PDF bytes).
+- **88/88 cumulative critical-path tests PASS** (Phase 14 + iter34 +
+  iter33 + smoke + auth+CSRF + payment+patient legacy + cursor +
+  backfill + CSV + telemetry). Ruff + ESLint clean.
+
+### Production rollout
+**Code-only redeploy.** No data migration needed — new fields are all
+optional with safe defaults. Frontend wiring needed in a follow-up
+batch: (a) ticket-create form gets a Repair Location radio,
+(b) Loaner Issue / Return modals, (c) Courier panel surfaces PENDING_AWB
+shipments + adds the "Stamp AWB" action, (d) "Print Service Note"
+button on ticket detail, (e) "Mark return un-repaired" button visible
+only when ticket has a vendor estimate.
+
+### What's left after this
+- 🟢 Frontend wiring for all 5 gaps above (single UI batch, ~2hr).
+- 🟢 Forfeiture-reason picker on the loaner-return modal (audit trail
+  for the "patient walked off" case).
+- 🟢 Auto-fire loaner-return reminder SMS at 7 days post-issue.
+- 🟠 MSG91 Hosted Sender Number → WhatsApp Phase 2.
+- 🟢 Scheduled CSV email exports · Quiet-hours alerter · CDN ·
+  Structured logs · Atomic next_number().
+
+---
+
 ## 🔧 BUGFIX BATCH — iter34 OUT-OF-WARRANTY service workflow (2026-06-02)
 
 User asked to verify the full **Hearing-aid Service Workflow for an
