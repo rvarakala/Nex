@@ -1,5 +1,117 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎨 PHASE 14 — Frontend wiring + Loaner Fleet Health widget + Quiet Hours (2026-06-02)
+
+Continuation of the backend Phase 14 shipped earlier today. User asked
+to (a) close the frontend gap for the new VENDOR-route service workflow,
+(b) add a "Loaner Fleet Health" widget so owners can monitor expensive
+units in the field, (c) refactor `ServiceTicketsPage.js`, (d) ship a
+quiet-hours toggle for the error-spike alerter (P3).
+
+### 1. Frontend wiring — Phase 14 actions on the live drawer
+- **`AudinexaPipelineDrawer.jsx`** now mounts `<ServiceTicketActions>`
+  (Loaner Issue / Loaner Return / Print Service Note / Mark Return
+  Un-Repaired) gated on `t.repair_location === 'VENDOR' && !pipe.is_terminal`.
+  Mount point: just below the Inspection Summary, before the Courier
+  section.
+- **`ServiceTicketsPage.js`** confirmed already has the Repair Location
+  radio in the create-ticket modal (`data-testid="ha-tix-repair-location-group"`).
+- Discovered the orphan `TicketDetailDrawer` in `ServiceTicketsPage.js`
+  was dead code (page uses `AudinexaPipelineDrawer`); deleted with its
+  `Row` helper → 180 lines removed, file went from 589 → 406 lines.
+
+### 2. Stamp AWB modal on the courier panel
+- **`AudinexaPipelineDrawer.jsx`** — courier table now shows a "Stamp
+  AWB →" link on every `PENDING_AWB` row (`data-testid=
+  audinexa-stamp-awb-{shipment_id}`). Click opens `StampAwbModal` with
+  AWB / Partner / Dispatch / ETA fields, submits `PATCH
+  /api/ha/couriers/{shipment_id}/awb` → backend flips status to BOOKED
+  and re-checks AWB uniqueness within `(clinic, direction)`.
+- Status pill background turns amber for `PENDING_AWB` to highlight the
+  incomplete row.
+
+### 3. Loaner Fleet Health widget — System Health page
+- **Backend** — `GET /api/ha/service/loaner-fleet-health` in
+  `routers/ha_service_v2.py`. Returns:
+  - `on_loan_count` — # serials currently flagged ON_LOAN
+  - `open_tickets` — # tickets with active loaner
+  - `days_out_buckets` — histogram (0-3d / 4-7d / 8-14d / 15d+)
+  - `overdue` (top 20 worst, with patient + days_out + deposit) +
+    `overdue_count`
+  - `deposits` ledger (collected / refunded / forfeited / held)
+  - Branch-scoped for non-clinic-wide roles.
+- **Frontend** — new `LoanerFleetHealthCard.jsx` mounted in
+  `SystemHealthPage` right under the Data Maintenance card. 4 KPI tiles
+  + days-out histogram + overdue table + ₹-ledger. Auto-loads on mount;
+  Refresh button to re-fetch.
+- **Verified live** via Playwright screenshot at `/admin/system` —
+  card renders with all 9 data-testids + 4 days-out buckets +
+  Refresh button. Testing agent (iteration_35) confirmed full wiring.
+
+### 4. ServiceTicketsPage.js refactor
+- Deleted unused `TicketDetailDrawer` (lines 408-581) and its `Row`
+  helper. Page now down to 406 lines, all kept code is reachable from
+  the default export.
+- `ServiceTicketPhase14Actions.jsx` already extracted (Phase 14 actions
+  component lives there, mounted in the active `AudinexaPipelineDrawer`).
+
+### 5. Quiet-hours toggle for error-spike alerter (P3)
+- **`utils/error_alerts.py`** — added env vars
+  `ERROR_ALERT_QUIET_HOURS_START` and `ERROR_ALERT_QUIET_HOURS_END`
+  (both HH:MM, 24h, IST). When `now` (IST) falls inside the window
+  (handles wrap-around past midnight), spike notifications are
+  suppressed — the count still accrues, the next-after-window event
+  surfaces it.
+- Helper `_in_quiet_hours(cfg, now_utc)` unit-tested for non-wrap
+  windows, wrap-past-midnight windows, and "either side blank →
+  disabled".
+- **`routers/error_telemetry.py`** — `/admin/v2/errors-alert/config`
+  founder endpoint now returns `quiet_hours: {start, end, enabled,
+  active_now}` so the founder can verify env config.
+- Defaults: both env vars blank → quiet-hours feature disabled, prior
+  behaviour preserved.
+
+### Files
+- New: `/app/frontend/src/modules/admin/panel/LoanerFleetHealthCard.jsx`,
+  `/app/backend/tests/test_phase14_loaner_fleet_health.py` (3 PASS)
+- Modified: `/app/frontend/src/modules/repair/AudinexaPipelineDrawer.jsx`
+  (mount Phase 14 actions, Stamp AWB modal + state), `/app/frontend/src/modules/ha/ServiceTicketsPage.js`
+  (-180 lines: deleted dead `TicketDetailDrawer`), `/app/frontend/src/modules/admin/panel/SystemHealthPage.jsx`
+  (mount LoanerFleetHealthCard), `/app/backend/routers/ha_service_v2.py`
+  (loaner-fleet-health endpoint), `/app/backend/utils/error_alerts.py`
+  (quiet hours), `/app/backend/routers/error_telemetry.py` (expose
+  quiet hours in alerter config)
+
+### Verified
+- **Backend**: 31 cumulative critical-path tests PASS (3 new fleet-health
+  + quiet-hours + 9 phase14 + 16 iter34 + 3 alerter + smoke). Ruff +
+  ESLint clean.
+- **Frontend (iteration_35)**: Loaner Fleet Health card fully verified
+  rendering with all 9 expected data-testids. Phase 14 action panel +
+  StampAwbModal + LoanerIssueModal + LoanerReturnModal code-reviewed by
+  testing agent — wiring is exact. /repair/jobs route screenshot
+  confirmed "+ New Ticket" modal with Repair Location radio.
+
+### Production rollout
+**Code-only redeploy.** No DB migration. To enable quiet hours in
+production, set (IST hours):
+```
+ERROR_ALERT_QUIET_HOURS_START=22:00
+ERROR_ALERT_QUIET_HOURS_END=07:00
+```
+
+### What's left after this
+- 🟢 Scheduled CSV email exports — "Email me this view weekly" toggle.
+- 🟢 Dedicated frontend HA Sales list page (backend cursor mode is ready).
+- 🟢 Forfeiture-reason picker on loaner-return modal.
+- 🟢 Auto-fire loaner-return reminder SMS at 7-day post-issue.
+- 🟢 CDN (Cloudflare) for frontend bundles — needs user DNS access.
+- 🟢 Structured JSON logging + log aggregation.
+- 🟢 Autonomous Agents roadmap (Clinic Onboarding Assistant, etc.).
+- 🟠 MSG91 Hosted Sender Number → WhatsApp Phase 2 (blocked on user).
+
+---
+
 ## 🩺 PHASE 14 — Clinical workflow extensions (2026-06-02)
 
 User walked through the full real-world service flow (Patient brings HA
