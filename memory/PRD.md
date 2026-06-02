@@ -1,5 +1,114 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔒 SECURITY — `localStorage` JWT → `httpOnly` cookies + CSRF double-submit (2026-06-01)
+
+### Why
+XSS hardening (P1). Until today every authenticated user's JWT lived in
+`localStorage.acs.token` — readable by any third-party script that
+somehow made it past CSP. One bad-actor analytics tag or a one-line
+prototype-pollution vulnerability in any of our 700+ npm transitive deps
+was enough to exfiltrate every clinic owner's access token. Cookies with
+`HttpOnly` close that door: the browser holds the token, but no JS on the
+page can read or forward it.
+
+### How
+**Backend** — new `utils/auth_cookies.py:set_auth_cookies(response, token)`
+sets two cookies on every login path:
+- `access_token` → **HttpOnly, Secure, SameSite=Lax, Max-Age=7d, Path=/**
+  → contains the JWT. JS cannot read this.
+- `audinexa_csrf` → **NOT HttpOnly** (JS-readable), Secure, SameSite=Lax,
+  same expiry. Random 32-byte token. Used for the double-submit pattern.
+
+Cookies set on: `POST /api/auth/login`, `POST /api/auth/mfa/verify-login`,
+`POST /api/auth/switch-clinic`. New `POST /api/auth/logout` clears both
+(idempotent, callable from anywhere). `auth._extract_token()` already
+accepted a cookie fallback — no change needed there.
+
+**CSRF guard** — new `CsrfMiddleware` in `server.py`. For every
+state-changing method (POST/PUT/PATCH/DELETE):
+1. Skip the 5 exempt paths (login, logout, mfa/verify-login, telemetry
+   ingest, public clinic-signup — all of which have their own auth or
+   are anonymous).
+2. If the request carries `Authorization: Bearer …` → exempt (API
+   clients, pytest, curl — these cannot be CSRF'd by a browser since
+   the malicious site can't forge an Authorization header).
+3. Else if `access_token` cookie exists → require `X-CSRF-Token` header
+   == `audinexa_csrf` cookie. Mismatch → **403 "CSRF token missing or
+   mismatched"**.
+4. Else no cookie auth → let the endpoint's normal auth check handle it.
+
+**Frontend** — full `AuthContext.js` rewrite:
+- `axios.defaults.withCredentials = true` so cookies travel on every
+  request automatically.
+- Request interceptor reads `audinexa_csrf` from `document.cookie` and
+  attaches `X-CSRF-Token` header. Still attaches `Authorization: Bearer
+  <legacy>` if a stale `localStorage.acs.token` exists (zero-downtime
+  cutover — live sessions don't get force-logged-out).
+- `login()` / `loginVerifyMfa()` / `switchClinic()` all **remove** the
+  legacy localStorage token after a successful response. New cookie
+  session takes over.
+- `logout()` POSTs to `/api/auth/logout` so the server clears its
+  cookies, then does the existing local cache wipe.
+- One deliberate exception: `loginWithToken()` (public clinic signup
+  flow) still writes to localStorage because the JWT arrives in a JSON
+  response, not a cross-site Set-Cookie. The axios interceptor's
+  Bearer fallback picks it up. Acceptable tradeoff for a one-time
+  onboarding step.
+
+**Cookie domain** — user chose **option (a)**: empty `AUTH_COOKIE_DOMAIN`
+= exact-host-only (apex `audinexa.com`). Matches the current architecture
+where API and frontend share one domain. Override via env var if the API
+ever moves to its own subdomain.
+
+### Files
+- New: `/app/backend/utils/auth_cookies.py`,
+  `/app/frontend/src/auth/cookies.js`,
+  `/app/backend/tests/test_auth_cookies_csrf.py` (6 tests, all PASS)
+- Modified: `/app/backend/server.py` (CsrfMiddleware + Response param
+  on login + logout endpoint + set_auth_cookies on switch-clinic),
+  `/app/backend/routers/mfa.py` (set_auth_cookies on verify-login),
+  `/app/frontend/src/AuthContext.js` (full rewrite — withCredentials,
+  CSRF, no-localStorage-on-login)
+
+### Verified end-to-end
+- **Backend regression**: 6/6 cookie+CSRF tests PASS + 26 cumulative
+  critical-path tests PASS (smoke, sessions, MFA enforcement, launch
+  blockers, appointments filter, service ticket, awb guard). Ruff +
+  ESLint clean.
+- **Live browser verification (testing_agent_v3_fork iteration_31)**:
+  - Login as `founder@audinexa.com` → both cookies set correctly,
+    `access_token` is HttpOnly (Playwright `cookies()` confirms; JS
+    `document.cookie` only shows `audinexa_csrf`).
+  - `localStorage.getItem('acs.token') === null` after login. ← the key
+    XSS-hardening guarantee.
+  - Navigated to `/admin`, `/patients`, `/appointments`, `/settings`
+    — all loaded without 401.
+  - `fetch('/api/auth/me', {credentials:'include'})` from the browser
+    console (cookie-only, no Bearer) → 200.
+  - "Sign out" button → POST `/api/auth/logout` → 200, both cookies
+    removed by the browser, redirect to `/login`. Post-logout
+    `/auth/me` → 401.
+
+### Production rollout
+**Code-only.** No DB migration, no env vars *required* (defaults are
+correct for apex-only deployment). On redeploy:
+1. Existing users with valid `localStorage.acs.token` continue
+   working via the legacy Bearer fallback until their token expires;
+   their next login transparently migrates them to cookies.
+2. CSRF middleware activates immediately for every cookie-authenticated
+   request. Bearer-auth requests stay exempt.
+3. Optional: set `AUTH_COOKIE_DOMAIN=audinexa.com` in production env
+   if you want to lock the cookie to that exact host explicitly
+   (otherwise it inherits from the request origin, which is fine).
+
+### One follow-up worth noting
+The testing agent flagged: AppShell "Sign out" button has no
+`data-testid` yet (testing had to fall back to text matching). Trivial
+addition — consider adding `data-testid="appshell-logout"` next time
+that file's touched.
+
+---
+
 ## 🚀 LAUNCH READINESS — 4 "strongly recommended" 500-user items shipped (2026-06-01)
 
 ### Why
