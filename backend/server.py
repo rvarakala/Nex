@@ -187,13 +187,31 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             logger.debug(f"login_events index skip: {e}")
         # AUDINEXA Couriers / Estimates / Approvals (Phase 12.B)
-        await db.ha_courier_shipments.create_index("shipment_id", unique=True)
+        # ── Multi-tenant numbered IDs ──────────────────────────────────
+        # `shipment_id`, `estimate_id`, `approval_id` are minted as
+        # `CSH/EST/APR-YYYY-NNNN` via `next_number()`, which keeps a
+        # per-(clinic, year) counter. Two clinics legitimately mint the
+        # same number — so the unique index MUST be (clinic_id, <id>)
+        # NOT global. We drop any pre-existing global unique index
+        # (idempotent: ignore the error if it never existed) before
+        # creating the correct compound one. This fixes Bug B from
+        # iter34 QA: tenant-A getting HTTP 500 because tenant-B already
+        # owned the same CSH-2026-0002.
+        for coll, field in (
+            (db.ha_courier_shipments, "shipment_id"),
+            (db.ha_service_estimates, "estimate_id"),
+            (db.ha_customer_approvals, "approval_id"),
+        ):
+            try:
+                await coll.drop_index(f"{field}_1")
+            except Exception:  # noqa: BLE001  — index already absent
+                pass
+            await coll.create_index([("clinic_id", 1), (field, 1)], unique=True)
+        await db.ha_courier_shipments.create_index("shipment_id")
         await db.ha_courier_shipments.create_index([("clinic_id", 1), ("ticket_no", 1)])
         await db.ha_courier_shipments.create_index([("clinic_id", 1), ("status", 1), ("direction", 1)])
         await db.ha_courier_shipments.create_index([("clinic_id", 1), ("awb_number", 1), ("direction", 1)], unique=True)
-        await db.ha_service_estimates.create_index("estimate_id", unique=True)
         await db.ha_service_estimates.create_index([("clinic_id", 1), ("ticket_no", 1)])
-        await db.ha_customer_approvals.create_index("approval_id", unique=True)
         await db.ha_customer_approvals.create_index([("clinic_id", 1), ("ticket_no", 1)])
         await db.ha_customer_approvals.create_index([("clinic_id", 1), ("decision", 1)])
         await db.report_deliveries.create_index("delivery_id", unique=True)

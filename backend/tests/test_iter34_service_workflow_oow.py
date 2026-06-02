@@ -357,6 +357,18 @@ def test_08_generate_invoice(token, mongo):
     CTX["inv_tax_total"] = inv["tax_total"]
     # Hard assertion: amounts are populated & internally consistent
     assert abs((inv["subtotal"] + inv["tax_total"]) - inv["grand_total"]) < 0.05
+    # Bug C fix: estimate conveyed_amount=3000 must now be treated as
+    # INCLUSIVE → subtotal=2542.37, tax=457.63, grand=3000 (within
+    # ₹0.5 round-off tolerance for the rounded_total).
+    assert abs(inv["grand_total"] - 3000.0) < 1.0, (
+        f"Bug C regression — grand={inv['grand_total']}, expected ~3000"
+    )
+    assert abs(inv["subtotal"] - 2542.37) < 1.0, (
+        f"Bug C regression — subtotal={inv['subtotal']}, expected ~2542.37"
+    )
+    assert abs(inv["tax_total"] - 457.63) < 1.0, (
+        f"Bug C regression — tax_total={inv['tax_total']}, expected ~457.63"
+    )
 
     # Ticket has invoice_id / invoice_no stamped
     t = mongo.service_tickets.find_one({"clinic_id": CLINIC_ID, "ticket_no": CTX["ticket_no"]})
@@ -526,22 +538,29 @@ def test_14_server_does_not_validate_warranty_flag(token, mongo):
     r = requests.post(f"{API}/ha/service-tickets", json=body, headers=H(token), timeout=15)
     CTX["bug_a_status_code"] = r.status_code
     CTX["bug_a_response"] = r.text[:400]
-    # Whatever happens — clean up the bonus ticket
-    if r.status_code in (200, 201):
-        bonus_tno = r.json().get("ticket_no")
-        if bonus_tno:
-            mongo.service_tickets.delete_many(
-                {"clinic_id": CLINIC_ID, "ticket_no": bonus_tno}
-            )
-        # The server silently accepted a wrong flag — surface as xfail finding
-        pytest.xfail(
-            "Bug A confirmed: server accepts warranty_covered=true on a "
-            f"serial whose warranty_end_date is in the past. HTTP "
-            f"{r.status_code}. No server-side cross-check vs serial."
+
+    # After the Bug A fix: server MUST override the lying warranty_covered=true
+    # flag to False and include a warranty_override_note in the response. The
+    # ticket is still created (we don't want to block clinic ops over a UI
+    # mistake) but the billing-integrity hole is closed.
+    assert r.status_code in (200, 201), r.text
+    body_out = r.json()
+    bonus_tno = body_out.get("ticket_no")
+    if bonus_tno:
+        # Clean up the bonus ticket — but check the flag first
+        assert body_out.get("warranty_covered") is False, (
+            "Server still accepted warranty_covered=true on OOW serial — "
+            f"got: {body_out.get('warranty_covered')}"
         )
-    else:
-        # Server rejected — great, no bug
-        assert r.status_code in (400, 409, 422)
+        assert body_out.get("warranty_override_note"), (
+            "Server overrode the warranty flag but didn't surface a "
+            "warranty_override_note for the UI to display."
+        )
+        assert body_out.get("serial_warranty_active") is False
+        # Cleanup
+        mongo.service_tickets.delete_many(
+            {"clinic_id": CLINIC_ID, "ticket_no": bonus_tno}
+        )
 
 
 # --------------------------------------------------------------------------- #

@@ -150,7 +150,7 @@ async def kpis(user=Depends(get_current_user), db=Depends(get_db)):
 
 # ==================== CREATE ====================
 
-@router.post("/service-tickets", response_model=ServiceTicket, status_code=201)
+@router.post("/service-tickets", response_model=None, status_code=201)
 async def create_ticket(
     payload: ServiceTicketCreate,
     user=Depends(require_roles(*CREATE_ROLES)),
@@ -179,6 +179,8 @@ async def create_ticket(
         tech_name = tech.get("name")
 
     serial_doc = None
+    serial_warranty_active: Optional[bool] = None
+    warranty_message: Optional[str] = None
     if payload.serial_id:
         serial_doc = await db.serial_items.find_one(
             {"serial_id": payload.serial_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
@@ -189,6 +191,34 @@ async def create_ticket(
             raise HTTPException(
                 status_code=409,
                 detail=f"Serial is {serial_doc['state']} — only SOLD / IN_STOCK / RETURNED can enter service",
+            )
+        # ── Server-side warranty check ────────────────────────────────
+        # `warranty_covered` is no longer trusted blindly from the
+        # client. We compare the bound serial's `warranty_end_date`
+        # against today. If the payload claims coverage but the unit is
+        # out of warranty, we OVERRIDE the flag to False (refusing the
+        # ticket would block clinic ops; silent override would hide the
+        # disagreement). The actual warranty status is returned on the
+        # ticket so the UI can show a "Warranty expired on YYYY-MM-DD
+        # — coverage overridden to OUT-OF-WARRANTY" banner.
+        wend = serial_doc.get("warranty_end_date")
+        if wend:
+            try:
+                wend_date = (
+                    datetime.fromisoformat(wend.replace("Z", "+00:00")).date()
+                    if isinstance(wend, str)
+                    else wend
+                )
+                today = datetime.now(timezone.utc).date()
+                serial_warranty_active = wend_date >= today
+            except (TypeError, ValueError):
+                serial_warranty_active = None
+        # If we have a definitive answer, enforce it.
+        if serial_warranty_active is False and payload.warranty_covered:
+            payload.warranty_covered = False
+            warranty_message = (
+                f"Serial {serial_doc.get('serial_no')} warranty ended on "
+                f"{wend} — coverage overridden to OUT-OF-WARRANTY."
             )
 
     ticket_no = await next_number(db, "job", user["clinic_id"])
@@ -223,7 +253,15 @@ async def create_ticket(
             note=f"Service ticket {ticket_no}: {payload.complaint[:80]}",
         )
 
-    return deserialize_datetime(ticket.model_dump())
+    out = deserialize_datetime(ticket.model_dump())
+    # Surface the warranty-override note to the UI when applicable so the
+    # front-desk sees "this is actually OOW" before the patient is told
+    # otherwise. Non-breaking: legacy clients ignore the unknown field.
+    if warranty_message:
+        out["warranty_override_note"] = warranty_message
+    if serial_warranty_active is not None:
+        out["serial_warranty_active"] = serial_warranty_active
+    return out
 
 
 # ==================== UPDATE ====================

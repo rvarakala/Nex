@@ -1,5 +1,115 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔧 BUGFIX BATCH — iter34 OUT-OF-WARRANTY service workflow (2026-06-02)
+
+User asked to verify the full **Hearing-aid Service Workflow for an
+OOW unit**. The testing agent walked it end-to-end (RECEIVE → ESTIMATE
+→ APPROVE → REPAIR → INVOICE → PAY → RESOLVE → CLOSE → serial back to
+patient) and surfaced **3 production-grade bugs** plus a v1/v2 coherence
+note. All three fixed.
+
+### Bug A 🔴 — Server trusted client-supplied warranty_covered flag
+**Risk:** An audiologist could create a service ticket with
+`warranty_covered=true` on a serial whose warranty expired 6 months
+ago. The system had NO server-side cross-check against
+`serial_items.warranty_end_date`. Free repairs on OOW units (revenue
+loss) OR paid repairs on in-warranty units (patient anger). Either
+way: silent billing miscoding.
+
+**Fix** (`routers/ha_service.py:create_ticket`):
+- Resolves `serial.warranty_end_date` at create-time.
+- If today > warranty_end_date AND `payload.warranty_covered=true`,
+  **force-override** the flag to False (we don't reject — that would
+  block legitimate ops over a UI mistake).
+- Response now carries `warranty_override_note` (free-form message
+  for the UI to display) + `serial_warranty_active` (boolean,
+  available for any client to inspect).
+- Backward compat preserved — fresh tickets without a serial_id are
+  unaffected.
+
+### Bug B 🔴 — Multi-tenant global unique-index collision
+**Risk:** **Hard-blocked onboarding.** `ha_courier_shipments.shipment_id`
+had a globally-unique Mongo index, but the IDs themselves
+(`CSH-YYYY-NNNN`) are minted via per-(clinic, year) counters. Once two
+tenants reach overlapping counter ranges, every subsequent shipment
+creation returns HTTP 500 (DuplicateKeyError). Same shape applied to
+`ha_service_estimates.estimate_id` and `ha_customer_approvals.approval_id`.
+
+**Fix** (`server.py` index bootstrap):
+- Drop the global unique index on `shipment_id`, `estimate_id`,
+  `approval_id` (idempotent — handles "never existed" cleanly).
+- Recreate as compound `(clinic_id, <id>)` unique — matches the
+  pattern already correctly used by `service_tickets` +
+  `ha_sales`.
+- Verified post-deploy: `clinic_id_1_shipment_id_1` etc. exist and
+  carry the UNIQUE flag.
+- `invoice_id` left global-unique because it uses UUID, not a
+  per-tenant sequence — no collision risk by construction.
+
+### Bug C 🔴 — Service invoices over-billed by 18% GST
+**Risk:** Every OOW repair invoice. Quoted estimate of ₹3,000
+generated an invoice for ₹3,540. **Direct revenue overcharge** —
+each clinic eating customer goodwill on every chargeable repair.
+
+**Fix** (`routers/ha_service_v2.py:generate_service_invoice`):
+- Flipped `pseudo_service["gst_inclusive"]` from `False` to `True`.
+- Justification: the **conveyed_amount** the customer approved IS
+  the final amount they pay. GST law requires the tax invoice to
+  back-calculate taxable base + tax from that inclusive total —
+  exactly what `_compute_line` now does.
+- Verified: `conveyed_amount=3000` →
+  `subtotal=2542.37 / tax=457.63 / grand=3000`.
+
+### v1/v2 coherence note 🟡 — documented, not fixed
+v1 `/service-tickets/{ticket_no}/resolve` accepts the v2-walked
+status today only because `LEGACY_STATUS_MAP` normalises
+`READY_FOR_PICKUP → in_progress`. Future v2 transitions (e.g.
+`DELIVERED_TO_CLIENT` without going through `READY_FOR_PICKUP`)
+could silently bypass v1's serial SERVICE_IN→RETURNED hand-off.
+**Deferred** as the current workflow demonstrably works end-to-end
+(`test_iter34_service_workflow_oow.py:test_12_serial_returned_to_patient`
+PASSES). Worth a cleanup later — hoist the serial-state side-effect
+into v2 `/transition` and deprecate v1 resolve+close.
+
+### Files
+- New: regression `/app/backend/tests/test_iter34_service_workflow_oow.py`
+  (16 tests, **all PASS** — including the previously-XFAIL Bug A
+  test now firmly passing as a positive assertion)
+- Modified: `/app/backend/routers/ha_service.py` (Bug A — server-side
+  warranty check + override + UI banner fields),
+  `/app/backend/routers/ha_service_v2.py` (Bug C — gst_inclusive=True),
+  `/app/backend/server.py` (Bug B — compound unique indexes)
+
+### Verified
+- 16/16 iter34 OOW workflow tests PASS.
+- **79/79 cumulative critical-path tests PASS** (smoke + auth+CSRF +
+  patient/payment legacy tolerance + cursor + backfill + CSV export +
+  telemetry noise filter + iter33 + iter34). Ruff + ESLint clean.
+
+### Production rollout
+**Code-only redeploy.** On the next deploy:
+1. The index migration runs **idempotently at backend boot** (drop +
+   recreate). Production already has tenants minting overlapping
+   numbers — they'll start succeeding immediately.
+2. New service tickets get the warranty cross-check from the first
+   request.
+3. Service invoices billed AFTER redeploy use the corrected GST
+   split. Existing invoices are unchanged (no data migration).
+
+### What's left after this
+- 🟢 Frontend: render `warranty_override_note` as an amber banner on
+  the ticket detail / receive form so the audiologist sees the
+  override.
+- 🟢 Audit `next_number()` for atomicity (insert + counter bump should
+  be one operation; currently a race risks counter-advance-without-
+  insert).
+- 🟢 Hoist serial side-effects out of v1 /resolve into v2 /transition.
+- 🟠 MSG91 Hosted Sender Number → WhatsApp Phase 2.
+- 🟢 Scheduled CSV email exports · Quiet-hours alerter · CDN ·
+  Structured logging.
+
+---
+
 ## 🔧 BUGFIX BATCH — iter33 QA findings (2026-06-02)
 
 After the QA testing agent ran 4 end-to-end clinical scenarios (new

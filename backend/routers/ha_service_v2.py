@@ -629,15 +629,18 @@ async def generate_service_invoice(
         gst_rate=(SERVICE_GST_RATE if not warranty_covered else 0.0),
         hsn_sac=SERVICE_HSN_SAC,
     )
-    # Service-aware shape — _compute_line wants a dict with `gst_inclusive`,
-    # we want exclusive (line_total = base + GST)
+    # Service-aware shape — _compute_line reads `gst_inclusive` from this dict.
+    # The conveyed_amount the customer approved IS the final amount they pay
+    # (3000 conveyed = 3000 invoice grand-total, NOT 3000 + 18% = 3540).
+    # Treating it as inclusive back-calculates the taxable base + tax split,
+    # which is what GST law requires on a tax-invoice for a quoted service.
     pseudo_service = {
         "name": line_in.description,
         "price": final_amount,
         "is_taxable": line_in.is_taxable,
         "gst_rate": line_in.gst_rate,
         "hsn_sac": line_in.hsn_sac,
-        "gst_inclusive": False,
+        "gst_inclusive": True,
     }
     resolved_line: InvoiceLine = _compute_line(line_in, pseudo_service)
 
