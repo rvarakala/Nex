@@ -956,6 +956,14 @@ app.include_router(ha_quick_sale_router.router)
 # cookie auth (`withCredentials: true`), production was unconfigured for CORS
 # and every login returned "Network Error". The regex fallback below means a
 # similar regression in future just-works without ops intervention.
+#
+# UPDATE 2026-06-02 (second incident): production had `CORS_ORIGINS=*` set on
+# a stale ops config. With `withCredentials: true` on the frontend, the browser
+# REJECTS responses carrying `Access-Control-Allow-Origin: *` — every login
+# returned "Network Error". The block below now **explicitly ignores
+# `CORS_ORIGINS=*`** because it is fundamentally incompatible with our cookie
+# auth model. Operators wanting truly-open CORS would also need to drop cookie
+# auth — not something we'd silently do.
 _cors_raw = os.environ.get('CORS_ORIGINS', '').strip()
 
 # Always-accepted origin pattern (apex audinexa.com + any subdomain like www,
@@ -974,15 +982,15 @@ if _cors_raw and _cors_raw != '*':
     # Explicit allowlist takes precedence. Still allow credentials.
     _allow_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()]
 elif _cors_raw == '*':
-    # Operator explicitly opted into wildcard. Disable credentials so the
-    # browser doesn't reject the response (Allow-Origin: * + credentials is
-    # blocked by spec).
-    logging.getLogger(__name__).warning(
-        "CORS_ORIGINS='*' — credentials disabled. Set explicit origins to re-enable cookies."
+    # IGNORE wildcard. Cookie auth (`withCredentials: true`) means the browser
+    # will refuse responses with `Allow-Origin: *`. Fall through to regex so
+    # legitimate origins (audinexa.com + preview) keep working with cookies.
+    logging.getLogger(__name__).error(
+        "CORS_ORIGINS='*' detected — IGNORED because it breaks cookie auth. "
+        "Falling back to regex (audinexa.com + preview + localhost). "
+        "Set CORS_ORIGINS to an explicit comma-separated allowlist to override."
     )
-    _allow_origins = ['*']
-    _allow_origin_regex = None
-    _allow_credentials = False
+    _allow_origins = []
 else:
     # No env var → use regex-only fallback (still credential-friendly).
     _allow_origins = []
