@@ -9,6 +9,25 @@ value as the `X-CSRF-Token` header on every request. The CSRF middleware
 in `server.py` enforces `header == cookie` for any state-changing request
 authenticated via cookie. Bearer-header-authenticated requests (pytest,
 curl, API clients) are exempt.
+
+Domain resolution (production incident 2026-06-02 #3)
+-----------------------------------------------------
+A founder reported "not authenticated" on every founder-admin page on
+production at `www.audinexa.com`. Root cause: the user landed on
+`www.audinexa.com`, the API silently 308-redirects POSTs to apex
+`audinexa.com`, and the login response set the auth cookies WITHOUT a
+`Domain` attribute. Per RFC 6265 §5.3, a no-Domain cookie is **host-only**
+— it's bound to the exact responding host (`audinexa.com`), not `www`.
+The browser at `www.audinexa.com/dashboard` then never sent the cookie
+on follow-up API calls, so every admin endpoint returned 401.
+
+The fix: when the request host matches the `audinexa.com` family,
+**auto-set `Domain=.audinexa.com`** so cookies are shared between apex +
+www + any future subdomain (api, staging, etc.). Preview pods and
+localhost still get host-only cookies (each preview has a unique host —
+a wildcard makes no sense there).
+
+Operators can override the auto-detection via `AUTH_COOKIE_DOMAIN` env var.
 """
 from __future__ import annotations
 
@@ -16,7 +35,7 @@ import os
 import secrets
 from typing import Optional
 
-from fastapi import Response
+from fastapi import Request, Response
 
 # 7 days — same as JWT_ACCESS_TTL_SECONDS in auth.py.
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60
@@ -24,17 +43,45 @@ COOKIE_MAX_AGE = 7 * 24 * 60 * 60
 ACCESS_COOKIE = "access_token"
 CSRF_COOKIE = "audinexa_csrf"
 
+PROD_APEX = "audinexa.com"
+PROD_COOKIE_DOMAIN = ".audinexa.com"  # leading dot = also matches subdomains
 
-def _cookie_domain() -> Optional[str]:
-    """Optional cookie domain. Default empty = exact-host-only (apex domain),
-    which is the safest setting and matches the deployed `audinexa.com`
-    architecture (no API subdomain split today).
 
-    Set `AUTH_COOKIE_DOMAIN=.example.com` if you ever introduce a separate
-    API subdomain — that's the only case requiring a wildcard domain.
+def _resolve_cookie_domain(request: Optional[Request]) -> Optional[str]:
+    """Decide the cookie `Domain` attribute for this response.
+
+    Priority:
+      1. `AUTH_COOKIE_DOMAIN` env var (operator-controlled override).
+      2. Auto-detect: if the request host is part of the audinexa.com
+         family, return `.audinexa.com` so apex + www share the same
+         cookie jar.
+      3. Otherwise return `None` (host-only — correct for preview pods +
+         localhost, each of which has its own unique hostname).
     """
-    val = os.environ.get("AUTH_COOKIE_DOMAIN", "").strip()
-    return val or None
+    env = os.environ.get("AUTH_COOKIE_DOMAIN", "").strip()
+    if env:
+        return env
+    host = _request_host(request)
+    if host == PROD_APEX or host.endswith("." + PROD_APEX):
+        return PROD_COOKIE_DOMAIN
+    return None
+
+
+def _request_host(request: Optional[Request]) -> str:
+    """Best-effort extraction of the responding hostname. Falls back to
+    the empty string when the request object isn't available (callers
+    that pass `request=None` for some reason)."""
+    if request is None:
+        return ""
+    # Prefer the explicit Host header (covers proxy / load-balancer cases).
+    host = (request.headers.get("host") or "").lower().strip()
+    if not host:
+        try:
+            host = (request.url.hostname or "").lower().strip()
+        except Exception:
+            host = ""
+    # Strip any :port suffix
+    return host.split(":")[0]
 
 
 def _is_production() -> bool:
@@ -44,14 +91,21 @@ def _is_production() -> bool:
     return os.environ.get("AUTH_COOKIE_INSECURE") != "1"
 
 
-def set_auth_cookies(response: Response, token: str) -> str:
+def set_auth_cookies(
+    response: Response,
+    token: str,
+    request: Optional[Request] = None,
+) -> str:
     """Set both auth cookies on a successful login / switch-clinic /
     mfa-verify-login response. Returns the newly-minted CSRF token (so
     the response body can also include it, for clients that want it
     without relying on cookie parsing — e.g. future native mobile apps).
+
+    Pass the FastAPI `Request` so we can auto-scope the cookie Domain
+    correctly for the audinexa.com family (apex + www).
     """
     secure = _is_production()
-    domain = _cookie_domain()
+    domain = _resolve_cookie_domain(request)
     csrf = secrets.token_urlsafe(32)
 
     response.set_cookie(
@@ -60,7 +114,7 @@ def set_auth_cookies(response: Response, token: str) -> str:
         max_age=COOKIE_MAX_AGE,
         httponly=True,         # ← the whole point: JS cannot read this
         secure=secure,
-        samesite="lax",        # blocks the easy CSRF cases; double-submit covers the rest
+        samesite="lax",        # blocks easy CSRF cases; double-submit covers the rest
         path="/",
         domain=domain,
     )
@@ -77,10 +131,21 @@ def set_auth_cookies(response: Response, token: str) -> str:
     return csrf
 
 
-def clear_auth_cookies(response: Response) -> None:
+def clear_auth_cookies(
+    response: Response,
+    request: Optional[Request] = None,
+) -> None:
     """Clear both cookies on logout. We pass the same domain we set them
     with — otherwise the delete-cookie won't match and the browser keeps
     the cookie until it expires."""
-    domain = _cookie_domain()
+    domain = _resolve_cookie_domain(request)
     response.delete_cookie(ACCESS_COOKIE, path="/", domain=domain)
     response.delete_cookie(CSRF_COOKIE, path="/", domain=domain)
+    # Belt-and-braces: legacy sessions established before the auto-domain
+    # fix shipped have host-only cookies on `audinexa.com`. If we're
+    # logging out on the apex (or a subdomain), also try to delete the
+    # host-only variant so old browsers cleanly cross-over to the new
+    # `.audinexa.com` cookie on next login.
+    if domain == PROD_COOKIE_DOMAIN:
+        response.delete_cookie(ACCESS_COOKIE, path="/", domain=None)
+        response.delete_cookie(CSRF_COOKIE, path="/", domain=None)

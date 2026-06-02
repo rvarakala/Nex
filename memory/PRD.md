@@ -1,5 +1,92 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔥 PROD HOTFIX — www↔apex cookie scope: "Not authenticated" on every admin page (2026-06-02 #3)
+
+### Symptom
+Founder reported "Not authenticated" + "Page Loading, Failed" on every
+founder-admin page on **production** (`www.audinexa.com`). Login itself
+succeeded — but as soon as the dashboard tried to fetch KPIs, tenants,
+clinic assignments, etc., everything 401'd. Backend logs were clean. Curl
+probes against the API endpoints from a server (apex `audinexa.com`) all
+returned 200.
+
+### Root cause
+The user lands at `https://www.audinexa.com/login`. Axios POSTs to
+`https://www.audinexa.com/api/auth/login` → the production ingress
+**308-redirects POSTs from www → apex `audinexa.com`** (Cloudflare or
+nginx canonicalisation). Browser follows the redirect — login completes
+on apex. Response sets cookies with NO `Domain` attribute → per RFC 6265
+§5.3, those cookies are **host-only on `audinexa.com`** (the responding
+host), NOT on `www.audinexa.com`.
+
+Browser is then redirected back to the SPA at `www.audinexa.com/dashboard`.
+Every subsequent API call from the SPA goes to `https://www.audinexa.com/api/...`
+→ the browser checks its cookie jar for `www.audinexa.com` → **finds
+nothing** (cookies are on `audinexa.com`, not `www.audinexa.com`) → no
+auth headers sent → backend returns 401 "Not authenticated".
+
+### Fix (`utils/auth_cookies.py`)
+Added `_resolve_cookie_domain(request)` that auto-scopes the cookie
+`Domain` attribute based on the responding host:
+
+```
+host == "audinexa.com" or host.endswith(".audinexa.com")
+    → Domain=.audinexa.com   (apex + www + any future subdomain share)
+preview.emergentagent.com / localhost / anything else
+    → host-only              (each preview has its own host)
+operator override
+    → AUTH_COOKIE_DOMAIN env var (takes precedence)
+```
+
+Threaded `request: Request` through 3 call sites (login, switch-clinic,
+mfa verify-login) + the logout endpoint. `clear_auth_cookies` now also
+deletes the legacy host-only variant when we're on prod so live sessions
+established before this fix migrate cleanly to the new shared-domain
+cookie on next login.
+
+### Files
+- New: `/app/backend/tests/test_cookie_domain_resolution.py` (8 PASS —
+  pins apex/www/subdomain → `.audinexa.com`, preview/localhost → host-only,
+  lookalikes (`my-audinexa.com`) → host-only, env-var override).
+- Modified: `/app/backend/utils/auth_cookies.py` (auto-detect cookie
+  Domain via `request.headers["host"]`), `/app/backend/server.py` (pass
+  `request` through to set_auth_cookies/clear_auth_cookies on login,
+  switch-clinic, logout), `/app/backend/routers/mfa.py` (same for
+  verify-login).
+
+### Verified
+- 32/32 cumulative critical-path tests PASS (8 new cookie domain + 3 CORS
+  wildcard + cookie auth + Phase 14 + smoke).
+- Local curl with `Host: www.audinexa.com` → cookie response shows
+  `Domain=.audinexa.com` ✅
+- Local curl with `Host: audinexa.com` → cookie response shows
+  `Domain=.audinexa.com` ✅
+- Local curl with `Host: careful-feedback.preview.emergentagent.com` →
+  cookie response has NO Domain attribute (host-only) ✅
+- Playwright login on preview pod → cookies host-only, `/auth/me`
+  returns 200, dashboard loads with full KPIs (regression OK).
+
+### Production rollout
+**Code-only redeploy.** No env vars needed (auto-detection handles it).
+After the next prod redeploy:
+1. Existing live sessions with host-only `audinexa.com` cookies continue
+   to work on apex requests.
+2. Next time the user logs out + back in, they get a `.audinexa.com`
+   cookie that travels across www↔apex.
+3. **Optional belt-and-braces**: ops can set `AUTH_COOKIE_DOMAIN=.audinexa.com`
+   in production env to make the behaviour explicit / not rely on
+   auto-detection.
+
+### What's left after this
+- 🟢 Add a "Auth health" probe to `/api/status/public` that simulates a
+  login + a follow-up request and surfaces cookie-scope mismatches
+  within 30s of any deploy (proposed in the previous hotfix's potential
+  improvement — would have caught this within 30s of deploy).
+- 🟢 Scheduled CSV email exports — P1
+- 🟠 MSG91 Hosted Sender Number → WhatsApp Phase 2 (blocked on user)
+
+---
+
 ## 🔥 PROD HOTFIX — CORS wildcard + cookie auth Network Error (2026-06-02)
 
 ### Symptom

@@ -324,7 +324,7 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
     # P1 XSS hardening — set httpOnly cookies (matched on the verify-login
     # path so the post-2FA browser session uses cookie auth).
     from utils.auth_cookies import set_auth_cookies
-    csrf = set_auth_cookies(response, token)
+    csrf = set_auth_cookies(response, token, request)
 
     return {
         "access_token": token,

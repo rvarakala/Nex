@@ -556,7 +556,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     # P1 XSS hardening — also set httpOnly cookies. The JSON body still
     # returns `access_token` for backward compat with existing localStorage
     # clients during the migration window.
-    csrf = set_auth_cookies(response, token)
+    csrf = set_auth_cookies(response, token, request)
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -680,17 +680,17 @@ async def switch_clinic(
             pass
 
     return {"access_token": token, "token_type": "bearer",
-            "csrf_token": set_auth_cookies(response, token),
+            "csrf_token": set_auth_cookies(response, token, request),
             "active_clinic_id": target, "active_clinic_name": clinic["name"]}
 
 
 @api_router.post("/auth/logout")
-async def auth_logout(response: Response):
+async def auth_logout(request: Request, response: Response):
     """Clears the httpOnly auth + CSRF cookies. Idempotent — callable
     without auth (a client that lost its token can still wipe its cookies).
     Frontend should also clear in-memory state + local caches client-side.
     """
-    clear_auth_cookies(response)
+    clear_auth_cookies(response, request)
     return {"ok": True}
 
 
