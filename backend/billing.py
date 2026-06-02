@@ -351,7 +351,7 @@ def _format_patient_address(p: dict) -> Optional[str]:
     return ", ".join(parts) if parts else None
 
 
-@billing_router.get("/billing/invoices", response_model=List[Invoice])
+@billing_router.get("/billing/invoices", response_model=None)
 async def list_invoices(
     status: Optional[str] = None,
     patient_id: Optional[str] = None,
@@ -359,9 +359,14 @@ async def list_invoices(
     to_date: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = 200,
+    cursor: Optional[str] = None,
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):
+    """List invoices. See get_patients() in routers/patients.py for the
+    legacy-array vs paginated-envelope contract."""
+    from utils.pagination import cursor_clause, next_cursor_for
+
     q: dict = {"clinic_id": user["clinic_id"]}
     if status:
         q["status"] = status
@@ -377,8 +382,27 @@ async def list_invoices(
     if search:
         rx = {"$regex": re.escape(search.strip()), "$options": "i"}
         q["$or"] = [{"invoice_no": rx}, {"patient_name": rx}, {"mrd": rx}, {"patient_mobile": rx}]
-    rows = await db.invoices.find(q, {"_id": 0}).sort("invoice_date", -1).to_list(limit)
-    return [_deserialize(r) for r in rows]
+
+    paginated = cursor is not None
+    if paginated and cursor:
+        clause = cursor_clause("invoice_date", "invoice_id", cursor)
+        if clause:
+            if "$or" in q:
+                q = {"$and": [{"$or": q.pop("$or")}, clause, q]}
+            else:
+                q.update(clause)
+
+    cap = max(1, min(int(limit or 50), 500))
+    rows = await (
+        db.invoices.find(q, {"_id": 0})
+        .sort([("invoice_date", -1), ("invoice_id", -1)])
+        .to_list(cap)
+    )
+    items = [_deserialize(r) for r in rows]
+    if paginated:
+        nxt = next_cursor_for(rows, "invoice_date", "invoice_id", cap)
+        return {"items": items, "next_cursor": nxt, "has_more": nxt is not None}
+    return items
 
 
 @billing_router.get("/billing/invoices/{invoice_id}", response_model=Invoice)

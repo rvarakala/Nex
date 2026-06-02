@@ -2,24 +2,35 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { API, fmtINR, fmtDate, StatusPill } from './billingUtils';
-import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
+import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
+
+const PAGE_SIZE = 50;
 
 export default function InvoicesListPage() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [cursor, setCursor] = useState('');
+  const [hasMore, setHasMore] = useState(false);
   const [filter, setFilter] = useState({ status: '', from_date: '', to_date: '', search: '' });
   const [collections, setCollections] = useState(null);
-  const [page, setPage] = useState(1);
-  const pagedInvoices = usePaginationSlice(invoices, page, DEFAULT_PAGE_SIZE);
-  useEffect(() => { setPage(1); }, [filter, invoices.length]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const fetchPage = useCallback(async (reset, useCursor) => {
+    if (reset) setLoading(true); else setLoadingMore(true);
     try {
-      const params = Object.fromEntries(Object.entries(filter).filter(([, v]) => v));
+      const params = { limit: PAGE_SIZE, cursor: useCursor || '' };
+      Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
       const r = await axios.get(`${API}/billing/invoices`, { params });
-      setInvoices(r.data || []);
-    } finally { setLoading(false); }
+      const body = r.data || {};
+      const newRows = Array.isArray(body) ? body : (body.items || []);
+      setInvoices((prev) => reset ? newRows : [...prev, ...newRows]);
+      setCursor(body.next_cursor || '');
+      setHasMore(!!body.has_more);
+    } catch {
+      if (reset) setInvoices([]);
+    } finally {
+      if (reset) setLoading(false); else setLoadingMore(false);
+    }
   }, [filter]);
 
   const loadCollections = useCallback(async () => {
@@ -29,7 +40,8 @@ export default function InvoicesListPage() {
     } catch { setCollections(null); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Filter change → reset & re-fetch from page 1
+  useEffect(() => { fetchPage(true, ''); }, [fetchPage]);
   useEffect(() => { loadCollections(); }, [loadCollections]);
 
   return (
@@ -100,12 +112,14 @@ export default function InvoicesListPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-400 italic">Loading…</td></tr>
+              <tr><td colSpan={7} className="p-0">
+                <div className="p-4"><ListSkeleton rows={6} cols={5} /></div>
+              </td></tr>
             )}
             {!loading && invoices.length === 0 && (
               <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400 italic">No invoices yet. Click "+ New Invoice" to create one.</td></tr>
             )}
-            {pagedInvoices.map((inv) => (
+            {!loading && invoices.map((inv) => (
               <tr key={inv.invoice_id} data-testid={`inv-row-${inv.invoice_id}`}
                   className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-3 py-2 font-mono text-slate-700">
@@ -126,7 +140,7 @@ export default function InvoicesListPage() {
             ))}
           </tbody>
         </table>
-        <Pagination page={page} setPage={setPage} total={invoices.length} testidPrefix="invoices-pagination" />
+        <LoadMoreButton hasMore={hasMore} loading={loadingMore} onClick={() => fetchPage(false, cursor)} />
       </div>
     </div>
   );

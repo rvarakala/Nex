@@ -122,9 +122,25 @@ async def check_duplicate_patient(
     return {"matches": matches}
 
 
-@router.get("/patients", response_model=List[Patient])
-async def get_patients(search: Optional[str] = None, limit: int = 100,
-                       user=Depends(get_current_user), db=Depends(get_db)):
+@router.get("/patients", response_model=None)
+async def get_patients(
+    search: Optional[str] = None,
+    limit: int = 100,
+    cursor: Optional[str] = None,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """List patients for this clinic.
+
+    Two modes:
+    - **Legacy / array mode** (no `cursor` param) — returns `[Patient, ...]`
+      truncated to `limit`. Preserves backward compat for the 30+ call sites
+      that haven't migrated yet.
+    - **Cursor mode** (`?cursor=…` present, even if empty) — returns
+      `{items, next_cursor, has_more}`. Use this for paginated UIs.
+    """
+    from utils.pagination import cursor_clause, next_cursor_for
+
     query: dict = {"clinic_id": user["clinic_id"]}
     if search:
         safe = re.escape(search.strip())
@@ -134,8 +150,42 @@ async def get_patients(search: Optional[str] = None, limit: int = 100,
                 {"name": rx}, {"mobile": rx}, {"alternate_mobile": rx},
                 {"phone": rx}, {"patient_id": rx}, {"mrd": rx},
             ]
-    patients = await db.patients.find(query, {"_id": 0}).sort("updated_at", -1).to_list(limit)
-    return [deserialize_datetime(p) for p in patients]
+
+    # `cursor` query-param is present in the URL even when its value is
+    # empty (= first page) — that's our signal to return the pagination
+    # envelope. We can't distinguish "not provided" from "= empty string"
+    # at the FastAPI layer easily, so we use the value-is-not-None hack:
+    # FastAPI defaults `Optional[str]` to None when the param is omitted.
+    paginated = cursor is not None
+
+    if paginated and cursor:
+        clause = cursor_clause("updated_at", "patient_id", cursor)
+        if clause:
+            # If query already has $or (from `search`), nest into $and so
+            # both filter sets are required.
+            if "$or" in query:
+                query = {"$and": [{"$or": query.pop("$or")}, clause, query]}
+            else:
+                query.update(clause)
+
+    cap = max(1, min(int(limit or 50), 500))
+    fetch_limit = cap if paginated else cap
+
+    rows = await (
+        db.patients.find(query, {"_id": 0})
+        .sort([("updated_at", -1), ("patient_id", -1)])
+        .to_list(fetch_limit)
+    )
+    items = [deserialize_datetime(p) for p in rows]
+
+    if paginated:
+        nxt = next_cursor_for(rows, "updated_at", "patient_id", fetch_limit)
+        return {
+            "items": items,
+            "next_cursor": nxt,
+            "has_more": nxt is not None,
+        }
+    return items
 
 
 @router.get("/patients/{patient_id}", response_model=Patient)

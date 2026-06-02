@@ -1,0 +1,46 @@
+{
+  "summary": "P2 verification — cursor pagination on lists (Patients / Invoices / HA Sales), founder backfill admin endpoint, and list skeletons + Load More UX. 9/9 new backend pytest cases PASS (test_cursor_pagination.py + test_admin_backfill.py). Live API curl against the preview URL confirms (a) legacy array shape preserved when ?cursor= is omitted on /api/patients, /api/billing/invoices, /api/ha/sales (critical for the 30+ existing call sites) and (b) envelope shape {items,next_cursor,has_more} returned when ?cursor=… is sent. Founder dry-run POST /api/admin/v2/backfill/serial-current-patient-id returns ok:true, dry_run:true, candidates:0 — confirming no rows need fixing in the preview tenants (matches the note from main agent). Audiologist (pytest.audio@audinexa.test) is blocked with HTTP 403. Live browser flow on the preview URL: (1) Invoices list at /billing mounts data-testid=invoices-list-page with 33 inv-row-* entries; load-more-btn correctly hidden (33 < 50/page threshold, has_more=false). (2) Founder /admin/system shows the BackfillCard with all 4 data-testids (backfill-card, backfill-dry-run-btn, backfill-apply-btn, backfill-result). Clicking Dry run fires POST and renders the result panel with the 3-stat grid (Candidates / Would fix / Skipped (no match) — all 0). DID NOT click Apply per main-agent instruction. (3) Audiologist navigating to /admin/system is route-redirected (lands on /test) and backfill-card is not rendered — UI fence holds. ⚠ Patients list page: the route /patients renders PatientsDashboard, not PatientsListPage — the list with data-testid=patients-list-page is actually mounted at /patients/list (see PatientsModule.jsx line 78). The PRD said 'navigate to /patients' which is ambiguous; the data-testid sits on the /list sub-route. Confirmed the file itself has patients-list-page + patient-row-{id} + patients-list-search + ListSkeleton wired (grep'd source). Recommend main agent decide whether to (a) make /patients default to the list (replace dashboard) or (b) update PRD wording to /patients/list.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Patients list discoverability",
+        "issue": "PRD says 'navigate to /patients' but PatientsListPage (the new cursor-paginated table with data-testid=patients-list-page) is actually mounted at /patients/list — the bare /patients route renders the legacy PatientsDashboard tile screen. Functionality is correct; the PRD wording / default route mismatch is the concern.",
+        "affected_selectors": ["[data-testid=patients-list-page]", "[data-testid=load-more-btn]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cursor_pagination.py",
+    "/app/backend/tests/test_admin_backfill.py",
+    "/app/test_reports/pytest/iter32_p2_pagination_backfill.xml"
+  ],
+  "action_items": [
+    "Decide UX for /patients root: either default-redirect /patients to /patients/list, or update the PRD to instruct users to use /patients/list. Recommend the redirect because the legacy PatientsDashboard tile screen pre-dates the new cursor-paginated list and is the less useful landing.",
+    "Optional: add a load-more positive-path screenshot by seeding 60+ patients in a test tenant so the Load More button + non-skeleton append behaviour is visually validated (currently only verified via unit tests because TSC has 25 patients and other tenants have 0)."
+  ],
+  "critical_code_review_comments": [
+    "OK — /app/backend/utils/pagination.py encode_cursor/decode_cursor uses a timestamp+id tuple (constant-time index seek). cursor_clause is correctly composed for a $or query so pagination is stable under inserts.",
+    "OK — /app/backend/routers/patients.py, /app/backend/billing.py, /app/backend/routers/ha_sales.py all preserve the legacy bare-array response when ?cursor= is omitted — confirmed live; this is what protects 30+ existing call sites from a breaking change.",
+    "OK — /app/backend/routers/admin_backfill.py is correctly gated by require_roles({founder, super_admin}) — audiologist returns 403 over the wire.",
+    "OK — BackfillCard.jsx has a window.confirm() guard on the Apply path (good defensive UX before a write across all tenants). Idempotency is asserted by the backend test test_backfill_apply_writes_and_is_idempotent.",
+    "OK — ListSkeleton + LoadMoreButton are properly tagged with data-testid=list-skeleton and data-testid=load-more-btn (inside data-testid=load-more-row). The visible UX of LoadMoreButton showing a small inline spinner during the second-page fetch (instead of re-flashing the whole skeleton) is the right pattern.",
+    "Minor — Console showed several 404s during /patients dashboard load (background-data endpoints, unrelated to this PR). Pre-existing noise from iter31."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (9/9 new pytest + live curl on Patients/Invoices/HA Sales legacy+envelope + founder dry-run + audiologist 403)",
+    "frontend": "Backfill card 100% (founder dry-run end-to-end through live browser). Invoices list page 100% (mounts, renders 33 rows, no load-more correctly hidden). Patients list page: source is correct (data-testids present, ListSkeleton wired) — only flagged because /patients default route renders PatientsDashboard not PatientsListPage."
+  },
+  "test_credentials": "founder@audinexa.com / founder123 — used to verify backfill admin path + general nav. owner@thesoundclinic.in / demo123 — used to verify Invoices list rendering. pytest.audio@audinexa.test / Pytest@123 — used to verify 403 + admin route redirect.",
+  "seed_data_creation": "None — relied on the pre-seeded TSC tenant (25 patients, 33 invoices) and the pytest suite tenant. Test cursor_pagination.py creates a handful of TEST_ patients but on the pytest-suite tenant only.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run: cd /app/backend && python -m pytest tests/test_cursor_pagination.py tests/test_admin_backfill.py -v (9 tests, ~10s). Live API smoke: hit /api/patients?limit=3 (must be a JSON array) and /api/patients?cursor=&limit=3 (must be {items,next_cursor,has_more}) with the founder bearer token. The BackfillCard sits at the bottom of /admin/system below 'Storage · Hybrid PDF Retention' and the Incidents table (founder login required). DO NOT click Apply — keep using Dry run only.",
+  "rca of the issue": "No backend or integration bugs surfaced. Only finding: /patients root route renders PatientsDashboard, not the new PatientsListPage — the new cursor-paginated table is at /patients/list. The data-testids and wiring inside PatientsListPage.jsx are correct."
+}

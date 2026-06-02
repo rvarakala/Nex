@@ -18,6 +18,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Send, Activity, AlertCircle, Trash2, RefreshCw, Loader2, CheckCircle2 } from 'lucide-react';
 import { PageHeader, Card, Pill, fmtDateTime, Empty } from './shared';
+import BackfillCard from './BackfillCard';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const STATUS_TONE = { healthy: 'emerald', mocked: 'slate', degraded: 'amber', down: 'rose', error: 'rose' };
@@ -111,6 +112,9 @@ export default function SystemHealthPage() {
 
       {/* Storage / Hybrid PDF Retention */}
       <StorageCard data={storage} purging={purging} onPurge={purgePdfs} onRefresh={loadStorage} />
+
+      {/* Data Maintenance — one-shot legacy backfill (founder/super_admin only) */}
+      <BackfillCard />
 
       {/* Incidents */}
       <Card

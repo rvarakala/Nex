@@ -821,6 +821,9 @@ app.include_router(user_sessions_router)
 from routers.status_page import router as status_page_router  # noqa: E402
 app.include_router(status_page_router)
 
+from routers.admin_backfill import router as admin_backfill_router  # noqa: E402
+app.include_router(admin_backfill_router)
+
 from routers import closeouts as closeouts_router    # noqa: E402
 from routers import reports as reports_router         # noqa: E402
 from routers import patients as patients_router       # noqa: E402

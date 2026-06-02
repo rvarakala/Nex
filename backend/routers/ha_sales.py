@@ -38,21 +38,42 @@ def _branch_scope(user: dict) -> dict:
     return {"clinic_id": user["clinic_id"], "branch_id": {"$in": user.get("branch_ids") or []}}
 
 
-@router.get("/sales", response_model=List[Sale])
+@router.get("/sales", response_model=None)
 async def list_sales(
     status: Optional[str] = None,
     patient_id: Optional[str] = None,
     limit: int = 100,
+    cursor: Optional[str] = None,
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):
+    """List HA sales. See get_patients() in routers/patients.py for the
+    legacy-array vs paginated-envelope contract."""
+    from utils.pagination import cursor_clause, next_cursor_for
+
     q = _branch_scope(user)
     if status:
         q["status"] = status
     if patient_id:
         q["patient_id"] = patient_id
-    rows = await db.ha_sales.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    return [deserialize_datetime(r) for r in rows]
+
+    paginated = cursor is not None
+    if paginated and cursor:
+        clause = cursor_clause("created_at", "sale_no", cursor)
+        if clause:
+            q.update(clause)
+
+    cap = max(1, min(int(limit or 50), 500))
+    rows = await (
+        db.ha_sales.find(q, {"_id": 0})
+        .sort([("created_at", -1), ("sale_no", -1)])
+        .to_list(cap)
+    )
+    items = [deserialize_datetime(r) for r in rows]
+    if paginated:
+        nxt = next_cursor_for(rows, "created_at", "sale_no", cap)
+        return {"items": items, "next_cursor": nxt, "has_more": nxt is not None}
+    return items
 
 
 @router.get("/sales/{sale_no}", response_model=Sale)
