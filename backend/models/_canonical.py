@@ -335,12 +335,19 @@ class InvoiceLine(BaseModel):
 class Payment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     payment_id: str = Field(default_factory=lambda: f"PAY-{str(uuid4())[:8].upper()}")
-    clinic_id: str
-    invoice_id: str
-    method: Literal["cash", "upi", "card", "bank_transfer", "insurance"]
+    # `clinic_id` and `invoice_id` are redundant when the Payment is
+    # embedded inside an Invoice (which it always is in practice — the
+    # parent Invoice carries both). Legacy embedded payments do not have
+    # these fields, which caused the `DATA_HEALTH: invoices schema drift`
+    # incident on 2026-06-02 (10/66 invoices failed Pydantic validation).
+    # Keeping them Optional preserves the field for any future
+    # de-normalisation needs without breaking historical data.
+    clinic_id: Optional[str] = None
+    invoice_id: Optional[str] = None
+    method: Optional[Literal["cash", "upi", "card", "bank_transfer", "insurance"]] = None
     amount: float
     reference: Optional[str] = None                              # Txn ref / UPI UTR / card last-4
-    paid_at: datetime = Field(default_factory=datetime.utcnow)
+    paid_at: Optional[Union[str, datetime]] = Field(default_factory=datetime.utcnow)
     received_by_user_id: Optional[str] = None
     notes: Optional[str] = None
 
