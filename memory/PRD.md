@@ -1,5 +1,123 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🚀 SCALABILITY + OPS — Cursor pagination + Founder backfill endpoint + List skeletons (2026-06-01)
+
+### Why (one batch, three items)
+1. **Cursor pagination** — Until today, every list endpoint hard-capped at
+   `limit=200`. A clinic with 5k patients / 10k invoices would silently
+   lose data past row 200. Offset pagination scales linearly with page
+   number; cursor pagination is constant-time.
+2. **Founder backfill admin endpoint** — Production pod is sandboxed
+   (no SSH); legacy data backfills had to go through Emergent Support
+   tickets. Founder now has a button.
+3. **List skeletons** — UX nicety paired with the pagination work — long
+   first-page loads now shimmer instead of saying "Loading patients…".
+
+### 1. Cursor pagination — `?cursor=` mode on 3 list endpoints
+- `GET /api/patients` (cursor on `(updated_at, patient_id)`)
+- `GET /api/billing/invoices` (cursor on `(invoice_date, invoice_id)`)
+- `GET /api/ha/sales` (cursor on `(created_at, sale_no)`)
+
+**Dual-shape contract** — backward-compat-preserving:
+- No `cursor` param → response is a bare JSON array (legacy behaviour).
+  30+ existing call sites untouched.
+- `cursor` param present (even empty string = first page) → envelope
+  `{items, next_cursor, has_more}`. Used by the new list UIs.
+
+**Cursor encoding** — base64url of `{"d": <sort-value>, "i": <id>}`. Opaque
+to the frontend; never parsed client-side. Tie-breaker `id` field keeps
+pagination deterministic when many rows share the primary sort timestamp.
+
+**Frontend** — `PatientsListPage.jsx` and `InvoicesListPage.js` now:
+- 50 rows / page (user's chosen default).
+- Initial fetch shows `<ListSkeleton rows={6-8} cols={5} />` (Tailwind
+  shimmer — see `components/ListSkeleton.jsx`).
+- `<LoadMoreButton>` at the bottom while `has_more=true`. Inline spinner
+  during the second-page fetch (skeleton does NOT re-flash).
+- Search / filter changes reset to page 1.
+
+### 2. Founder backfill admin endpoint
+- **New**: `POST /api/admin/v2/backfill/serial-current-patient-id`
+  - Body: `{ "apply": true|false }` — dry-run by default.
+  - Returns `{ ok, dry_run, candidates, backfilled, skipped_no_match,
+    fixed_per_clinic, examples, actor_email }`.
+  - **Founder + super_admin only** (`require_roles("founder",
+    "super_admin")`). Audiologist gets 403.
+- **Frontend**: new `BackfillCard.jsx` mounted in Admin Panel →
+  System Health (`/admin/system`), below the Storage card.
+  - "Dry run" + "Apply" buttons. Apply has a `window.confirm()` guard.
+  - Renders a result panel with 3-stat grid + per-clinic breakdown.
+- **Idempotent**: re-running after an `apply` finds 0 new candidates
+  (asserted by `test_backfill_apply_writes_and_is_idempotent`).
+
+### 3. Loading skeletons
+- New shared `components/ListSkeleton.jsx` exporting `ListSkeleton`
+  + `LoadMoreButton`. Tailwind keyframe `shimmer` animation (no JS
+  perf cost). Used by Patients + Invoices lists.
+- HA Sales has no dedicated frontend list page yet; the API
+  pagination is in place for whenever one is built.
+
+### Files
+- New: `/app/backend/utils/pagination.py`,
+  `/app/backend/routers/admin_backfill.py`,
+  `/app/backend/tests/test_cursor_pagination.py` (6 PASS),
+  `/app/backend/tests/test_admin_backfill.py` (3 PASS),
+  `/app/frontend/src/components/ListSkeleton.jsx`,
+  `/app/frontend/src/modules/admin/panel/BackfillCard.jsx`
+- Modified: `/app/backend/routers/patients.py` (cursor mode),
+  `/app/backend/billing.py` (cursor mode),
+  `/app/backend/routers/ha_sales.py` (cursor mode),
+  `/app/backend/server.py` (registered admin_backfill_router),
+  `/app/frontend/src/modules/patients/PatientsListPage.jsx` (rewrite),
+  `/app/frontend/src/modules/billing/InvoicesListPage.js` (refactor
+  off in-memory `Pagination` component, onto server cursor + Load
+  More), `/app/frontend/src/modules/admin/panel/SystemHealthPage.jsx`
+  (mounted BackfillCard)
+
+### Verified
+- **Backend**: 9 new tests PASS; 28 cumulative critical-path tests
+  PASS (smoke, sessions, auth+CSRF, cursor, backfill, appointments
+  filter, service ticket awb). Ruff + ESLint clean.
+- **Live (testing_agent_v3_fork iteration_32)**:
+  - Legacy array shape preserved when `?cursor=` is omitted on all 3
+    endpoints (confirmed via curl).
+  - Envelope `{items, next_cursor, has_more}` when `?cursor=` present.
+  - Founder dry-run `POST /admin/v2/backfill/serial-current-patient-id`
+    returned `ok:true, dry_run:true, candidates:0` against the preview
+    DB (matches expected — script was run on preview in May).
+  - Audiologist hitting the same endpoint → **HTTP 403**.
+  - `/admin/system` shows the BackfillCard with all 4 data-testids;
+    Dry run renders the 3-stat result panel correctly.
+  - `/billing` (Invoices) renders 33 rows; Load More button correctly
+    hidden because `has_more=false`. data-testid=invoices-list-page +
+    inv-row-* present.
+  - **Patients list** lives at `/patients/list` (it's the "Patients"
+    tab in the unified 4-tab PatientsModule — Dashboard /
+    Appointments / Patients / Reports). data-testids confirmed in
+    source. Bare `/patients` route intentionally shows the Dashboard
+    tab; navigating "Patients" tab → `/patients/list` → cursor table
+    with skeleton + Load More.
+
+### Production rollout
+**Code-only.** Redeploy preview → production. After the next deploy:
+1. Founder can hit System Health → "Dry run" to see how many legacy
+   serial_items rows still need backfilling on production.
+2. Click "Apply" once the dry-run looks right. **Then check the
+   "Aar Vee at Harmony Hyderabad" service-ticket flow** — should now
+   show the unit in the dropdown (the original symptom that triggered
+   this whole backfill work).
+
+### What's left after this
+- 🟠 AUDINEXA Connect (MSG91 WhatsApp) Phase 2 — awaiting your Hosted
+  Sender Number.
+- 🟢 Default-redirect `/patients` → `/patients/list` (testing-agent
+  suggestion; deferred — current 4-tab UX is intentional).
+- 🟢 CDN (Cloudflare) for frontend bundles.
+- 🟢 Structured JSON logs + log aggregation.
+- 🟢 Add `data-testid="appshell-logout"` to Sign Out button.
+
+---
+
 ## 🔒 SECURITY — `localStorage` JWT → `httpOnly` cookies + CSRF double-submit (2026-06-01)
 
 ### Why
