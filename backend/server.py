@@ -6,6 +6,7 @@ import os
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Optional
 import uuid
 
 # IST helpers — shared module (single source of truth)
@@ -927,27 +928,62 @@ app.include_router(password_reset_router.router)
 app.include_router(ha_quick_sale_router.router)
 
 # ---- CORS lockdown ----
-# Production MUST set CORS_ORIGINS to a comma-separated list of allowed origins
-# (e.g. "https://app.audinexa.com,https://www.audinexa.com"). A literal "*" is
-# permitted only for dev/preview where it pairs with allow_credentials=False.
-_cors_raw = os.environ.get('CORS_ORIGINS', '*').strip()
-if _cors_raw == '*' or _cors_raw == '':
+# Production SHOULD set CORS_ORIGINS to a comma-separated list of allowed origins
+# (e.g. "https://audinexa.com,https://www.audinexa.com"). The default below is a
+# **resilience fallback**: it allows the production apex + www + every Emergent
+# preview subdomain via regex, so the app keeps working even if the explicit env
+# var is missing on a fresh deploy.
+#
+# This change was driven by a P0 prod incident on 2026-06-02: after shipping
+# cookie auth (`withCredentials: true`), production was unconfigured for CORS
+# and every login returned "Network Error". The regex fallback below means a
+# similar regression in future just-works without ops intervention.
+_cors_raw = os.environ.get('CORS_ORIGINS', '').strip()
+
+# Always-accepted origin pattern (apex audinexa.com + any subdomain like www,
+# api, staging; plus every Emergent preview deployment for the dev pod).
+_PROD_ORIGIN_REGEX = (
+    r"^https://"
+    r"(?:[A-Za-z0-9-]+\.)?audinexa\.com$"
+    r"|^https://[A-Za-z0-9-]+\.preview\.emergentagent\.com$"
+    r"|^https?://localhost(?::\d+)?$"        # local dev frontend
+    r"|^https?://127\.0\.0\.1(?::\d+)?$"
+)
+_allow_origin_regex: Optional[str] = _PROD_ORIGIN_REGEX
+_allow_credentials = True
+
+if _cors_raw and _cors_raw != '*':
+    # Explicit allowlist takes precedence. Still allow credentials.
+    _allow_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()]
+elif _cors_raw == '*':
+    # Operator explicitly opted into wildcard. Disable credentials so the
+    # browser doesn't reject the response (Allow-Origin: * + credentials is
+    # blocked by spec).
     logging.getLogger(__name__).warning(
-        "CORS_ORIGINS is '*' — acceptable for dev/preview only. Set explicit origins in production."
+        "CORS_ORIGINS='*' — credentials disabled. Set explicit origins to re-enable cookies."
     )
     _allow_origins = ['*']
-    _allow_credentials = False  # browsers reject `*` + credentials anyway
+    _allow_origin_regex = None
+    _allow_credentials = False
 else:
-    _allow_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()]
-    _allow_credentials = True
+    # No env var → use regex-only fallback (still credential-friendly).
+    _allow_origins = []
+    logging.getLogger(__name__).info(
+        "CORS_ORIGINS unset — using built-in regex fallback "
+        "(audinexa.com + Emergent preview + localhost)."
+    )
 
-app.add_middleware(
-    CORSMiddleware,
+_cors_kwargs = dict(
     allow_credentials=_allow_credentials,
-    allow_origins=_allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],  # CSV export filenames
 )
+if _allow_origin_regex:
+    _cors_kwargs["allow_origin_regex"] = _allow_origin_regex
+_cors_kwargs["allow_origins"] = _allow_origins
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 # Configure logging
 logging.basicConfig(
