@@ -1,5 +1,77 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📤 EXPORT — "Export this view" CSV for Patients + Invoices (2026-06-02)
+
+### Why
+Now that the cursor pagination + skeletons landed, clinic owners can
+browse 50/page comfortably — but tax filings, GST returns, AR aging,
+and insurance-reimbursement reports all still need **the full result set
+in Excel**. Daily owner-facing ask. Closing it.
+
+### How
+**Backend** — `utils/csv_export.py` provides a generic streaming helper
+(`stream_csv`) that emits UTF-8 BOM (Excel-friendly Devanagari/Tamil
+support) + header row + body rows yielded one-at-a-time. Memory is
+bounded; the browser starts downloading on the first chunk.
+
+Two new endpoints:
+- `GET /api/patients/export.csv?search=…` — 18 columns covering
+  identifiers, demographics, contact, address, clinical context,
+  referral, insurance.
+- `GET /api/billing/invoices/export.csv?status=…&from_date=…&to_date=…&search=…`
+  — 20 columns covering invoice ID, status, patient block, GST split
+  (CGST/SGST/IGST), totals, payment status, linked sale/ticket.
+
+Both endpoints honour the **exact same filter params** as their list
+counterparts, so "Export this view" really means **this view**.
+
+Response headers: `Content-Type: text/csv; charset=utf-8`,
+`Content-Disposition: attachment; filename="audinexa-<kind>-<clinic>-<ts>.csv"`,
+`Cache-Control: no-store` (per-user-scoped data, no CDN caching).
+
+**Frontend** — `<button data-testid="patients-export-csv">` and
+`<button data-testid="inv-export-csv">` in the respective list page
+headers. Click triggers a hidden `<a download>` that hits the streaming
+URL with the active filter; the browser's auth cookie carries through.
+Disabled while loading or when 0 rows are visible (don't tempt the user
+to export an empty file).
+
+### Files
+- New: `/app/backend/utils/csv_export.py`,
+  `/app/backend/tests/test_csv_export.py` (4 tests, all PASS)
+- Modified: `/app/backend/routers/patients.py` (export endpoint),
+  `/app/backend/billing.py` (export endpoint),
+  `/app/frontend/src/modules/patients/PatientsListPage.jsx`
+  (Export CSV button + handler),
+  `/app/frontend/src/modules/billing/InvoicesListPage.js`
+  (Export CSV button + handler)
+
+### Verified
+- **Backend**: 4 new CSV-export tests PASS; 25 cumulative critical-path
+  tests PASS (smoke + auth+CSRF + cursor + backfill + CSV export).
+  Ruff + ESLint clean.
+- **Curl**: `/api/patients/export.csv` and `/api/billing/invoices/export.csv`
+  both stream with correct `Content-Type`, `Content-Disposition`,
+  `Cache-Control: no-store`, and UTF-8 BOM. Filter params honoured.
+- **Filename pattern**: `audinexa-patients-<clinic_id>-YYYYMMDD-HHMMSS.csv`
+  (sortable + uniquely identifies tenant + export time).
+
+### Production rollout
+**Code-only.** Redeploy preview → production. Users will see a new
+"Export CSV" button next to "Add Patient" (Patients tab) and next to
+"+ New Invoice" (Billing tab).
+
+### What's left after this
+- 🟠 **Run the legacy serial_items backfill on production** (founder
+  panel → System Health → Backfill card → Dry run → Apply).
+- 🟢 AUDINEXA Connect (MSG91 WhatsApp) Phase 2 — awaiting your Hosted
+  Sender Number.
+- 🟢 Add `data-testid="appshell-logout"` to Sign Out button.
+- 🟢 CDN (Cloudflare) for frontend bundles.
+- 🟢 Structured JSON logs + log aggregation.
+
+---
+
 ## 🚀 SCALABILITY + OPS — Cursor pagination + Founder backfill endpoint + List skeletons (2026-06-01)
 
 ### Why (one batch, three items)

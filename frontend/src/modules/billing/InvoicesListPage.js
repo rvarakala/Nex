@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { Download } from 'lucide-react';
 import { API, fmtINR, fmtDate, StatusPill } from './billingUtils';
 import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
 
@@ -43,6 +44,15 @@ export default function InvoicesListPage() {
   // Filter change → reset & re-fetch from page 1
   useEffect(() => { fetchPage(true, ''); }, [fetchPage]);
   useEffect(() => { loadCollections(); }, [loadCollections]);
+
+  const exportCsv = useCallback(() => {
+    const params = new URLSearchParams();
+    Object.entries(filter).forEach(([k, v]) => { if (v) params.set(k, v); });
+    const url = `${API}/billing/invoices/export.csv${params.toString() ? '?' + params : ''}`;
+    const a = document.createElement('a');
+    a.href = url; a.rel = 'noopener'; a.target = '_self';
+    document.body.appendChild(a); a.click(); a.remove();
+  }, [filter]);
 
   return (
     <div className="p-4 space-y-3" data-testid="invoices-list-page">
@@ -94,6 +104,14 @@ export default function InvoicesListPage() {
           className="ml-auto px-3 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded shadow-sm">
           + New Invoice
         </Link>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={loading || invoices.length === 0}
+          data-testid="inv-export-csv"
+          className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 font-semibold rounded">
+          <Download size={12} /> Export CSV
+        </button>
       </div>
 
       {/* List */}

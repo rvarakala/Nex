@@ -9,7 +9,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Search, UserPlus, Users } from 'lucide-react';
+import { Search, UserPlus, Users, Download } from 'lucide-react';
 import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -57,6 +57,17 @@ export default function PatientsListPage() {
   };
   const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
 
+  const exportCsv = useCallback(() => {
+    // Browser <a download> picks up the auth cookie automatically and
+    // hits the streaming endpoint with the current `search` filter.
+    const params = new URLSearchParams();
+    if (q.trim()) params.set('search', q.trim());
+    const url = `${API}/patients/export.csv${params.toString() ? '?' + params : ''}`;
+    const a = document.createElement('a');
+    a.href = url; a.rel = 'noopener'; a.target = '_self';
+    document.body.appendChild(a); a.click(); a.remove();
+  }, [q]);
+
   return (
     <div className="p-4 sm:p-6 space-y-4" data-testid="patients-list-page">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -74,6 +85,14 @@ export default function PatientsListPage() {
           className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
           <UserPlus size={13} /> Add Patient
         </Link>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={loading || rows.length === 0}
+          data-testid="patients-export-csv"
+          className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-lg font-semibold">
+          <Download size={13} /> Export CSV
+        </button>
       </header>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">

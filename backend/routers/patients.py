@@ -188,6 +188,78 @@ async def get_patients(
     return items
 
 
+@router.get("/patients/export.csv")
+async def export_patients_csv(
+    search: Optional[str] = None,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Stream the current Patients view as CSV. Accepts the same
+    `search` filter as `/api/patients`. Exports the *entire* matching
+    result set (no 50/page cap), streamed in chunks so memory stays
+    bounded even for clinics with 10k+ patients.
+
+    Auth: cookie or Bearer (browser <a download> uses cookies).
+    """
+    from utils.csv_export import stream_csv
+
+    query: dict = {"clinic_id": user["clinic_id"]}
+    if search:
+        safe = re.escape(search.strip())
+        if safe:
+            rx = {"$regex": safe, "$options": "i"}
+            query["$or"] = [
+                {"name": rx}, {"mobile": rx}, {"alternate_mobile": rx},
+                {"phone": rx}, {"patient_id": rx}, {"mrd": rx},
+            ]
+
+    headers = [
+        "MRD", "Patient ID", "Name", "Age", "Gender",
+        "Mobile", "Alt Mobile", "Email",
+        "City", "State", "Pincode",
+        "Chief Complaint", "Ear Side",
+        "Referring Doctor", "Referral Source", "Insurance Scheme",
+        "Registered At", "Last Updated",
+    ]
+
+    async def rows_iter():
+        cursor = db.patients.find(
+            query,
+            {"_id": 0, "mrd": 1, "patient_id": 1, "name": 1, "age": 1,
+             "gender": 1, "mobile": 1, "alternate_mobile": 1, "email": 1,
+             "city": 1, "state": 1, "pincode": 1, "chief_complaint": 1,
+             "ear_side": 1, "referring_physician": 1, "referral_source": 1,
+             "insurance_scheme": 1, "created_at": 1, "updated_at": 1},
+        ).sort([("updated_at", -1), ("patient_id", -1)])
+        async for p in cursor:
+            yield [
+                p.get("mrd") or "",
+                p.get("patient_id") or "",
+                p.get("name") or "",
+                p.get("age") or "",
+                p.get("gender") or "",
+                p.get("mobile") or "",
+                p.get("alternate_mobile") or "",
+                p.get("email") or "",
+                p.get("city") or "",
+                p.get("state") or "",
+                p.get("pincode") or "",
+                (p.get("chief_complaint") or "").replace("\n", " ").strip(),
+                p.get("ear_side") or "",
+                p.get("referring_physician") or "",
+                p.get("referral_source") or "",
+                p.get("insurance_scheme") or "",
+                str(p.get("created_at") or ""),
+                str(p.get("updated_at") or ""),
+            ]
+
+    return await stream_csv(
+        filename_prefix=f"audinexa-patients-{user['clinic_id']}",
+        headers=headers,
+        rows_iter=rows_iter(),
+    )
+
+
 @router.get("/patients/{patient_id}", response_model=Patient)
 async def get_patient(patient_id: str, user=Depends(get_current_user), db=Depends(get_db)):
     p = await db.patients.find_one({"patient_id": patient_id, "clinic_id": user["clinic_id"]}, {"_id": 0})

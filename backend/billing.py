@@ -405,6 +405,87 @@ async def list_invoices(
     return items
 
 
+@billing_router.get("/billing/invoices/export.csv")
+async def export_invoices_csv(
+    status: Optional[str] = None,
+    patient_id: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    search: Optional[str] = None,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Stream the current Invoices view as CSV. Accepts the same filter
+    params as `/billing/invoices`. Useful for GST filings, AR aging, and
+    insurance reimbursement reports."""
+    from utils.csv_export import stream_csv
+
+    q: dict = {"clinic_id": user["clinic_id"]}
+    if status:
+        q["status"] = status
+    if patient_id:
+        q["patient_id"] = patient_id
+    if from_date or to_date:
+        rng: dict = {}
+        if from_date:
+            rng["$gte"] = f"{from_date}T00:00:00"
+        if to_date:
+            rng["$lte"] = f"{to_date}T23:59:59"
+        q["invoice_date"] = rng
+    if search:
+        rx = {"$regex": re.escape(search.strip()), "$options": "i"}
+        q["$or"] = [{"invoice_no": rx}, {"patient_name": rx}, {"mrd": rx}, {"patient_mobile": rx}]
+
+    headers = [
+        "Invoice No", "Invoice Date", "Status",
+        "Patient Name", "MRD", "Patient Mobile", "Patient GSTIN",
+        "Subtotal", "Discount", "CGST", "SGST", "IGST",
+        "Tax Total", "Round Off", "Grand Total", "Rounded Total",
+        "Paid", "Due",
+        "Linked Sale", "Linked Service Ticket",
+    ]
+
+    async def rows_iter():
+        cursor = db.invoices.find(
+            q,
+            {"_id": 0, "invoice_no": 1, "invoice_date": 1, "status": 1,
+             "patient_name": 1, "mrd": 1, "patient_mobile": 1, "patient_gstin": 1,
+             "subtotal": 1, "discount_total": 1, "cgst_total": 1, "sgst_total": 1,
+             "igst_total": 1, "tax_total": 1, "round_off": 1, "grand_total": 1,
+             "rounded_total": 1, "paid_total": 1, "due_total": 1,
+             "linked_sale_no": 1, "ticket_no": 1},
+        ).sort([("invoice_date", -1), ("invoice_id", -1)])
+        async for inv in cursor:
+            yield [
+                inv.get("invoice_no") or "",
+                str(inv.get("invoice_date") or "")[:19],
+                inv.get("status") or "",
+                inv.get("patient_name") or "",
+                inv.get("mrd") or "",
+                inv.get("patient_mobile") or "",
+                inv.get("patient_gstin") or "",
+                inv.get("subtotal") or 0,
+                inv.get("discount_total") or 0,
+                inv.get("cgst_total") or 0,
+                inv.get("sgst_total") or 0,
+                inv.get("igst_total") or 0,
+                inv.get("tax_total") or 0,
+                inv.get("round_off") or 0,
+                inv.get("grand_total") or 0,
+                inv.get("rounded_total") or 0,
+                inv.get("paid_total") or 0,
+                inv.get("due_total") or 0,
+                inv.get("linked_sale_no") or "",
+                inv.get("ticket_no") or "",
+            ]
+
+    return await stream_csv(
+        filename_prefix=f"audinexa-invoices-{user['clinic_id']}",
+        headers=headers,
+        rows_iter=rows_iter(),
+    )
+
+
 @billing_router.get("/billing/invoices/{invoice_id}", response_model=Invoice)
 async def get_invoice(invoice_id: str,
                       user=Depends(get_current_user), db=Depends(get_db)):
