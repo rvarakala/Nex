@@ -209,6 +209,18 @@ async def ingest_frontend_error(
         except Exception:  # noqa: BLE001  — anonymous crash is still useful
             pass
 
+    # ── Server-side noise filter (defence in depth) ──────────────────
+    # `crashReporter.js` already drops these, but older deployed frontends
+    # or rogue clients can still send them. An `unhandledrejection` whose
+    # message is "Request failed with status code 4xx" is a user-caused
+    # HTTP error, not a crash — silently 200 it without writing the row.
+    msg = (payload.message or "").lower()
+    if payload.source == "unhandledrejection" and (
+        "request failed with status code 4" in msg
+        or msg.strip() in ("canceled", "aborted", "canceled error", "aborterror")
+    ):
+        return {"ok": True, "filtered": "noise"}
+
     doc = {
         "log_id": uuid.uuid4().hex,
         "kind": "frontend",

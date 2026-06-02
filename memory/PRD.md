@@ -1,5 +1,63 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔇 OBSERVABILITY — Telemetry collector filters HTTP-4xx noise (2026-06-02)
+
+### Why
+Every "wrong password" / 404 / 422 axios rejection was bubbling up as a
+JavaScript `unhandledrejection` event, getting reported to
+`/api/_telemetry/frontend-error`, and polluting Founder Panel → Ops →
+Errors with rows like:
+> `unhandledrejection · Request failed with status code 401 · /login`
+These aren't crashes — they're expected user-caused HTTP failures.
+Fingerprint `7690804eca25` was sitting at x2 in last 24h and crowding
+out real bugs.
+
+### Fix
+**1. Frontend** (`crashReporter.js`) — `unhandledrejection` handler now
+skips any rejection that:
+- has `reason.response.status` in `[400, 500)` (axios HTTP 4xx)
+- has `reason.code === 'ERR_CANCELED'` or `reason.name === 'AbortError'`
+  (user-cancelled fetch — happens whenever they navigate away mid-call)
+
+This prevents the report from being sent at all — zero network round-trip,
+zero DB write.
+
+**2. Backend** (`routers/error_telemetry.py`) — defence in depth.
+`ingest_frontend_error` now short-circuits with `{"ok": true,
+"filtered": "noise"}` when an `unhandledrejection` payload matches the
+same patterns. Returns 200 (so the client doesn't retry), but never
+writes to `error_logs`. Catches anything that slips past the
+frontend filter (older deployed bundles, rogue clients).
+
+**3. Cleanup** — purged 2 existing noise rows from `error_logs` on
+preview. (Production cleanup happens automatically over time as the
+filter stops new ones; no manual action needed.)
+
+### Files
+- New: `/app/backend/tests/test_telemetry_noise_filter.py` (5 tests
+  PASS — covers 401/404/cancelled-filtered, plus 500/boundary-still-
+  written to prove we didn't kill real signal)
+- Modified: `/app/frontend/src/shell/crashReporter.js` (handler
+  filter), `/app/backend/routers/error_telemetry.py` (ingest filter)
+
+### Verified
+- 5/5 noise-filter tests PASS. Real 5xx + React boundary crashes still
+  write `log_id`. 4xx + cancelled requests are silently filtered.
+- Lint clean.
+
+### Production rollout
+**Code-only.** Redeploy preview → production. After the next deploy,
+the existing prod noise rows (~2-3) will age out as you don't see them
+again. Your error dashboard becomes signal-only.
+
+### What's left after this
+- 🟠 Run prod backfills (patient-dates + serial_items.current_patient_id).
+- 🟢 Add `data-testid="appshell-logout"` to Sign Out button.
+- 🟢 Scheduled CSV email exports.
+- 🟢 AUDINEXA Connect (MSG91 WhatsApp) Phase 2 (awaiting Hosted Sender).
+
+---
+
 ## 🔥 PROD HOTFIX — Patient model tolerance + legacy-date backfill (2026-06-02)
 
 ### The trigger

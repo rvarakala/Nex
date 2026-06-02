@@ -103,6 +103,20 @@ export function setupGlobalErrorHandlers() {
   window.addEventListener('unhandledrejection', (event) => {
     if (!event) return;
     const reason = event.reason || {};
+    // ── Noise filter ─────────────────────────────────────────────────
+    // Skip *expected* HTTP 4xx errors that bubble up as unhandled
+    // rejections — they're user-caused (wrong password, 404, validation
+    // 422) and not real frontend crashes. They pollute the error
+    // dashboard and trigger spike alerts for no reason.
+    const status = reason?.response?.status;
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      return;
+    }
+    // Also skip cancelled/aborted requests (user navigated away mid-fetch).
+    if (reason?.code === 'ERR_CANCELED' || reason?.name === 'CanceledError'
+        || reason?.name === 'AbortError') {
+      return;
+    }
     reportCrash({
       message: reason.message || String(reason).slice(0, 200) || 'unhandledrejection',
       stack: reason.stack || null,
