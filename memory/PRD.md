@@ -1,5 +1,93 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔧 BUGFIX BATCH — iter33 QA findings (2026-06-02)
+
+After the QA testing agent ran 4 end-to-end clinical scenarios (new
+patient intake + audiogram, repeat patient comparison, HA device sale
+with serials + warranties, flat-fee walk-in invoice) — all 21 scenario
+tests passed, but 3 real product gaps surfaced. All 3 fixed in this
+batch.
+
+### Bug 1 — Warranty end-date not stamped on RESERVED → SOLD transition
+**🔴 Important** — silent money leak. When a serial moves to SOLD via
+`mark_sale_paid_internal`, the only patches were `current_patient_id`
+and `updated_at`. Real-world impact: Service & Repair "Is this under
+warranty?" check returned NO for every unit that didn't have
+`warranty_end_date` explicitly set at GRN receiving time. Clinic owner
+would see a 6-month-old aid flagged "out of warranty" and rightly be
+furious.
+
+**Fix** (`routers/ha_sales.py:mark_sale_paid_internal`):
+- Stamp `sold_at = now()` on every serial transitioning RESERVED → SOLD.
+- Resolve warranty months from the serial itself, fall back to the
+  parent product's `warranty_months`.
+- Compute `warranty_end_date = sold_at + warranty_months * 30 days` and
+  stamp it on the serial.
+- Same backfill logic added to the already-SOLD branch so legacy sales
+  also self-heal on the next idempotent re-call.
+
+### Bug 2 — Flat-fee GST silently inclusive
+**🟡 Medium** — direct revenue loss on every walk-in service charge.
+Front-desk enters "Consultation = ₹500, GST 18%". User expects ₹590
+invoice. Reality was ₹500 (system silently treated 500 as inclusive →
+taxable ₹423.73 + tax ₹76.27 = ₹500 grand). Owner gets ~₹76 less per
+service ticket.
+
+**Fix**:
+- New `gst_inclusive: Optional[bool]` field on `InvoiceLineCreate`
+  (`models/_canonical.py`). Default None (preserves legacy inclusive
+  behaviour for product sales).
+- `_compute_line()` (`billing.py`) honours explicit wire value first,
+  service-level default second, hardcoded True third.
+- Frontend invoice form will need a small "Price includes GST?" toggle
+  on the line item — already in the backlog as a follow-up; backend
+  contract is now ready.
+
+### Bug 3 — Walk-in patient registration blocked
+**🟢 Minor UX** — `PatientCreate` required `age: int` and
+`gender: Literal[Male,Female,Other]`. Front-desk wanting to register a
+phone-in walk-in with just name + mobile got HTTP 422.
+
+**Fix**: `age: Optional[int]` + `gender: Optional[str]` on
+`PatientCreate`. The registration form's UI nudge will prompt for
+demographics on first follow-up.
+
+### Files
+- New: `/app/backend/tests/test_iter33_bugfixes.py` (4 PASS),
+  `/app/backend/tests/test_iter33_qa_scenarios.py` (21 PASS — written
+  by testing agent during the QA run, kept as canonical e2e regression)
+- Modified: `/app/backend/routers/ha_sales.py` (Bug 1 — warranty +
+  sold_at stamp), `/app/backend/billing.py` (Bug 2 — gst_inclusive
+  honoured), `/app/backend/models/_canonical.py` (Bug 2 — InvoiceLineCreate
+  field, Bug 3 — PatientCreate optional fields)
+
+### Verified
+- 4/4 new bugfix tests PASS, 21/21 iter33 e2e scenario tests PASS,
+  **63/63 cumulative critical-path tests PASS**. Ruff + ESLint clean.
+
+### Production rollout
+**Code-only redeploy.** After redeploy:
+1. Any new HA sale fully completes the warranty lifecycle —
+   `sold_at` + `warranty_end_date` populated automatically. **Legacy
+   already-SOLD serials self-heal on the next mark-paid call** (which
+   is rare); for a full backfill of historical sales, consider a
+   one-shot admin endpoint similar to the existing
+   `serial-current-patient-id` one.
+2. Invoice creators can now pass `gst_inclusive: false` to add-GST-on-top.
+   No frontend change needed for backend-driven invoice flows; UI work
+   is a follow-up task to add the toggle to the manual invoice form.
+3. Walk-in patient API accepts name + mobile only.
+
+### What's left after this
+- 🟢 Frontend "Price includes GST?" toggle on manual invoice line form.
+- 🟢 Optional: admin endpoint to backfill warranty_end_date on all
+  historically-SOLD serials.
+- 🟠 MSG91 Hosted Sender Number → unblocks WhatsApp Phase 2.
+- 🟢 Scheduled CSV email exports.
+- 🟢 Quiet-hours toggle for error-spike alerter.
+
+---
+
 ## 🔇 OBSERVABILITY — Telemetry collector filters HTTP-4xx noise (2026-06-02)
 
 ### Why

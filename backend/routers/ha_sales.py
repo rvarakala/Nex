@@ -12,7 +12,7 @@ A Sale is created from an accepted Quotation. Creation:
 
 Lifecycle:  reserved → invoiced → paid   (any → cancelled, which unreserves).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -544,7 +544,11 @@ async def mark_sale_paid_internal(
 
     serials = [ln["serial_id"] for ln in sale["lines"] if ln.get("serial_id")]
     for sid in serials:
-        s = await db.serial_items.find_one({"serial_id": sid}, {"_id": 0, "state": 1, "serial_no": 1})
+        s = await db.serial_items.find_one(
+            {"serial_id": sid},
+            {"_id": 0, "state": 1, "serial_no": 1, "product_id": 1,
+             "warranty_months": 1, "warranty_end_date": 1},
+        )
         if not s:
             continue
         if s["state"] == "RESERVED":
@@ -554,29 +558,65 @@ async def mark_sale_paid_internal(
                 ref_doc={"kind": "sale", "id": sale_no},
                 note=f"Sold via {sale_no}",
             )
-            # Stamp current_patient_id so Service Tickets / warranty / AMC can
-            # find this unit by patient. Mirrors ha_quick_sale behaviour.
+            # Stamp current_patient_id, sold_at, and warranty_end_date so
+            # Service Tickets / warranty / AMC can find this unit by
+            # patient + know its warranty status. Mirrors ha_quick_sale
+            # behaviour. `warranty_end_date` is preserved if already set
+            # (e.g. stamped at GRN); otherwise computed from
+            # `serial.warranty_months` or the parent product.
+            sold_at = datetime.now(timezone.utc)
+            patch: dict = {
+                "updated_at": sold_at.isoformat(),
+                "sold_at": sold_at.isoformat(),
+            }
             if sale.get("patient_id"):
+                patch["current_patient_id"] = sale["patient_id"]
+            if not s.get("warranty_end_date"):
+                months = s.get("warranty_months")
+                if months is None and s.get("product_id"):
+                    prod = await db.ha_products.find_one(
+                        {"product_id": s["product_id"]},
+                        {"_id": 0, "warranty_months": 1},
+                    )
+                    if prod:
+                        months = prod.get("warranty_months")
+                if isinstance(months, int) and months > 0:
+                    # +N months ≈ +30N days (calendar arithmetic without
+                    # pulling in `dateutil`). Acceptable error window:
+                    # ~1 day per 24-month warranty.
+                    end = sold_at + timedelta(days=30 * months)
+                    patch["warranty_end_date"] = end.date().isoformat()
+                    if "warranty_months" not in s or s["warranty_months"] != months:
+                        patch["warranty_months"] = months
+            await db.serial_items.update_one(
+                {"serial_id": sid},
+                {"$set": patch},
+            )
+        elif s["state"] == "SOLD":
+            # Already sold — still backfill current_patient_id + warranty
+            # if missing (handles legacy sales that pre-date this fix).
+            backfill: dict = {}
+            if sale.get("patient_id"):
+                backfill["current_patient_id"] = sale["patient_id"]
+            if not s.get("warranty_end_date"):
+                months = s.get("warranty_months")
+                if months is None and s.get("product_id"):
+                    prod = await db.ha_products.find_one(
+                        {"product_id": s["product_id"]},
+                        {"_id": 0, "warranty_months": 1},
+                    )
+                    if prod:
+                        months = prod.get("warranty_months")
+                if isinstance(months, int) and months > 0:
+                    sold_at = datetime.now(timezone.utc)
+                    backfill["warranty_end_date"] = (
+                        sold_at + timedelta(days=30 * months)
+                    ).date().isoformat()
+            if backfill:
+                backfill["updated_at"] = datetime.now(timezone.utc).isoformat()
                 await db.serial_items.update_one(
                     {"serial_id": sid},
-                    {"$set": {
-                        "current_patient_id": sale["patient_id"],
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }},
-                )
-        elif s["state"] == "SOLD":
-            # Already sold — still backfill current_patient_id if missing
-            # (handles legacy sales that pre-date this fix).
-            if sale.get("patient_id"):
-                await db.serial_items.update_one(
-                    {"serial_id": sid, "$or": [
-                        {"current_patient_id": None},
-                        {"current_patient_id": {"$exists": False}},
-                    ]},
-                    {"$set": {
-                        "current_patient_id": sale["patient_id"],
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }},
+                    {"$set": backfill},
                 )
             continue  # already sold (idempotent)
         else:

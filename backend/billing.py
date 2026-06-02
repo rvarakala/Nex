@@ -79,7 +79,17 @@ def _compute_line(line_in: InvoiceLineCreate, service: Optional[dict]) -> Invoic
     is_taxable = line_in.is_taxable if line_in.is_taxable is not None else bool(service.get("is_taxable", False) if service else False)
     gst_rate = line_in.gst_rate if line_in.gst_rate is not None else float(service.get("gst_rate", 0.0) if service else 0.0)
     hsn = line_in.hsn_sac or (service.get("hsn_sac") if service else None)
-    gst_inclusive = bool(service.get("gst_inclusive", True) if service else True)
+    # gst_inclusive: explicit wire value wins. Falls back to service-level
+    # default. Falls back to True (legacy) only if neither is set — but
+    # callers entering "flat-fee + GST" workflows should pass
+    # `gst_inclusive=false`. Fixes Bug #2 from iter33 QA: flat-fee invoices
+    # were silently treating unit_price as inclusive, eating into revenue.
+    if line_in.gst_inclusive is not None:
+        gst_inclusive = bool(line_in.gst_inclusive)
+    elif service is not None and "gst_inclusive" in service:
+        gst_inclusive = bool(service["gst_inclusive"])
+    else:
+        gst_inclusive = True
 
     qty = float(line_in.quantity or 1.0)
 

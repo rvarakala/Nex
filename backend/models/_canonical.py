@@ -419,6 +419,13 @@ class InvoiceLineCreate(BaseModel):
     discount_value: float = 0.0                                  # Raw user-entered value (₹ for flat, % for percent)
     is_taxable: Optional[bool] = None                            # Override
     gst_rate: Optional[float] = None
+    # When `True`, `unit_price` already includes GST and we back-calculate
+    # the taxable value (legacy behaviour — default for product sales).
+    # When `False`, `unit_price` is the pre-tax amount and we add GST on
+    # top (the intuitive behaviour for flat-fee service charges like
+    # "Consultation = ₹500 + 18% GST"). Explicit override beats the
+    # service-level default.
+    gst_inclusive: Optional[bool] = None
     hsn_sac: Optional[str] = None
     # Optional product detail fields (mirrored from InvoiceLine).
     product_type: Optional[Literal["Hearing Aid", "Accessory", "Other"]] = None
@@ -534,8 +541,13 @@ class Patient(BaseModel):
 
 class PatientCreate(BaseModel):
     name: str
-    age: int
-    gender: Literal["Male", "Female", "Other"]
+    # Walk-in / phone-in registrations don't always have age + gender at
+    # first capture. Front-desk can still register the patient and
+    # backfill demographics on first follow-up (a UI nudge fires on
+    # next opening of the profile). Strict enums removed — the
+    # registration form still defaults to canonical values.
+    age: Optional[int] = None
+    gender: Optional[str] = None
     dob: Optional[str] = None
     occupation: Optional[str] = None
 
