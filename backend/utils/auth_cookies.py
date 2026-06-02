@@ -108,6 +108,19 @@ def set_auth_cookies(
     domain = _resolve_cookie_domain(request)
     csrf = secrets.token_urlsafe(32)
 
+    # Belt-and-braces migration from the legacy host-only cookies.
+    # When we're setting a `.audinexa.com`-scoped cookie, ALSO emit a
+    # `Max-Age=0` Set-Cookie for the previous host-only variant so the
+    # browser drops it on the same response. Otherwise the host-only
+    # cookie keeps shadowing the new one whenever the request host
+    # matches the apex exactly (browsers pick the more-specific cookie).
+    # This single line means our cookie-scope hotfix self-migrates every
+    # live user the moment they hit `/auth/login` on the new code — no
+    # manual sign-out required.
+    if domain == PROD_COOKIE_DOMAIN:
+        response.delete_cookie(ACCESS_COOKIE, path="/", domain=None)
+        response.delete_cookie(CSRF_COOKIE, path="/", domain=None)
+
     response.set_cookie(
         key=ACCESS_COOKIE,
         value=token,
