@@ -1,0 +1,35 @@
+{
+  "summary": "P1 XSS hardening (httpOnly cookie + CSRF double-submit) end-to-end verification across backend + live browser. All 6 backend cookie/CSRF tests PASS (test_auth_cookies_csrf.py). Live browser flow on the preview URL: (1) POST /api/auth/login as founder@audinexa.com returns 200 with csrf_token in body + sets both Set-Cookie headers; (2) access_token cookie has httpOnly=True, secure=True, sameSite=Lax; (3) audinexa_csrf cookie has httpOnly=False (JS-readable), secure=True, sameSite=Lax; (4) localStorage.acs.token is NOT written on the new login (the key XSS hardening guarantee); (5) document.cookie from JS shows audinexa_csrf but NOT access_token (confirms HttpOnly is honoured by the browser); (6) /admin redirects to /admin/dashboard, /patients, /appointments, /settings (→/settings/profile) all load without 401 / login redirect; (7) fetch /api/auth/me with credentials:'include' (cookie-only, no Bearer) returns 200; (8) AppShell 'Sign out' button hits POST /api/auth/logout (200), both cookies removed by the browser, redirect to /login; (9) fetch /api/auth/me post-logout returns 401. Curl confirmation: Set-Cookie flags exactly as designed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_cookies_csrf.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OK — set_auth_cookies() in /app/backend/utils/auth_cookies.py: httpOnly correctly toggled per cookie (true for access_token, false for audinexa_csrf), Secure+SameSite=Lax both set, Max-Age aligned with JWT TTL (7d), domain defaults to exact-host (apex-only) matching user's chosen option (a).",
+    "OK — CsrfMiddleware double-submit gate: state-change without X-CSRF-Token → 403 (verified by test_state_change_without_csrf_header_is_blocked); matching header bypasses (verified). Bearer-auth path is correctly exempt so the legacy pytest/API client suites keep working.",
+    "OK — Frontend AuthContext.js: live test confirmed NO write of localStorage.acs.token on a fresh login. document.cookie shows only audinexa_csrf (HttpOnly honoured). axios withCredentials:true working — /api/auth/me succeeds with cookie-only auth from the browser console.",
+    "OK — /api/auth/logout endpoint clears both cookies (browser shows neither cookie post-call), and the AppShell 'Sign out' control hits it correctly. Post-logout /auth/me returns 401 as expected.",
+    "Cosmetic (NOT a bug, pre-existing) — Console shows recharts 'width(-1) height(-1)' warnings on the founder dashboard and 4 generic 404s on the /admin page load (likely missing background-data endpoints unrelated to auth). Auth flow itself is clean.",
+    "Note for prod cutover — On audinexa.com you'll want to either (a) leave AUTH_COOKIE_DOMAIN unset (exact-host only, the user's chosen default) OR (b) set AUTH_COOKIE_DOMAIN=audinexa.com (no leading dot) for apex-only. In the preview pod the cookies got Domain=careful-feedback.preview.emergentagent.com which is the correct exact-host behavior."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (6/6 cookie+CSRF tests pass; curl Set-Cookie flags verified)",
+    "frontend": "100% (login → cookies set, no localStorage token, authenticated nav, fetch /me with cookies, logout clears cookies + /me=401)"
+  },
+  "test_credentials": "founder@audinexa.com / founder123 — verified working end-to-end in the live browser.",
+  "seed_data_creation": "None — used the pre-seeded founder account.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P1 XSS hardening is fully verified in both pytest and live browser on the preview URL. Re-run: `cd /app/backend && python -m pytest tests/test_auth_cookies_csrf.py -v` (6 tests, ~3s). Browser regression script lives inline in iteration_31 — check post-login Playwright cookies for httpOnly flag and `localStorage.getItem('acs.token')===null`. The logout button is `button:has-text('Sign out')` in the AppShell sidebar (no dedicated data-testid yet — consider adding `data-testid=appshell-logout` for stability). Note: legacy `loginWithToken` path (signup flow) still writes to localStorage by design and was NOT exercised here.",
+  "rca of the issue": "No bugs surfaced. The httpOnly cookie + CSRF double-submit migration works end-to-end: backend sets the right flags, browser honours HttpOnly (JS cannot read access_token), CSRF middleware blocks header-less state-changes, axios withCredentials carries the cookie on subsequent requests, and logout cleanly invalidates the session client-side and server-side."
+}

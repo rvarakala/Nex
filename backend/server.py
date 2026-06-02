@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -19,6 +19,7 @@ from auth import (
 )
 import billing as billing_module
 import closeout as closeout_module
+from utils.auth_cookies import set_auth_cookies, clear_auth_cookies
 from utils.serde import serialize_datetime  # noqa: F401 — used by _seed_defaults
 
 
@@ -445,6 +446,57 @@ from routers.error_telemetry import (  # noqa: E402
 # so it sees exceptions raised by every other middleware/route.
 app.add_middleware(ErrorLoggerMiddleware)
 
+
+# ==================== CSRF guard (cookie-auth only) ====================
+# When a request authenticates via the `access_token` httpOnly cookie AND
+# uses an unsafe HTTP method, require `X-CSRF-Token` header == `audinexa_csrf`
+# cookie (double-submit pattern). Authorization-header-authenticated requests
+# (pytest, curl, native API clients) are exempt — they can't be CSRF'd by a
+# browser, since the malicious site can't forge an Authorization header.
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
+
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+# Endpoints that legitimately receive a cookie + unsafe method but don't
+# need CSRF: login (no cookie set yet), logout (idempotent + needs to work
+# from a stuck state), telemetry ingest (anonymous), MFA verify-login
+# (challenge token already authenticates).
+_CSRF_EXEMPT_PATHS = {
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/mfa/verify-login",
+    "/api/_telemetry/frontend-error",
+    "/api/public/clinic-signup",
+}
+
+
+class CsrfMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in _UNSAFE_METHODS:
+            return await call_next(request)
+        if request.url.path in _CSRF_EXEMPT_PATHS:
+            return await call_next(request)
+        auth_hdr = request.headers.get("authorization") or ""
+        if auth_hdr.startswith("Bearer "):
+            # API-client / pytest path — no cookie auth, no CSRF risk.
+            return await call_next(request)
+        cookie_token = request.cookies.get("audinexa_csrf")
+        access_cookie = request.cookies.get("access_token")
+        if not access_cookie:
+            # Not authenticated via cookie — let the endpoint's normal auth
+            # check return 401 if needed. No CSRF check applies.
+            return await call_next(request)
+        header_token = request.headers.get("x-csrf-token")
+        if not (cookie_token and header_token and cookie_token == header_token):
+            return JSONResponse(
+                {"detail": "CSRF token missing or mismatched"},
+                status_code=403,
+            )
+        return await call_next(request)
+
+
+app.add_middleware(CsrfMiddleware)
+
 # Expose db to dependency (used by auth.get_current_user)
 app.state.db = db
 
@@ -459,7 +511,7 @@ api_router = APIRouter(prefix="/api")
 # are caught long before 60 attempts/min by IP-level WAF rules), while
 # unblocking the pytest suite where each test fixture re-logs in.
 @limiter.limit("60/minute")
-async def login(req: LoginRequest, request: Request):
+async def login(req: LoginRequest, request: Request, response: Response):
     email = req.email.strip().lower()
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not user.get("active", True) or not verify_password(req.password, user.get("password_hash", "")):
@@ -482,9 +534,14 @@ async def login(req: LoginRequest, request: Request):
     # Fire-and-forget login audit (never blocks or fails the login)
     from utils.activity import record_login
     await record_login(db, user, clinic, request)
+    # P1 XSS hardening — also set httpOnly cookies. The JSON body still
+    # returns `access_token` for backward compat with existing localStorage
+    # clients during the migration window.
+    csrf = set_auth_cookies(response, token)
     return {
         "access_token": token,
         "token_type": "bearer",
+        "csrf_token": csrf,
         "user": {
             "user_id": user["user_id"],
             "email": user["email"],
@@ -531,7 +588,7 @@ class SwitchClinicIn(BaseModel):
 
 @api_router.post("/auth/switch-clinic")
 async def switch_clinic(
-    payload: SwitchClinicIn, request: Request,
+    payload: SwitchClinicIn, request: Request, response: Response,
     user=Depends(get_current_user),
 ):
     """Re-issues a JWT bound to a different clinic the user has been granted.
@@ -604,7 +661,18 @@ async def switch_clinic(
             pass
 
     return {"access_token": token, "token_type": "bearer",
+            "csrf_token": set_auth_cookies(response, token),
             "active_clinic_id": target, "active_clinic_name": clinic["name"]}
+
+
+@api_router.post("/auth/logout")
+async def auth_logout(response: Response):
+    """Clears the httpOnly auth + CSRF cookies. Idempotent — callable
+    without auth (a client that lost its token can still wipe its cookies).
+    Frontend should also clear in-memory state + local caches client-side.
+    """
+    clear_auth_cookies(response)
+    return {"ok": True}
 
 
 class LinkClinicIn(BaseModel):

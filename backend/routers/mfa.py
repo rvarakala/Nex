@@ -36,7 +36,7 @@ import bcrypt
 import jwt
 import pyotp
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from auth import (
@@ -284,7 +284,7 @@ async def mfa_disable(
 # ─── Second-step login endpoint ──────────────────────────────────────────
 
 @auth_router.post("/mfa/verify-login")
-async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, db=Depends(get_db)):
+async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response: Response, db=Depends(get_db)):
     user_id = _decode_mfa_token(payload.mfa_token)
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user or not user.get("active", True) or not user.get("mfa_enabled"):
@@ -321,9 +321,15 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, db=Depen
     except Exception:
         pass
 
+    # P1 XSS hardening — set httpOnly cookies (matched on the verify-login
+    # path so the post-2FA browser session uses cookie auth).
+    from utils.auth_cookies import set_auth_cookies
+    csrf = set_auth_cookies(response, token)
+
     return {
         "access_token": token,
         "token_type": "bearer",
+        "csrf_token": csrf,
         "user": {
             "user_id": user["user_id"],
             "email": user["email"],
