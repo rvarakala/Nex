@@ -63,7 +63,46 @@ def _config() -> dict:
         "frontend_base":    (os.environ.get("ERROR_ALERT_FRONTEND_BASE_URL")
                              or os.environ.get("REACT_APP_BACKEND_URL")
                              or "").rstrip("/"),
+        # Quiet hours — when "now" in IST falls inside [start, end), suppress
+        # noisy notifications. Crash count still accrues; the first alert
+        # *after* quiet hours expire will surface the spike. Format: HH:MM
+        # (24h). End can wrap past midnight (e.g. 22:00 → 07:00). Leave both
+        # blank to disable the feature entirely (default — preserves prior
+        # behaviour).
+        "quiet_start":      (os.environ.get("ERROR_ALERT_QUIET_HOURS_START") or "").strip(),
+        "quiet_end":        (os.environ.get("ERROR_ALERT_QUIET_HOURS_END") or "").strip(),
     }
+
+
+def _parse_hhmm(s: str) -> Optional[tuple[int, int]]:
+    """Parse HH:MM → (hour, minute). Returns None on any bad input."""
+    if not s or ":" not in s:
+        return None
+    try:
+        hh, mm = s.split(":", 1)
+        h, m = int(hh), int(mm)
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return (h, m)
+    except ValueError:
+        pass
+    return None
+
+
+def _in_quiet_hours(cfg: dict, now_utc: datetime) -> bool:
+    """Return True if `now_utc` (in IST) falls inside the configured quiet
+    window. Wrap-around windows (e.g. 22:00 → 07:00) handled correctly.
+    """
+    start = _parse_hhmm(cfg.get("quiet_start") or "")
+    end = _parse_hhmm(cfg.get("quiet_end") or "")
+    if not start or not end:
+        return False
+    # IST = UTC+5:30, no DST.
+    ist = now_utc + timedelta(hours=5, minutes=30)
+    cur = (ist.hour, ist.minute)
+    if start <= end:
+        return start <= cur < end
+    # Wraps midnight: covers [start, 24:00) ∪ [00:00, end)
+    return cur >= start or cur < end
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +130,14 @@ async def maybe_alert(db, doc: dict) -> None:
             "at": {"$gte": window_start},
         })
         if count < cfg["threshold"]:
+            return
+
+        # Quiet hours — suppress noisy alerts during user-defined sleeping
+        # window. Count still accrued above; the alert will surface as soon
+        # as the next error happens outside the quiet window.
+        if _in_quiet_hours(cfg, now):
+            _log.info("error-spike alert suppressed by quiet hours (fp=%s count=%d)",
+                      fingerprint, count)
             return
 
         # Cooldown — refuse to re-alert the same fingerprint within the

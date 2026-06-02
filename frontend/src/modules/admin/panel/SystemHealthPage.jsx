@@ -19,6 +19,7 @@ import axios from 'axios';
 import { Send, Activity, AlertCircle, Trash2, RefreshCw, Loader2, CheckCircle2 } from 'lucide-react';
 import { PageHeader, Card, Pill, fmtDateTime, Empty } from './shared';
 import BackfillCard from './BackfillCard';
+import LoanerFleetHealthCard from './LoanerFleetHealthCard';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const STATUS_TONE = { healthy: 'emerald', mocked: 'slate', degraded: 'amber', down: 'rose', error: 'rose' };
@@ -115,6 +116,9 @@ export default function SystemHealthPage() {
 
       {/* Data Maintenance — one-shot legacy backfill (founder/super_admin only) */}
       <BackfillCard />
+
+      {/* Loaner Fleet Health — Phase 14 KPI: rentable units out in the field */}
+      <LoanerFleetHealthCard />
 
       {/* Incidents */}
       <Card

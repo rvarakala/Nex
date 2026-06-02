@@ -324,7 +324,8 @@ async def alert_config(
 ):
     """Returns the current alerter configuration so the founder can verify
     env vars loaded correctly. Webhook URL is masked."""
-    from utils.error_alerts import _config
+    from utils.error_alerts import _config, _in_quiet_hours
+    from datetime import datetime, timezone
     cfg = _config()
     return {
         "threshold":         cfg["threshold"],
@@ -335,6 +336,12 @@ async def alert_config(
         "email_to":          cfg["email_to"],
         "frontend_base":     cfg["frontend_base"],
         "enabled":           bool(cfg["slack_webhook"] or cfg["email_to"]),
+        "quiet_hours": {
+            "start": cfg.get("quiet_start") or None,
+            "end":   cfg.get("quiet_end") or None,
+            "enabled": bool(cfg.get("quiet_start") and cfg.get("quiet_end")),
+            "active_now": _in_quiet_hours(cfg, datetime.now(timezone.utc)),
+        },
     }
 
 

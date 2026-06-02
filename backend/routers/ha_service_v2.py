@@ -1101,3 +1101,126 @@ async def service_note_pdf(
         },
     )
 
+
+
+# ==================== Loaner Fleet Health (Phase 14 KPI) ====================
+
+@router.get("/service/loaner-fleet-health")
+async def loaner_fleet_health(
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """KPI tile for clinic owners — single glance at every loaner unit
+    currently out in the field.
+
+    Returns:
+      • total ON_LOAN serials in the clinic (across all tickets)
+      • bucketed days-out histogram (0-3 / 4-7 / 8-14 / 15+)
+      • overdue list (issued > 7 days ago, not yet returned) with patient
+        + serial + days-out for each ticket
+      • total deposits collected (rupees out the door)
+      • deposits still held (collected − refunded − forfeited)
+    """
+    clinic_id = user["clinic_id"]
+    now = datetime.now(timezone.utc)
+
+    # Count serials currently flagged ON_LOAN. Branch-scope-safe — clinic-wide
+    # for owners/super_admin, branch-scoped via patch on ticket lookups below.
+    on_loan_serials = await db.serial_items.count_documents(
+        {"clinic_id": clinic_id, "state": "ON_LOAN"}
+    )
+
+    # Pull every open loaner-bearing ticket (loaner issued but not returned).
+    cursor = db.service_tickets.find(
+        {
+            "clinic_id": clinic_id,
+            "loaner_serial_id": {"$ne": None, "$exists": True},
+            "loaner_returned_at": None,
+        },
+        {
+            "_id": 0,
+            "ticket_no": 1,
+            "branch_id": 1,
+            "patient_id": 1,
+            "patient_name": 1,
+            "patient_mobile": 1,
+            "loaner_serial_id": 1,
+            "loaner_issued_at": 1,
+            "loaner_deposit_amount": 1,
+        },
+    )
+    open_loans = await cursor.to_list(length=500)
+
+    # Branch-filter for non-clinic-wide roles
+    if user["role"] not in CLINIC_WIDE_ROLES:
+        allowed = set(user.get("branch_ids") or [])
+        open_loans = [t for t in open_loans if t.get("branch_id") in allowed]
+
+    buckets = {"0-3d": 0, "4-7d": 0, "8-14d": 0, "15d+": 0}
+    overdue: list[dict] = []
+    for t in open_loans:
+        iso = t.get("loaner_issued_at")
+        if not iso:
+            continue
+        try:
+            issued_at = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        days_out = (now - issued_at).days
+        if days_out <= 3:
+            buckets["0-3d"] += 1
+        elif days_out <= 7:
+            buckets["4-7d"] += 1
+        elif days_out <= 14:
+            buckets["8-14d"] += 1
+        else:
+            buckets["15d+"] += 1
+        if days_out > 7:
+            overdue.append({
+                "ticket_no": t["ticket_no"],
+                "patient_name": t.get("patient_name"),
+                "patient_mobile": t.get("patient_mobile"),
+                "loaner_serial_id": t["loaner_serial_id"],
+                "days_out": days_out,
+                "deposit_amount": t.get("loaner_deposit_amount"),
+            })
+    overdue.sort(key=lambda r: r["days_out"], reverse=True)
+
+    # Deposits — sum across every ticket (open or closed) for this clinic.
+    pipeline_collected: list = [
+        {"$match": {"clinic_id": clinic_id,
+                    "loaner_deposit_amount": {"$gt": 0}}},
+        {"$group": {"_id": None,
+                     "collected": {"$sum": "$loaner_deposit_amount"},
+                     "refunded":  {"$sum": {"$cond": [{"$ne": ["$loaner_deposit_refunded_at", None]},
+                                                       "$loaner_deposit_amount", 0]}},
+                     "forfeited": {"$sum": {"$cond": [{"$ne": ["$loaner_deposit_forfeited_at", None]},
+                                                       "$loaner_deposit_amount", 0]}}}},
+    ]
+    if user["role"] not in CLINIC_WIDE_ROLES:
+        pipeline_collected[0]["$match"]["branch_id"] = {
+            "$in": user.get("branch_ids") or []
+        }
+    agg = await db.service_tickets.aggregate(pipeline_collected).to_list(length=1)
+    if agg:
+        collected = float(agg[0].get("collected") or 0)
+        refunded = float(agg[0].get("refunded") or 0)
+        forfeited = float(agg[0].get("forfeited") or 0)
+    else:
+        collected = refunded = forfeited = 0.0
+    deposits_held = max(0.0, collected - refunded - forfeited)
+
+    return {
+        "on_loan_count": on_loan_serials,
+        "open_tickets": len(open_loans),
+        "days_out_buckets": buckets,
+        "overdue": overdue[:20],   # cap at 20 worst offenders
+        "overdue_count": len(overdue),
+        "deposits": {
+            "collected": round(collected, 2),
+            "refunded": round(refunded, 2),
+            "forfeited": round(forfeited, 2),
+            "held": round(deposits_held, 2),
+        },
+        "as_of": now.isoformat(),
+    }

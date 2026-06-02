@@ -1,0 +1,58 @@
+{
+  "summary": "Iteration-35: Frontend Phase 14 wiring smoke test. Loaner Fleet Health card at /admin/system is fully wired and renders for founder with all 9 expected data-testids + 4 days-out bucket tiles + working refresh. UNABLE to complete VENDOR-route ticket drawer flows because (a) seed data contains zero VENDOR-route service tickets (all 11 returned by /api/ha/service-tickets are repair_location=IN_CLINIC), and (b) the /ha/service-tickets URL did not render the tickets table or '+ New Ticket' button (ha-tix-new) in the clinic_owner session — likely a route mismatch (sidebar shows 'Service & Repair' but the click handler routing was not verified). Code review of ServiceTicketPhase14Actions.jsx + AudinexaPipelineDrawer.jsx confirms the Phase 14 actions panel, Stamp AWB modal, loaner issue/return modals, and all data-testids exist exactly as specified, gated on t.repair_location === 'VENDOR' && !pipe.is_terminal. The IN_CLINIC-hidden contract is enforced in source.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Service Tickets list page",
+        "issue": "Direct navigation to /ha/service-tickets did not surface ha-tix-new button or a <table> in the rendered DOM (clinic_owner session). Either the route is different from /ha/service-tickets (sidebar label is 'Service & Repair' → may route to /service-tickets or /repair) or the page renders rows in non-<table> markup. Could not confirm because tickets exist in DB but UI showed nothing.",
+        "affected_selectors": ["ha-tix-new", "tbody tr"]
+      },
+      {
+        "flow": "VENDOR-route Phase 14 end-to-end",
+        "issue": "Cannot execute end-to-end test of the Phase 14 action panel, Stamp AWB modal, loaner-issue / loaner-return / mark-return-unrepaired buttons, or Print Service Note PDF because the tenant-sound-clinic-blr seed contains ZERO VENDOR-route tickets. Component is correctly gated on t.repair_location === 'VENDOR' so the panel will be hidden in every existing ticket.",
+        "affected_selectors": ["ha-tix-phase14-actions","ha-tix-loaner-issue-btn","ha-tix-loaner-return-btn","ha-tix-print-service-note","ha-tix-mark-return-unrepaired","audinexa-stamp-awb-modal"]
+      }
+    ],
+    "design_issues": []
+  },
+  "verified_wiring": {
+    "loaner_fleet_health_card": "FULLY WIRED at /admin/system (founder login). Confirmed: loaner-fleet-health-card container, loaner-kpi-on-loan, loaner-kpi-open, loaner-kpi-overdue, loaner-kpi-deposits-held, loaner-dep-collected, loaner-dep-refunded, loaner-dep-forfeited, loaner-dep-held, loaner-fleet-refresh. 4 days-out bucket tiles rendered. Refresh button re-fetched without blank state.",
+    "ha-tix-new-modal-radio": "NOT VERIFIED — could not open the Service Tickets list",
+    "phase14_actions_panel": "Component definition VERIFIED in source (ServiceTicketPhase14Actions.jsx). Mount conditional in AudinexaPipelineDrawer.jsx line 311: {t.repair_location === 'VENDOR' && !pipe.is_terminal && (<ServiceTicketActions ... />)} — IN_CLINIC tickets WILL hide the panel by design.",
+    "stamp_awb_modal": "Definition VERIFIED in AudinexaPipelineDrawer.jsx (StampAwbModal component, lines 985-1062). PENDING_AWB row → audinexa-stamp-awb-{shipment_id} link → opens audinexa-stamp-awb-modal with audinexa-stamp-awb-input + audinexa-stamp-awb-submit. PATCH /api/ha/couriers/{id}/awb wired correctly."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "BLOCKER for end-to-end Phase 14 frontend QA: Seed at least 2-3 VENDOR-route service tickets in tenant-sound-clinic-blr (repair_location='VENDOR'), one at AWAITING_DISPATCH (to test outbound courier booking + Stamp AWB), one at ESTIMATE_PENDING / CLIENT_APPROVED with a logged estimate (to test Issue Loaner + Mark Return Un-Repaired), and one with an active loaner (to test Return Loaner refund flow). Without this, no testing agent can verify the Phase 14 action panel renders on a live ticket.",
+    "Verify the route for the Service Tickets list page. Direct GET https://.../ha/service-tickets did not show ha-tix-new in the DOM for clinic_owner. Either fix the route or document the actual path used in the sidebar (sidebar label = 'Service & Repair'). The 11 tickets present in the API are not surfaced in any list page that this testing agent could reach via /ha/service-tickets.",
+    "Optional: add a quick e2e smoke that creates a VENDOR ticket, books an OUTBOUND courier in PENDING_AWB mode, and exercises the StampAwbModal → BOOKED flip — this is the single regression most worth automating."
+  ],
+  "critical_code_review_comments": [
+    "ServiceTicketPhase14Actions.jsx line 117: GET /api/ha/serial-items?state=IN_STOCK&limit=200 in LoanerIssueModal — fine, but if the tenant has >200 IN_STOCK serials the dropdown will silently truncate. Consider server-side search or pagination.",
+    "ServiceTicketPhase14Actions.jsx line 20: window.open(url) for service-note.pdf relies on the cookie flowing through the new tab. Works for same-origin httpOnly cookies but if the PDF endpoint moves to a CDN/signed URL this will break. Defensive alternative: fetch the PDF as a blob via axios (same pattern as downloadJobCard in AudinexaPipelineDrawer) — keeps the JWT/cookie flow consistent and avoids 401s in safari strict-tracking mode.",
+    "AudinexaPipelineDrawer.jsx line 311 gating uses !pipe.is_terminal — correct, but means CLOSED tickets cannot reprint the service note even though that's a legitimate post-fact need. Consider letting print-service-note survive into CLOSED state while keeping the other 3 buttons hidden.",
+    "StampAwbModal (line 985) does not validate AWB format (length / alphanumeric) before submitting. Real partner AWBs are typically 10-13 chars; a 1-char accidental key would still PATCH through. Add a minLength=4 hint client-side.",
+    "LoanerFleetHealthCard.jsx is well-structured. Single-fetch on mount + manual refresh is appropriate; no polling needed. Consider showing last-refreshed timestamp next to the Refresh button for ops clarity."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only iteration)",
+    "frontend": "25% — 1 of 4 testable surfaces verified (Loaner Fleet Health). 3 surfaces blocked on missing seed data + unverified route."
+  },
+  "test_credentials": "founder@audinexa.com / founder123 (admin panel access); owner@thesoundclinic.in / demo123 (clinic-side, lacks /admin/system access by design)",
+  "seed_data_creation": "None.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "(1) The Loaner Fleet Health card is confirmed working — skip re-testing unless the SystemHealthPage changes. (2) BEFORE running Phase 14 frontend tests, ASK MAIN AGENT to seed at least one VENDOR-route service ticket per state (RECEIVED, AWAITING_DISPATCH with PENDING_AWB shipment, ESTIMATE_PENDING with logged estimate, plus one with an active loaner). All flows are gated on repair_location='VENDOR' and the current seed has zero such tickets. (3) Verify the actual route the sidebar 'Service & Repair' link navigates to — /ha/service-tickets did not render the table or '+ New Ticket' button in this run. (4) Code-level wiring of Phase 14 panel, StampAwbModal, LoanerIssueModal, LoanerReturnModal is correct and matches the spec data-testids 1:1 — no UI bugs found in source.",
+  "rca of the issue": {
+    "Cannot test VENDOR-route flows": {
+      "reproduction": "Login owner@thesoundclinic.in → GET /api/ha/service-tickets?limit=100 → all 11 tickets have repair_location='IN_CLINIC'.",
+      "expected": "Seed should contain VENDOR-route tickets so testing agents can verify the Phase 14 action panel renders on a live ticket.",
+      "actual": "0 VENDOR tickets in seed → ha-tix-phase14-actions container never mounts in any open drawer.",
+      "fix_location": "Seed script for tenant-sound-clinic-blr (likely scripts/seed_demo_premium.py) — add VENDOR-route service tickets covering the Phase 14 states.",
+      "blast_radius": "All Phase 14 UI QA is blocked until seed is fixed."
+    }
+  }
+}

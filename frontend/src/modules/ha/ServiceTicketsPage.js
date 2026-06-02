@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import AudinexaPipelineDrawer from '../repair/AudinexaPipelineDrawer';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
+import { ServiceTicketActions } from './ServiceTicketPhase14Actions';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -227,6 +228,7 @@ function NewTicketModal({ onClose, onCreated }) {
   const [serialFallback, setSerialFallback] = useState(false);
   const [serialId, setSerialId] = useState('');
   const [kind, setKind] = useState('repair');
+  const [repairLocation, setRepairLocation] = useState('IN_CLINIC');
   const [complaint, setComplaint] = useState('');
   const [warranty, setWarranty] = useState(false);
   const [err, setErr] = useState('');
@@ -279,7 +281,7 @@ function NewTicketModal({ onClose, onCreated }) {
     if (!complaint || complaint.length < 5) { setErr('Complaint must be ≥ 5 chars'); return; }
     setSaving(true);
     try {
-      const body = { branch_id: branch, patient_id: patient, kind, complaint, warranty_covered: warranty };
+      const body = { branch_id: branch, patient_id: patient, kind, complaint, warranty_covered: warranty, repair_location: repairLocation };
       if (serialId) body.serial_id = serialId;
       const r = await axios.post(`${API}/ha/service-tickets`, body);
       onCreated(r.data);
@@ -359,6 +361,33 @@ function NewTicketModal({ onClose, onCreated }) {
           </div>
         </div>
 
+        {/* Repair location — the audiologist's decision at inspect-time.
+            IN_CLINIC = we'll rectify here (no courier flow). VENDOR = ship to
+            manufacturer (courier + estimate + customer approval flows fire). */}
+        <div className="mb-3" data-testid="ha-tix-repair-location-group">
+          <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Repair Location *</span>
+          <div className="flex gap-2">
+            <label className={`flex-1 cursor-pointer border rounded-md px-3 py-2 text-xs ${repairLocation === 'IN_CLINIC' ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              <input
+                type="radio" className="mr-1.5" name="repair_loc" value="IN_CLINIC"
+                checked={repairLocation === 'IN_CLINIC'}
+                onChange={() => setRepairLocation('IN_CLINIC')}
+                data-testid="ha-tix-repair-location-in-clinic"
+              />
+              <b>In-clinic</b> — fix here, no courier
+            </label>
+            <label className={`flex-1 cursor-pointer border rounded-md px-3 py-2 text-xs ${repairLocation === 'VENDOR' ? 'border-amber-500 bg-amber-50 text-amber-900' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              <input
+                type="radio" className="mr-1.5" name="repair_loc" value="VENDOR"
+                checked={repairLocation === 'VENDOR'}
+                onChange={() => setRepairLocation('VENDOR')}
+                data-testid="ha-tix-repair-location-vendor"
+              />
+              <b>Send to vendor</b> — ship to manufacturer
+            </label>
+          </div>
+        </div>
+
         <div className="mb-3">
           <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-0.5 font-semibold">Complaint *</span>
           <textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} rows={3} placeholder="Describe the problem in detail…" data-testid="ha-tix-complaint" className="w-full border border-slate-300 rounded px-2 py-1 text-sm" />
@@ -375,164 +404,3 @@ function NewTicketModal({ onClose, onCreated }) {
   );
 }
 
-
-function TicketDetailDrawer({ ticketNo, onClose, onChanged, canMutate }) {
-  const [t, setT] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const [mode, setMode] = useState(null);
-  const [diag, setDiag] = useState('');
-  const [res, setRes] = useState('');
-  const [cost, setCost] = useState(0);
-  const [warranty, setWarranty] = useState(false);
-
-  const load = useCallback(async () => {
-    const r = await axios.get(`${API}/ha/service-tickets/${ticketNo}`);
-    setT(r.data);
-    setDiag(r.data.diagnosis || '');
-    setWarranty(!!r.data.warranty_covered);
-  }, [ticketNo]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const moveStatus = async (newStatus) => {
-    setBusy(true); setErr('');
-    try {
-      await axios.put(`${API}/ha/service-tickets/${ticketNo}`, { status: newStatus });
-      await load(); onChanged();
-    } catch (e) { setErr(e?.response?.data?.detail || 'Failed'); }
-    finally { setBusy(false); }
-  };
-
-  const saveDiag = async () => {
-    setBusy(true); setErr('');
-    try {
-      await axios.put(`${API}/ha/service-tickets/${ticketNo}`, { diagnosis: diag, warranty_covered: warranty });
-      await load(); onChanged();
-      setMode(null);
-    } catch (e) { setErr(e?.response?.data?.detail || 'Save failed'); }
-    finally { setBusy(false); }
-  };
-
-  const doResolve = async () => {
-    if (!res || res.length < 5) { setErr('Resolution notes ≥ 5 chars'); return; }
-    setBusy(true); setErr('');
-    try {
-      await axios.post(`${API}/ha/service-tickets/${ticketNo}/resolve`, {
-        resolution_notes: res, cost_to_patient: Number(cost || 0), warranty_covered: warranty,
-      });
-      await load(); onChanged();
-      setMode(null);
-    } catch (e) { setErr(e?.response?.data?.detail || 'Resolve failed'); }
-    finally { setBusy(false); }
-  };
-
-  const doClose = async () => {
-    if (!window.confirm('Close this ticket? It cannot be reopened.')) return;
-    setBusy(true);
-    try { await axios.post(`${API}/ha/service-tickets/${ticketNo}/close`); await load(); onChanged(); }
-    catch (e) { setErr(e?.response?.data?.detail || 'Close failed'); }
-    finally { setBusy(false); }
-  };
-
-  const doCancel = async () => {
-    if (!window.confirm('Cancel this ticket? The attached serial (if any) will be marked DAMAGED.')) return;
-    setBusy(true);
-    try { await axios.post(`${API}/ha/service-tickets/${ticketNo}/cancel`); await load(); onChanged(); }
-    catch (e) { setErr(e?.response?.data?.detail || 'Cancel failed'); }
-    finally { setBusy(false); }
-  };
-
-  if (!t) return (
-    <div className="fixed inset-0 z-40 flex">
-      <div className="flex-1 bg-black/40" onClick={onClose} />
-      <div className="w-[600px] bg-white p-6 text-slate-400 italic text-sm">Loading…</div>
-    </div>
-  );
-
-  return (
-    <div className="fixed inset-0 z-40 flex" data-testid="ha-tix-drawer">
-      <div className="flex-1 bg-black/40" onClick={onClose} />
-      <div className="w-[600px] bg-white shadow-2xl overflow-auto">
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
-          <div>
-            <div className="font-mono text-[11px] font-bold text-indigo-700">{t.ticket_no}</div>
-            <div className="text-sm font-bold">{t.patient_name || t.patient_id}</div>
-            <div className="text-[10px] text-slate-500">{KIND_LABEL[t.kind]} · {t.serial_no || 'no serial'}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[t.status]}`}>{t.status.toUpperCase()}</span>
-            {t.warranty_covered && <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1 py-0.5 rounded font-bold">WARRANTY</span>}
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl">✕</button>
-          </div>
-        </div>
-
-        {err && <div className="m-4 bg-rose-50 text-rose-700 text-xs p-2 rounded" data-testid="ha-tix-drawer-err">{err}</div>}
-
-        <div className="p-5 space-y-3 text-xs">
-          <Row label="Complaint" v={t.complaint} />
-          <Row label="Technician" v={t.technician_name || '—'} />
-          <Row label="Diagnosis" v={t.diagnosis || '—'} />
-          <Row label="Resolution" v={t.resolution_notes || '—'} />
-          <Row label="Cost to patient" v={t.cost_to_patient ? fmtINR(t.cost_to_patient) : '—'} />
-          <Row label="Loaner serial" v={t.loaner_serial_id || '—'} />
-          <Row label="Resolved at" v={t.resolved_at ? new Date(t.resolved_at).toLocaleString('en-IN') : '—'} />
-          <Row label="Closed at" v={t.closed_at ? new Date(t.closed_at).toLocaleString('en-IN') : '—'} />
-
-          {canMutate && t.status === 'open' && (
-            <div className="pt-4 border-t border-slate-200 grid grid-cols-2 gap-2" data-testid="ha-tix-actions">
-              <button onClick={() => moveStatus('in_progress')} disabled={busy} data-testid="ha-tix-start" className="px-3 py-1.5 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded">Start Work</button>
-              <button onClick={doCancel} disabled={busy} data-testid="ha-tix-cancel" className="px-3 py-1.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded">Cancel (Damaged)</button>
-            </div>
-          )}
-
-          {canMutate && t.status === 'in_progress' && (
-            <div className="pt-4 border-t border-slate-200 space-y-2" data-testid="ha-tix-actions">
-              {mode === 'diag' ? (
-                <div className="bg-blue-50 border border-blue-200 rounded p-2">
-                  <textarea value={diag} onChange={(e) => setDiag(e.target.value)} rows={2} placeholder="Diagnosis" data-testid="ha-tix-diag-input" className="w-full border border-slate-300 rounded px-2 py-1 text-xs mb-1" />
-                  <label className="text-[10px] inline-flex items-center gap-1"><input type="checkbox" checked={warranty} onChange={(e) => setWarranty(e.target.checked)} /> Warranty covered</label>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setMode(null)} className="text-[10px] text-slate-500">Cancel</button>
-                    <button onClick={saveDiag} disabled={busy} data-testid="ha-tix-diag-save" className="px-2 py-0.5 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded">Save</button>
-                  </div>
-                </div>
-              ) : mode === 'resolve' ? (
-                <div className="bg-emerald-50 border border-emerald-200 rounded p-2">
-                  <textarea value={res} onChange={(e) => setRes(e.target.value)} rows={2} placeholder="What did you do to fix it?" data-testid="ha-tix-res-input" className="w-full border border-slate-300 rounded px-2 py-1 text-xs mb-1" />
-                  <div className="flex items-center gap-2 mb-1">
-                    <label className="text-[10px]">Cost to patient: ₹<input type="number" value={cost} onChange={(e) => setCost(e.target.value)} data-testid="ha-tix-cost-input" className="ml-1 w-20 border border-slate-300 rounded px-1 py-0.5 text-[11px]" /></label>
-                    <label className="text-[10px] inline-flex items-center gap-1"><input type="checkbox" checked={warranty} onChange={(e) => setWarranty(e.target.checked)} data-testid="ha-tix-warranty-cb" /> Warranty</label>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setMode(null)} className="text-[10px] text-slate-500">Cancel</button>
-                    <button onClick={doResolve} disabled={busy} data-testid="ha-tix-resolve-save" className="px-2 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded">Resolve</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  <button onClick={() => setMode('diag')} data-testid="ha-tix-diag-btn" className="px-2 py-1.5 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded">Set Diagnosis</button>
-                  <button onClick={() => setMode('resolve')} data-testid="ha-tix-resolve-btn" className="px-2 py-1.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded">Resolve</button>
-                  <button onClick={doCancel} disabled={busy} className="px-2 py-1.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded">Cancel</button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {canMutate && t.status === 'resolved' && (
-            <div className="pt-4 border-t border-slate-200">
-              <button onClick={doClose} disabled={busy} data-testid="ha-tix-close-btn" className="w-full px-3 py-2 text-xs font-bold bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded">Close Ticket</button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const Row = ({ label, v }) => (
-  <div className="flex items-baseline justify-between py-1 border-b border-slate-100">
-    <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold w-32">{label}</span>
-    <span className="text-slate-800 flex-1 text-right break-words">{v}</span>
-  </div>
-);

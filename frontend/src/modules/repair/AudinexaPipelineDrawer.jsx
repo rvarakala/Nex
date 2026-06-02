@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import ConflictResolutionModal from '../../components/ConflictResolutionModal';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
+import { ServiceTicketActions } from '../ha/ServiceTicketPhase14Actions';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -94,6 +95,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
   // Sub-forms
   const [showCourier, setShowCourier] = useState(false);
   const [showEstimate, setShowEstimate] = useState(false);
+  const [stampingShipment, setStampingShipment] = useState(null);
 
   const load = useCallback(async () => {
     setErr(''); setLoading(true);
@@ -303,6 +305,22 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
         </div>
       )}
 
+      {/* ===== PHASE 14 — Vendor-route extras (loaner, print service note,
+                 mark return un-repaired). Mounts only on VENDOR-route
+                 tickets; component itself decides which buttons to show. =====*/}
+      {t.repair_location === 'VENDOR' && !pipe.is_terminal && (
+        <div className="mb-5">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+            Patient handover &amp; loaner
+          </div>
+          <ServiceTicketActions
+            ticket={t}
+            hasVendorEstimate={pipe.estimates && pipe.estimates.length > 0}
+            onChanged={() => { load(); onChanged && onChanged(); }}
+          />
+        </div>
+      )}
+
       {/* ===== END-OF-PIPELINE: Print Service Report + Auto-Invoice ===== */}
       {(curStatus === 'READY_FOR_PICKUP' ||
         curStatus === 'DELIVERED_TO_CLIENT' ||
@@ -354,7 +372,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
         {pipe.shipments.length === 0 ? <Empty label="No shipments yet." /> : (
           <table className="w-full text-xs">
             <thead className="text-[10px] uppercase text-slate-500">
-              <tr><th className="text-left">ID</th><th>Dir</th><th className="text-left">Partner</th><th className="text-left">AWB</th><th>Status</th></tr>
+              <tr><th className="text-left">ID</th><th>Dir</th><th className="text-left">Partner</th><th className="text-left">AWB</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
               {pipe.shipments.map(s => (
@@ -363,9 +381,21 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
                   <td className="py-1 font-mono text-[10px]">{s.shipment_id}</td>
                   <td className="text-center text-[10px]">{s.direction === 'OUTBOUND' ? '📤' : '📥'}</td>
                   <td>{s.courier_partner}</td>
-                  <td className="font-mono text-[10px]">{s.awb_number}</td>
+                  <td className="font-mono text-[10px]">
+                    {s.awb_number || <span className="italic text-amber-700">pending</span>}
+                  </td>
                   <td className="text-center">
-                    <span className="bg-slate-100 text-slate-700 px-1 py-0.5 rounded text-[10px] font-bold">{s.status}</span>
+                    <span className={`px-1 py-0.5 rounded text-[10px] font-bold ${s.status === 'PENDING_AWB' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{s.status}</span>
+                  </td>
+                  <td className="text-right">
+                    {s.status === 'PENDING_AWB' && (
+                      <button
+                        type="button"
+                        onClick={() => setStampingShipment(s)}
+                        data-testid={`audinexa-stamp-awb-${s.shipment_id}`}
+                        className="text-[10px] font-bold text-indigo-600 hover:underline"
+                      >Stamp AWB →</button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -373,6 +403,13 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
           </table>
         )}
         {showCourier && <CourierForm ticketNo={ticketNo} curStatus={curStatus} onDone={() => { setShowCourier(false); load(); }} />}
+        {stampingShipment && (
+          <StampAwbModal
+            shipment={stampingShipment}
+            onClose={() => setStampingShipment(null)}
+            onDone={() => { setStampingShipment(null); load(); onChanged && onChanged(); }}
+          />
+        )}
       </Section>
 
       {/* ===== ESTIMATES ===== */}
@@ -935,6 +972,91 @@ function ApprovalRow({ approval, onChanged }) {
           {approval.notes && <div className="italic mt-0.5">"{approval.notes}"</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+
+
+/**
+ * Stamp AWB modal — wired to PATCH /api/ha/couriers/{id}/awb.
+ * Opens from a PENDING_AWB row in the courier table (Phase 14).
+ */
+function StampAwbModal({ shipment, onClose, onDone }) {
+  const [awb, setAwb] = useState('');
+  const [partner, setPartner] = useState(shipment.courier_partner === '(pending)' ? '' : (shipment.courier_partner || ''));
+  const [dispatchDate, setDispatchDate] = useState('');
+  const [etaDate, setEtaDate] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!awb.trim()) { setErr('AWB / tracking number is required'); return; }
+    setBusy(true); setErr('');
+    try {
+      await axios.patch(`${API}/ha/couriers/${shipment.shipment_id}/awb`, {
+        awb_number: awb.trim(),
+        courier_partner: partner.trim() || undefined,
+        dispatch_date: dispatchDate || undefined,
+        eta_date: etaDate || undefined,
+      });
+      onDone();
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Stamp failed');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5"
+           data-testid="audinexa-stamp-awb-modal">
+        <h3 className="text-base font-bold mb-1">Stamp AWB</h3>
+        <p className="text-[11px] text-slate-500 mb-3 font-mono">
+          {shipment.shipment_id} · {shipment.direction}
+        </p>
+        {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-3">{err}</div>}
+        <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">AWB / Tracking *</label>
+        <input
+          value={awb} onChange={(e) => setAwb(e.target.value)}
+          data-testid="audinexa-stamp-awb-input"
+          placeholder="e.g. BL123456789IN"
+          className="w-full border border-slate-300 rounded px-2 py-1 text-sm mb-3 font-mono"
+        />
+        <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Courier Partner</label>
+        <input
+          value={partner} onChange={(e) => setPartner(e.target.value)}
+          data-testid="audinexa-stamp-partner"
+          placeholder="DTDC / Bluedart / India Post…"
+          className="w-full border border-slate-300 rounded px-2 py-1 text-sm mb-3"
+        />
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">Dispatch date</label>
+            <input
+              type="date" value={dispatchDate} onChange={(e) => setDispatchDate(e.target.value)}
+              data-testid="audinexa-stamp-dispatch"
+              className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-semibold">ETA</label>
+            <input
+              type="date" value={etaDate} onChange={(e) => setEtaDate(e.target.value)}
+              data-testid="audinexa-stamp-eta"
+              className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs text-slate-600">Cancel</button>
+          <button onClick={submit} disabled={busy}
+                  data-testid="audinexa-stamp-awb-submit"
+                  className="px-4 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded">
+            {busy ? 'Stamping…' : 'Stamp AWB'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
