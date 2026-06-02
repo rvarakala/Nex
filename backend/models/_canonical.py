@@ -1,7 +1,23 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Literal, Dict
-from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import Optional, List, Literal, Dict, Union
+from datetime import datetime, date
 from uuid import uuid4
+
+
+def _normalize_date_str(v):
+    """Tolerate legacy rows where dob/anniversary_date were written as
+    `datetime` instead of an ISO `"YYYY-MM-DD"` string. Returns None for
+    falsy input, ISO date string otherwise."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, str):
+        return v
+    # Fallback: stringify whatever it is (defensive — should not hit in practice).
+    return str(v)
 
 
 # ==================== MULTI-TENANT + AUTH MODELS ====================
@@ -443,9 +459,16 @@ class Patient(BaseModel):
 
     # Demographics
     name: str
-    age: int
-    gender: Literal["Male", "Female", "Other"]
-    dob: Optional[str] = None
+    # ── Tolerance: legacy/seed rows occasionally have age=None or a
+    # non-canonical gender string ("M", "F", "T"). Strict types here
+    # caused production ResponseValidationErrors on any list that
+    # included one such row. Keep them optional + permissive — the
+    # registration form still enforces canonical values at write time.
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    # dob/anniversary_date may exist as legacy `datetime` rows — see
+    # _normalize_date_str validators below.
+    dob: Optional[Union[str, datetime, date]] = None
     occupation: Optional[str] = None
 
     # Contact
@@ -461,7 +484,7 @@ class Patient(BaseModel):
     aadhaar_last4: Optional[str] = None
 
     # Special occasions (used by birthday / anniversary auto-greetings)
-    anniversary_date: Optional[str] = None      # ISO YYYY-MM-DD
+    anniversary_date: Optional[Union[str, datetime, date]] = None      # ISO YYYY-MM-DD
 
     # Clinical triage at registration (one-liner — full case history lives in M02 Pre-Test)
     chief_complaint: Optional[str] = None
@@ -489,6 +512,17 @@ class Patient(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # ── Validators to coerce legacy data ─────────────────────────────
+    # Some pre-2026 rows have `dob` / `anniversary_date` written as a
+    # raw `datetime` object instead of an ISO `"YYYY-MM-DD"` string,
+    # which made the strict Patient response model 500 on list/detail
+    # endpoints. `mode='before'` runs before type coercion so we can
+    # safely intercept and normalise.
+    @field_validator("dob", "anniversary_date", mode="before")
+    @classmethod
+    def _coerce_legacy_dates(cls, v):
+        return _normalize_date_str(v)
 
 
 class PatientCreate(BaseModel):

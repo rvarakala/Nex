@@ -1,5 +1,104 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔥 PROD HOTFIX — Patient model tolerance + legacy-date backfill (2026-06-02)
+
+### The trigger
+Production fired an error-spike email alert (5× in 60min) for
+fingerprint `b5ce81b3ad38`:
+- `path: /api/patients`
+- `clinic: clinic-ambulkarspeech-and-hearing-clinic-1ecff7`
+- `1 validation errors: ('response', 3, 'anniversary_date') - Input
+  should be a valid string - input: datetime.datetime(2022, 2, 27, 0, 0)`
+
+### Root cause
+Patient model declared strict types (`age: int`,
+`gender: Literal["Male","Female","Other"]`,
+`anniversary_date: Optional[str]`). Legacy/seed rows in production
+have:
+- `anniversary_date` / `dob` stored as raw `datetime` objects
+- `age = None`
+- `gender = "M"` / `"F"` (pre-canonical-enum)
+
+→ Any list/detail call that touched such a row hit a Pydantic
+`ResponseValidationError` → 500. Same pattern explained the 2 other
+backend error fingerprints (`b5ce81b3ad38`, `391f3c90a4c9`) sitting in
+the local error_logs collection.
+
+### Fix
+**1. Model tolerance** — `models/_canonical.py`:
+- `age: Optional[int] = None`
+- `gender: Optional[str] = None` (write-time validation still strict
+  via `PatientCreate`, but read-time accepts legacy values)
+- `dob: Optional[Union[str, datetime, date]] = None`
+- `anniversary_date: Optional[Union[str, datetime, date]] = None`
+- New `@field_validator("dob", "anniversary_date", mode="before")` calls
+  shared `_normalize_date_str()` to coerce `datetime`/`date` → ISO string
+  on every read.
+
+**2. Data cleanup script** — `scripts/backfill_patient_dates.py`
+(dry-run by default; `--apply` to write). Rewrites the two date fields
+where they exist as `{"$type": "date"}` → ISO `"YYYY-MM-DD"`. Idempotent.
+
+**3. Founder admin endpoint** — `POST /api/admin/v2/backfill/patient-dates`
+(founder + super_admin only) mirrors the script for production, since
+prod is sandboxed.
+
+**4. BackfillCard UI** — refactored from a single-tool card into a
+multi-tool list. Tools registry pattern; adding a new backfill = add
+one entry to `TOOLS`. Each tool gets its own dry-run + apply pair with
+its own result panel (`data-testid="backfill-tool-patient-dates"`,
+`backfill-patient-dates-dry-run-btn`, etc.). Existing
+`serial-current-patient-id` tool moves under the same roof.
+
+**5. Regression** — `tests/test_patient_legacy_tolerance.py` (4 tests,
+all PASS):
+- Reproduces the exact prod error: creates a patient, mutates Mongo to
+  set `anniversary_date = datetime(2022, 2, 27)` + `age = None` +
+  `gender = "M"`, then calls `/patients` and `/patients/{id}` —
+  expects **200, not 500**.
+- Verifies the dry-run + apply backfill endpoint, including idempotency
+  (`r3.backfilled == 0` after first apply).
+
+### Other findings while reviewing logs
+- 🟡 `fp=2171de5d00d1` + `99c078b5d579` — frontend "Cannot read
+  properties of undefined (reading map)" on `/billing/invoices` —
+  **stale (May 8)**, predates the cursor-pagination refactor which
+  already handles both array + envelope shapes. No action.
+- 🟡 `fp=7690804eca25` — login `unhandledrejection: Request failed with
+  status code 401` — just a wrong-password event surfacing as a JS
+  rejection. **Should be filtered at the telemetry collector**; out of
+  scope for this hotfix.
+- 🟢 `fp=8c97f59152ae` (`/api/ha/trials` missing `created_by_user_id`)
+  — **already fixed** in `models_ha.py:523` (`Optional[str] = None`).
+  Stale.
+- 🟢 `fp=TEST-ALERT-F` — synthetic alert from May 8. Test fixture.
+
+### Files
+- New: `/app/backend/scripts/backfill_patient_dates.py`,
+  `/app/backend/tests/test_patient_legacy_tolerance.py` (4 PASS)
+- Modified: `/app/backend/models/_canonical.py` (tolerance + validator),
+  `/app/backend/routers/admin_backfill.py` (new `/patient-dates` endpoint),
+  `/app/frontend/src/modules/admin/panel/BackfillCard.jsx` (multi-tool
+  registry refactor)
+
+### Production rollout
+**Code-only.** Redeploy preview → production. Then in production:
+1. Founder Panel → System Health → "Data Maintenance" → tool 2 ("Normalise
+   patient.dob & patient.anniversary_date") → **Dry run**.
+2. If the candidate count looks right, click **Apply**.
+3. While in that card, also re-run tool 1 ("Stamp serial_items
+   current_patient_id") — same dry-run + apply flow for the long-pending
+   AarVee/Harmony service-ticket fix.
+4. Wait 60min; the error-spike cooldown will let `b5ce81b3ad38` re-alert
+   if the model fix didn't take. (It will take — but verify.)
+
+### Cumulative test status post-hotfix
+29 critical-path tests PASS (smoke + sessions + auth+CSRF + cursor +
+backfill + csv-export + **new patient-legacy-tolerance**). ESLint +
+Ruff clean.
+
+---
+
 ## 📤 EXPORT — "Export this view" CSV for Patients + Invoices (2026-06-02)
 
 ### Why
