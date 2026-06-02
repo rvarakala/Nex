@@ -1,5 +1,82 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔥 PROD HOTFIX — CORS wildcard + cookie auth Network Error (2026-06-02)
+
+### Symptom
+User reported login on `https://audinexa.com/login` fails with **"Network
+Error"** + persistent "Connection issue — retrying save (3/3)" toast even
+on healthy internet. Recurrence of the post-cookie-auth CORS issue we
+previously thought was settled.
+
+### Root cause
+Production `.env` had `CORS_ORIGINS="*"` set. The previous CORS code path
+honoured the wildcard verbatim by:
+- Setting `Access-Control-Allow-Origin: *`
+- Disabling credentials (`_allow_credentials = False`)
+
+But our frontend ships `axios.defaults.withCredentials = true` (httpOnly
+cookie auth, P1 XSS hardening). Per the CORS spec, when a request has
+`withCredentials: true`, the browser **rejects any response carrying
+`Access-Control-Allow-Origin: *`** — silently, with no error code other
+than a generic "Network Error". Every login attempt was blocked by the
+browser before the user-visible error path could fire.
+
+Curl probe of prod confirmed:
+```
+HTTP/2 401 (login probe)
+access-control-allow-origin: *
+access-control-allow-credentials: true
+```
+This combination is forbidden by the CORS spec → browser refuses to deliver
+the response to the JavaScript app → "Network Error".
+
+### Fix (`server.py:948-1010`)
+When `CORS_ORIGINS=*` is read from env, we now **IGNORE the wildcard** and
+fall through to the credential-friendly regex fallback
+(`https://(*.)?audinexa.com$ | preview emergentagent | localhost`). A loud
+ERROR log fires so ops see the misconfiguration. Operators who genuinely
+want wildcard CORS would have to also disable cookie auth — not something
+we silently do.
+
+Internal curl confirmed: backend now responds
+```
+access-control-allow-origin: https://audinexa.com
+access-control-allow-credentials: true
+```
+when the request origin is `https://audinexa.com`, exactly what the browser
+needs.
+
+### Files
+- New: `/app/backend/tests/test_cors_wildcard_fallback.py` (3 PASS — pins
+  wildcard-ignored, unset-uses-regex, and explicit-allowlist behaviours)
+- Modified: `/app/backend/server.py` (lines 976-991 — wildcard branch now
+  logs ERROR + falls back to regex)
+- Modified: `/app/.gitignore` — removed 15 stray blanket `.env` ignore
+  patterns that conflict with line 69 comment "keep .env committed for
+  Emergent deploy". Deployment agent flagged this as a potential block
+  on .env propagation during native deploys.
+
+### Verified
+- 27/27 cumulative critical-path tests PASS (3 new CORS wildcard fallback
+  + cookie auth + phase14 + smoke). Ruff + ESLint clean.
+- Live local backend probe: `Allow-Origin: https://audinexa.com` (not `*`)
+  on a real login POST — confirms the regex fallback is active even
+  though `.env` still carries `CORS_ORIGINS="*"`.
+
+### Production rollout
+**Code-only redeploy.** No DB migration, no env-var changes needed.
+After the next redeploy of audinexa.com:
+1. Backend boot log will show: `CORS_ORIGINS='*' detected — IGNORED
+   because it breaks cookie auth. Falling back to regex…`
+2. Browser login from `audinexa.com` will succeed (server returns
+   `Allow-Origin: https://audinexa.com`).
+3. **Optional cleanup**: in the production env, change
+   `CORS_ORIGINS="*"` → `CORS_ORIGINS="https://audinexa.com,https://www.audinexa.com"`
+   so the explicit allowlist matches the actual deployed domains and the
+   regex fallback is only a safety net.
+
+---
+
 ## 🎨 PHASE 14 — Frontend wiring + Loaner Fleet Health widget + Quiet Hours (2026-06-02)
 
 Continuation of the backend Phase 14 shipped earlier today. User asked
