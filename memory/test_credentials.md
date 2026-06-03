@@ -39,13 +39,36 @@ pytest
 Valid roles: `super_admin`, `clinic_owner`, `front_desk`, `audiologist`, `accounts`, `inventory_manager`, `technician`, `referral_partner`, `founder`. `super_admin` and `founder` bypass every `require_roles` + `require_tier` check.
 
 ## AUDINEXA Super Admin Panel — Internal Team (Phase 14A/B/C)
+> Architecture note: the admin-panel backend is split across two router
+> files for historical reasons — `admin_panel.py` (21 routes, Phase 14A
+> dashboard/tenants/leads/revenue) + `admin_panel_b.py` (32 routes,
+> Phase 14B+C support/usage/system-health/marketing/notifications/audit/
+> settings/RBAC). They share zero routes — both are mounted under
+> `/api/admin/v2`. Future rename candidate: `admin_panel.py` →
+> `admin_panel_core.py` and `admin_panel_b.py` → `admin_panel_ops.py`.
+> Not blocking; safe to defer.
+
 - **Founder**: `founder@audinexa.com` / `founder123` — full access + delete-tenant
-- **Super Admin**: `admin@acs.in` / `admin123` — all admin except delete-tenant
-- **Sales Manager**: `sales@audinexa.com` / `sales123` — leads/marketing/revenue:read
-- **Support Agent**: `support@audinexa.com` / `support123` — tickets/impersonate/system:read
-- **Finance Manager**: `finance@audinexa.com` / `finance123` — revenue/invoices/subscriptions
-- **Product Ops**: `ops@audinexa.com` / `ops123` — features/usage/notifications
-- **Read Only Analyst**: `analyst@audinexa.com` / `analyst123` — all read, no write
+  - Override via env `FOUNDER_PASSWORD=<strong>` for production
+- **Super Admin**: `admin@acs.in` / `admin123` — all admin except delete-tenant (legacy, deprecated)
+
+### 🔐 Rotated 2026-06-03 — strong passwords now required
+Internal Audinexa-team accounts had their default passwords rotated from
+`<role>123` to strong randoms. Each value can be overridden in production
+via env var `AUDINEXA_<ROLE>_PW`.
+
+| Role | Email | New Password | Env Override |
+|---|---|---|---|
+| Sales Manager | `sales@audinexa.com` | `Sales-Mgr-9K2vX7wR` | `AUDINEXA_SALES_PW` |
+| Support Agent | `support@audinexa.com` | `Support-A3jH8nP4yZ` | `AUDINEXA_SUPPORT_PW` |
+| Finance Manager | `finance@audinexa.com` | `Finance-V5tB9cM1qL` | `AUDINEXA_FINANCE_PW` |
+| Product Ops | `ops@audinexa.com` | `ProdOps-G4xN6sD2uK` | `AUDINEXA_OPS_PW` |
+| Read Only Analyst | `analyst@audinexa.com` | `Analyst-W8rT5fJ3eY` | `AUDINEXA_ANALYST_PW` |
+
+The previous `<role>123` passwords **no longer work**. To rotate again:
+1. Set `AUDINEXA_<ROLE>_PW=<new-strong>` in `/app/backend/.env`
+2. Either run the seed (`DISABLE_DEMO_SEED=0 supervisorctl restart backend`)
+   OR run the one-off rotation block in `admin_seed._resolve_internal_pw`.
 
 ### Seeded demo tenants (for Admin Panel screenshots)
 | Clinic | Tier | Owner email | Password |

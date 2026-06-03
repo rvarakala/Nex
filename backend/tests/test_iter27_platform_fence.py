@@ -35,12 +35,12 @@ def founder_token():
 
 @pytest.fixture(scope="module")
 def analyst_token():
-    return _login("analyst@audinexa.com", "analyst123")
+    return _login("analyst@audinexa.com", "Analyst-W8rT5fJ3eY")
 
 
 @pytest.fixture(scope="module")
 def support_token():
-    return _login("support@audinexa.com", "support123")
+    return _login("support@audinexa.com", "Support-A3jH8nP4yZ")
 
 
 @pytest.fixture(scope="module")

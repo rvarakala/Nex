@@ -33,6 +33,20 @@ from auth import (
     get_current_user, hash_password, create_access_token,
     VALID_ROLES,
 )
+from utils.hot_cache import cached, invalidate as _cache_invalidate
+
+
+def _invalidate_dashboard_cache():
+    """Drop dashboard + tenants + leads cache entries — called by any
+    mutation that changes platform-level KPIs (tenant create/suspend/
+    activate/delete, lead convert, plan change, payment status flip).
+
+    Cheap: scans the in-process cache map (≤1024 entries) for matching
+    prefixes; typical eviction count is 1-5 entries.
+    """
+    _cache_invalidate("dashboard:")
+    _cache_invalidate("tenants:")
+    _cache_invalidate("leads:")
 from database import get_db
 from utils.serde import serialize_datetime, deserialize_datetime
 
@@ -80,6 +94,27 @@ async def dashboard(
     user=Depends(require_permission("dashboard:read")),
     db=Depends(get_db),
 ):
+    """Founder dashboard KPI tile + charts.
+
+    **Cached** for 30s — these are platform-wide aggregations that are
+    expensive to recompute on every poll (founder dashboard polls every
+    15s). Cache key is shared across all founder/super_admin viewers
+    because the response is platform-wide, not user-scoped. Cache is
+    automatically invalidated when a tenant is created/updated/deleted
+    (see `_invalidate_dashboard_cache()` in the mutation handlers).
+    """
+    return await cached(
+        key="dashboard:v1",
+        factory=lambda: _compute_dashboard(db),
+        ttl_seconds=30,
+    )
+
+
+async def _compute_dashboard(db) -> dict:
+    """Pure compute fn for the dashboard payload. Pulled out of the route
+    handler so it can be invoked behind the `cached()` wrapper without
+    threading FastAPI internals through the cache layer.
+    """
     now = datetime.now(timezone.utc)
     month_ago = (now - timedelta(days=30)).isoformat()
     months_ago_12 = (now - timedelta(days=365)).isoformat()
@@ -244,6 +279,23 @@ async def list_tenants(
     user=Depends(require_permission("tenants:read")),
     db=Depends(get_db),
 ):
+    """Enriched tenants list. **Cached 30s** per unique filter combo.
+    Founder console polls this every few seconds when filtering; the
+    cache makes repeat filter clicks instant. Invalidated on tenant
+    create/update/delete."""
+    # Cache key includes every filter dimension. Note: filter values are
+    # already typed (Optional[str]), no injection risk via the key.
+    key = f"tenants:v1:{status}:{tier}:{country}:{q}:{limit}"
+    return await cached(
+        key=key,
+        factory=lambda: _compute_list_tenants(status, tier, country, q, limit, db),
+        ttl_seconds=30,
+    )
+
+
+async def _compute_list_tenants(status, tier, country, q, limit, db):
+    """Pure-compute backing function for the cached `/tenants` endpoint.
+    Identical shape to the previous handler body."""
     query: dict = {}
     if status:
         query["status"] = status
@@ -371,6 +423,7 @@ async def update_tenant(
     updates["updated_at"] = datetime.now(timezone.utc)
     await db.clinics.update_one({"clinic_id": clinic_id}, {"$set": serialize_datetime(updates)})
     await _log_audit(db, user, "tenant.update", clinic_id, before={k: existing.get(k) for k in updates}, after=updates, request=request)
+    _invalidate_dashboard_cache()
     return {"ok": True}
 
 
@@ -383,6 +436,7 @@ async def suspend_tenant(
     await db.clinics.update_one({"clinic_id": clinic_id}, {"$set": {"status": "suspended", "suspended_at": datetime.now(timezone.utc).isoformat()}})
     await db.users.update_many({"clinic_id": clinic_id}, {"$set": {"active": False}})
     await _log_audit(db, user, "tenant.suspend", clinic_id, request=request)
+    _invalidate_dashboard_cache()
     return {"ok": True, "clinic_id": clinic_id, "status": "suspended"}
 
 
@@ -395,6 +449,7 @@ async def activate_tenant(
     await db.clinics.update_one({"clinic_id": clinic_id}, {"$set": {"status": "active"}, "$unset": {"suspended_at": ""}})
     await db.users.update_many({"clinic_id": clinic_id}, {"$set": {"active": True}})
     await _log_audit(db, user, "tenant.activate", clinic_id, request=request)
+    _invalidate_dashboard_cache()
     return {"ok": True, "clinic_id": clinic_id, "status": "active"}
 
 
@@ -449,6 +504,7 @@ async def delete_tenant(
         r = await db[coll].delete_many({"clinic_id": clinic_id})
         deleted[coll] = r.deleted_count
     await _log_audit(db, user, "tenant.delete", clinic_id, before={"deleted_counts": deleted}, request=request)
+    _invalidate_dashboard_cache()
     return {"ok": True, "clinic_id": clinic_id, "deleted": deleted}
 
 
@@ -652,6 +708,15 @@ async def list_leads(
     user=Depends(require_permission("leads:read")),
     db=Depends(get_db),
 ):
+    """Lead pipeline. **Cached 30s** per stage filter."""
+    return await cached(
+        key=f"leads:v1:{stage}",
+        factory=lambda: _compute_list_leads(stage, db),
+        ttl_seconds=30,
+    )
+
+
+async def _compute_list_leads(stage, db):
     q: dict = {}
     if stage:
         q["stage"] = stage

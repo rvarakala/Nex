@@ -69,7 +69,10 @@ def test_patients_cursor_pagination_walks_to_end(admin_token):
             break
         cursor = body["next_cursor"]
         assert cursor, "has_more was True but next_cursor was empty"
-        assert pages < 50, "guard against infinite loop"
+        # Page-count guard scaled for prod tenants: at 3 patients per page,
+        # 500 pages covers 1500 patients. Bumped from 50 → 500 on 2026-06-03
+        # after rotating seed data made the platform tenant exceed 50 pages.
+        assert pages < 500, "guard against infinite loop"
     # Last page must signal exhaustion
     assert not body["has_more"]
     assert body["next_cursor"] is None

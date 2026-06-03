@@ -150,9 +150,18 @@ async def get_activation_funnel(
     Stages (each clinic counts in exactly one — their highest reached):
       registered → first_login → first_patient → first_diagnostic
       → first_invoice → active (logged in <7d ago AND has invoice)
+
+    **Cached 30s** — recomputing aggregates per poll is wasteful when the
+    funnel changes slowly (daily). Founder dashboard polls every 15s →
+    cache hit on the second poll.
     """
     from utils.activity import activation_funnel
-    return await activation_funnel(db)
+    from utils.hot_cache import cached
+    return await cached(
+        key="funnel:v1",
+        factory=lambda: activation_funnel(db),
+        ttl_seconds=30,
+    )
 
 
 @router.get("/activity/funnel/by-tenant")

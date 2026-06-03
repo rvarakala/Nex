@@ -82,13 +82,54 @@ _SAMPLE_TICKETS: list[dict[str, Any]] = [
      "clinic_id": "tenant-ent-plus", "status": "Resolved"},
 ]
 
-_INTERNAL_USERS: list[tuple[str, str, str, str]] = [
-    ("sales@audinexa.com", "sales_manager", "Asha Sales", "sales123"),
-    ("support@audinexa.com", "support_agent", "Rohit Support", "support123"),
-    ("finance@audinexa.com", "finance_manager", "Priya Finance", "finance123"),
-    ("ops@audinexa.com", "product_ops", "Kiran Ops", "ops123"),
-    ("analyst@audinexa.com", "read_only", "Neha Analyst", "analyst123"),
+_INTERNAL_USERS_DEFAULT_PWS: dict[str, str] = {
+    # P0 security hardening (2026-06-03): rotated from `<role>123` to
+    # strong randoms. Each user's password can be overridden via env var
+    # `AUDINEXA_<ROLE>_PW` (e.g. AUDINEXA_SALES_PW). The strong defaults
+    # below are the source of truth and propagate to the DB via the
+    # idempotent password-sync block in `seed_admin_panel_demo`.
+    #
+    # These ARE intentionally checked in — they are the seed/demo creds
+    # for the platform tenant, NOT production keys. The platform tenant
+    # is for internal Audinexa team only; clinics use separate auth.
+    # Production owners should override every value below via env.
+    "sales@audinexa.com":   "Sales-Mgr-9K2vX7wR",
+    "support@audinexa.com": "Support-A3jH8nP4yZ",
+    "finance@audinexa.com": "Finance-V5tB9cM1qL",
+    "ops@audinexa.com":     "ProdOps-G4xN6sD2uK",
+    "analyst@audinexa.com": "Analyst-W8rT5fJ3eY",
+}
+
+_INTERNAL_USER_ROLES: list[tuple[str, str, str]] = [
+    # (email, role, display_name) — passwords looked up from the dict above
+    # (or env var override).
+    ("sales@audinexa.com",   "sales_manager",   "Asha Sales"),
+    ("support@audinexa.com", "support_agent",   "Rohit Support"),
+    ("finance@audinexa.com", "finance_manager", "Priya Finance"),
+    ("ops@audinexa.com",     "product_ops",     "Kiran Ops"),
+    ("analyst@audinexa.com", "read_only",       "Neha Analyst"),
 ]
+
+
+def _resolve_internal_pw(email: str) -> str:
+    """Resolve seed password for an internal user. Env var wins (operators
+    should set `AUDINEXA_<ROLE>_PW=<strong>` in prod), strong default
+    otherwise. Falls back to a per-call random if anything goes wrong, so
+    we never accidentally seed a blank password."""
+    import os
+    import secrets
+    role_key = email.split("@", 1)[0].upper()
+    env_var = f"AUDINEXA_{role_key}_PW"
+    env_val = os.environ.get(env_var)
+    if env_val and len(env_val) >= 12:
+        return env_val
+    default = _INTERNAL_USERS_DEFAULT_PWS.get(email)
+    if default:
+        return default
+    # Defensive — never seed blank. If a new internal user is added without
+    # a default, generate a random one (caller can read it from the DB or
+    # logs, then rotate). 18 url-safe chars ≈ 134 bits of entropy.
+    return secrets.token_urlsafe(18)
 
 
 async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
@@ -185,8 +226,17 @@ async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
 
         await db.clinics.insert_one(serialize_datetime(doc))
 
-        # Seed an owner user for each tenant
+        # Seed an owner user for each tenant. The default is intentionally
+        # kept as `demo123` because it's the documented test credential for
+        # every demo tenant (see `/app/memory/test_credentials.md`). Rotate
+        # via env `AUDINEXA_DEMO_OWNER_PW` before any external-facing demo.
+        # Note: existing demo owners aren't auto-synced — only newly created
+        # demo tenants pick up the env override. To rotate existing users
+        # at scale, run the seed with the new env var AND a one-off
+        # update_many in mongo.
+        import os
         owner_email = t.get("email") or f"owner@{cid}.in"
+        demo_owner_pw = os.environ.get("AUDINEXA_DEMO_OWNER_PW", "demo123")
         if not await db.users.find_one({"email": owner_email}):
             await db.users.insert_one(serialize_datetime({
                 "user_id": f"USR-{str(uuid4())[:8].upper()}",
@@ -195,7 +245,7 @@ async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
                 "name": f"{t['name']} Owner",
                 "role": "clinic_owner",
                 "active": True,
-                "password_hash": hash_password("demo123"),
+                "password_hash": hash_password(demo_owner_pw),
                 "branch_ids": [],
                 "created_at": now,
             }))
@@ -231,16 +281,21 @@ async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
         }))
 
     # ---- 5. Internal Audinexa team users (Phase 14C granular RBAC) ----
-    for email, role, name, pw in _INTERNAL_USERS:
+    # Passwords come from env var `AUDINEXA_<ROLE>_PW` if set, otherwise
+    # strong checked-in defaults (see `_INTERNAL_USERS_DEFAULT_PWS`).
+    for email, role, name in _INTERNAL_USER_ROLES:
+        pw = _resolve_internal_pw(email)
         found = await db.users.find_one({"email": email})
         if found:
-            # keep pw in sync
+            # keep pw in sync — re-runs after env rotation propagate without
+            # operator intervention.
             if not verify_password(pw, found.get("password_hash", "")):
                 await db.users.update_one(
                     {"email": email},
                     {"$set": {"password_hash": hash_password(pw), "role": role,
                               "clinic_id": PLATFORM_CLINIC_ID, "active": True}},
                 )
+                logger.info(f"Internal user password rotated: {email}")
             continue
         await db.users.insert_one(serialize_datetime({
             "user_id": f"USR-{str(uuid4())[:8].upper()}",

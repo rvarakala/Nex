@@ -31,11 +31,11 @@ API = f"{BASE_URL}/api"
 
 FOUNDER = ("founder@audinexa.com", "founder123")
 SUPER_ADMIN = (ADMIN_EMAIL, ADMIN_PASSWORD)
-SALES_MGR = ("sales@audinexa.com", "sales123")
-SUPPORT_AGT = ("support@audinexa.com", "support123")
-FINANCE_MGR = ("finance@audinexa.com", "finance123")
-PRODUCT_OPS = ("ops@audinexa.com", "ops123")
-READ_ONLY = ("analyst@audinexa.com", "analyst123")
+SALES_MGR = ("sales@audinexa.com", "Sales-Mgr-9K2vX7wR")
+SUPPORT_AGT = ("support@audinexa.com", "Support-A3jH8nP4yZ")
+FINANCE_MGR = ("finance@audinexa.com", "Finance-V5tB9cM1qL")
+PRODUCT_OPS = ("ops@audinexa.com", "ProdOps-G4xN6sD2uK")
+READ_ONLY = ("analyst@audinexa.com", "Analyst-W8rT5fJ3eY")
 FRONT_DESK = (FRONTDESK_EMAIL, FRONTDESK_PASSWORD)
 SOUND_CLINIC_OWNER = ("owner@thesoundclinic.in", "demo123")  # PREMIUM seeded tenant
 

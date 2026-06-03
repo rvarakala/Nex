@@ -40,7 +40,6 @@ google-api-python-client==2.191.0
 google-auth-httplib2==0.3.0
 google-auth==2.49.0.dev0
 google-genai==1.65.0
-google-generativeai==0.8.6
 googleapis-common-protos==1.72.0
 grpcio-status==1.71.2
 grpcio==1.78.0
@@ -61,7 +60,6 @@ jsonschema-specifications==2025.9.1
 jsonschema==4.26.0
 librt==0.8.1
 limits==5.8.0
-litellm==1.80.0
 markdown-it-py==4.0.0
 mccabe==0.7.0
 mdurl==0.1.2
@@ -71,7 +69,6 @@ mypy==1.19.1
 mypy_extensions==1.1.0
 numpy==2.4.2
 oauthlib==3.3.1
-openai==1.99.9
 openpyxl==3.1.5
 packaging==26.0
 pandas==3.0.1
@@ -135,3 +132,4 @@ websockets==16.0
 wrapt==2.1.2
 yarl==1.23.0
 zipp==3.23.0
+cachetools==5.5.0

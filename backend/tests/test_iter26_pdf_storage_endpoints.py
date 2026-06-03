@@ -76,7 +76,7 @@ def test_purge_days_invalid_returns_400():
 # ---------- RBAC negatives ----------
 
 def test_support_agent_cannot_override_days():
-    tok = _login("support@audinexa.com", "support123")
+    tok = _login("support@audinexa.com", "Support-A3jH8nP4yZ")
     r = requests.post(f"{API}/admin/v2/system/storage/purge-pdfs",
                       headers={"Authorization": f"Bearer {tok}"}, json={"days": 7}, timeout=20)
     assert r.status_code == 403, f"support should not override days, got {r.status_code} {r.text}"
@@ -84,7 +84,7 @@ def test_support_agent_cannot_override_days():
 
 def test_support_agent_can_view_storage_stats():
     """system:read permission should allow GET /system/storage."""
-    tok = _login("support@audinexa.com", "support123")
+    tok = _login("support@audinexa.com", "Support-A3jH8nP4yZ")
     r = requests.get(f"{API}/admin/v2/system/storage",
                      headers={"Authorization": f"Bearer {tok}"}, timeout=20)
     assert r.status_code == 200, r.text
@@ -93,7 +93,7 @@ def test_support_agent_can_view_storage_stats():
 
 def test_support_agent_default_purge_allowed():
     """Body {} (no days override) should NOT 403 — only override needs founder."""
-    tok = _login("support@audinexa.com", "support123")
+    tok = _login("support@audinexa.com", "Support-A3jH8nP4yZ")
     r = requests.post(f"{API}/admin/v2/system/storage/purge-pdfs",
                       headers={"Authorization": f"Bearer {tok}"}, json={}, timeout=20)
     assert r.status_code == 200, r.text

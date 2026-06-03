@@ -25,11 +25,11 @@ API = f"{BASE_URL}/api"
 CREDS = {
     "founder":        ("founder@audinexa.com", "founder123"),
     "super_admin":    (ADMIN_EMAIL, ADMIN_PASSWORD),
-    "sales_manager":  ("sales@audinexa.com", "sales123"),
-    "support_agent":  ("support@audinexa.com", "support123"),
-    "finance_manager": ("finance@audinexa.com", "finance123"),
-    "product_ops":    ("ops@audinexa.com", "ops123"),
-    "read_only":      ("analyst@audinexa.com", "analyst123"),
+    "sales_manager":  ("sales@audinexa.com", "Sales-Mgr-9K2vX7wR"),
+    "support_agent":  ("support@audinexa.com", "Support-A3jH8nP4yZ"),
+    "finance_manager": ("finance@audinexa.com", "Finance-V5tB9cM1qL"),
+    "product_ops":    ("ops@audinexa.com", "ProdOps-G4xN6sD2uK"),
+    "read_only":      ("analyst@audinexa.com", "Analyst-W8rT5fJ3eY"),
     "frontdesk":      (FRONTDESK_EMAIL, FRONTDESK_PASSWORD),
     "kims_owner":     ("support@kimshearing.in", "demo123"),
 }
