@@ -107,6 +107,22 @@ def create_access_token(
 MFA_ENFORCED_ROLES = {"super_admin", "founder"}
 MFA_GRACE_DAYS = 7
 
+# 2026-06-03 — operator-controlled kill switch for the 2FA grace-period
+# enforcement. The founder was repeatedly running into the post-grace 403
+# while we iterated on production, and the dict-shaped error payload was
+# triggering a React render crash (error #31). Setting
+# `MFA_ENFORCEMENT_DISABLED=1` in `backend/.env` short-circuits the
+# check below — all platform admins can hit every endpoint without 2FA.
+# Re-enable in production once a permanent 2FA UX is shipped and the
+# founder has set up TOTP. Default remains enforce-on.
+#
+# IMPORTANT: read the env var inside the function (NOT at module-load),
+# because auth.py loads before server.py calls `load_dotenv`. A
+# module-load read here would miss the .env file every time.
+def _mfa_enforcement_disabled() -> bool:
+    import os
+    return os.environ.get("MFA_ENFORCEMENT_DISABLED") == "1"
+
 # Paths a blocked platform-admin can still hit, so they can enable 2FA + see
 # who they are + log out. Everything else returns 403.
 _MFA_ENFORCEMENT_ALLOWLIST_PREFIXES = (
@@ -133,6 +149,16 @@ async def _mfa_enforcement_check(db, user: dict, request: Request) -> dict:
     Raises 403 when the user is past grace and the path isn't on the
     allowlist of "setup-only" endpoints.
     """
+    # Operator-controlled kill switch — see _mfa_enforcement_disabled() docstring.
+    if _mfa_enforcement_disabled():
+        return {
+            "required": False,
+            "enabled": bool(user.get("mfa_enabled")),
+            "blocked": False,
+            "grace_days_left": None,
+            "enforcement_disabled": True,
+        }
+
     role = user.get("role")
     if role not in MFA_ENFORCED_ROLES:
         return {"required": False, "enabled": bool(user.get("mfa_enabled")), "blocked": False}

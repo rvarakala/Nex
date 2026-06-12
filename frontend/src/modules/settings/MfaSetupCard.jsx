@@ -19,6 +19,21 @@ import {
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api/mfa`;
 
+// Safely turn any backend error into a plain string. The MFA enforcement
+// middleware (auth.py::_mfa_enforcement_check) returns 403 with a DICT-
+// shaped `detail` payload `{code, message, must_enable_by}`. Without this
+// helper, dropping that dict directly into JSX triggers React error #31
+// ("Objects are not valid as a React child"). Always route error → string
+// before calling `setErr`.
+function _errString(e, fallback) {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    return detail.message || detail.detail || JSON.stringify(detail);
+  }
+  return e?.message || fallback || 'Request failed';
+}
+
 export default function MfaSetupCard() {
   const [status, setStatus] = useState(null);          // { mfa_enabled, mfa_eligible, ... }
   const [phase, setPhase] = useState('idle');          // idle | setup | verifying | done | disable
@@ -51,7 +66,7 @@ export default function MfaSetupCard() {
       setSetup(r.data);
       setPhase('setup');
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Failed to start setup');
+      setErr(_errString(e, 'Failed to start setup'));
     } finally { setBusy(false); }
   };
 
@@ -64,7 +79,7 @@ export default function MfaSetupCard() {
       setPhase('done');
       await refresh();
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Invalid code — try a fresh one');
+      setErr(_errString(e, 'Invalid code — try a fresh one'));
     } finally { setBusy(false); }
   };
 
@@ -80,7 +95,7 @@ export default function MfaSetupCard() {
       setSavedConfirm(false);
       await refresh();
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Invalid code');
+      setErr(_errString(e, 'Invalid code'));
     } finally { setBusy(false); }
   };
 
