@@ -347,15 +347,32 @@ async def alert_config(
 
 @admin_errors_router.post("/errors-alert/test")
 async def alert_test(
+    send: int = 0,
     user=Depends(require_roles("founder")),
     db=Depends(get_db),
 ):
-    """Synthesise a fake error spike and dispatch one alert to all
-    configured channels. Bypasses cooldown by clearing state for the test
-    fingerprint first."""
-    from utils.error_alerts import maybe_alert
+    """Verify the error-spike alerter end-to-end.
+
+    Defaults to **DRY-RUN** mode (`send=0`): returns a preview of what WOULD
+    have been emailed/posted, but doesn't touch the channels. This is
+    deliberate — the founder reported real test emails flooding their
+    inbox on 2026-06-03 after clicking this endpoint a handful of times
+    while exploring the admin panel. The previous behaviour silently
+    bypassed cooldown AND sent a real email on every call.
+
+    Pass `?send=1` to actually dispatch the alert through Slack/email.
+    Even in `send=1` mode, the synthetic `error_logs` rows we insert to
+    cross the threshold are AUTO-PURGED after the dispatch — so the test
+    never pollutes long-term metrics.
+
+    Either mode returns the rendered payload for inspection.
+    """
+    from utils.error_alerts import maybe_alert, _config, _alert_context
     fp = "TEST-ALERT-FINGERPRINT"
+
+    # Clear any previous cooldown state so the test can fire repeatedly.
     await db.error_alert_state.delete_one({"fingerprint": fp})
+
     fake = {
         "fingerprint": fp,
         "kind": "backend",
@@ -365,16 +382,70 @@ async def alert_test(
         "clinic_id": user.get("clinic_id"),
         "user_id": user.get("user_id"),
     }
-    # Force the count check above the threshold by inserting `threshold` rows.
-    from utils.error_alerts import _config
+
     threshold = _config()["threshold"]
     now = datetime.now(timezone.utc)
+    synthetic_log_ids = [f"test-{uuid.uuid4().hex[:8]}-{i}" for i in range(threshold)]
+
+    # Insert synthetic rows so the alerter's count check passes.
     await db.error_logs.insert_many([
         {**fake,
-         "log_id": f"test-{uuid.uuid4().hex[:8]}-{i}",
+         "log_id": lid,
          "at": now,
          "method": "TEST", "query_string": "", "client_ip": "127.0.0.1",
-         "user_agent": "test", "request_id": "test"} for i in range(threshold)
+         "user_agent": "test", "request_id": "test"} for lid in synthetic_log_ids
     ])
-    await maybe_alert(db, fake)
-    return {"ok": True, "dispatched": True, "fingerprint": fp}
+
+    dispatched = False
+    payload_preview = None
+    try:
+        if send == 1:
+            # Real dispatch — Slack/email goes out.
+            await maybe_alert(db, fake)
+            dispatched = True
+            payload_preview = {"note": "Real alert dispatched to configured channels"}
+        else:
+            # Dry-run — render the would-be payload but DON'T send.
+            try:
+                payload_preview = _alert_context(fake, count=threshold, cfg=_config())
+            except Exception as exc:  # pragma: no cover — defensive
+                payload_preview = {"render_error": str(exc)}
+    finally:
+        # ALWAYS clean up the synthetic rows so long-term metrics aren't
+        # polluted. Runs in both dry-run and real-send paths.
+        await db.error_logs.delete_many({"log_id": {"$in": synthetic_log_ids}})
+        # Also drop the cooldown state we just minted so future real
+        # spikes for this fingerprint can alert normally (defensive).
+        await db.error_alert_state.delete_one({"fingerprint": fp})
+
+    return {
+        "ok": True,
+        "dispatched": dispatched,
+        "dry_run": send != 1,
+        "fingerprint": fp,
+        "synthetic_rows_inserted": threshold,
+        "synthetic_rows_purged": threshold,
+        "payload_preview": payload_preview,
+        "hint": ("This was a DRY RUN. Pass `?send=1` to actually email the alert."
+                 if send != 1 else "Real alert dispatched. Synthetic rows auto-purged."),
+    }
+
+
+@admin_errors_router.post("/errors-alert/purge-test-data")
+async def alert_purge_test_data(
+    user=Depends(require_roles("founder")),
+    db=Depends(get_db),
+):
+    """One-shot cleanup of any TEST-ALERT-FINGERPRINT rows that leaked
+    into `error_logs` before the auto-cleanup landed (2026-06-03).
+    Idempotent — runs harmlessly when there's nothing to purge.
+    """
+    fp = "TEST-ALERT-FINGERPRINT"
+    logs_result = await db.error_logs.delete_many({"fingerprint": fp})
+    state_result = await db.error_alert_state.delete_many({"fingerprint": fp})
+    return {
+        "ok": True,
+        "error_logs_purged": logs_result.deleted_count,
+        "alert_state_purged": state_result.deleted_count,
+    }
+
