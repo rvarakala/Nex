@@ -1,5 +1,46 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📬 PHASE 15.6 — Waitlist autoresponder + Leads weekly counter (2026-06-12)
+
+Completed the last in-progress item from the previous fork: full wiring of
+the Zepto autoresponder email for new beta-waitlist signups, plus an
+admin-side "N in queue this week" KPI chip on the Leads Kanban.
+
+### Implementation
+1. **Backend** — `routers/subscription.py::join_waitlist`
+   - Accepts `BackgroundTasks`, computes the live `queue_position` via
+     `waitlist_autoresponder.queue_position_for()` and schedules
+     `send_waitlist_autoresponder_sync()` AFTER the response is sent.
+   - HTTP returns in <100ms even when SMTP takes 1-3s.
+   - Response now includes `queue_position` so the landing-page modal can
+     show "You're #N" without a second round-trip.
+   - **Idempotent**: checks `autoresponder_sent_at` stamp before firing.
+     A re-submission of the same email is a no-op (verified by automated
+     pytest — only 1 SMTP attempt for 2 signups).
+2. **Backend** — `routers/admin_panel.py::_compute_list_leads`
+   - Adds `in_queue_this_week` = count of real (non-test) signups created
+     in the last 7 days. Cached by the existing 30s TTL wrapper.
+3. **Frontend** — `modules/admin/panel/LeadsPage.jsx`
+   - Renders an indigo gradient KPI chip above the kanban board with the
+     Sparkles icon, "Inbound this week" label, and the live count.
+
+### Tests
+- `tests/test_waitlist_autoresponder.py` — 3 passing tests:
+  - `test_waitlist_signup_returns_queue_position`
+  - `test_waitlist_signup_is_idempotent_on_autoresponder`
+  - `test_leads_endpoint_exposes_in_queue_this_week`
+- All existing `test_phase14_admin_panel.py::test_leads_*` tests still pass.
+
+### Email copy (hybrid tone — warm + professional)
+- Subject: `You're on the AUDINEXA waitlist — position #N`
+- Body sections: greeting → premium queue-position card (#N) → "What
+  happens next" 3-step checklist → optional next-batch label → reply-to
+  CTA → footer ("we do NOT send marketing emails").
+- Brand colours `#0F52BA` / `#16A34A` inline-styled for Gmail/Outlook
+  compatibility.
+
+---
+
 ## 🛡️ PHASE 15 — CTO audit P0 hardening + perf (2026-06-03)
 
 Executed the 5 P0 action items from the multi-dimensional CTO audit

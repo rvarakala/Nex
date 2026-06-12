@@ -66,6 +66,28 @@ export default function LeadsPage() {
     <div className="p-6 space-y-5" data-testid="admin-leads-page">
       <PageHeader title="Leads / Trial CRM" subtitle={`${d.rows.length} prospects in the pipeline`} />
 
+      {typeof d.in_queue_this_week === 'number' && (
+        <div
+          data-testid="leads-week-counter"
+          className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-fuchsia-50 shadow-sm"
+        >
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-indigo-200">
+            <Sparkles size={16} className="text-indigo-600" />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-700">
+              Inbound this week
+            </div>
+            <div className="text-sm font-semibold text-slate-900">
+              <span className="text-indigo-600 font-extrabold text-lg mr-1">
+                {d.in_queue_this_week}
+              </span>
+              in queue this week
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4">
         {d.stages.map((s) => {
           const all = byStage[s];

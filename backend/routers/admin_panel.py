@@ -726,9 +726,20 @@ async def _compute_list_leads(stage, db):
     counts = {s: 0 for s in LEAD_STAGES}
     for r in rows:
         counts[r.get("stage") or "Lead"] = counts.get(r.get("stage") or "Lead", 0) + 1
+
+    # "N in queue this week" KPI — counts real (non-test) signups created in
+    # the last 7 days, regardless of stage. Sales uses this to gauge inbound
+    # velocity at a glance.
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    in_queue_this_week = await db.waitlist_signups.count_documents({
+        "created_at": {"$gte": week_ago},
+        "email": {"$not": {"$regex": r"(?i)^(test|qa|sample|demo|smoke|pytest|fake)@"}},
+    })
+
     return {
         "stages": LEAD_STAGES,
         "counts": counts,
+        "in_queue_this_week": in_queue_this_week,
         "rows": [deserialize_datetime(r) for r in rows],
     }
 

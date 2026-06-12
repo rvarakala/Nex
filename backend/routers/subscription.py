@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -34,6 +34,9 @@ from utils.serde import serialize_datetime, deserialize_datetime
 from utils.tiers import (
     TIER_ORDER, TIER_MODULES, get_tier_prices,
     resolve_effective_tier, has_module_access,
+)
+from utils.waitlist_autoresponder import (
+    queue_position_for, send_waitlist_autoresponder_sync,
 )
 
 
@@ -74,12 +77,22 @@ class WaitlistCreate(BaseModel):
 
 
 @router.post("/public/waitlist-signup", status_code=201)
-async def join_waitlist(payload: WaitlistCreate, db=Depends(get_db)):
+async def join_waitlist(
+    payload: WaitlistCreate,
+    background_tasks: BackgroundTasks,
+    db=Depends(get_db),
+):
     """Public waitlist signup — idempotent on email (upsert).
 
     All landing-page demo requests funnel through here, then surface in the
     Founder Command Centre's Leads Kanban (`stage='Lead'`). The optional
     `source` field lets us slice traffic later (landing vs. organic vs. partner).
+
+    Side-effect: a Zepto autoresponder email ("You're #N on the waitlist")
+    is scheduled via FastAPI `BackgroundTasks` so the HTTP response returns
+    in <100ms even when SMTP takes 1-3 seconds. The autoresponder is sent
+    exactly ONCE per email — re-submissions are no-ops because the helper
+    checks `autoresponder_sent_at` before firing.
     """
     doc = {
         **payload.model_dump(exclude_unset=True),
@@ -97,8 +110,30 @@ async def join_waitlist(payload: WaitlistCreate, db=Depends(get_db)):
         },
         upsert=True,
     )
-    return {"ok": True, "email": doc["email"],
-            "message": "You're on the waitlist. We'll email you at launch."}
+
+    # Fire the autoresponder exactly once per email. We check the persisted
+    # `autoresponder_sent_at` flag here (not just the upsert result) because
+    # a re-submission could land on an existing row that already received
+    # the email — we don't want to re-spam the lead.
+    existing = await db.waitlist_signups.find_one(
+        {"email": doc["email"]},
+        {"_id": 0, "autoresponder_sent_at": 1},
+    )
+    queue_position = await queue_position_for(db, doc["email"])
+    if not (existing or {}).get("autoresponder_sent_at"):
+        background_tasks.add_task(
+            send_waitlist_autoresponder_sync,
+            doc["email"],
+            payload.contact_name,
+            queue_position,
+        )
+
+    return {
+        "ok": True,
+        "email": doc["email"],
+        "queue_position": queue_position,
+        "message": "You're on the waitlist. Check your inbox for confirmation.",
+    }
 
 
 # ==================== PUBLIC VISITOR COUNTER ====================
