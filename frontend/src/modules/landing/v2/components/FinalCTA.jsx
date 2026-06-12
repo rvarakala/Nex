@@ -31,8 +31,8 @@ export default function FinalCTA({ onBookDemo }) {
           />
 
           <div className="relative max-w-4xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[11px] font-semibold tracking-[0.18em] uppercase text-emerald-300">
-              <Sparkles size={12} /> One screen. Three workflows. Zero leakage.
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-400/15 border border-amber-300/30 text-[11px] font-semibold tracking-[0.18em] uppercase text-amber-200">
+              <Sparkles size={12} /> Beta cohort full · Queue is now open
             </div>
 
             <h2 className="font-display tracking-supertight font-bold text-4xl sm:text-5xl lg:text-6xl leading-[1.02] mt-6">
@@ -41,18 +41,18 @@ export default function FinalCTA({ onBookDemo }) {
             </h2>
 
             <p className="font-body text-base sm:text-lg text-slate-300 leading-relaxed mt-6 max-w-2xl">
-              30-minute demo. We'll plot a sample audiogram, generate a GST
-              invoice, and walk through your data security — all in one screen.
-              No card, no commitment.
+              The beta cohort is full. We open one batch at a time so every
+              clinic gets white-glove onboarding. Join the queue — you'll
+              be first to know when the next batch opens.
             </p>
 
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <button
                 onClick={onBookDemo}
-                data-testid="final-cta-book-demo"
+                data-testid="final-cta-join-waitlist"
                 className="group inline-flex items-center gap-2 px-7 py-4 text-[15px] font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 active:scale-[0.98] transition shadow-[0_18px_40px_-12px_rgba(255,255,255,0.35)]"
               >
-                Book your 30-min demo
+                Reserve my spot in the queue
                 <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
               </button>
               <a

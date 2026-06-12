@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 
+// Pricing link intentionally removed 2026-06-03 — beta cohort is full,
+// pricing is per-clinic conversation during sales call (not a public
+// table). Restore when general availability ships.
 const NAV_LINKS = [
   { href: '#features',  label: 'Features' },
   { href: '#how',       label: 'How it works' },
-  { href: '#pricing',   label: 'Pricing' },
   { href: '#security',  label: 'Security' },
   { href: '#faq',       label: 'FAQ' },
 ];
 
-export default function Navbar({ onBookDemo }) {
+export default function Navbar({ onBookDemo, ribbonOffset = false }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -21,10 +23,14 @@ export default function Navbar({ onBookDemo }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // When the beta ribbon is mounted above us we need to push the navbar
+  // down by the ribbon height (~36px). Otherwise it overlaps the ribbon.
+  const topOffset = ribbonOffset ? 'top-9' : 'top-0';
+
   return (
     <header
       data-testid="landing-navbar"
-      className={`fixed top-0 inset-x-0 z-50 transition-[background,backdrop-filter,border-color] duration-300 ${
+      className={`fixed ${topOffset} inset-x-0 z-50 transition-[background,backdrop-filter,border-color] duration-300 ${
         scrolled
           ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,82,186,0.04)]'
           : 'bg-transparent border-b border-transparent'
@@ -68,10 +74,10 @@ export default function Navbar({ onBookDemo }) {
           </Link>
           <button
             onClick={onBookDemo}
-            data-testid="nav-book-demo"
+            data-testid="nav-join-waitlist"
             className="hidden sm:inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-[#0F52BA] rounded-lg hover:bg-[#0C4399] active:scale-[0.98] transition shadow-[0_8px_20px_-8px_rgba(15,82,186,0.6)]"
           >
-            Book demo
+            Join waitlist
             <span className="ml-1.5 opacity-80">→</span>
           </button>
           <button
@@ -108,10 +114,10 @@ export default function Navbar({ onBookDemo }) {
             </Link>
             <button
               onClick={() => { setOpen(false); onBookDemo(); }}
-              data-testid="nav-mobile-book-demo"
+              data-testid="nav-mobile-join-waitlist"
               className="mt-2 px-4 py-3 text-sm font-semibold text-white bg-[#0F52BA] rounded-lg"
             >
-              Book demo →
+              Join waitlist →
             </button>
           </div>
         </div>

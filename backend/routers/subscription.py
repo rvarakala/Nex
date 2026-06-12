@@ -177,6 +177,36 @@ async def landing_stats(db=Depends(get_db)):
     }
 
 
+@router.get("/public/waitlist-stats")
+async def waitlist_stats(db=Depends(get_db)):
+    """Public-facing beta-waitlist counter for the landing-page sticky
+    ribbon ("Beta cohort full — N clinics in queue · Next batch July
+    2026").
+
+    Honest count: real signups in `db.waitlist_signups`, minus obvious
+    test/seed entries. A small `FLOOR_OFFSET` (set via env
+    `AUDINEXA_WAITLIST_FLOOR`) is added so a fresh prod with 0 signups
+    still shows a non-zero figure that grows real with every new lead.
+    Default floor is 0 — no inflation unless an operator explicitly opts
+    in.
+    """
+    import os
+    floor = int(os.environ.get("AUDINEXA_WAITLIST_FLOOR", "0") or 0)
+    # Exclude obvious test rows. Real product signups never use these
+    # placeholders.
+    real = await db.waitlist_signups.count_documents({
+        "email": {"$not": {"$regex": r"(?i)^(test|qa|sample|demo|smoke|pytest|fake)@"}}
+    })
+    total = real + max(0, floor)
+    next_batch = os.environ.get("AUDINEXA_NEXT_BATCH_LABEL", "").strip() or None
+    return {
+        "in_queue": total,
+        "real_signups": real,
+        "next_batch": next_batch,
+        "beta_status": "FULL",
+    }
+
+
 # ==================== PUBLIC CLINIC SIGNUP ====================
 
 class ClinicSignup(BaseModel):

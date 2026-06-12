@@ -77,10 +77,10 @@ export default function Hero({ onBookDemo, onWatchTour }) {
             <div className="animate-fade-up-delay-3 mt-8 flex flex-wrap items-center gap-3">
               <button
                 onClick={onBookDemo}
-                data-testid="hero-book-demo"
+                data-testid="hero-join-waitlist"
                 className="group inline-flex items-center px-6 py-3.5 text-[15px] font-semibold text-slate-900 bg-emerald-400 rounded-xl hover:bg-emerald-300 active:scale-[0.98] transition shadow-[0_14px_30px_-12px_rgba(16,185,129,0.5)]"
               >
-                Schedule a demo
+                Join the beta waitlist
                 <ArrowRight size={16} className="ml-2 transition-transform group-hover:translate-x-0.5" />
               </button>
               <button

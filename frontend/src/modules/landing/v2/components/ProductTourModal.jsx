@@ -267,10 +267,10 @@ export default function ProductTourModal({ open, onClose, onBookDemo }) {
           </div>
           <button
             onClick={() => { onClose?.(); onBookDemo?.(); }}
-            data-testid="tour-book-demo"
+            data-testid="tour-join-waitlist"
             className="bg-[#0F52BA] hover:bg-[#0C4399] text-white px-4 sm:px-5 py-2 rounded-lg font-semibold text-[13px] sm:text-[14px] shadow-sm transition"
           >
-            Book Free Demo
+            Join the beta waitlist
           </button>
         </div>
       </div>

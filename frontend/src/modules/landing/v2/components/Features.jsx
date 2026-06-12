@@ -89,7 +89,7 @@ export default function Features({ onBookDemo }) {
             data-testid="features-cta"
             className="group inline-flex items-center px-5 py-3 text-sm font-semibold text-[#0F52BA] hover:bg-[#0F52BA]/5 rounded-xl border border-[#0F52BA]/30 transition"
           >
-            See it live in a 30-min demo
+            See it live · Join the waitlist
             <ArrowRight size={15} className="ml-2 transition-transform group-hover:translate-x-0.5" />
           </button>
         </div>
