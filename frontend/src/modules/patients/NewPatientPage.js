@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
 
@@ -60,14 +60,61 @@ const EAR_SIDES = ['', 'Left', 'Right', 'Bilateral'];
 
 export default function NewPatientPage() {
   const navigate = useNavigate();
+  const { patientId } = useParams();
+  const isEdit = !!patientId;
   const { setActiveTest } = useTestContext();
   const [form, setForm] = useState(INITIAL);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [dupMatches, setDupMatches] = useState([]);
+  const [loadingPatient, setLoadingPatient] = useState(isEdit);
   const debounceRef = useRef(null);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  // Edit mode: hydrate the form with the existing patient on mount. We pull
+  // only the fields the form actually edits — extras (like patient_id, mrd)
+  // are intentionally NOT placed on `form` so they can never be smuggled
+  // into the PUT body and silently overwrite server-managed values.
+  //
+  // IMPORTANT: we do NOT fall back to `INITIAL` defaults for fields where
+  // the patient's stored value is null/undefined. Doing so would silently
+  // overwrite "unset gender" → "Male", "unset insurance" → "Cash", etc.,
+  // on the very next save — a sneaky data-corruption bug. Text fields
+  // coerce null → "" so the controlled <input> doesn't warn; everything
+  // else preserves whatever was stored.
+  useEffect(() => {
+    if (!isEdit) return;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/patients/${patientId}`);
+        if (!alive) return;
+        const p = r.data || {};
+        const next = { ...INITIAL };
+        for (const k of Object.keys(INITIAL)) {
+          const v = p[k];
+          if (v === undefined || v === null) {
+            // Text inputs need controlled empty strings; the boolean
+            // `whatsapp_consent` falls back to false (its INITIAL value).
+            if (typeof INITIAL[k] === 'boolean') next[k] = false;
+            else next[k] = '';
+          } else {
+            next[k] = v;
+          }
+        }
+        // Coerce numeric age into a string for the controlled <input>.
+        if (p.age === 0 || p.age) next.age = String(p.age);
+        next.whatsapp_consent = !!p.whatsapp_consent;
+        setForm(next);
+      } catch (e) {
+        setErr(describeError(e, 'Could not load patient for editing'));
+      } finally {
+        if (alive) setLoadingPatient(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [isEdit, patientId]);
 
   // Auto-calc age from DOB
   useEffect(() => {
@@ -75,11 +122,14 @@ export default function NewPatientPage() {
     const diff = Date.now() - new Date(form.dob).getTime();
     const age = Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
     if (age >= 0 && age < 150) set({ age: String(age) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.dob]);
 
-  // Duplicate detection (debounced) — triggers on 3+ chars name or 4+ digits in mobile
+  // Duplicate detection (debounced) — triggers on 3+ chars name or 4+ digits in mobile.
+  // SKIPPED in edit mode: we'd inevitably "match" the patient we're editing
+  // (same mobile / same name), which would surface a confusing "possible
+  // duplicate of this same patient" banner.
   useEffect(() => {
+    if (isEdit) { setDupMatches([]); return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const mobileDigits = (form.mobile || '').replace(/\D/g, '');
     const nameTrimmed = (form.name || '').trim();
@@ -94,7 +144,7 @@ export default function NewPatientPage() {
       } catch { /* ignore */ }
     }, 400);
     return () => debounceRef.current && clearTimeout(debounceRef.current);
-  }, [form.mobile, form.name]);
+  }, [form.mobile, form.name, isEdit]);
 
   const valid = form.name.trim() && form.age !== '' && !isNaN(parseInt(form.age, 10));
 
@@ -107,6 +157,17 @@ export default function NewPatientPage() {
       Object.keys(payload).forEach((k) => {
         if (payload[k] === '' || payload[k] === null) delete payload[k];
       });
+
+      // EDIT MODE — PUT to the existing patient and bounce back to their
+      // profile so the user sees the updates take effect immediately. None
+      // of the "issue a token / start diagnostics" branches apply here —
+      // those are walk-in registration actions, not edit actions.
+      if (isEdit) {
+        await axios.put(`${API}/patients/${patientId}`, payload);
+        navigate(`/patients/${patientId}`);
+        return;
+      }
+
       const r = await axios.post(`${API}/patients`, payload);
       const patient = r.data;
 
@@ -139,21 +200,27 @@ export default function NewPatientPage() {
         navigate('/patients');
       }
     } catch (e) {
-      setErr(describeError(e, 'Registration failed'));
+      setErr(describeError(e, isEdit ? 'Save failed' : 'Registration failed'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="p-4 max-w-6xl mx-auto" data-testid="new-patient-page">
+    <div className="p-4 max-w-6xl mx-auto" data-testid={isEdit ? 'edit-patient-page' : 'new-patient-page'}>
       <div className="bg-white rounded-lg shadow-sm border border-slate-200">
         <div className="px-4 py-2.5 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-800">New Patient Walk-in</h2>
-            <p className="text-[10px] text-slate-500 mt-0.5">UC-01 · MRD will be auto-generated on registration</p>
+            <h2 className="text-sm font-bold text-slate-800">
+              {isEdit ? 'Edit Patient Details' : 'New Patient Walk-in'}
+            </h2>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              {isEdit
+                ? `Updating record · ${patientId}`
+                : 'UC-01 · MRD will be auto-generated on registration'}
+            </p>
           </div>
-          {dupMatches.length > 0 && (
+          {!isEdit && dupMatches.length > 0 && (
             <div className="text-[10px] bg-amber-50 border border-amber-300 rounded px-2 py-1 text-amber-800" data-testid="dup-banner">
               <b>{dupMatches.length}</b> possible match{dupMatches.length > 1 ? 'es' : ''} — check before creating
             </div>
@@ -161,8 +228,15 @@ export default function NewPatientPage() {
         </div>
 
         <div className="p-4">
-          {/* Duplicate match cards */}
-          {dupMatches.length > 0 && (
+          {/* Loading state on initial fetch in edit mode */}
+          {loadingPatient && (
+            <div className="text-[12px] text-slate-500 py-4 text-center" data-testid="edit-patient-loading">
+              Loading patient details…
+            </div>
+          )}
+
+          {/* Duplicate match cards — create flow only */}
+          {!isEdit && dupMatches.length > 0 && (
             <div className="mb-3 bg-amber-50 border border-amber-200 rounded p-2" data-testid="dup-matches">
               <div className="text-[10px] font-bold text-amber-800 mb-1">Potential duplicate records:</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
@@ -304,33 +378,53 @@ export default function NewPatientPage() {
 
         {/* Sticky action bar */}
         <div className="px-4 py-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2 sticky bottom-0">
-          <button
-            type="button"
-            onClick={() => setForm(INITIAL)}
-            data-testid="btn-reset"
-            className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded"
-          >Reset</button>
-          <button
-            type="button"
-            onClick={() => submit('register')}
-            disabled={!valid || busy}
-            data-testid="btn-register"
-            className="px-3 py-1.5 text-xs bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded disabled:opacity-50"
-          >{busy ? 'Saving…' : 'Register Patient'}</button>
-          <button
-            type="button"
-            onClick={() => submit('print')}
-            disabled={!valid || busy}
-            data-testid="btn-register-print"
-            className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded disabled:opacity-50"
-          >Register + Print Token</button>
-          <button
-            type="button"
-            onClick={() => submit('start_diagnostics')}
-            disabled={!valid || busy}
-            data-testid="btn-register-diagnostics"
-            className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
-          >Register + Start Diagnostics →</button>
+          {isEdit ? (
+            <>
+              <button
+                type="button"
+                onClick={() => navigate(`/patients/${patientId}`)}
+                data-testid="btn-cancel-edit"
+                className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={() => submit('save')}
+                disabled={!valid || busy || loadingPatient}
+                data-testid="btn-save-edit"
+                className="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
+              >{busy ? 'Saving…' : 'Save Changes'}</button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setForm(INITIAL)}
+                data-testid="btn-reset"
+                className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded"
+              >Reset</button>
+              <button
+                type="button"
+                onClick={() => submit('register')}
+                disabled={!valid || busy}
+                data-testid="btn-register"
+                className="px-3 py-1.5 text-xs bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded disabled:opacity-50"
+              >{busy ? 'Saving…' : 'Register Patient'}</button>
+              <button
+                type="button"
+                onClick={() => submit('print')}
+                disabled={!valid || busy}
+                data-testid="btn-register-print"
+                className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded disabled:opacity-50"
+              >Register + Print Token</button>
+              <button
+                type="button"
+                onClick={() => submit('start_diagnostics')}
+                disabled={!valid || busy}
+                data-testid="btn-register-diagnostics"
+                className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
+              >Register + Start Diagnostics →</button>
+            </>
+          )}
         </div>
       </div>
     </div>

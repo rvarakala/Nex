@@ -206,7 +206,7 @@ export default function PatientProfilePage() {
             <Plus size={13} /> Add Appointment
           </Link>
           <Link
-            to={`/patients?new=1`}
+            to={`/patients/${patient.patient_id}/edit`}
             data-testid="profile-edit"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 border border-slate-200 hover:border-slate-300 bg-white rounded-lg text-slate-700 font-semibold">
             <Edit size={13} /> Edit

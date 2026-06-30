@@ -44,9 +44,13 @@ export default function PatientsModule() {
     }
   }, [searchParams, location.pathname, navigate]);
 
-  // Hide top tab bar on the per-patient profile page (it has its own sub-tabs)
-  const onProfile = /^\/patients\/[^/]+$/.test(location.pathname)
-    && !['/patients/new', '/patients/appointments', '/patients/list', '/patients/reports'].includes(location.pathname);
+  // Hide top tab bar on the per-patient profile page (it has its own sub-tabs).
+  // Edit-patient pages also get the bar hidden — they're a sub-flow of the
+  // profile, not a navigation peer of Dashboard / Appointments / Patients.
+  const onProfile = (
+    /^\/patients\/[^/]+$/.test(location.pathname)
+    || /^\/patients\/[^/]+\/edit$/.test(location.pathname)
+  ) && !['/patients/new', '/patients/appointments', '/patients/list', '/patients/reports'].includes(location.pathname);
 
   return (
     <div className="h-full flex flex-col bg-slate-50" data-testid="patients-module">
@@ -77,6 +81,10 @@ export default function PatientsModule() {
           <Route path="appointments" element={<AppointmentsBoard />} />
           <Route path="list" element={<PatientsListPage />} />
           <Route path="reports" element={<ReportsModule />} />
+          {/* Edit route MUST come before `:patientId` so React Router prefers
+              the more specific match (otherwise `PT-123/edit` would render
+              the profile and pass `PT-123/edit` as patientId). */}
+          <Route path=":patientId/edit" element={<NewPatientPage />} />
           <Route path=":patientId" element={<PatientProfilePage />} />
           <Route path="*" element={<Navigate to="/patients" replace />} />
         </Routes>
