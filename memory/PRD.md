@@ -1,5 +1,72 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🖨️ PHASE 15.8 — Seal placement on Audiogram / Invoice / Challan (2026-06-30)
+
+Wired the per-user seal upload (Phase 15.7) into the three printable doc
+types via a new "Seal placement" multi-select in **Settings → Print
+Templates**.
+
+### Architecture
+- **Storage**: new field `users.seal_include_on: list[str]` containing any
+  subset of `{"audiogram","invoice","challan"}`. Server validates the codes
+  to prevent silent typos.
+- **API** — 2 new endpoints in `routers/settings.py`:
+  - `GET  /api/settings/me/seal-prefs` → `{include_on, has_seal, valid_doc_types}`
+  - `PUT  /api/settings/me/seal-prefs` → persists the list (rejects unknown
+    codes with 400; de-dupes + lower-cases input).
+- **Exposure**: `seal_include_on` now surfaces on `/api/auth/me` so the
+  frontend nav can short-circuit blob fetches when the user is opted out.
+
+### Document rendering (3 doc types)
+1. **Audiogram PDF** (`pdf_generator.create_audiogram_report`):
+   - New optional `signature_png` + `seal_png` byte params. The signature
+     row now lays out a 2-column table (signature left, optional seal right)
+     instead of a pair of centered underlines. Falls back to the legacy
+     underline + typed name when no image is provided — so old call sites
+     stay visually identical.
+   - `routers/reports.py::_load_user_signature_and_seal()` resolves the
+     signing user (session's `audiologist_user_id` → falls back to the
+     requestor) and pulls the seal blob only when `"audiogram" in
+     seal_include_on`. Verified by curl: PDF size grows by ~470 bytes when
+     toggled on.
+2. **Invoice** (`modules/billing/InvoiceDetailPage.js`):
+   - New `<SignatureSealFooter />` component fetches `/auth/me`, reads
+     `seal_include_on`, and lazily pulls the viewer's signature + seal
+     blobs. Renders an "AUTHORISED SIGNATORY" block bottom-right above the
+     system-generated disclaimer. Skipped entirely when neither image
+     resolves — clean print output preserved.
+3. **Delivery Challan** (`modules/ha/transfers/DeliveryChallanDoc.jsx`):
+   - `SignBox` now accepts a `sealUrl` and renders the seal next to the
+     existing receiver signature with subtle opacity to mimic a wet-ink
+     stamp. Backend (`stock_transfers.get_transfer`) now exposes
+     `received_by_seal_eligible` so the frontend never wastes a blob fetch
+     on a user with no opt-in.
+
+### Settings UI
+- **`SealPlacementCard.jsx`** under **Settings → Print Templates** with
+  three doc-type toggle cards. Empty-state CTA links to `/settings/seal`
+  when the user has no seal uploaded yet. Optimistic toggle UI with revert
+  on save failure + "Saved" flash badge.
+
+### Tests
+- `tests/test_seal_prefs.py` — 6 tests covering happy paths, dedup, case
+  normalisation, rejection of unknown codes, /auth/me exposure, empty
+  payload clears.
+- `tests/test_seal_audiogram_integration.py` — confirms the audiogram PDF
+  size grows when `"audiogram" in seal_include_on`, shrinks back without
+  it (renderer path actually honours the toggle).
+- All `test_seal_upload.py` (7) + `test_pdf_generator.py` (14) tests
+  continue to pass.
+
+### Notes
+- Invoice signer = the user viewing/printing the doc (no "prepared_by"
+  field on invoices today). Matches how an Indian clinic owner would
+  actually stamp their own invoice.
+- Challan seal = the receiver's seal (already the same user as the
+  receiver signature).
+
+---
+
 ## 🔖 PHASE 15.7 — Per-user Seal / Stamp upload (2026-06-30)
 
 Mirrors the existing per-user signature pattern to let users (clinic owners

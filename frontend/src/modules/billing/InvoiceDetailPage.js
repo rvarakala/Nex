@@ -253,6 +253,8 @@ export default function InvoiceDetailPage() {
           </div>
         )}
 
+        <SignatureSealFooter />
+
         <div className="mt-6 flex justify-between text-[10px] text-slate-400 italic border-t border-slate-200 pt-2">
           <div>This is a system-generated tax invoice.</div>
           <div>Generated at {fmtDateTime(inv.created_at)}</div>
@@ -273,6 +275,86 @@ export default function InvoiceDetailPage() {
 const Td = ({ children, right, colSpan, className = '' }) => (
   <td colSpan={colSpan} className={`px-2 py-1 ${right ? 'text-right tabular-nums' : ''} ${className}`}>{children}</td>
 );
+
+// ---------- Signature & seal footer (rendered above the "system-generated"
+// disclaimer). Fetches /api/auth/me to discover the CURRENT viewer's prefs
+// and lazily loads the signature + seal blobs that they've opted-in to print
+// on invoices. We use the viewer because the invoice document doesn't
+// currently carry a "prepared_by_user_id" — the print action is initiated
+// by whoever is looking at it, and they're stamping it as themselves.
+function SignatureSealFooter() {
+  const [sig, setSig] = React.useState(null);
+  const [seal, setSeal] = React.useState(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    let blobs = [];
+    (async () => {
+      try {
+        const me = await axios.get(`${API}/auth/me`);
+        const u = me.data?.user || me.data;
+        if (!u?.user_id) return;
+        const prefs = Array.isArray(u.seal_include_on) ? u.seal_include_on : [];
+        const wantSeal = prefs.includes('invoice') && !!u.seal_image_fs_id;
+
+        // Signature is always shown if available — it's the bread of the
+        // footer. Seal is the optional butter.
+        if (u.signature_image_fs_id) {
+          try {
+            const r = await axios.get(`${API}/settings/users/${u.user_id}/signature`, { responseType: 'blob' });
+            if (!alive) return;
+            const url = URL.createObjectURL(r.data); blobs.push(url);
+            setSig(url);
+          } catch { /* no sig on file → fall back to underline */ }
+        }
+        if (wantSeal) {
+          try {
+            const r = await axios.get(`${API}/settings/users/${u.user_id}/seal`, { responseType: 'blob' });
+            if (!alive) return;
+            const url = URL.createObjectURL(r.data); blobs.push(url);
+            setSeal(url);
+          } catch { /* opted-in but blob missing → silently skip */ }
+        }
+      } catch { /* /auth/me failed → render footer with placeholder */ }
+    })();
+    return () => { alive = false; blobs.forEach((u) => URL.revokeObjectURL(u)); };
+  }, []);
+
+  // Only render the block if we have something to show; an empty signature
+  // footer on a printed invoice looks unprofessional.
+  if (!sig && !seal) return null;
+
+  return (
+    <div
+      data-testid="inv-signature-seal-footer"
+      className="mt-8 flex items-end justify-end gap-6 print:break-inside-avoid"
+    >
+      <div className="text-right" style={{ minWidth: 220 }}>
+        <div className="h-[64px] flex items-end justify-end gap-3 border-b border-slate-400 pb-1">
+          {sig && (
+            <img
+              src={sig}
+              alt="Authorised signature"
+              data-testid="inv-signature-img"
+              style={{ maxHeight: 56, maxWidth: 160, objectFit: 'contain' }}
+            />
+          )}
+          {seal && (
+            <img
+              src={seal}
+              alt="Clinic seal"
+              data-testid="inv-seal-img"
+              style={{ maxHeight: 64, maxWidth: 96, objectFit: 'contain', opacity: 0.86 }}
+            />
+          )}
+        </div>
+        <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">
+          Authorised signatory
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------- Product detail mini-row (rendered under the description) ----------
 // Compact pill row showing only what's filled in. Stays tidy when a line has

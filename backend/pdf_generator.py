@@ -25,7 +25,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
-    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 # Type aliases — keeps helper signatures readable
@@ -335,22 +335,50 @@ def _build_signature_and_footer(
     elements: Elements,
     styles: StyleDict,
     session_data: Dict[str, Any],
+    signature_png: Optional[bytes] = None,
+    seal_png: Optional[bytes] = None,
 ) -> None:
     elements.append(Spacer(1, 0.3 * inch))
+
+    # Build the image flowable cells lazily — ReportLab's `Image` from a
+    # BytesIO is fine, but we don't want to instantiate one if the user has
+    # no signature/seal on file (the placeholder underline reads cleaner).
+    def _img(blob: bytes, max_h_in: float, max_w_in: float):
+        try:
+            return Image(BytesIO(blob), width=max_w_in * inch, height=max_h_in * inch, kind="proportional")
+        except Exception:
+            # Bad blob — fall back to the underline rather than crashing
+            # report generation. The user can still read the typed name.
+            return ""
+
+    sig_cell = _img(signature_png, 0.55, 2.6) if signature_png else "_____________________"
+    seal_cell = _img(seal_png, 0.95, 1.2) if seal_png else ""
+
+    # Two-column layout. Left column: signature image (or underline) stacked
+    # over the audiologist name + license. Right column: an optional seal
+    # image floats above the date so we keep the same visual rhythm as the
+    # plain (pre-seal) report when no seal is configured.
     signature_rows = [
-        ["", ""],
-        ["_____________________", "_____________________"],
-        [session_data.get("audiologist_name", "Audiologist Name"), "Date"],
-        ["Audiologist", datetime.now().strftime("%d-%b-%Y")],
+        [sig_cell, seal_cell],
+        [session_data.get("audiologist_name", "Audiologist Name"),
+         f"Date: {datetime.now().strftime('%d-%b-%Y')}"],
+        ["Audiologist",
+         "Signed & sealed" if (signature_png and seal_png) else ""],
         [session_data.get("audiologist_license", "License: RCI-XXXXX"), ""],
     ]
-    table = Table(signature_rows, colWidths=[3.5 * inch, 3.5 * inch])
+    table = Table(signature_rows, colWidths=[4.0 * inch, 3.0 * inch])
     table.setStyle(TableStyle([
         ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (0, -1), "LEFT"),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
+        ("VALIGN", (0, 1), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        # Subtle baseline under the signature cell so the eye still tracks the
+        # signing area even when no image is embedded.
+        ("LINEBELOW", (0, 0), (0, 0), 0.5, MUTED_GREY) if not signature_png else
+            ("LINEBELOW", (0, 0), (0, 0), 0, colors.transparent),
     ]))
     elements.append(table)
 
@@ -368,6 +396,8 @@ def create_audiogram_report(
     session_data: Dict[str, Any],
     patient_data: Dict[str, Any],
     audiogram_images: Optional[Dict[str, str]] = None,
+    signature_png: Optional[bytes] = None,
+    seal_png: Optional[bytes] = None,
 ) -> BytesIO:
     """Generate a professional audiological report PDF.
 
@@ -375,6 +405,11 @@ def create_audiogram_report(
         session_data: Test-session payload (audiograms, speech, results, recommendations).
         patient_data: Patient demographics (name, age, MRD, etc).
         audiogram_images: Optional dict ``{'right': <base64>, 'left': <base64>}``.
+        signature_png: Optional raw PNG/JPEG bytes of the signing audiologist's
+            signature. Embedded above the typed name when present.
+        seal_png: Optional raw PNG/JPEG bytes of the user's official seal.
+            Embedded on the right of the signature row when present AND the
+            user has opted in to "audiogram" in their seal placement prefs.
 
     Returns:
         A ``BytesIO`` buffer positioned at 0, ready to stream back as a response.
@@ -398,7 +433,9 @@ def create_audiogram_report(
     _build_speech_audiometry(elements, styles, session_data)
     _build_results_and_impression(elements, styles, session_data)
     _build_recommendations(elements, styles, session_data)
-    _build_signature_and_footer(elements, styles, session_data)
+    _build_signature_and_footer(elements, styles, session_data,
+                                 signature_png=signature_png,
+                                 seal_png=seal_png)
 
     doc.build(elements)
     buffer.seek(0)
@@ -409,10 +446,15 @@ def generate_report_pdf(
     session_id: str,
     session_data: Dict[str, Any],
     patient_data: Dict[str, Any],
+    signature_png: Optional[bytes] = None,
+    seal_png: Optional[bytes] = None,
 ) -> BytesIO:
     """Thin wrapper kept for backwards compatibility. Returns the PDF buffer."""
     try:
-        return create_audiogram_report(session_data, patient_data)
+        return create_audiogram_report(
+            session_data, patient_data,
+            signature_png=signature_png, seal_png=seal_png,
+        )
     except Exception as e:
         # Keep the legacy print-then-raise behaviour so callers see the trace.
         print(f"Error generating PDF (session {session_id}): {e}")

@@ -85,6 +85,10 @@ class StockTransfer(BaseModel):
     signature_image_fs_id: Optional[str] = None     # GridFS id of the captured PNG
     short_shipment_notes: Optional[str] = None      # raised when partial / mismatched receive
 
+    # Computed-on-read: True when receiver has a seal AND opted-in to challans.
+    # Frontend uses this to decide whether to fetch /settings/users/<id>/seal.
+    received_by_seal_eligible: Optional[bool] = None
+
     # Cancel leg
     cancelled_at: Optional[datetime] = None
     cancelled_by_user_id: Optional[str] = None

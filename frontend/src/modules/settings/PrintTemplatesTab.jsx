@@ -7,6 +7,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Printer, Activity, ArrowRight, FileText } from 'lucide-react';
+import SealPlacementCard from './SealPlacementCard';
 
 const TEMPLATES = [
   {
@@ -54,8 +55,10 @@ export default function PrintTemplatesTab() {
       <h2 className="text-2xl font-bold text-slate-900 mt-1">Print Templates</h2>
       <p className="text-sm text-slate-600 mt-1 max-w-2xl">
         Blank, hand-fillable forms with your clinic letterhead. Open one and use
-        your browser's print dialog → <b>Save as PDF</b> or send to a printer.
+        your browser&apos;s print dialog → <b>Save as PDF</b> or send to a printer.
       </p>
+
+      <SealPlacementCard />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
         {TEMPLATES.map((t) => {

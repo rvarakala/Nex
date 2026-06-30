@@ -15,6 +15,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export default function DeliveryChallanDoc({ transfer }) {
   const t = transfer;
   const [sigUrl, setSigUrl] = useState(null);
+  const [sealUrl, setSealUrl] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -29,6 +30,29 @@ export default function DeliveryChallanDoc({ transfer }) {
         blobUrl = URL.createObjectURL(r.data);
         setSigUrl(blobUrl);
       } catch { /* missing sig is not fatal — we just print a blank box */ }
+    })();
+    return () => { alive = false; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [t]);
+
+  // Receiver's seal — printed alongside their signature when they have one
+  // on file AND have opted in to "challan" in their seal placement prefs.
+  // The challan endpoint surfaces these as `received_by_seal_url` /
+  // `received_by_seal_eligible` so we never call /auth/me from this doc
+  // (which would be the WRONG user — the viewer, not the receiver).
+  useEffect(() => {
+    let alive = true;
+    let blobUrl = null;
+    const uid = t?.received_by_user_id;
+    if (!uid || !t?.received_by_seal_eligible) return;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/settings/users/${uid}/seal`, {
+          responseType: 'blob',
+        });
+        if (!alive) return;
+        blobUrl = URL.createObjectURL(r.data);
+        setSealUrl(blobUrl);
+      } catch { /* no seal on file → silently skip; signature stands alone */ }
     })();
     return () => { alive = false; if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [t]);
@@ -167,6 +191,7 @@ export default function DeliveryChallanDoc({ transfer }) {
           role={t.received_by_role}
           subtitle={t.to_clinic_name}
           signatureUrl={sigUrl}
+          sealUrl={sealUrl}
         />
       </div>
 
@@ -235,7 +260,7 @@ const Td = ({ children, align = 'left' }) => (
   <td style={{ padding: '7px 10px', textAlign: align, verticalAlign: 'top' }}>{children}</td>
 );
 
-const SignBox = ({ label, name, role, subtitle, signatureUrl }) => (
+const SignBox = ({ label, name, role, subtitle, signatureUrl, sealUrl }) => (
   <div>
     <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#64748B', marginBottom: 6 }}>
       {label}
@@ -243,13 +268,27 @@ const SignBox = ({ label, name, role, subtitle, signatureUrl }) => (
     <div style={{
       height: 70, borderBottom: '1px solid #0F172A', position: 'relative',
       display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-start', paddingBottom: 2,
+      gap: 12,
     }}>
       {signatureUrl && (
         <img
           src={signatureUrl}
           alt="signature"
-          style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }}
+          style={{ maxHeight: 60, maxWidth: '60%', objectFit: 'contain' }}
           data-testid="challan-signature-img"
+        />
+      )}
+      {sealUrl && (
+        <img
+          src={sealUrl}
+          alt="seal"
+          style={{
+            maxHeight: 64, maxWidth: '38%', objectFit: 'contain',
+            // Subtle opacity mimics a physical wet-ink stamp impression so
+            // the seal feels embossed rather than slapped over the signature.
+            opacity: 0.86, marginLeft: 'auto', marginRight: 4,
+          }}
+          data-testid="challan-seal-img"
         />
       )}
     </div>

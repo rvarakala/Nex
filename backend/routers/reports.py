@@ -3,6 +3,7 @@ import hashlib
 import io
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -50,6 +51,46 @@ async def _load_session_and_patient(db, session_id: str) -> tuple[dict, dict]:
     return session, patient
 
 
+async def _load_user_signature_and_seal(
+    db, *, user_id: Optional[str], clinic_id: str,
+    include_seal_for_doc: str,
+) -> tuple[Optional[bytes], Optional[bytes]]:
+    """Look up the signature + (optionally) seal blobs for the signing user.
+
+    The seal is ONLY returned when the user has opted in to the given doc
+    type (`include_seal_for_doc`) via their `seal_include_on` preference.
+    Failures are non-fatal — the PDF renders fine with the typed name.
+    """
+    if not user_id:
+        return None, None
+    udoc = await db.users.find_one(
+        {"user_id": user_id, "clinic_id": clinic_id},
+        {"_id": 0, "signature_image_fs_id": 1, "seal_image_fs_id": 1,
+         "seal_include_on": 1},
+    ) or {}
+
+    sig_bytes: Optional[bytes] = None
+    if udoc.get("signature_image_fs_id"):
+        try:
+            bucket = AsyncIOMotorGridFSBucket(db, bucket_name="user_signatures")
+            stream = await bucket.open_download_stream(ObjectId(udoc["signature_image_fs_id"]))
+            sig_bytes = await stream.read()
+        except Exception as e:
+            logger.warning(f"signature blob unreadable for user={user_id}: {e}")
+
+    seal_bytes: Optional[bytes] = None
+    seal_prefs = list(udoc.get("seal_include_on") or [])
+    if include_seal_for_doc in seal_prefs and udoc.get("seal_image_fs_id"):
+        try:
+            bucket = AsyncIOMotorGridFSBucket(db, bucket_name="user_seals")
+            stream = await bucket.open_download_stream(ObjectId(udoc["seal_image_fs_id"]))
+            seal_bytes = await stream.read()
+        except Exception as e:
+            logger.warning(f"seal blob unreadable for user={user_id}: {e}")
+
+    return sig_bytes, seal_bytes
+
+
 async def _stream_uploaded_pdf(db, session: dict) -> StreamingResponse | None:
     """Return the client-uploaded (as-printed) PDF from GridFS, if any.
 
@@ -74,12 +115,31 @@ async def _stream_uploaded_pdf(db, session: dict) -> StreamingResponse | None:
     )
 
 
-async def _stream_pdf(db, session_id: str, session: dict, patient: dict) -> StreamingResponse:
+async def _stream_pdf(
+    db, session_id: str, session: dict, patient: dict,
+    *, signing_user_id: Optional[str] = None,
+) -> StreamingResponse:
     uploaded = await _stream_uploaded_pdf(db, session)
     if uploaded is not None:
         return uploaded
     try:
-        pdf_buffer = generate_report_pdf(session_id, session, patient)
+        # Resolve signing-user identity: explicit caller wins (e.g. share-link),
+        # else use the audiologist recorded on the session, else fall through
+        # with no embedded image (the report still renders, just with the
+        # typed name + License underline as before).
+        user_id = signing_user_id or session.get("audiologist_user_id") or session.get("user_id")
+        sig_png, seal_png = (None, None)
+        if user_id:
+            sig_png, seal_png = await _load_user_signature_and_seal(
+                db,
+                user_id=user_id,
+                clinic_id=session.get("clinic_id") or patient.get("clinic_id") or "",
+                include_seal_for_doc="audiogram",
+            )
+        pdf_buffer = generate_report_pdf(
+            session_id, session, patient,
+            signature_png=sig_png, seal_png=seal_png,
+        )
         return StreamingResponse(
             pdf_buffer,
             media_type="application/pdf",
@@ -101,7 +161,10 @@ async def generate_session_report(session_id: str,
         raise HTTPException(status_code=403, detail="Not authorised")
     if patient_clinic and patient_clinic != user["clinic_id"]:
         raise HTTPException(status_code=403, detail="Not authorised")
-    return await _stream_pdf(db, session_id, session, patient)
+    # Use the requesting user as the signer when the session has no explicit
+    # `audiologist_user_id` (covers older sessions that pre-date that field).
+    return await _stream_pdf(db, session_id, session, patient,
+                             signing_user_id=user.get("user_id"))
 
 
 # ---- Short-lived share-link ----

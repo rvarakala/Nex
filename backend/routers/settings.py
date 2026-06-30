@@ -595,6 +595,66 @@ async def fetch_user_seal(user_id: str,
     )
 
 
+# ---------- Seal placement preferences ---------------------------------------
+# Where should the user's seal appear by default? Stored as a small string list
+# on the user doc (`seal_include_on`). The PDF renderers + printable doc
+# components read this to decide whether to draw the seal on a given document
+# type. Valid doc types are exactly the three places we currently render
+# clinic stationery — kept tight on the server side to prevent UI typos from
+# silently disabling the feature.
+_SEAL_DOC_TYPES = {"audiogram", "invoice", "challan"}
+
+
+class SealPrefsPayload(BaseModel):
+    """Plain list of doc-type codes the user wants the seal printed on.
+    Unknown codes are rejected (415-ish via a 400) so a typo doesn't silently
+    leave the seal off every doc."""
+    include_on: List[str]
+
+
+@router.get("/me/seal-prefs")
+async def get_my_seal_prefs(user=Depends(get_current_user), db=Depends(get_db)):
+    """Return the user's preferences + whether they actually have a seal on
+    file. The UI uses both to decide which checkboxes to show as "available"."""
+    udoc = await db.users.find_one(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "seal_include_on": 1, "seal_image_fs_id": 1},
+    ) or {}
+    return {
+        "include_on": list(udoc.get("seal_include_on") or []),
+        "has_seal": bool(udoc.get("seal_image_fs_id")),
+        "valid_doc_types": sorted(_SEAL_DOC_TYPES),
+    }
+
+
+@router.put("/me/seal-prefs")
+async def set_my_seal_prefs(payload: SealPrefsPayload,
+                            user=Depends(get_current_user), db=Depends(get_db)):
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for code in payload.include_on or []:
+        c = (code or "").strip().lower()
+        if not c:
+            continue
+        if c not in _SEAL_DOC_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown doc type '{c}'. Allowed: {sorted(_SEAL_DOC_TYPES)}",
+            )
+        if c not in seen:
+            seen.add(c)
+            cleaned.append(c)
+
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "seal_include_on": cleaned,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"ok": True, "include_on": cleaned}
+
+
 
 # ============================================================================
 # SELF-SERVICE PROFILE & PASSWORD ENDPOINTS
@@ -644,6 +704,7 @@ async def get_my_profile(user=Depends(get_current_user), db=Depends(get_db)):
         "qualifications", "license_no", "rci_registration_no",
         "specialization", "years_of_experience", "languages", "bio",
         "avatar_fs_id", "signature_image_fs_id", "seal_image_fs_id",
+        "seal_include_on",
         "appointment_color", "must_change_password",
         "created_at", "updated_at",
     ]

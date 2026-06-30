@@ -345,6 +345,19 @@ async def get_transfer(transfer_id: str,
     accessible = await _accessible_clinic_ids(user, db)
     if t["from_clinic_id"] not in accessible and t["to_clinic_id"] not in accessible:
         raise HTTPException(status_code=403, detail="Not allowed to view this transfer")
+    # Flag whether the receiving user has opted-in to stamping their seal on
+    # challans. The frontend uses this to decide whether to fetch the seal
+    # image — a cheap projection on `users.seal_include_on` keeps the doc
+    # render path purely declarative.
+    if t.get("received_by_user_id"):
+        rdoc = await db.users.find_one(
+            {"user_id": t["received_by_user_id"]},
+            {"_id": 0, "seal_image_fs_id": 1, "seal_include_on": 1},
+        ) or {}
+        prefs = list(rdoc.get("seal_include_on") or [])
+        t["received_by_seal_eligible"] = (
+            "challan" in prefs and bool(rdoc.get("seal_image_fs_id"))
+        )
     return deserialize_datetime(t)
 
 
