@@ -305,6 +305,7 @@ async def get_current_user(request: Request):
         "seal_image_fs_id": user.get("seal_image_fs_id"),
         "seal_include_on": list(user.get("seal_include_on") or []),
         "license_no": user.get("license_no"),
+        "can_access_referrals": bool(user.get("can_access_referrals")),
         "appointment_color": user.get("appointment_color"),
         "mfa_enforcement": enforcement,
         "session_id": sid,

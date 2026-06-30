@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import DiagnosticsAnalyticsTab from './DiagnosticsAnalyticsTab';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -8,6 +9,7 @@ const fmtPct = (n) => `${Number(n || 0).toFixed(1)}%`;
 
 export default function OwnerAnalyticsPage() {
   const [me, setMe] = useState(null);
+  const [tab, setTab] = useState('core'); // 'core' | 'diagnostics'
   const [rev, setRev] = useState(null);
   const [aud, setAud] = useState(null);
   const [inv, setInv] = useState(null);
@@ -99,11 +101,50 @@ export default function OwnerAnalyticsPage() {
 
   return (
     <div className="p-5 space-y-5" data-testid="ha-analytics-page">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Owner Analytics</h1>
-          <p className="text-[11px] text-slate-500 mt-0.5">Revenue, funnel, team performance, inventory health, retention — at a glance.</p>
+          <h1 className="text-xl font-bold text-slate-800">Reports &amp; Analytics</h1>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {tab === 'core'
+              ? 'Hearing-aid sales, service & repair, brand split, team performance.'
+              : 'Diagnostic tests, recommendations, age/gender split, and referral pathways for marketing planning.'}
+          </p>
         </div>
+      </div>
+
+      {/* Top-level tab bar — clean two-pill switcher */}
+      <div className="inline-flex bg-slate-100 rounded-lg p-1 gap-1" data-testid="analytics-tabs">
+        <button
+          type="button"
+          onClick={() => setTab('core')}
+          data-testid="tab-core-business"
+          className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+            tab === 'core'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-800'
+          }`}
+        >
+          Core Business Analytics
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('diagnostics')}
+          data-testid="tab-diagnostics"
+          className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+            tab === 'diagnostics'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-800'
+          }`}
+        >
+          Diagnostics Analytics
+        </button>
+      </div>
+
+      {tab === 'diagnostics' ? (
+        <DiagnosticsAnalyticsTab />
+      ) : (
+      <>
+      <div className="flex items-center justify-end gap-3 flex-wrap">
         <div className="flex items-center gap-2 text-xs">
           <label className="inline-flex items-center gap-1 text-slate-600">
             From <input type="date" value={start} onChange={(e) => setStart(e.target.value)} data-testid="ha-analytics-start" className="border border-slate-300 rounded px-1 py-0.5 text-xs" />
@@ -281,7 +322,7 @@ export default function OwnerAnalyticsPage() {
                 </div>
               ))}
               <div className="pt-2 mt-2 border-t border-slate-100 text-[10px] text-slate-500 italic">
-                Bar colour: <span className="text-emerald-700 font-bold">≥50% green</span> · <span className="text-amber-700 font-bold">25-49% amber</span> · <span className="text-rose-700 font-bold">&lt;25% rose</span>. Low rates usually mean the follow-up message needs rewriting, or patients aren't replying in time.
+                Bar colour: <span className="text-emerald-700 font-bold">≥50% green</span> · <span className="text-amber-700 font-bold">25-49% amber</span> · <span className="text-rose-700 font-bold">&lt;25% rose</span>. Low rates usually mean the follow-up message needs rewriting, or patients aren&apos;t replying in time.
               </div>
             </div>
           );
@@ -292,6 +333,8 @@ export default function OwnerAnalyticsPage() {
       {srev && <ServiceRevenueCard data={srev} />}
 
       {drill && <DrillModal title={drill.title} rows={drillRows} onClose={() => { setDrill(null); setDrillRows(null); }} />}
+      </>
+      )}
     </div>
   );
 }

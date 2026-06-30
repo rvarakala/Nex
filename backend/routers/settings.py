@@ -170,6 +170,7 @@ class StaffCreate(BaseModel):
                   "inventory_manager", "technician"]
     branch_ids: List[str] = []
     phone: Optional[str] = None
+    can_access_referrals: bool = False
 
 
 class StaffUpdate(BaseModel):
@@ -179,6 +180,10 @@ class StaffUpdate(BaseModel):
     branch_ids: Optional[List[str]] = None
     phone: Optional[str] = None
     active: Optional[bool] = None
+    # When True, this user can view the Referral Corner dashboard even
+    # without being a clinic_owner / super_admin. Editing payout terms
+    # still requires owner role. Default OFF — explicit grants only.
+    can_access_referrals: Optional[bool] = None
 
 
 async def _log_mock_email(db, clinic_id: str, to: str, subject: str, body: str, kind: str = "staff_welcome"):

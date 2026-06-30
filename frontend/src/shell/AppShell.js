@@ -7,7 +7,7 @@ import {
   Menu, Search as SearchIcon, Settings, Database, LifeBuoy,
   Calendar, CalendarDays, BookOpen, RotateCcw, UserPlus, UserSquare2,
   Package, Tag, IndianRupee, Bell, MessageSquare, HelpCircle, ChevronDown,
-  TrendingUp, ShieldCheck,
+  TrendingUp, ShieldCheck, Award,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import ClinicSwitcher from './ClinicSwitcher';
@@ -225,6 +225,11 @@ export default function AppShell({ children }) {
   // checks (e.g. `access['hearing-aids']`) survive untouched.
   const isAudio = user?.role === 'audiologist';
   const isOwnerOrAdmin = ['clinic_owner', 'super_admin', 'founder'].includes(user?.role);
+  // Referral Corner is owner-only by default, but the owner can delegate
+  // via the `can_access_referrals` user flag (e.g. Marketing Manager,
+  // Accounts). We check both signals so the sidebar accurately reflects
+  // what the API will let through.
+  const canSeeReferrals = isOwnerOrAdmin || !!user?.can_access_referrals;
   const m = (k) => superAdminBypass || access[k];          // shorthand for module access
 
   const sections = [
@@ -283,6 +288,8 @@ export default function AppShell({ children }) {
       label: 'Reports',
       items: [
         { to: '/ha/analytics',       Icon: BarChart3, label: 'Reports & Analytics', testid: 'nav-analytics' },
+        canSeeReferrals &&
+          { to: '/referrals', Icon: Award, label: 'Referral Corner', testid: 'nav-referrals' },
       ].filter(Boolean),
     },
     {

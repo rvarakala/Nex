@@ -873,6 +873,7 @@ from routers import ha_service_v2 as ha_service_v2_router     # noqa: E402
 from routers import ha_repair_ops as ha_repair_ops_router     # noqa: E402
 from routers import ha_amc as ha_amc_router                   # noqa: E402
 from routers import analytics as analytics_router             # noqa: E402
+from routers import referrals as referrals_router             # noqa: E402
 from routers import referral_partners as referral_partners_router  # noqa: E402
 from routers import patient_portal as patient_portal_router   # noqa: E402
 from routers import admin_panel as admin_panel_router         # noqa: E402
@@ -925,6 +926,7 @@ app.include_router(ha_service_v2_router.router)
 app.include_router(ha_repair_ops_router.router)
 app.include_router(ha_amc_router.router)
 app.include_router(analytics_router.router)
+app.include_router(referrals_router.router)
 app.include_router(referral_partners_router.router)
 app.include_router(patient_portal_router.router)
 app.include_router(admin_panel_router.router)

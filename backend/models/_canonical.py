@@ -59,6 +59,13 @@ class User(BaseModel):
     signature_image_fs_id: Optional[str] = None
     # Optional license / registration number printed under the signature.
     license_no: Optional[str] = None
+    # Referral-corner delegation: when True (or the user is clinic_owner /
+    # super_admin), this user can view + edit referral payouts. Default off
+    # so Marketing Manager / Admin staff must be explicitly granted access
+    # by the owner. Branch scoping is enforced via the existing
+    # `branch_ids` filter — a delegated user only sees referrals from
+    # patients registered at their branches.
+    can_access_referrals: bool = False
     active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -599,6 +606,23 @@ class ReferringDoctor(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
+
+    # ── Referral payout configuration ─────────────────────────────────
+    # The clinic owner can set a cut for this doctor on TWO categories
+    # independently: diagnostics revenue and HA-sales revenue. Within each
+    # category the cut is EITHER a percentage of the booked revenue OR a
+    # fixed flat amount per referred patient — never both at once (per
+    # product call — "one mode active at a time" is simpler to reconcile
+    # with manual cheque-cutting).
+    #
+    # Default: no payout (`mode=None`, `value=0`). Setting a category to
+    # `mode=None` effectively disables payouts for that revenue stream
+    # for this doctor, even if revenue accrues.
+    diag_cut_mode: Optional[Literal["percent", "flat"]] = None
+    diag_cut_value: float = 0.0
+    ha_cut_mode: Optional[Literal["percent", "flat"]] = None
+    ha_cut_value: float = 0.0
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

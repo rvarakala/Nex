@@ -22,6 +22,7 @@ import AdminPanel from './modules/admin/panel/AdminPanel';
 import SettingsModule from './modules/settings/SettingsModule';
 import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
 import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
+import ReferralCornerPage from './modules/referrals/ReferralCornerPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
 import PatientPortal from './modules/patient/PatientPortal';
 import DataExportPage from './modules/data/DataExportPage';
@@ -165,6 +166,11 @@ function AppRoutes() {
               } />
               <Route path="/partners" element={
                 <ShelledRoute><ModuleGate module="referral-partners"><ReferralPartnersPage /></ModuleGate></ShelledRoute>
+              } />
+
+              {/* Referral Corner — owner-grade payout dashboard (access enforced inside the page) */}
+              <Route path="/referrals" element={
+                <ShelledRoute><ReferralCornerPage /></ShelledRoute>
               } />
 
               {/* CLINIC DATA EXPORT — role-gated inside the page */}

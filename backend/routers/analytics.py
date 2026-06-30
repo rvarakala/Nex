@@ -180,6 +180,115 @@ async def diagnosis_analytics(
     ]):
         monthly.append(row)
 
+    # Tests-performed breakdown + recommendations breakdown.
+    # `test_sessions` doesn't store an explicit "test type" column — instead,
+    # we infer which tests were actually run from which clinical-data fields
+    # are populated on the session. This mirrors how the UI surfaces "test
+    # cards" in the M02 audiologist console. A single visit often runs
+    # multiple tests, so totals can exceed unique sessions (and that's the
+    # intended view — "PTA was done on 80 sessions; OAE on 35" is more
+    # actionable than "X sessions did one of these tests").
+    test_buckets: dict[str, int] = {}
+    rec_buckets: dict[str, int] = {}
+    sessions_with_any_test = 0
+
+    def _has_test_data(blob) -> bool:
+        # A dict counts as 'has data' only if at least one nested field is
+        # non-empty — empty dicts are how the UI initialises a fresh test card.
+        if not blob:
+            return False
+        if isinstance(blob, dict):
+            for v in blob.values():
+                if isinstance(v, dict):
+                    if any(x not in (None, "", [], {}) for x in v.values()):
+                        return True
+                elif v not in (None, "", [], {}):
+                    return True
+            return False
+        return True
+
+    async for s in db.test_sessions.find(
+        {"clinic_id": user["clinic_id"], "test_date": {"$gte": cutoff}},
+        {
+            "_id": 0,
+            # Modern (canonical-model) shape
+            "right_ear_audiogram": 1, "left_ear_audiogram": 1,
+            "speech_data": 1, "right_ear_speech": 1, "left_ear_speech": 1,
+            "impedance_data": 1, "oae_data": 1, "abr_data": 1,
+            "soundfield_data": 1, "pediatric_data": 1, "tinnitus_data": 1,
+            "special_tests_data": 1,
+            "recommendations": 1,
+            # Legacy shape (pre-canonical-model seed + some imported data)
+            "audiogram": 1, "speech_audiometry": 1, "impedance": 1,
+            "oae": 1, "abr": 1, "bera": 1, "soundfield": 1, "pediatric": 1,
+            "tinnitus": 1, "recommendation": 1,
+        },
+    ):
+        ran_anything = False
+        # PTA: any audiogram with at least one threshold (modern OR legacy)
+        if (_has_test_data(s.get("right_ear_audiogram"))
+                or _has_test_data(s.get("left_ear_audiogram"))
+                or _has_test_data(s.get("audiogram"))):
+            test_buckets["Pure-tone Audiometry (PTA)"] = test_buckets.get("Pure-tone Audiometry (PTA)", 0) + 1
+            ran_anything = True
+        if (_has_test_data(s.get("speech_data"))
+                or _has_test_data(s.get("right_ear_speech"))
+                or _has_test_data(s.get("left_ear_speech"))
+                or _has_test_data(s.get("speech_audiometry"))):
+            test_buckets["Speech Audiometry"] = test_buckets.get("Speech Audiometry", 0) + 1
+            ran_anything = True
+        if _has_test_data(s.get("impedance_data")) or _has_test_data(s.get("impedance")):
+            test_buckets["Impedance / Tympanometry"] = test_buckets.get("Impedance / Tympanometry", 0) + 1
+            ran_anything = True
+        if _has_test_data(s.get("oae_data")) or _has_test_data(s.get("oae")):
+            test_buckets["OAE"] = test_buckets.get("OAE", 0) + 1
+            ran_anything = True
+        if (_has_test_data(s.get("abr_data"))
+                or _has_test_data(s.get("abr"))
+                or _has_test_data(s.get("bera"))):
+            test_buckets["ABR / BERA"] = test_buckets.get("ABR / BERA", 0) + 1
+            ran_anything = True
+        if _has_test_data(s.get("soundfield_data")) or _has_test_data(s.get("soundfield")):
+            test_buckets["Soundfield"] = test_buckets.get("Soundfield", 0) + 1
+            ran_anything = True
+        if _has_test_data(s.get("pediatric_data")) or _has_test_data(s.get("pediatric")):
+            test_buckets["Paediatric"] = test_buckets.get("Paediatric", 0) + 1
+            ran_anything = True
+        if _has_test_data(s.get("tinnitus_data")) or _has_test_data(s.get("tinnitus")):
+            test_buckets["Tinnitus"] = test_buckets.get("Tinnitus", 0) + 1
+            ran_anything = True
+        if _has_test_data(s.get("special_tests_data")):
+            test_buckets["Special tests"] = test_buckets.get("Special tests", 0) + 1
+            ran_anything = True
+        if ran_anything:
+            sessions_with_any_test += 1
+
+        # Recommendations: canonical schema is a `list[str]`, but legacy seed
+        # rows store a single `recommendation` string. Normalise either shape
+        # into a flat string list before bucketing.
+        rec_list = s.get("recommendations") or []
+        if not rec_list and s.get("recommendation"):
+            legacy = s.get("recommendation")
+            rec_list = legacy if isinstance(legacy, list) else [legacy]
+        for r in rec_list:
+            label = (r or "").strip()
+            if not label:
+                continue
+            # Normalise common variants so the chart doesn't fragment them
+            # into 5 near-duplicates ("ENT consult", "ENT consultation", ...).
+            low = label.lower()
+            if "ent" in low and "consult" in low:
+                label = "ENT consultation"
+            elif "ha trial" in low or "hearing aid trial" in low or "ha-trial" in low:
+                label = "Hearing Aid Trial"
+            elif "follow" in low:
+                label = "Follow-up"
+            elif "fit" in low and ("ha" in low or "hearing" in low):
+                label = "HA Fitting"
+            elif "speech" in low and "therapy" in low:
+                label = "Speech Therapy"
+            rec_buckets[label] = rec_buckets.get(label, 0) + 1
+
     def _avg(xs):
         return round(sum(xs) / len(xs), 1) if xs else None
 
@@ -193,6 +302,15 @@ async def diagnosis_analytics(
         "avg_pta_right": _avg(worst_right),
         "avg_pta_left": _avg(worst_left),
         "monthly_trend": monthly,
+        "sessions_with_any_test": sessions_with_any_test,
+        "tests_performed": [
+            {"name": k, "count": v}
+            for k, v in sorted(test_buckets.items(), key=lambda kv: -kv[1])
+        ],
+        "recommendations_breakdown": [
+            {"name": k, "count": v}
+            for k, v in sorted(rec_buckets.items(), key=lambda kv: -kv[1])
+        ],
     }
 
 

@@ -351,9 +351,14 @@ function StaffForm({ user, branches, onClose, onCreated, onSaved }) {
     role: user?.role || 'front_desk',
     branch_ids: user?.branch_ids || [],
     phone: user?.phone || '',
+    can_access_referrals: !!user?.can_access_referrals,
   }));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+
+  // Owner / super_admin / founder always have referral access via role; the
+  // checkbox is meaningless for them and shown as locked-on for clarity.
+  const roleHasImplicitAccess = ['clinic_owner', 'super_admin'].includes(f.role);
 
   const save = async () => {
     if (!f.name.trim()) { setErr('Name is required'); return; }
@@ -363,6 +368,7 @@ function StaffForm({ user, branches, onClose, onCreated, onSaved }) {
       if (isEdit) {
         await axios.put(`${API}/settings/staff/${user.user_id}`, {
           name: f.name, role: f.role, branch_ids: f.branch_ids, phone: f.phone,
+          can_access_referrals: f.can_access_referrals,
         });
         onSaved();
       } else {
@@ -426,6 +432,33 @@ function StaffForm({ user, branches, onClose, onCreated, onSaved }) {
             ))}
             <div className="text-[10px] text-slate-500 mt-1 italic">Leave empty for clinic-wide access (owners + accounts).</div>
           </div>
+        </F>
+        <F label="Permissions" className="col-span-2">
+          <label
+            className={`flex items-start gap-2 p-2.5 rounded border ${
+              roleHasImplicitAccess ? 'bg-slate-50 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-300 cursor-pointer hover:border-indigo-300'
+            }`}
+            data-testid="staff-perm-referrals-label"
+          >
+            <input
+              type="checkbox"
+              checked={roleHasImplicitAccess || f.can_access_referrals}
+              disabled={roleHasImplicitAccess}
+              onChange={(e) => setF({ ...f, can_access_referrals: e.target.checked })}
+              data-testid="staff-perm-referrals"
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <div className="text-[12px] font-semibold text-slate-800">
+                Allow access to Referral Corner
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">
+                {roleHasImplicitAccess
+                  ? 'Owners have this access by default.'
+                  : 'Lets this user see referring-doctor revenue + payout reports. They can NOT change payout terms — only owners can.'}
+              </div>
+            </div>
+          </label>
         </F>
       </div>
       <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
