@@ -177,8 +177,16 @@ export default function ModernDashboard() {
         safe(axios.get(`${API}/patients`, { params: { limit: 5, sort: 'created_at:desc' } })),
         safe(axios.get(`${API}/users`)),
         safe(axios.get(`${API}/clinic-schedule`)),
-        safe(axios.get(`${API}/ha/service-v2/tickets`, { params: { status: 'ready_for_pickup', limit: 1 } })),
-        safe(axios.get(`${API}/ha/inventory/low-stock`, { params: { limit: 1 } })),
+        // Service tickets ready for pickup → counts as "repairs_pending"
+        // in the alert strip. Path is /api/ha/service-tickets (NOT the
+        // /service-v2/ namespace, which only hosts the state-machine
+        // transition endpoints — there's no list there).
+        safe(axios.get(`${API}/ha/service-tickets`, { params: { status: 'ready_for_pickup', limit: 1 } })),
+        // Low-stock accessories → counts as "low_stock" in the alert
+        // strip. The inventory router has prefix `/api/ha`, so the path
+        // is /api/ha/accessory-stock (not /ha/inventory/...). Use the
+        // `low_stock_only=true` flag — there's no `/low-stock` shorthand.
+        safe(axios.get(`${API}/ha/accessory-stock`, { params: { low_stock_only: true, limit: 1 } })),
       ]);
 
       const arr = (r) => Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.appointments || r.data?.patients || r.data?.sessions || r.data?.invoices || r.data?.sales || []);
