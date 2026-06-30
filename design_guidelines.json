@@ -1,92 +1,83 @@
 {
+  "project_name": "AUDINEXA Medical Dashboard Redesign",
   "theme": "Light",
-  "archetype": "4 (Swiss & High-Contrast) tailored for B2B Healthcare SaaS",
-  "brand_identity": {
-    "name": "AUDINEXA",
-    "tone": "Authoritative, Precise, Trustworthy, Modern",
-    "audience": "Indian audiology clinic owners (35-55, busy, semi-tech-savvy)"
-  },
+  "archetype": "1_organic_earthy",
+  "domain": "Medical / Audiology SaaS Dashboard",
+  "core_philosophy": "Premium, modern, border-free design language. Therapeutic, professional, and calming. No hard borders, rely on subtle elegant drop shadows and generous whitespace.",
   "colors": {
-    "background": "#FDFDFD",
+    "background": "#F8F9FA",
     "surface": "#FFFFFF",
-    "surface_secondary": "#F8FAFC",
-    "primary": "#0F52BA",
-    "primary_hover": "#0C4399",
     "text_primary": "#0F172A",
     "text_secondary": "#475569",
-    "accent_success": "#10B981",
-    "accent_warning": "#F59E0B",
-    "accent_danger": "#E11D48",
-    "border": "#E2E8F0"
-  },
-  "typography": {
-    "headings": {
-      "fontFamily": "Cabinet Grotesk, sans-serif",
-      "style": "tracking-tighter font-bold text-slate-900"
+    "text_tertiary": "#94A3B8",
+    "kpi_active_mint": {
+      "bg": "#ECFDF5",
+      "text": "#047857"
     },
-    "body": {
-      "fontFamily": "Manrope, sans-serif",
-      "style": "leading-relaxed text-slate-600"
+    "kpi_active_blue": {
+      "bg": "#EFF6FF",
+      "text": "#1D4ED8"
     },
-    "scales": {
-      "h1": "text-4xl sm:text-5xl lg:text-6xl leading-tight",
-      "h2": "text-3xl sm:text-4xl lg:text-5xl leading-tight",
-      "h3": "text-xl sm:text-2xl lg:text-3xl",
-      "body": "text-base sm:text-lg",
-      "small": "text-sm",
-      "overline": "text-xs tracking-[0.2em] uppercase font-semibold text-slate-500"
+    "kpi_muted": {
+      "bg": "#F1F5F9",
+      "text": "#94A3B8"
+    },
+    "brand_accents": {
+      "indigo": "#4F46E5",
+      "emerald": "#059669",
+      "amber": "#D97706"
     }
   },
-  "layout_and_spacing": {
-    "section_padding": "py-24 md:py-32",
-    "container_padding": "px-6 md:px-12 max-w-7xl mx-auto",
-    "generous_spacing": "gap-8 md:gap-12",
-    "bento_grid_marketing": "grid grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-6 md:gap-8"
+  "typography": {
+    "font_family": "Inter",
+    "rules": {
+      "h1_greeting": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+      "h2_section": "text-lg font-semibold tracking-tight text-slate-800",
+      "kpi_numbers": "text-3xl sm:text-4xl font-bold tracking-tighter",
+      "body": "text-sm text-slate-600 leading-relaxed",
+      "table_text": "text-sm text-slate-700 font-medium",
+      "labels": "text-xs font-semibold tracking-wide uppercase text-slate-500"
+    }
   },
-  "surfaces_and_micro_themes": {
-    "header": "Crystal Glass: bg-white/80 backdrop-blur-xl border-b border-slate-200/50 shadow-sm",
-    "cards_default": "bg-white rounded-2xl border border-slate-200 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-slate-300",
-    "cards_flat": "bg-slate-50 rounded-xl border border-slate-200",
-    "technical_grid": "border-collapse structure with visible border-r and border-b in slate-200",
-    "glass_overlay": "bg-white/20 backdrop-blur-md border border-white/30 text-white"
-  },
-  "media": {
-    "image_urls": [
-      {
-        "url": "https://images.pexels.com/photos/14558557/pexels-photo-14558557.jpeg",
-        "description": "Doctor examining patient - to be used in Hero section right column image.",
-        "category": "hero"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1763718528755-4bca23f82ac3",
-        "description": "Abstract medical dashboard UI for product visual reference inside features bento boxes.",
-        "category": "product_showcase"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1744907529502-168ccdab53a3",
-        "description": "Abstract blue waves for background textures in How it Works or CTA section.",
-        "category": "background_texture"
-      }
-    ]
+  "styling_rules": {
+    "border_radius": "rounded-xl",
+    "borders": "NO hard borders. Remove 'border' and 'border-border' from standard components. Use shadow-sm or custom soft shadows.",
+    "shadows": "shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)] for cards, hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.08)] for interaction.",
+    "spacing": "Generous spacing. p-6 or p-8 for main cards. py-4 for list items.",
+    "icons": "Use lucide-react. Keep stroke-width to 1.5 or 2 for a refined look."
   },
   "components": {
-    "Navbar": "Sticky header with Crystal Glass. Logo left, Nav center, Login + Demo right. Ensure text visibility over content.",
-    "Hero": "Asymmetrical 12-col grid. Text col-span-7 with massive H1. Image col-span-5 with glassmorphism overlay containing 'DPDPA Compliant' badge. Primary CTA is solid sapphire, Secondary is ghost.",
-    "PainPoints": "Side-by-side Technical Grid or split section. Left side: muted red/gray for 'The Old Way' (Chaos/WhatsApp/Files). Right side: crisp Sapphire blue for 'The Audinexa Way'.",
-    "Features": "Bento Grid Protocol (Mode A). 9 features mapped to asymmetrical spans (e.g., col-span-8 row-span-2 for core feature, col-span-4 for smaller features). Generous inner padding (p-8).",
-    "HowItWorks": "4-step horizontal timeline or vertical tracking line. Active steps highlight in Sapphire blue. Minimalist iconography.",
-    "Pricing": "3 pricing tiers fetched via API. Middle card (STANDARD) emphasized with 'Tracing Beam' effect or darker background (bg-slate-900 text-white) to pop out.",
-    "SecurityShowcase": "Swiss Brutalist minimalist section. High contrast, data-heavy look (monochrome with blue accents) for DPDPA, 2FA, Audit Logs.",
-    "Testimonials": "Text-heavy block. Use a complementary Serif font (like Cormorant Garamond or similar if possible, or stick to italics Manrope) to contrast with the UI and build deep human trust.",
-    "FAQ": "Minimalist accordion list. Bottom border only on items, no surrounding boxes. Large clear typography.",
-    "FinalCTA": "Massive typography (text-6xl) centered on a rich Sapphire background or using the abstract blue wave background. High contrast white text."
+    "greeting_header": "Show 'Good Evening, Dr. <Name> 👋' and a subtitle (e.g., 'Here is what your day looks like.'). Include existing search bar and Quick Actions cluster.",
+    "alert_pills": "Small muted badges (e.g., rounded-full bg-slate-100 text-slate-600 px-3 py-1 text-xs font-medium flex items-center gap-2) for 'Low stock' and 'Ready for pickup'.",
+    "kpi_cards": "5 top-row cards. Active metrics use 'kpi_active_mint' or 'kpi_active_blue'. Zero-value metrics use 'kpi_muted'. Include small sparklines or trend indicators if applicable.",
+    "calendar_empty_state": "Left column block. Elegant, soft design. Use a large, soft-colored lucide-react icon (like CalendarHeart or Calendar) with a therapeutic message 'No appointments today'.",
+    "patient_list": "Right column. 'Recent Registrations' borderless list. Avatar + Name, Age + Gender, Tag (New/Returning), Phone, Date. Ample vertical line-height. CTA '+ New Registration' top right.",
+    "quick_actions": "3-4 buttons. Use soft background colors or ghost button styles to avoid cluttering the primary hierarchy."
   },
+  "mockups_instructions": {
+    "deliverable": "Provide 3 distinct full-page mockups (implement as 3 separate layout components or a toggleable layout in the dashboard). All must apply the off-white bg, no hard borders, 12px radius, pastel fills, and Inter typography.",
+    "Mock_A": "Magazine Grid: 5 stacked KPI cards across the top in a single row. Below it, a strict 50/50 split with Calendar on the left and Patient List on the right.",
+    "Mock_B": "Hero + Sidebar: Asymmetric KPI strip (1 large primary KPI tile spanning 2 columns, 4 smaller tiles). Below it, a 2-column main body (Calendar/Patients) and a slim right-rail for 'Today's Schedule' timeline.",
+    "Mock_C": "Workspace Cards: 12-column grid layout. Every region (KPIs, Calendar, Patients, Quick Actions) is an elevated panel with clear visual hierarchy and breathing room, arranged in a masonry or bento-box style."
+  },
+  "image_urls": [
+    {
+      "url": "https://images.unsplash.com/photo-1622207691293-5cd80466dab3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxpbmRpYW4lMjB3b21hbiUyMHBvcnRyYWl0fGVufDB8fHx8MTc4Mjg0Mjk1MHww&ixlib=rb-4.1.0&q=85",
+      "category": "patient_avatar",
+      "description": "Aditi Sharma - Female 42y"
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1663560454891-9bdbdaaed84d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwyfHxpbmRpYW4lMjBtYW4lMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODI4NDI5NTB8MA&ixlib=rb-4.1.0&q=85",
+      "category": "patient_avatar",
+      "description": "Vikram Mehta - Male 58y"
+    }
+  ],
   "instructions_to_main_agent": [
-    "1. Setup Typography: Import 'Cabinet Grotesk' (or similar geometric sans like 'Clash Display' / 'Outfit') for headings and 'Manrope' for body in global CSS.",
-    "2. Iconography: Use @phosphor-icons/react or lucide-react (if already installed) for crisp B2B styling.",
-    "3. Refactoring: Refactor ALL components in '/app/frontend/src/modules/landing/v2/components/' using this exact JSON guide.",
-    "4. Spacing: DO NOT use default cramped Tailwind padding. Apply `py-24` or `py-32` for sections.",
-    "5. Testing: MUST apply `data-testid` to every interactive element, button, and section wrapper.",
-    "6. Functionality: Retain API calls (`/api/landing/pricing` and demo booking). Connect the visual redesign to existing state logic."
+    "You are editing /app/frontend/src/modules/patients/ModernDashboard.jsx (or creating new files alongside it for layout variations).",
+    "Replace existing hard borders with elegant drop shadows and border-radius 12px.",
+    "Apply background color #F8F9FA to the main content area.",
+    "Implement the 3 layouts (Mock A, B, C). You can create 3 separate components and render them stacked or with a toggle to present them to the user.",
+    "Preserve all existing data points and functionalities mentioned in the prompt (Search, Greeting, KPI counts, Lists).",
+    "Ensure all interactive elements have data-testid attributes."
   ]
 }
