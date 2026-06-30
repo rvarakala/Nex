@@ -1,5 +1,83 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📈 PHASE 15.9 — Diagnostics Analytics + Referral Corner (2026-06-30)
+
+Two interrelated owner-grade features shipped together:
+
+### A. Reports & Analytics → tabbed shell
+- **Renamed**: page now says "Reports & Analytics" (was "Owner Analytics").
+- **Tab switcher** with two pills:
+  - **Core Business Analytics** ← all pre-existing HA Sales / Service &
+    Repair / Brand / Team / Inventory / Retention cards (no changes
+    inside — just wrapped in a conditional render).
+  - **Diagnostics Analytics** (NEW) — fresh view with:
+    - 4 KPI cards: Total tests, Patients tested, Recommendations made,
+      Inbound channels.
+    - Tests-performed bar list (PTA / Speech / Tympanometry / OAE / ABR /
+      etc.), **inferred from populated session fields** so old AND new
+      session shapes both count.
+    - Recommendations breakdown with label normalisation (ENT
+      consultation, Hearing Aid Trial, Follow-up, HA Fitting, Speech
+      Therapy).
+    - Age + gender distributions reused from the existing
+      `/api/analytics/diagnosis` endpoint.
+    - Referral pathways table (Patients / Conversion % / Total revenue /
+      visual share bar) — direct from `/api/analytics/referrals`. Helps
+      plan marketing spend.
+- Degree/type-of-hearing-loss breakdowns intentionally skipped per
+  product call.
+
+### B. Referral Corner — new top-level menu
+- Sidebar entry `nav-referrals` under "Reports", gated by:
+  - `role in (clinic_owner, super_admin, founder)`, OR
+  - `user.can_access_referrals == true` (delegated).
+- **Per-doctor rollup table** with patients referred, diagnostics
+  revenue, HA-sales revenue, and live payout computation.
+- **Revenue rules** (locked):
+  - **Diagnostics revenue** = sum of paid-invoice lines where
+    `product_type != "Hearing Aid"`.
+  - **HA Sales revenue** = sum of paid-invoice HA lines, MINUS any
+    revenue tied to a sale whose lifecycle is `trial / cancelled /
+    returned` (trials excluded per product call).
+- **Cut config per doctor** — independent for Diagnostics vs HA:
+  - Three radio modes: None / `% of revenue` / `₹ flat per patient`.
+  - Server clamps negatives to 0 and rejects > 100% with a 400.
+  - **Owner-only write** — delegated staff get 403 on PATCH (defence in
+    depth alongside the menu hide).
+- **End-of-month payout CSVs** — three downloads:
+  - Diagnostics-only (one cheque per doctor for diag referrals).
+  - HA-only (one cheque per doctor for HA-sales referrals).
+  - Combined (single-row-per-doctor summary).
+  - All CSVs drop zero-payout rows for a clean printout.
+- **Staff permissions** — Settings → Staff edit form now includes an
+  "Allow access to Referral Corner" checkbox. Locked-on for
+  owners/super_admin. Default off for everyone else.
+
+### API surface (new under `/api/referrals/*`)
+- `GET    /access`                          → caller capability summary
+- `GET    /dashboard?start=…&end=…`         → per-doctor rollup + totals
+- `PATCH  /doctors/{id}/cut-config`         → owner-only payout edit
+- `GET    /payout-report.csv?report_type=…` → CSV export
+
+### Data model changes
+- `users.can_access_referrals: bool = False`
+- `referring_doctors.diag_cut_mode/diag_cut_value` +
+  `ha_cut_mode/ha_cut_value`
+- Exposed `can_access_referrals` on `/api/auth/me`
+
+### Tests
+- `backend/tests/test_referral_corner.py` — 11 passing tests:
+  access, dashboard shape, inverted-window rejection, cut-config save,
+  percent > 100 rejection, negative clamp, 404 unknown doctor, CSV
+  exports (diag + combined), delegated-staff view-only access,
+  unauthorised-staff 403 path.
+- **Frontend e2e** (testing agent iteration-36): 21/21 assertions across
+  6 review-request scenarios PASSED. Tab switcher, KPIs, inline cut
+  editor save, staff permission checkbox, denial card, and the patient
+  edit regression all green.
+
+---
+
 ## 🖨️ PHASE 15.8 — Seal placement on Audiogram / Invoice / Challan (2026-06-30)
 
 Wired the per-user seal upload (Phase 15.7) into the three printable doc
