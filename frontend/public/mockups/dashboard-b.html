@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AUDINEXA · Dashboard Mock B — Hero + Sidebar</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --bg: #F8F9FA; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #0F172A; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px -4px rgba(0,0,0,0.06); }
+  .card-elev { background: #fff; border-radius: 16px; box-shadow: 0 12px 32px -16px rgba(0,0,0,0.10); }
+  .ring-mint { background: #ECFDF5; color: #047857; }
+  .ring-blue { background: #EFF6FF; color: #1D4ED8; }
+  .ring-muted { background: #F1F5F9; color: #94A3B8; }
+  .ring-amber { background: #FEF3C7; color: #B45309; }
+  .ring-violet { background: #F5F3FF; color: #6D28D9; }
+  .row:hover { background: #FAFAFB; }
+  .icon-svg { stroke-width: 1.75; }
+  .tag-new { background: #ECFDF5; color: #047857; }
+  .tag-ret { background: #EFF6FF; color: #1D4ED8; }
+  .timeline-dot { box-shadow: 0 0 0 4px #fff, 0 0 0 5px #E2E8F0; }
+  /* Hero gradient texture */
+  .hero {
+    background:
+      radial-gradient(circle at 100% 0%, #ECFDF5 0%, transparent 50%),
+      radial-gradient(circle at 0% 100%, #EFF6FF 0%, transparent 50%),
+      #FFFFFF;
+  }
+</style>
+</head>
+<body class="min-h-screen p-8">
+  <div class="max-w-[1300px] mx-auto mb-3 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-bold">Layout B · Hero + Sidebar · 1 big KPI + 4 small · slim right-rail</div>
+
+  <div class="max-w-[1300px] mx-auto">
+    <!-- Header -->
+    <div class="flex items-end justify-between gap-6 mb-7">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight text-slate-900">Good Evening, Dr. Rajesh Iyer <span class="ml-1">👋</span></h1>
+        <p class="text-sm text-slate-500 mt-1 leading-relaxed">59 patients walked in this week · ₹1.84L collected today.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="card px-3 py-2 flex items-center gap-2 w-[280px]">
+          <svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input placeholder="Search patient, appointment..." class="flex-1 outline-none bg-transparent text-sm placeholder:text-slate-400" />
+          <kbd class="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-500">⌘K</kbd>
+        </div>
+        <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl px-4 py-2.5 shadow-[0_4px_12px_-3px_rgba(79,70,229,0.4)]">+ New Appointment</button>
+      </div>
+    </div>
+
+    <!-- Hero KPI strip: 1 big + 4 small -->
+    <div class="grid grid-cols-6 gap-4 mb-7">
+      <!-- BIG hero KPI (spans 2 cols) -->
+      <div class="card-elev hero p-7 col-span-2 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-32 h-32 rounded-full bg-emerald-100/50 -translate-y-12 translate-x-12"></div>
+        <div class="relative">
+          <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700"><svg class="icon-svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Today's Collections</div>
+          <div class="text-5xl font-bold tracking-tight mt-3 text-slate-900">₹1.84<span class="text-3xl text-slate-500 font-medium">L</span></div>
+          <div class="text-sm text-slate-600 mt-2">8 invoices paid · ₹52,000 pending</div>
+          <div class="flex items-center gap-4 mt-5 pt-5 border-t border-slate-100">
+            <div>
+              <div class="text-[10px] uppercase text-slate-500 font-bold">Cash</div>
+              <div class="text-base font-semibold text-slate-800 mt-1">₹62,000</div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase text-slate-500 font-bold">UPI</div>
+              <div class="text-base font-semibold text-slate-800 mt-1">₹98,400</div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase text-slate-500 font-bold">Card</div>
+              <div class="text-base font-semibold text-slate-800 mt-1">₹24,000</div>
+            </div>
+            <div class="ml-auto">
+              <svg width="80" height="36" viewBox="0 0 80 36" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round">
+                <polyline points="2,30 12,22 22,25 32,14 42,18 52,8 62,12 72,4 78,7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-5 ring-muted">
+        <div class="flex items-center justify-between mb-2"><span class="text-[10px] font-bold uppercase tracking-wide">Today's Appts</span><svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/></svg></div>
+        <div class="text-3xl font-bold tracking-tight">0</div>
+        <div class="text-[10.5px] mt-2 font-medium">No bookings yet</div>
+      </div>
+      <div class="card p-5 ring-mint">
+        <div class="flex items-center justify-between mb-2"><span class="text-[10px] font-bold uppercase tracking-wide">New Reg.</span><svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+        <div class="text-3xl font-bold tracking-tight">59</div>
+        <div class="text-[10.5px] mt-2 font-medium">↑ 12% vs yesterday</div>
+      </div>
+      <div class="card p-5 ring-blue">
+        <div class="flex items-center justify-between mb-2"><span class="text-[10px] font-bold uppercase tracking-wide">Tests</span><svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg></div>
+        <div class="text-3xl font-bold tracking-tight">7</div>
+        <div class="text-[10.5px] mt-2 font-medium">3 PTA · 4 Speech</div>
+      </div>
+      <div class="card p-5 ring-violet">
+        <div class="flex items-center justify-between mb-2"><span class="text-[10px] font-bold uppercase tracking-wide">HA Sold</span><svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="text-3xl font-bold tracking-tight">12</div>
+        <div class="text-[10.5px] mt-2 font-medium">3 closed · 9 trials</div>
+      </div>
+    </div>
+
+    <!-- 3-column body: calendar / patients / schedule -->
+    <div class="grid grid-cols-12 gap-5">
+      <!-- Calendar empty state -->
+      <div class="card p-7 col-span-5">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-base font-semibold tracking-tight text-slate-800 flex items-center gap-2">
+            <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+            Today
+          </h2>
+          <a class="text-xs font-semibold text-indigo-600">Open calendar →</a>
+        </div>
+        <div class="text-[11px] text-slate-400 mb-5">Tue · 30 Jun 2026</div>
+
+        <div class="flex items-center gap-1 mb-5">
+          <span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-semibold">All · 0</span>
+          <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Cons · 0</span>
+          <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Test · 0</span>
+          <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Fitting · 0</span>
+        </div>
+
+        <div class="flex flex-col items-center justify-center py-10">
+          <div class="relative w-28 h-28 mb-4">
+            <div class="absolute inset-0 rounded-full bg-gradient-to-br from-blue-100 to-emerald-50 animate-pulse"></div>
+            <div class="absolute inset-2 rounded-full bg-white flex items-center justify-center shadow-inner">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.4">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M22 11.5l-2.5 2.5L17 11.5"/>
+              </svg>
+            </div>
+          </div>
+          <h3 class="text-sm font-semibold text-slate-700">No appointments today</h3>
+          <p class="text-[12px] text-slate-400 mt-1 max-w-[240px] text-center leading-relaxed">Block a slot or accept a walk-in to fill the schedule.</p>
+          <button class="mt-4 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-full px-4 py-2">+ Book a slot</button>
+        </div>
+      </div>
+
+      <!-- Recent Registrations -->
+      <div class="card p-7 col-span-4">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-base font-semibold tracking-tight text-slate-800 flex items-center gap-2">
+            <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            Recent Registrations
+          </h2>
+          <button class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full">+ Add</button>
+        </div>
+        <div class="divide-y divide-slate-100/80">
+          <div class="row flex items-center gap-3 py-3.5">
+            <img src="https://images.unsplash.com/photo-1622207691293-5cd80466dab3?w=80&h=80&fit=crop" class="w-10 h-10 rounded-full object-cover" />
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 truncate">Aditi Sharma</div>
+              <div class="text-[11px] text-slate-500">42 Y · F · 14:32</div>
+            </div>
+            <span class="tag-new text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">New</span>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5">
+            <img src="https://images.unsplash.com/photo-1663560454891-9bdbdaaed84d?w=80&h=80&fit=crop" class="w-10 h-10 rounded-full object-cover" />
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 truncate">Vikram Mehta</div>
+              <div class="text-[11px] text-slate-500">58 Y · M · 12:08</div>
+            </div>
+            <span class="tag-ret text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Returning</span>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5">
+            <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-xs">PB</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 truncate">Priya Banerjee</div>
+              <div class="text-[11px] text-slate-500">31 Y · F · 11:14</div>
+            </div>
+            <span class="tag-new text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">New</span>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5">
+            <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">SK</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 truncate">Suresh Kumar</div>
+              <div class="text-[11px] text-slate-500">67 Y · M · 09:42</div>
+            </div>
+            <span class="tag-ret text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Returning</span>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5">
+            <div class="w-10 h-10 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs">RD</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 truncate">Ravi Deshmukh</div>
+              <div class="text-[11px] text-slate-500">45 Y · M · 09:03</div>
+            </div>
+            <span class="tag-new text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">New</span>
+          </div>
+        </div>
+        <a class="block text-center text-[11px] font-semibold text-indigo-600 mt-4 pt-3">View all 59 →</a>
+      </div>
+
+      <!-- Slim right-rail: Today's schedule -->
+      <div class="card p-6 col-span-3">
+        <h2 class="text-base font-semibold tracking-tight text-slate-800 mb-1">Today's Schedule</h2>
+        <p class="text-[11px] text-slate-400 mb-5">Tue · 30 Jun · Clinic hours</p>
+        <div class="relative pl-6 space-y-5 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-slate-200">
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400 timeline-dot"></div>
+            <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">09:00 — Morning</div>
+            <div class="text-[12px] text-slate-500 mt-0.5">Clinic opens · Walk-ins welcome</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 timeline-dot"></div>
+            <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">13:30 — Lunch</div>
+            <div class="text-[12px] text-slate-500 mt-0.5">45-min break</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-blue-400 timeline-dot"></div>
+            <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">14:15 — Afternoon</div>
+            <div class="text-[12px] text-slate-500 mt-0.5">Booked patients first</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 timeline-dot"></div>
+            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">19:00 — Close</div>
+            <div class="text-[12px] text-slate-400 mt-0.5">Last patient out</div>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-5 border-t border-slate-100">
+          <h3 class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-3">Quick actions</h3>
+          <div class="space-y-2">
+            <button class="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2.5 text-[12px] font-semibold text-slate-700 flex items-center gap-2">
+              <svg class="icon-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              New Appointment
+            </button>
+            <button class="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2.5 text-[12px] font-semibold text-slate-700 flex items-center gap-2">
+              <svg class="icon-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10B981"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>
+              Start Hearing Test
+            </button>
+            <button class="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2.5 text-[12px] font-semibold text-slate-700 flex items-center gap-2">
+              <svg class="icon-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9"><circle cx="12" cy="12" r="3"/></svg>
+              HA Fitting
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AUDINEXA · Dashboard Mock C — Bento Workspace</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --bg: #F8F9FA; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #0F172A; }
+  .panel { background: #fff; border-radius: 16px; box-shadow: 0 4px 16px -6px rgba(0,0,0,0.07); }
+  .panel:hover { box-shadow: 0 12px 28px -12px rgba(0,0,0,0.10); transition: box-shadow .2s; }
+  .ring-mint { background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); color: #047857; }
+  .ring-blue { background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%); color: #1D4ED8; }
+  .ring-amber { background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%); color: #B45309; }
+  .ring-violet { background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%); color: #6D28D9; }
+  .ring-muted { background: #F1F5F9; color: #94A3B8; }
+  .row:hover { background: #FAFAFB; }
+  .icon-svg { stroke-width: 1.75; }
+  .tag-new { background: #ECFDF5; color: #047857; }
+  .tag-ret { background: #EFF6FF; color: #1D4ED8; }
+  /* gradient texture for hero panel */
+  .therapeutic {
+    background:
+      radial-gradient(circle at 20% 20%, rgba(236,253,245,0.6), transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(239,246,255,0.6), transparent 50%),
+      #FFFFFF;
+  }
+  /* Custom dot pattern */
+  .dotted-bg {
+    background-image: radial-gradient(#E2E8F0 1px, transparent 1px);
+    background-size: 14px 14px;
+  }
+</style>
+</head>
+<body class="min-h-screen p-8">
+  <div class="max-w-[1300px] mx-auto mb-3 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-bold">Layout C · Bento Workspace · 12-col grid · varied tile sizes</div>
+
+  <div class="max-w-[1300px] mx-auto">
+    <!-- Header -->
+    <div class="flex items-end justify-between gap-6 mb-7">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight text-slate-900">Good Evening, Dr. Rajesh Iyer <span class="ml-1">👋</span></h1>
+        <p class="text-sm text-slate-500 mt-1 leading-relaxed">Your workspace · everything important, one glance away.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="panel px-3 py-2 flex items-center gap-2 w-[280px]">
+          <svg class="icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input placeholder="Search…" class="flex-1 outline-none bg-transparent text-sm placeholder:text-slate-400" />
+          <kbd class="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-500">⌘K</kbd>
+        </div>
+        <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl px-4 py-2.5 shadow-[0_4px_12px_-3px_rgba(79,70,229,0.4)]">+ New Appointment</button>
+      </div>
+    </div>
+
+    <!-- BENTO GRID — 12 cols, varied sizes -->
+    <div class="grid grid-cols-12 gap-4 auto-rows-auto">
+      <!-- KPI 1: Today's Appts (muted/zero) — small -->
+      <div class="panel ring-muted p-5 col-span-2">
+        <div class="text-[10px] font-bold uppercase tracking-wide">Today's Appts</div>
+        <div class="text-4xl font-bold tracking-tight mt-2">0</div>
+        <div class="text-[10.5px] mt-1 font-medium">No bookings yet</div>
+      </div>
+
+      <!-- KPI 2: New Registrations (active mint) — small -->
+      <div class="panel ring-mint p-5 col-span-2">
+        <div class="text-[10px] font-bold uppercase tracking-wide">New Reg.</div>
+        <div class="flex items-baseline gap-2 mt-2">
+          <div class="text-4xl font-bold tracking-tight">59</div>
+          <span class="text-[10px] font-bold">↑12%</span>
+        </div>
+        <div class="text-[10.5px] mt-1 font-medium">vs yesterday</div>
+      </div>
+
+      <!-- KPI 3: Tests (active blue) — small -->
+      <div class="panel ring-blue p-5 col-span-2">
+        <div class="text-[10px] font-bold uppercase tracking-wide">Tests Today</div>
+        <div class="text-4xl font-bold tracking-tight mt-2">7</div>
+        <div class="text-[10.5px] mt-1 font-medium">3 PTA · 4 Speech</div>
+      </div>
+
+      <!-- KPI 4: HA Sold (violet) — small -->
+      <div class="panel ring-violet p-5 col-span-2">
+        <div class="text-[10px] font-bold uppercase tracking-wide">HA Sold</div>
+        <div class="text-4xl font-bold tracking-tight mt-2">12</div>
+        <div class="text-[10.5px] mt-1 font-medium">3 closed · 9 trials</div>
+      </div>
+
+      <!-- KPI 5: Collections (amber, bigger highlight) — 4 cols wide -->
+      <div class="panel ring-amber p-5 col-span-4 relative overflow-hidden">
+        <div class="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-amber-200/40"></div>
+        <div class="relative">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-[10px] font-bold uppercase tracking-wide">Today's Collections</div>
+            <span class="text-[10px] bg-white/60 rounded-full px-2 py-0.5 font-semibold">8 paid</span>
+          </div>
+          <div class="text-4xl font-bold tracking-tight">₹1,84,400</div>
+          <div class="flex items-center gap-3 mt-2">
+            <div class="text-[10.5px]"><span class="font-bold">UPI</span> ₹98,400</div>
+            <div class="text-[10.5px]"><span class="font-bold">Cash</span> ₹62,000</div>
+            <div class="text-[10.5px]"><span class="font-bold">Card</span> ₹24,000</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Calendar empty-state — large hero block (8 cols × 2 rows) -->
+      <div class="panel therapeutic p-7 col-span-8 row-span-2 relative overflow-hidden">
+        <div class="absolute inset-0 dotted-bg opacity-30 pointer-events-none"></div>
+        <div class="relative">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-base font-semibold tracking-tight text-slate-800 flex items-center gap-2">
+              <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+              Today's Appointments
+            </h2>
+            <a class="text-xs font-semibold text-indigo-600">Open calendar →</a>
+          </div>
+          <div class="text-[11px] text-slate-400 mb-6">Tuesday · 30 June 2026</div>
+
+          <div class="flex items-center gap-1 mb-6">
+            <span class="px-2.5 py-1 rounded-full bg-white shadow-sm text-indigo-700 text-[11px] font-semibold">All · 0</span>
+            <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Consultation · 0</span>
+            <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Hearing Test · 0</span>
+            <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Fitting · 0</span>
+            <span class="px-2.5 py-1 rounded-full text-slate-500 text-[11px] font-medium">Follow-up · 0</span>
+          </div>
+
+          <!-- Big therapeutic empty state -->
+          <div class="flex flex-col items-center justify-center py-16">
+            <div class="relative">
+              <div class="absolute inset-0 rounded-full bg-emerald-100/30 blur-2xl scale-150"></div>
+              <div class="relative w-32 h-32 rounded-full bg-gradient-to-br from-white via-emerald-50 to-blue-50 flex items-center justify-center shadow-[0_20px_50px_-20px_rgba(5,150,105,0.25)]">
+                <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="1.2">
+                  <path d="M19 4H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                  <path d="M9 16l2 2 4-4"/>
+                </svg>
+              </div>
+            </div>
+            <h3 class="text-base font-semibold text-slate-700 mt-6">A calm day ahead.</h3>
+            <p class="text-sm text-slate-400 mt-2 max-w-[320px] text-center leading-relaxed">No appointments are on the books for today. Book a slot, accept a walk-in, or use this quiet moment to catch up on notes.</p>
+            <div class="flex items-center gap-2 mt-6">
+              <button class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-full px-4 py-2 shadow-sm">+ Schedule First Appointment</button>
+              <button class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-full px-4 py-2 shadow-sm">Accept walk-in</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alert pills bento (4 cols) -->
+      <div class="panel p-5 col-span-4">
+        <h3 class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-3">Needs attention</h3>
+        <div class="space-y-2.5">
+          <div class="flex items-center gap-3 p-3 rounded-lg bg-amber-50/70">
+            <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg></div>
+            <div class="flex-1">
+              <div class="text-[12px] font-semibold text-slate-800">2 accessories low on stock</div>
+              <div class="text-[10.5px] text-slate-500">Tubing 1.2mm · Wax filters</div>
+            </div>
+            <button class="text-[10px] font-bold text-amber-700 uppercase tracking-wide">View →</button>
+          </div>
+          <div class="flex items-center gap-3 p-3 rounded-lg bg-emerald-50/70">
+            <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div class="flex-1">
+              <div class="text-[12px] font-semibold text-slate-800">3 repairs ready for pickup</div>
+              <div class="text-[10.5px] text-slate-500">Notify patients via WhatsApp</div>
+            </div>
+            <button class="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">View →</button>
+          </div>
+          <div class="flex items-center gap-3 p-3 rounded-lg bg-blue-50/70">
+            <div class="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+            <div class="flex-1">
+              <div class="text-[12px] font-semibold text-slate-800">5 follow-ups due this week</div>
+              <div class="text-[10.5px] text-slate-500">Send reminder messages</div>
+            </div>
+            <button class="text-[10px] font-bold text-blue-700 uppercase tracking-wide">View →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick actions bento (4 cols) — under alerts -->
+      <div class="panel p-5 col-span-4">
+        <h3 class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-3">Quick actions</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="text-left bg-slate-50 hover:bg-indigo-50 rounded-lg p-3 transition group">
+            <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center mb-1 group-hover:scale-110 transition"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+            <div class="text-[11.5px] font-semibold text-slate-800">New Appointment</div>
+          </button>
+          <button class="text-left bg-slate-50 hover:bg-emerald-50 rounded-lg p-3 transition group">
+            <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center mb-1 group-hover:scale-110 transition"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+            <div class="text-[11.5px] font-semibold text-slate-800">New Registration</div>
+          </button>
+          <button class="text-left bg-slate-50 hover:bg-blue-50 rounded-lg p-3 transition group">
+            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center mb-1 group-hover:scale-110 transition"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg></div>
+            <div class="text-[11.5px] font-semibold text-slate-800">Hearing Test</div>
+          </button>
+          <button class="text-left bg-slate-50 hover:bg-violet-50 rounded-lg p-3 transition group">
+            <div class="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center mb-1 group-hover:scale-110 transition"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg></div>
+            <div class="text-[11.5px] font-semibold text-slate-800">HA Fitting</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Recent Registrations — 8 cols full width -->
+      <div class="panel p-6 col-span-8">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-base font-semibold tracking-tight text-slate-800 flex items-center gap-2">
+            <svg class="icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            Recent Registrations
+            <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">59 today</span>
+          </h2>
+          <button class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full">+ New Registration</button>
+        </div>
+        <div class="divide-y divide-slate-100/80">
+          <div class="row flex items-center gap-3 py-3.5 px-2 -mx-2 rounded-lg">
+            <img src="https://images.unsplash.com/photo-1622207691293-5cd80466dab3?w=80&h=80&fit=crop" class="w-10 h-10 rounded-full object-cover" />
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Aditi Sharma</div>
+              <div class="text-[11px] text-slate-500">42 Y · Female · Tinnitus · 9870047591</div>
+            </div>
+            <span class="tag-new text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">New</span>
+            <div class="text-[11px] text-slate-400 w-14 text-right">14:32</div>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5 px-2 -mx-2 rounded-lg">
+            <img src="https://images.unsplash.com/photo-1663560454891-9bdbdaaed84d?w=80&h=80&fit=crop" class="w-10 h-10 rounded-full object-cover" />
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Vikram Mehta</div>
+              <div class="text-[11px] text-slate-500">58 Y · Male · HA trial follow-up · 9870147591</div>
+            </div>
+            <span class="tag-ret text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Returning</span>
+            <div class="text-[11px] text-slate-400 w-14 text-right">12:08</div>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5 px-2 -mx-2 rounded-lg">
+            <div class="w-10 h-10 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-xs">PB</div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Priya Banerjee</div>
+              <div class="text-[11px] text-slate-500">31 Y · Female · Speech screening · 9870147552</div>
+            </div>
+            <span class="tag-new text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">New</span>
+            <div class="text-[11px] text-slate-400 w-14 text-right">11:14</div>
+          </div>
+          <div class="row flex items-center gap-3 py-3.5 px-2 -mx-2 rounded-lg">
+            <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">SK</div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Suresh Kumar</div>
+              <div class="text-[11px] text-slate-500">67 Y · Male · BTE programming · 9870147529</div>
+            </div>
+            <span class="tag-ret text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">Returning</span>
+            <div class="text-[11px] text-slate-400 w-14 text-right">09:42</div>
+          </div>
+        </div>
+        <a class="block text-center text-[11px] font-semibold text-indigo-600 mt-4 pt-3">View all 59 registrations →</a>
+      </div>
+
+      <!-- Today's Schedule — 4 cols on the right -->
+      <div class="panel p-5 col-span-4">
+        <h2 class="text-base font-semibold tracking-tight text-slate-800 mb-1">Today's Schedule</h2>
+        <p class="text-[11px] text-slate-400 mb-4">Tue · 30 Jun · Clinic hours</p>
+        <div class="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-gradient-to-b before:from-emerald-200 before:via-blue-200 before:to-slate-200">
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_0_4px_white,0_0_0_5px_#A7F3D0]"></div>
+            <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">09:00 — Morning</div>
+            <div class="text-[12px] text-slate-500 mt-0.5">Walk-ins welcome</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_0_4px_white,0_0_0_5px_#FDE68A]"></div>
+            <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">13:30 — Lunch</div>
+            <div class="text-[12px] text-slate-500 mt-0.5">45-min break</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-blue-400 shadow-[0_0_0_4px_white,0_0_0_5px_#BFDBFE]"></div>
+            <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">14:15 — Afternoon</div>
+            <div class="text-[12px] text-slate-500 mt-0.5">Booked patients first</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[19px] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 shadow-[0_0_0_4px_white,0_0_0_5px_#E2E8F0]"></div>
+            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">19:00 — Close</div>
+            <div class="text-[12px] text-slate-400 mt-0.5">Last patient out</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
