@@ -302,6 +302,7 @@ async def get_current_user(request: Request):
         "branch_ids": user.get("branch_ids", []) or [],
         "active": user.get("active", True),
         "signature_image_fs_id": user.get("signature_image_fs_id"),
+        "seal_image_fs_id": user.get("seal_image_fs_id"),
         "license_no": user.get("license_no"),
         "appointment_color": user.get("appointment_color"),
         "mfa_enforcement": enforcement,

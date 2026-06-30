@@ -1,5 +1,57 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔖 PHASE 15.7 — Per-user Seal / Stamp upload (2026-06-30)
+
+Mirrors the existing per-user signature pattern to let users (clinic owners
+& staff) upload their official seal or company stamp once and have it on
+file for future report / invoice / challan rendering.
+
+### Implementation
+1. **Backend** — `routers/settings.py` (3 new endpoints):
+   - `POST /api/settings/me/seal` — upload base64 PNG/JPEG/WEBP (max 3 MB).
+     Sniffs MIME from the data-URL prefix, rejects unsupported types with
+     415, oversize with 413, empty with 400. Replaces the previous blob in
+     the `user_seals` GridFS bucket before storing the new one.
+   - `DELETE /api/settings/me/seal` — clears the seal. Returns 200 even if
+     there was nothing to remove (goal-state semantics).
+   - `GET /api/settings/users/{user_id}/seal` — same-tenant fetch of the
+     binary, 404 cleanly when no seal is set.
+2. **Backend** — exposed `seal_image_fs_id` on:
+   - `/api/auth/me` (so the nav-load `useEffect` can detect saved state)
+   - `/api/settings/me/profile` (rich profile load)
+3. **Frontend** — `modules/settings/MySealTab.jsx` (new):
+   - Drag-and-drop OR click-to-browse upload zone. Two-step flow:
+     **stage** (preview + filename + size) → **save** (sends to API and
+     refreshes preview from server). Lucide `Stamp` icon throughout.
+   - Saved-state shows an emerald confirmation card with the actual seal
+     image and a `Remove` link.
+   - File-size, MIME, and empty-input validation all client-side too with
+     friendly errors, before the API round-trip.
+4. **Frontend** — wired into `SettingsModule.js` as a new "My Seal" tab
+   directly under "My Signature" with matching `data-testid` conventions
+   (`settings-nav-seal`, `my-seal-tab`, `my-seal-save`, etc.).
+
+### Tests
+- `tests/test_seal_upload.py` — 7 passing tests:
+  1. `test_upload_seal_returns_fs_id`
+  2. `test_seal_appears_on_auth_me`
+  3. `test_fetch_then_delete_roundtrip`
+  4. `test_rejects_unsupported_mime`
+  5. `test_rejects_empty_payload`
+  6. `test_rejects_oversize`
+  7. `test_replace_deletes_previous_blob`
+
+### Storage schema
+- GridFS bucket: `user_seals`
+- User document fields added: `seal_image_fs_id` (string), `seal_image_mime` (string)
+
+### Future hookups (not in this phase)
+- Rendering on audiogram report footer, invoice PDF, challan receipt —
+  same pattern as signature embed. Will need explicit user opt-in per
+  doc type (settings checkbox: "Include seal on invoices").
+
+---
+
 ## 📬 PHASE 15.6 — Waitlist autoresponder + Leads weekly counter (2026-06-12)
 
 Completed the last in-progress item from the previous fork: full wiring of

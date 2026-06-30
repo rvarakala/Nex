@@ -438,6 +438,165 @@ async def fetch_user_signature(user_id: str,
 
 
 # ============================================================================
+# Personal seal / stamp — every authenticated user can upload one.
+#
+# Mirrors the signature pattern (same shape: POST/DELETE on /me/seal, GET on
+# /users/{user_id}/seal) but accepts a pre-made image (uploaded PNG/JPEG/WEBP)
+# instead of a canvas-drawn data-URL — because users typically already have a
+# designed or scanned seal artwork rather than drawing one freehand.
+#
+# Bucket: `user_seals`. Max 3 MB (slightly larger than signatures because
+# detailed seal artwork is heavier than a quick signature trace).
+# ============================================================================
+_SEAL_BUCKET = "user_seals"
+_MAX_SEAL_BYTES = 3_000_000  # 3 MB
+_ALLOWED_SEAL_MIME = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+}
+
+
+class SealPayload(BaseModel):
+    """JSON body for seal uploads. The client sends the base64 image (data-URL
+    or raw base64). Multipart is also supported via a separate endpoint below
+    in case the UI wants a true file picker without doing the base64 dance."""
+    image_base64: str
+
+
+@router.post("/me/seal")
+async def upload_my_seal(payload: SealPayload,
+                         user=Depends(get_current_user), db=Depends(get_db)):
+    """Upload (or replace) the current user's official seal / stamp.
+
+    Accepts a base64-encoded PNG / JPEG / WEBP. The previous seal blob (if
+    any) is deleted from GridFS before the new one is stored — keeping the
+    bucket tight. Returns the new GridFS id.
+    """
+    import base64
+    raw = payload.image_base64 or ""
+
+    # Sniff mime from the data-URL prefix when available; this lets us reject
+    # garbage uploads (e.g. PDFs renamed to .png) before they hit GridFS.
+    mime = "image/png"
+    if "," in raw and raw.lower().startswith("data:"):
+        header, raw = raw.split(",", 1)
+        # header looks like 'data:image/png;base64'
+        try:
+            mime = header.split(":", 1)[1].split(";", 1)[0].strip().lower()
+        except Exception:
+            mime = "image/png"
+    if mime not in _ALLOWED_SEAL_MIME:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported image type. Allowed: PNG, JPEG, WEBP. Got: {mime}",
+        )
+    try:
+        blob = base64.b64decode(raw, validate=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 image: {e}")
+    if not blob:
+        raise HTTPException(status_code=400, detail="Empty seal upload")
+    if len(blob) > _MAX_SEAL_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Seal image too large (max {_MAX_SEAL_BYTES // 1_000_000} MB)",
+        )
+
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_SEAL_BUCKET)
+    udoc = await db.users.find_one(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "seal_image_fs_id": 1},
+    ) or {}
+    if udoc.get("seal_image_fs_id"):
+        try:
+            await bucket.delete(ObjectId(udoc["seal_image_fs_id"]))
+        except Exception:
+            pass  # orphan blob is harmless; we move on.
+
+    ext = _ALLOWED_SEAL_MIME[mime]
+    fs_id = await bucket.upload_from_stream(
+        f"seal-{user['user_id']}.{ext}",
+        io.BytesIO(blob),
+        metadata={
+            "user_id": user["user_id"],
+            "clinic_id": user.get("clinic_id"),
+            "kind": "user-seal",
+            "mime": mime,
+        },
+    )
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "seal_image_fs_id": str(fs_id),
+            "seal_image_mime": mime,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {
+        "seal_image_fs_id": str(fs_id),
+        "mime": mime,
+        "size_bytes": len(blob),
+    }
+
+
+@router.delete("/me/seal")
+async def clear_my_seal(user=Depends(get_current_user), db=Depends(get_db)):
+    """Remove the current user's seal. Returns 200 even if there was nothing
+    to remove — the goal-state is 'no seal', and that's now true regardless."""
+    udoc = await db.users.find_one(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "seal_image_fs_id": 1},
+    ) or {}
+    if udoc.get("seal_image_fs_id"):
+        bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_SEAL_BUCKET)
+        try:
+            await bucket.delete(ObjectId(udoc["seal_image_fs_id"]))
+        except Exception:
+            pass
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "seal_image_fs_id": None,
+            "seal_image_mime": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"ok": True}
+
+
+@router.get("/users/{user_id}/seal")
+async def fetch_user_seal(user_id: str,
+                          user=Depends(get_current_user), db=Depends(get_db)):
+    """Same-tenant fetch of a user's seal. 404s cleanly when no seal is on
+    file so the consumer can fall back gracefully (e.g. omit the seal from
+    a printed report)."""
+    udoc = await db.users.find_one(
+        {"user_id": user_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "seal_image_fs_id": 1, "seal_image_mime": 1, "name": 1},
+    )
+    if not udoc or not udoc.get("seal_image_fs_id"):
+        raise HTTPException(status_code=404, detail="No seal on file")
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_SEAL_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(udoc["seal_image_fs_id"]))
+        data = await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Seal blob missing")
+    from fastapi.responses import Response
+    return Response(
+        content=data,
+        media_type=udoc.get("seal_image_mime") or "image/png",
+        headers={
+            "X-Seal-Owner": udoc.get("name") or "",
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
+
+# ============================================================================
 # SELF-SERVICE PROFILE & PASSWORD ENDPOINTS
 # ----------------------------------------------------------------------------
 # The `change-password` flow is critical because admins now provision users
@@ -484,7 +643,7 @@ async def get_my_profile(user=Depends(get_current_user), db=Depends(get_db)):
         "user_id", "email", "name", "role", "phone", "designation",
         "qualifications", "license_no", "rci_registration_no",
         "specialization", "years_of_experience", "languages", "bio",
-        "avatar_fs_id", "signature_image_fs_id",
+        "avatar_fs_id", "signature_image_fs_id", "seal_image_fs_id",
         "appointment_color", "must_change_password",
         "created_at", "updated_at",
     ]

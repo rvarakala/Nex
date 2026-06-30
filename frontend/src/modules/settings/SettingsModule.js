@@ -11,11 +11,12 @@
  */
 import React from 'react';
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom';
-import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload, User, Printer } from 'lucide-react';
+import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload, User, Printer, Stamp } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
 import MySignatureTab from './MySignatureTab';
+import MySealTab from './MySealTab';
 import MyProfileTab from './MyProfileTab';
 import SecurityPrivacyTab from './SecurityPrivacyTab';
 import ConnectWhatsAppTab from './ConnectWhatsAppTab';
@@ -58,6 +59,7 @@ export default function SettingsModule() {
         {(isAdmin || canManageCatalog) && <div className="my-2 border-t border-slate-100" />}
         <SideLink to="/settings/profile"   icon={<User size={14} />} label="My Profile"   testid="settings-nav-profile" />
         <SideLink to="/settings/signature" icon={<Pen size={14} />}  label="My Signature" testid="settings-nav-signature" />
+        <SideLink to="/settings/seal"      icon={<Stamp size={14} />} label="My Seal"     testid="settings-nav-seal" />
       </aside>
       <main className="flex-1 overflow-auto">
         <Routes>
@@ -75,6 +77,7 @@ export default function SettingsModule() {
           {canManageCatalog && <Route path="services" element={<ServiceCatalogPage />} />}
           <Route path="profile"   element={<MyProfileTab />} />
           <Route path="signature" element={<MySignatureTab />} />
+          <Route path="seal"      element={<MySealTab />} />
         </Routes>
       </main>
     </div>
