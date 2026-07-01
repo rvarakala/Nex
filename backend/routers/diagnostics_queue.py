@@ -211,6 +211,10 @@ async def diagnostics_queue(
             "service": a.get("service"),
             "arrived_at": a.get("check_in_at") or a.get("start_at"),
             "start_at": a.get("start_at"),
+            # Kanban chips: which diagnostic tests the audiologist should run
+            # + whether this is a first-visit vs a repeat/follow-up.
+            "recommended_tests": a.get("recommended_tests") or [],
+            "visit_type": a.get("visit_type"),
         })
 
     # ---- draft sessions (always in_progress) ----
@@ -234,6 +238,8 @@ async def diagnostics_queue(
             "priority": "normal",
             "service": None,
             "arrived_at": s.get("created_at"),
+            "recommended_tests": s.get("recommended_tests") or [],
+            "visit_type": s.get("visit_type"),
         })
 
     # ---- completed sessions today ----
@@ -257,6 +263,8 @@ async def diagnostics_queue(
             "priority": "normal",
             "service": None,
             "arrived_at": s.get("updated_at") or s.get("created_at"),
+            "recommended_tests": s.get("recommended_tests") or [],
+            "visit_type": s.get("visit_type"),
         })
 
     # ------ Split into 4 columns, sort within each ------

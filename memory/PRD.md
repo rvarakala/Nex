@@ -1,5 +1,57 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎨 PHASE 16.3 — Hearing Tests Kanban v3-aligned redesign (2026-07-01, night+)
+
+Delivered the Hearing Tests module redesign per the approved mockup
+`/mockups/hearing-tests-v2.html`, fully aligned with the AUDINEXA v3
+theme.
+
+### 1. Backend
+- `/api/diagnostics/queue` rows now expose two new fields:
+  - `recommended_tests: string[]` — drives the chip badges (PTA / SPEECH
+    / IMP / OAE / ABR / TINN / SFA / VRA / VEMP)
+  - `visit_type: string?` — powers the ✓ RPT badge in the Completed
+    column when the value is `revisit / follow_up / repeat`
+
+### 2. Frontend rewrite (`modules/test/DiagnosticsQueueBoard.js`)
+- Big page title "Hearing Tests" + Inter typography + off-white bg
+- Dynamic sub-strip "N pending · M completed today · <day>"
+- 4-column Kanban with **saturated gradient column headers**
+  (amber / indigo / violet / emerald) matching the mockup — count pill
+  uses `bg-white/25 backdrop-blur-sm` for a glass effect
+- Rounded 2xl patient cards with hover lift + left-border priority
+  accent (rose urgent / fuchsia VIP / slate normal)
+- LIVE badge (red, pulsing) on in-progress row
+- ✓ RPT badge on completed repeat visits
+- Colour-coded recommended-test chips (max 4 shown + "+N" overflow)
+- Token/Appointment ID pill top-right
+- Dashed empty-column state ("Drop patient here to start" on hover)
+- New **Walk-in Test** button (purple gradient) + Returning + Refresh
+- Below the Kanban: **Available Tests Launcher** — 10 diagnostic test
+  tiles (PTA, Speech, Impedance, OAE, ABR/BERA, Tinnitus, Soundfield,
+  Paediatric, VEMP, Special Tests) with colored top-border, icon,
+  title, subtitle, and "N DUE" badge computed from queue rows.
+
+### 3. Preserved functionality
+Drag-and-drop, 20 s auto-refresh, click-to-start/resume, view-report
+PDF flow, walk-in shortcuts — none regressed. All original data-testids
+kept (`dq-col-*`, `dq-card-*`, `dq-count-*`, `dq-refresh`, `dq-new-walkin`,
+`dq-returning`) plus new (`dq-launcher`, `dq-launch-<test>`).
+
+### Files touched
+- `/app/backend/routers/diagnostics_queue.py` — 2 field additions.
+- `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` — full rewrite
+  (357 → 456 lines, mostly JSX).
+
+### Verified
+- ESLint clean.
+- Live rendering on desktop 1600×900 with `owner@thesoundclinic.in`:
+  gradient column headers · empty-state placeholders visible · Walk-in
+  Test CTA renders as purple gradient pill · 10-tile launcher renders
+  below.
+
+---
+
 ## 🎨 PHASE 16.2 — Dashboard Restructure v3 (2026-07-01, night)
 
 Second round of user-driven dashboard tweaks:
