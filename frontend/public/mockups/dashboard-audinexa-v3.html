@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AUDINEXA · Dashboard · Restructured (Needs Attention on top)</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --navy: #0F1D3A;
+    --navy-hover: #1B2A4E;
+    --navy-active: #1A2B4A;
+    --bg: #EEF1FA;
+    --teal: #22D3EE;
+    --teal-deep: #0891B2;
+  }
+  html { font-size: 15px; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #0F172A; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02","cv03","cv04","cv11"; }
+
+  .sidebar { background: var(--navy); width: 260px; min-height: 100vh; padding: 24px 18px; color: white; border-radius: 0 22px 22px 0; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; color: rgba(255,255,255,0.70); font-size: 14.5px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .nav-item:hover { background: var(--navy-hover); color: white; }
+  .nav-item.active { background: var(--navy-active); color: var(--teal); box-shadow: inset 3px 0 0 var(--teal); }
+
+  .kpi-card { border-radius: 16px; padding: 22px 20px; color: white; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15); }
+  .kpi-blue   { background: linear-gradient(135deg, #5B92F5 0%, #4380E5 100%); }
+  .kpi-mint   { background: linear-gradient(135deg, #37D399 0%, #27BF87 100%); }
+  .kpi-purple { background: linear-gradient(135deg, #7B68EE 0%, #6957DE 100%); }
+  .kpi-cyan   { background: linear-gradient(135deg, #3ABBED 0%, #26A6D9 100%); }
+  .kpi-icon-wrap { background: white; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.10); }
+
+  .card { background: #fff; border-radius: 16px; padding: 22px; box-shadow: 0 2px 10px -4px rgba(15,23,42,0.06), 0 12px 30px -20px rgba(15,23,42,0.10); }
+
+  /* ============ NEW: Large "Needs Attention" hero cards ============ */
+  .na-card {
+    background: white;
+    border-radius: 18px;
+    padding: 20px 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: all .18s ease;
+    box-shadow: 0 3px 14px -4px rgba(15,23,42,0.08);
+    border: 1px solid #F1F5F9;
+    border-left: 5px solid transparent;
+    position: relative;
+  }
+  .na-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px -8px rgba(15, 29, 58, 0.18);
+  }
+  .na-card .na-icon {
+    width: 52px; height: 52px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .na-card .na-body { flex: 1; min-width: 0; }
+  .na-card .na-title { font-size: 16.5px; font-weight: 800; color: #0F172A; letter-spacing: -0.015em; }
+  .na-card .na-sub {
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 4px;
+  }
+  .na-card .na-count { font-size: 32px; font-weight: 900; color: #0F172A; letter-spacing: -0.03em; line-height: 1; margin-top: 6px; tab-size: 1; }
+  .na-card .na-chev { color: #CBD5E1; flex-shrink: 0; }
+  .na-recall  { border-left-color: #F97316; }  .na-recall  .na-icon { background: #FFEDD5; color: #EA580C; }
+  .na-stock   { border-left-color: #EF4444; }  .na-stock   .na-icon { background: #FEE2E2; color: #DC2626; }
+  .na-device  { border-left-color: #0EA5E9; }  .na-device  .na-icon { background: #DBEAFE; color: #2563EB; }
+
+  .na-card.attn-live::before {
+    content: '';
+    position: absolute;
+    top: 12px; right: 12px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  .na-recall.attn-live::before { background: #F97316; box-shadow: 0 0 0 3px rgba(249,115,22,0.20); }
+  .na-stock.attn-live::before  { background: #EF4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.20); }
+  .na-device.attn-live::before { background: #0EA5E9; box-shadow: 0 0 0 3px rgba(14,165,233,0.20); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* ============ Patient rows + status pills (from previous) ============ */
+  .patient-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-radius: 10px; }
+  .patient-row:hover { background: #F8FAFC; }
+  .status-pill { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .status-ongoing { background: #DBEAFE; color: #1E3A8A; }
+  .status-time    { background: #F3E8FF; color: #6D28D9; }
+
+  .search-input { background: white; border-radius: 999px; padding: 10px 16px 10px 44px; width: 380px; box-shadow: 0 2px 10px -4px rgba(0,0,0,0.06); font-size: 14px; outline: none; }
+  .chip { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+  .chip-amber { background: #FEF3C7; color: #92400E; }
+  .chip-mint  { background: #D1FAE5; color: #065F46; }
+
+  /* Quick Action tiles */
+  .qa-tile { background: white; border-radius: 14px; padding: 14px 14px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all .15s; box-shadow: 0 1px 4px -2px rgba(15,23,42,0.05); border: 1px solid #F1F5F9; }
+  .qa-tile:hover { transform: translateY(-2px); box-shadow: 0 8px 20px -8px rgba(15, 29, 58, 0.20); border-color: rgba(34, 211, 238, 0.35); }
+  .qa-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .qa-label { font-size: 13.5px; font-weight: 700; color: #0F172A; line-height: 1.3; }
+  .qa-blue    { background: #EFF6FF; color: #2563EB; }
+  .qa-mint    { background: #D1FAE5; color: #059669; }
+  .qa-purple  { background: #F3E8FF; color: #7C3AED; }
+  .qa-amber   { background: #FEF3C7; color: #D97706; }
+  .qa-rose    { background: #FFE4E6; color: #E11D48; }
+  .qa-slate   { background: #E0E7FF; color: #4F46E5; }
+
+  /* ============ NEW: Front-Office replacement cards for the empty gap ============ */
+  .clinic-tile {
+    background: white;
+    border-radius: 16px;
+    padding: 18px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    cursor: pointer;
+    transition: all .18s ease;
+    box-shadow: 0 2px 10px -4px rgba(15,23,42,0.06);
+    border: 1px solid #F1F5F9;
+    border-top: 4px solid transparent;
+    min-height: 110px;
+  }
+  .clinic-tile:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -8px rgba(15, 29, 58, 0.18); }
+  .clinic-tile .ct-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .clinic-tile .ct-title { font-size: 14px; font-weight: 800; color: #0F172A; letter-spacing: -0.01em; }
+  .clinic-tile .ct-value { font-size: 24px; font-weight: 900; color: #0F172A; letter-spacing: -0.02em; line-height: 1; margin-top: 6px; }
+  .clinic-tile .ct-hint  { font-size: 11.5px; font-weight: 600; color: #64748B; margin-top: 6px; }
+  .clinic-teal    { border-top-color: #14B8A6; }  .clinic-teal .ct-icon    { background: #CCFBF1; color: #0F766E; }
+  .clinic-violet  { border-top-color: #8B5CF6; }  .clinic-violet .ct-icon  { background: #F3E8FF; color: #7C3AED; }
+  .clinic-amber   { border-top-color: #F59E0B; }  .clinic-amber .ct-icon   { background: #FEF3C7; color: #D97706; }
+
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .card-title  { font-size: 16px; font-weight: 800; color: #0F172A; letter-spacing: -0.01em; }
+  .card-link   { font-size: 13px; font-weight: 700; color: var(--teal-deep); }
+
+  .timeline-item { position: relative; padding-left: 32px; padding-bottom: 20px; }
+  .timeline-dot { position: absolute; left: 0; top: 4px; width: 14px; height: 14px; border-radius: 50%; background: white; border: 3px solid var(--teal); }
+  .timeline-dot.past { border-color: #CBD5E1; }
+  .donut-svg { transform: rotate(-90deg); }
+  .subcard-lavender { background: linear-gradient(180deg, #FAF5FF 0%, #FFFFFF 100%); }
+</style>
+</head>
+<body class="min-h-screen">
+  <div class="flex">
+
+    <!-- SIDEBAR (unchanged) -->
+    <aside class="sidebar">
+      <div class="flex items-center gap-2 mb-8 px-2">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #22D3EE, #0891B2);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>
+        </div>
+        <div class="text-white font-extrabold text-[19px] tracking-tight">AUDINEXA</div>
+      </div>
+      <div class="flex flex-col items-center mb-8 pb-6 border-b border-white/10">
+        <div class="w-24 h-24 rounded-full mb-3 bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center ring-4 ring-white/10">
+          <div class="text-white font-extrabold text-[28px]">RI</div>
+        </div>
+        <div class="text-white font-bold text-[16px]">Dr. Rajesh Iyer</div>
+        <div class="text-[12px] text-white/60 font-medium mt-1">Clinical Audiologist · MASLP</div>
+      </div>
+      <div class="nav-item active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Overview</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/></svg>Appointments</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/></svg>Patients</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>Hearing Tests</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>Hearing Aids</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/></svg>Billing</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="4"/></svg>Reports & Analytics</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>Settings</div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="flex-1 p-8" style="max-width: 1400px;">
+
+      <!-- Top bar -->
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-[28px] font-extrabold tracking-tight text-slate-900">Overview</h1>
+        <div class="flex items-center gap-3">
+          <div class="relative">
+            <svg class="absolute left-4 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="search-input" placeholder="Search Appointment, Patient or etc..." />
+          </div>
+          <button class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center relative">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+            <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Greeting + date -->
+      <div class="flex items-end justify-between mb-5">
+        <div>
+          <div class="text-[24px] font-extrabold text-slate-900 tracking-tight">Welcome, Dr. Rajesh</div>
+          <div class="text-[14px] text-slate-500 mt-1 font-medium">Have a nice day at great work</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-2">
+          <div class="text-[14px] font-semibold text-slate-800">30 June 2026</div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/></svg>
+        </div>
+      </div>
+
+      <!-- ============ ⚠️ NEEDS ATTENTION — 3 LARGE HERO CARDS (moved to TOP) ============ -->
+      <div class="mb-5">
+        <div class="flex items-center justify-between mb-3 px-1">
+          <div class="flex items-center gap-2.5">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <h3 class="text-[12px] font-extrabold tracking-widest text-amber-800 uppercase">Needs Attention</h3>
+          </div>
+          <a class="text-[12px] font-extrabold text-amber-800 hover:text-amber-900 flex items-center gap-0.5">REVIEW ALL <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></a>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <div class="na-card na-recall attn-live">
+            <div class="na-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="na-body">
+              <div class="na-title">Recall Reminders</div>
+              <div class="na-sub">Follow-ups due</div>
+              <div class="na-count">5 <span class="text-[13px] font-semibold text-slate-500 tracking-normal ml-1">patients</span></div>
+            </div>
+            <svg class="na-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+
+          <div class="na-card na-stock attn-live">
+            <div class="na-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            </div>
+            <div class="na-body">
+              <div class="na-title">Low Stock Alert</div>
+              <div class="na-sub">HA models running low</div>
+              <div class="na-count">2 <span class="text-[13px] font-semibold text-slate-500 tracking-normal ml-1">SKUs</span></div>
+            </div>
+            <svg class="na-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+
+          <div class="na-card na-device attn-live">
+            <div class="na-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </div>
+            <div class="na-body">
+              <div class="na-title">Device Pending</div>
+              <div class="na-sub">Repairs ready to deliver</div>
+              <div class="na-count">3 <span class="text-[13px] font-semibold text-slate-500 tracking-normal ml-1">devices</span></div>
+            </div>
+            <svg class="na-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 KPI cards -->
+      <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="kpi-card kpi-blue"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4380E5" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">6</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Appointments</div></div></div></div>
+        <div class="kpi-card kpi-mint"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#27BF87" stroke-width="2.5"><circle cx="9" cy="7" r="4"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">12</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">New Patients</div></div></div></div>
+        <div class="kpi-card kpi-purple"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6957DE" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">7</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Tests Today</div></div></div></div>
+        <div class="kpi-card kpi-cyan"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#26A6D9" stroke-width="2.5"><path d="M12 1v22"/></svg></div><div><div class="text-[32px] font-extrabold leading-none">₹1.84L</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Collections</div></div></div></div>
+      </div>
+
+      <!-- 12-col split — LEFT (8) · RIGHT (4) Quick Actions only -->
+      <div class="grid grid-cols-12 gap-5 mb-5">
+
+        <!-- LEFT column -->
+        <div class="col-span-8 space-y-5">
+          <div class="grid grid-cols-2 gap-5">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Today's Appointments</h3><a class="card-link">See all →</a></div>
+              <div>
+                <div class="patient-row"><div class="w-11 h-11 rounded-full bg-rose-50 text-rose-700 flex items-center justify-center font-extrabold text-[15px]">AS</div><div class="flex-1"><div class="text-[15px] font-bold text-slate-900">Aditi Sharma</div><div class="text-[12.5px] text-slate-500 font-medium mt-0.5">Hearing Test</div></div><span class="status-pill status-ongoing">Ongoing</span></div>
+                <div class="patient-row"><div class="w-11 h-11 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-extrabold text-[15px]">VM</div><div class="flex-1"><div class="text-[15px] font-bold text-slate-900">Vikram Mehta</div><div class="text-[12.5px] text-slate-500 font-medium mt-0.5">HA Fitting</div></div><span class="status-pill status-time">02:30 PM</span></div>
+                <div class="patient-row"><div class="w-11 h-11 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center font-extrabold text-[15px]">PB</div><div class="flex-1"><div class="text-[15px] font-bold text-slate-900">Priya Banerjee</div><div class="text-[12.5px] text-slate-500 font-medium mt-0.5">Consultation</div></div><span class="status-pill status-time">03:15 PM</span></div>
+              </div>
+            </div>
+
+            <div class="card subcard-lavender">
+              <div class="card-header"><h3 class="card-title">In Test Now</h3><a class="card-link">See more →</a></div>
+              <div class="flex items-center gap-3 mb-3"><div class="w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-extrabold text-[18px] shadow-lg">NK</div><div><div class="text-[17px] font-extrabold text-slate-900">Neha Kulkarni</div><div class="text-[13px] text-slate-600 mt-0.5 font-medium">F · Age: 39</div></div></div>
+              <div class="flex items-center gap-1.5 mb-4"><span class="chip chip-amber">Speech running</span><span class="chip chip-mint">PTA done</span></div>
+              <div class="pt-4 border-t border-slate-200/70 flex items-center justify-between"><div><div class="text-[11px] text-slate-500 font-extrabold uppercase tracking-widest">Session</div><div class="text-[13.5px] font-bold text-slate-800 mt-1">3 tests · 1 pending</div></div><a class="card-link">Open →</a></div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-5">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Recent Registrations</h3><a class="card-link">See all →</a></div>
+              <div class="grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"><div>Name</div><div>Time</div><div class="text-right">Action</div></div>
+              <div>
+                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center font-extrabold text-[12px]">SK</div><div class="text-[13.5px] font-bold text-slate-800 truncate">Suresh</div></div><div class="text-[13px] text-slate-600 font-semibold">15:00</div><div class="flex items-center justify-end gap-2"><button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button><button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-sky-50 text-sky-700 flex items-center justify-center font-extrabold text-[12px]">RD</div><div class="text-[13.5px] font-bold text-slate-800 truncate">Ravi</div></div><div class="text-[13px] text-slate-600 font-semibold">14:20</div><div class="flex items-center justify-end gap-2"><button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button><button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center font-extrabold text-[12px]">MI</div><div class="text-[13.5px] font-bold text-slate-800 truncate">Meena</div></div><div class="text-[13px] text-slate-600 font-semibold">12:45</div><div class="flex items-center justify-end gap-2"><button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button><button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Today's Test Mix</h3><a class="card-link">This week ▾</a></div>
+              <div class="flex items-center justify-center mb-3">
+                <div class="relative w-[140px] h-[140px]">
+                  <svg viewBox="0 0 36 36" class="donut-svg">
+                    <path d="M18 2 a 16 16 0 0 1 0 32 a 16 16 0 0 1 0 -32" fill="none" stroke="#E2E8F0" stroke-width="4"/>
+                    <path d="M18 2 a 16 16 0 0 1 13.86 8" fill="none" stroke="#5B92F5" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M31.86 10 a 16 16 0 0 1 -6.86 20" fill="none" stroke="#F97316" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M25 30 a 16 16 0 0 1 -20 -12" fill="none" stroke="#7B68EE" stroke-width="4" stroke-linecap="round"/>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center"><div class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest">Total</div><div class="text-[26px] font-extrabold text-slate-900 leading-none mt-0.5">7</div></div>
+                </div>
+              </div>
+              <div class="space-y-1.5 mt-2">
+                <div class="flex items-center justify-between text-[13px]"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#5B92F5"></span><span class="font-semibold text-slate-700">PTA</span></div><span class="font-bold text-slate-900">3</span></div>
+                <div class="flex items-center justify-between text-[13px]"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#F97316"></span><span class="font-semibold text-slate-700">Speech</span></div><span class="font-bold text-slate-900">2</span></div>
+                <div class="flex items-center justify-between text-[13px]"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#7B68EE"></span><span class="font-semibold text-slate-700">Impedance</span></div><span class="font-bold text-slate-900">2</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- =============================================================== -->
+          <!-- ROW C — NEW clinical / front-office tiles filling the empty gap -->
+          <!-- =============================================================== -->
+          <div>
+            <div class="text-[10px] font-extrabold tracking-[0.14em] text-slate-500 uppercase mb-3 px-1">Clinic Pulse</div>
+            <div class="grid grid-cols-3 gap-4">
+
+              <!-- Doctor Schedule -->
+              <div class="clinic-tile clinic-teal">
+                <div class="ct-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div class="flex-1">
+                  <div class="ct-title">Doctor Schedule</div>
+                  <div class="ct-value">3 <span class="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">on duty</span></div>
+                  <div class="ct-hint">Next free · Dr. Sam at 04:00 PM</div>
+                </div>
+              </div>
+
+              <!-- Trial Devices Out -->
+              <div class="clinic-tile clinic-violet">
+                <div class="ct-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3v4z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3v4z"/></svg>
+                </div>
+                <div class="flex-1">
+                  <div class="ct-title">Trial Devices Out</div>
+                  <div class="ct-value">4 <span class="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">trials</span></div>
+                  <div class="ct-hint">2 return by tomorrow · call to close</div>
+                </div>
+              </div>
+
+              <!-- Warranty Expiring / Referral -->
+              <div class="clinic-tile clinic-amber">
+                <div class="ct-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                </div>
+                <div class="flex-1">
+                  <div class="ct-title">Warranty Expiring</div>
+                  <div class="ct-value">6 <span class="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">HAs · 30 days</span></div>
+                  <div class="ct-hint">Nudge patients for AMC / renewal</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <!-- RIGHT column — only Quick Actions (Alerts removed) -->
+        <div class="col-span-4 space-y-5">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <div class="qa-tile"><div class="qa-icon qa-blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/></svg></div><div class="qa-label">New<br/>Appointment</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-mint"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="7" r="4"/></svg></div><div class="qa-label">New<br/>Registration</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 8.5A6.5 6.5 0 0 1 12.5 2 6.5 6.5 0 0 1 19 8.5"/></svg></div><div class="qa-label">Hearing<br/>Test</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-amber"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/></svg></div><div class="qa-label">Add HA<br/>Sale</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-rose"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="qa-label">Send<br/>Recall</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-slate"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div><div class="qa-label">View<br/>Reports</div></div>
+            </div>
+          </div>
+
+          <!-- NEW: Referrals This Week — fills the space where Alerts used to be -->
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">Top Referrers · This Week</h3><a class="card-link">See all →</a></div>
+            <div class="space-y-3">
+              <div class="flex items-center gap-3 py-1">
+                <div class="w-9 h-9 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center font-extrabold text-[13px]">1</div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[13.5px] font-bold text-slate-900 truncate">Dr. Anjali Rao</div>
+                  <div class="text-[11.5px] text-slate-500 font-medium">Manipal · ENT</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-[15px] font-extrabold text-slate-900 leading-none">8</div>
+                  <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">refs</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 py-1">
+                <div class="w-9 h-9 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center font-extrabold text-[13px]">2</div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[13.5px] font-bold text-slate-900 truncate">Dr. Ravi Kumar</div>
+                  <div class="text-[11.5px] text-slate-500 font-medium">Apollo · GP</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-[15px] font-extrabold text-slate-900 leading-none">5</div>
+                  <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">refs</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 py-1">
+                <div class="w-9 h-9 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center font-extrabold text-[13px]">3</div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[13.5px] font-bold text-slate-900 truncate">Dr. Priya Menon</div>
+                  <div class="text-[11.5px] text-slate-500 font-medium">Fortis · Paediatric</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-[15px] font-extrabold text-slate-900 leading-none">3</div>
+                  <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">refs</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Patient Trend + Timeline -->
+      <div class="grid grid-cols-12 gap-5 mb-5">
+        <div class="card col-span-8">
+          <div class="card-header"><h3 class="card-title">Patient Trend</h3><div class="flex items-center gap-2"><span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">This week</span><span class="text-[11px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded">Month</span></div></div>
+          <div class="relative">
+            <svg width="100%" height="180" viewBox="0 0 600 180" preserveAspectRatio="none">
+              <defs><linearGradient id="teal-grad-full" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#22D3EE" stop-opacity="0.30"/><stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/></linearGradient></defs>
+              <line x1="0" y1="40" x2="600" y2="40" stroke="#E2E8F0" stroke-width="1"/><line x1="0" y1="80" x2="600" y2="80" stroke="#E2E8F0" stroke-width="1"/><line x1="0" y1="120" x2="600" y2="120" stroke="#E2E8F0" stroke-width="1"/><line x1="0" y1="160" x2="600" y2="160" stroke="#E2E8F0" stroke-width="1"/>
+              <path d="M0,130 C40,110 80,120 120,100 C160,80 200,50 260,55 C320,60 360,25 420,30 C480,35 520,70 600,60 L600,180 L0,180 Z" fill="url(#teal-grad-full)"/>
+              <path d="M0,130 C40,110 80,120 120,100 C160,80 200,50 260,55 C320,60 360,25 420,30 C480,35 520,70 600,60" fill="none" stroke="#22D3EE" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="420" cy="30" r="6" fill="#22D3EE" stroke="white" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="flex justify-between text-[11px] text-slate-500 font-semibold mt-2 px-1"><span>Mo</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+        </div>
+
+        <div class="card col-span-4">
+          <div class="card-header"><h3 class="card-title">Timeline</h3></div>
+          <div class="timeline-item"><div class="timeline-dot"></div><div class="text-[13.5px] font-extrabold text-slate-900">11:30 AM · Clinic Consultation</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Rahul Kapoor + 2 walk-ins</div></div>
+          <div class="timeline-item"><div class="timeline-dot past"></div><div class="text-[13.5px] font-extrabold text-slate-900">02:30 PM · HA Fitting</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Vikram Mehta · 30 min</div></div>
+          <div class="timeline-item"><div class="timeline-dot past"></div><div class="text-[13.5px] font-extrabold text-slate-900">05:30 PM · Team Meet</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Weekly review · Dr. Sam</div></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
