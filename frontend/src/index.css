@@ -3,9 +3,80 @@
 @tailwind utilities;
 
 /* ==================================================================
-   AUDINEXA Landing — Cabinet Grotesk (display) + Manrope (body).
-   Loaded from Fontshare — no API key needed, free for commercial use.
+   AUDINEXA GLOBAL PALETTE + TYPOGRAPHY (2026-07-01)
+   -----------------------------------------------------------------
+   Adopted app-wide from the approved dashboard mockup:
+   `/mockups/dashboard-audinexa-final.html`.
+   Navy sidebar · off-white bg · Inter font · teal accent · 4 KPI
+   gradient tokens available as utility classes.
    ================================================================== */
+:root {
+  --audinexa-navy: #0F1D3A;
+  --audinexa-navy-hover: #1B2A4E;
+  --audinexa-navy-active: #1A2B4A;
+  --audinexa-bg: #EEF1FA;
+  --audinexa-teal: #22D3EE;
+  --audinexa-teal-deep: #0891B2;
+  --kpi-blue: #5B92F5;      --kpi-blue-deep: #4380E5;
+  --kpi-mint: #37D399;      --kpi-mint-deep: #27BF87;
+  --kpi-purple: #7B68EE;    --kpi-purple-deep: #6957DE;
+  --kpi-cyan: #3ABBED;      --kpi-cyan-deep: #26A6D9;
+}
+
+/* AUDINEXA KPI gradient utilities — used by the Modern Dashboard's
+   4 saturated cards and reusable anywhere in the app. */
+.audinexa-kpi-blue   { background: linear-gradient(135deg, var(--kpi-blue) 0%, var(--kpi-blue-deep) 100%); }
+.audinexa-kpi-mint   { background: linear-gradient(135deg, var(--kpi-mint) 0%, var(--kpi-mint-deep) 100%); }
+.audinexa-kpi-purple { background: linear-gradient(135deg, var(--kpi-purple) 0%, var(--kpi-purple-deep) 100%); }
+.audinexa-kpi-cyan   { background: linear-gradient(135deg, var(--kpi-cyan) 0%, var(--kpi-cyan-deep) 100%); }
+
+/* Attention strip amber banner — reusable across modules. */
+.audinexa-attention-strip {
+  background: linear-gradient(90deg, #FFF7ED 0%, #FEF3C7 100%);
+  border: 1px solid #FED7AA;
+  border-radius: 14px;
+  box-shadow: 0 2px 10px -4px rgba(217, 119, 6, 0.15);
+}
+
+/* AUDINEXA background wash — off-white with a faint cool tint. */
+.audinexa-bg { background-color: var(--audinexa-bg); }
+
+/* Horizontal-scroll snap container — used by mobile attention carousel. */
+.audinexa-hscroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.audinexa-hscroll::-webkit-scrollbar { display: none; }
+.audinexa-hscroll > * { scroll-snap-align: start; flex: 0 0 auto; }
+
+/* Mobile bottom nav — safe-area aware. */
+.audinexa-bottomnav {
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+}
+
+/* Modern Dashboard KPI row — must stay 2-col on mobile, 4-col on xl.
+   Uses a non-Tailwind class so the global `.grid.grid-cols-N → 1fr`
+   mobile override in this file doesn't collapse it to 1 column. */
+.dash-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1280px) {
+  .dash-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Modern Dashboard Quick Actions grid — 2-col on mobile/tablet, 1-col on lg
+   (single-column rail matches the desktop right-column layout). */
+.dash-qa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.625rem; }
+@media (min-width: 1024px) {
+  .dash-qa-grid { grid-template-columns: 1fr; }
+}
+
+/* Modern Dashboard Recent Registrations rows — always 3-col Name/Time/Action. */
+.dash-recent-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: center; }
+
 @import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&f[]=manrope@400,500,600,700&display=swap");
 
 .font-display { font-family: "Cabinet Grotesk", "Inter", system-ui, sans-serif; }

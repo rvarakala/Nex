@@ -69,8 +69,8 @@ const NavItem = ({ to, Icon, label, testid, collapsed, onNavigate, badge, exact 
       // slate-700 hover background; subtle, premium, scannable.
       className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-colors ${
         isActive
-          ? 'bg-white text-slate-900 shadow-sm shadow-black/30'
-          : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+          ? 'bg-white/10 text-cyan-300 shadow-[inset_3px_0_0_#22D3EE]'
+          : 'text-slate-300 hover:bg-white/5 hover:text-white'
       }`}
       title={collapsed ? label : undefined}
     >
@@ -104,6 +104,7 @@ export default function AppShell({ children }) {
   const { access, superAdminBypass, tier } = useSubscription();
   const { activeTest, clearActiveTest } = useTestContext();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -410,10 +411,11 @@ export default function AppShell({ children }) {
   );
 
   return (
-    <div className="h-screen w-screen flex bg-slate-100 overflow-hidden">
+    <div className="h-screen w-screen flex overflow-hidden" style={{ background: '#EEF1FA' }}>
       {/* Desktop / tablet sidebar */}
       <nav
-        className={`hidden md:flex ${sideWidth} bg-slate-950 text-slate-200 flex-col flex-shrink-0 border-r border-slate-800 transition-[width] duration-200`}
+        className={`hidden md:flex ${sideWidth} text-slate-200 flex-col flex-shrink-0 transition-[width] duration-200 rounded-r-[22px]`}
+        style={{ background: '#0F1D3A' }}
         data-testid="app-nav"
       >
         {navInner}
@@ -429,7 +431,8 @@ export default function AppShell({ children }) {
             data-testid="mobile-nav-backdrop"
           />
           <nav
-            className="relative w-[220px] bg-slate-950 text-slate-200 flex flex-col flex-shrink-0 shadow-2xl"
+            className="relative w-[240px] text-slate-200 flex flex-col flex-shrink-0 shadow-2xl rounded-r-[22px]"
+            style={{ background: '#0F1D3A' }}
             data-testid="app-nav-mobile"
           >
             {navInner}
@@ -569,13 +572,45 @@ export default function AppShell({ children }) {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto bg-slate-50" data-testid="app-main">
+        <main className="flex-1 overflow-auto pb-[72px] md:pb-0" style={{ background: '#EEF1FA' }} data-testid="app-main">
           <OfflineBanner />
           <MfaEnforcementBanner />
           <SignatureNudgeBanner />
           {children}
         </main>
       </div>
+
+      {/* Mobile bottom navigation — native-app feel, always thumb-reachable.
+          Hidden on md+ where the sidebar handles primary nav. */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_-4px_rgba(15,29,58,0.08)] audinexa-bottomnav"
+        data-testid="mobile-bottom-nav"
+      >
+        <div className="grid grid-cols-5 gap-1 px-2 pt-1.5">
+          {[
+            { to: '/patients',              Icon: LayoutDashboard, label: 'Home',     testid: 'bnav-home',    exact: true },
+            { to: '/patients/appointments', Icon: Calendar,        label: 'Schedule', testid: 'bnav-sched' },
+            { to: '/patients/list',         Icon: Users,           label: 'Patients', testid: 'bnav-patients' },
+            { to: '/billing',               Icon: Receipt,         label: 'Billing',  testid: 'bnav-billing' },
+            { to: '/reports',               Icon: BarChart3,       label: 'Reports',  testid: 'bnav-reports' },
+          ].map(({ to, Icon, label, testid, exact }) => {
+            const isActive = exact ? location.pathname === to : (location.pathname === to || location.pathname.startsWith(to + '/'));
+            return (
+              <Link
+                key={to}
+                to={to}
+                data-testid={testid}
+                className={`flex flex-col items-center gap-1 py-2 rounded-lg transition-colors ${
+                  isActive ? 'text-cyan-600' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Icon size={20} strokeWidth={isActive ? 2.4 : 2} />
+                <span className="text-[10.5px] font-semibold leading-none">{label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* PWA install prompt — only renders for signed-in users on eligible browsers */}
       <InstallPrompt />

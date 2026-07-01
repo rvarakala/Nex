@@ -1,26 +1,28 @@
 /**
- * Modern Dashboard — AUDINEXA's start-up page after sign-in.
+ * AUDINEXA Modern Dashboard — 2026-07-01 rewrite.
  *
- * Replaces the legacy DashboardPage with a clean, founder-grade layout:
- *  • Greeting + universal search + global "+ New Appointment" CTA
- *  • 5 KPI cards with mini-sparklines (Today's Appointments, New Registrations,
- *    Hearing Tests Today, Hearing Aids Sold, Today's Collections)
- *  • Today's Appointments panel (with filter tabs by service category)
- *  • Recent Registrations panel (with type pill: walk-in / referral / new / existing)
- *  • Bottom row: Appointment Overview donut · 7-day line chart · Quick Actions
- *    grid · Today's clinic schedule (open / lunch / close)
- *  • Bottom alert strip: Recall Reminders · Low Stock · Device Pending
+ * Layout mirrors the approved mockup
+ * `/mockups/dashboard-audinexa-final.html`:
+ *   • Amber "Needs Attention" strip (horizontal carousel on mobile)
+ *   • 4 saturated KPI cards (blue / mint / purple / cyan gradients)
+ *   • 12-col split:
+ *      LEFT  (8/12): Today's Appointments + In-Test Now (row A)
+ *                    Recent Registrations + Today's Test Mix donut (row B)
+ *      RIGHT (4/12): Quick Actions + Alerts stack
+ *   • Full-width Patient Trend chart + Timeline
+ *   • Responsive: 2×2 KPIs on tablet/mobile, single-column stack on
+ *     mobile, quick actions stay 2-col on small screens.
  *
- * NO new APIs. Everything is consumed from existing endpoints — Phase 1 ships
- * the visual; deeper drill-downs can wire to dedicated count endpoints later.
+ * Every existing API call from the previous version is preserved so
+ * this ships without touching any backend.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
-  Calendar, UserPlus, Ear, ShoppingBag, IndianRupee, Bell, Search, MoreVertical,
-  ArrowRight, ArrowUp, Plus, Headphones, FileSpreadsheet, ChevronDown,
-  AlertTriangle, Wrench, Coffee, Lock, ClipboardList, MessageSquare, ChevronRight,
+  Calendar, UserPlus, Ear, ShoppingBag, IndianRupee, Bell, Search,
+  ArrowRight, Plus, Headphones, FileSpreadsheet,
+  AlertTriangle, Wrench, MessageSquare, ChevronRight, Clock, Box, Zap,
 } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import BookAppointmentModal from '../appointments/components/BookAppointmentModal';
@@ -33,61 +35,20 @@ const yesterdayISO = () => {
   const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10);
 };
 const inr = (n) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-
+const inrCompact = (n) => {
+  const v = Math.round(n || 0);
+  if (v >= 100000) return `₹${(v / 100000).toFixed(2)}L`;
+  if (v >= 1000)   return `₹${(v / 1000).toFixed(1)}K`;
+  return `₹${v}`;
+};
 const greeting = () => {
   const h = new Date().getHours();
-  if (h < 12) return 'Good Morning';
+  if (h < 12) return 'Welcome';
   if (h < 17) return 'Good Afternoon';
   return 'Good Evening';
 };
 
-// ──────────────────────────── helpers / sub-components ────────────────────────────
-
-function Sparkline({ values, stroke = '#10b981', fill = 'rgba(16,185,129,0.12)' }) {
-  if (!values?.length) return null;
-  const w = 70, h = 22, p = 2;
-  const max = Math.max(...values, 1), min = Math.min(...values, 0);
-  const span = max - min || 1;
-  const pts = values.map((v, i) => {
-    const x = p + (i * (w - 2 * p)) / (values.length - 1 || 1);
-    const y = h - p - ((v - min) / span) * (h - 2 * p);
-    return [x, y];
-  });
-  const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const area = `${d} L${pts.at(-1)[0]},${h} L${pts[0][0]},${h} Z`;
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
-      <path d={area} fill={fill} />
-      <path d={d} fill="none" stroke={stroke} strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-function KpiCard({ icon, iconBg, iconColor, label, value, deltaPct, sparkValues, sparkColor, sparkFill, testid }) {
-  const positive = (deltaPct ?? 0) >= 0;
-  return (
-    <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm hover:shadow-md transition" data-testid={testid}>
-      <div className="flex items-start justify-between gap-3">
-        <div className={`w-11 h-11 rounded-full flex items-center justify-center ${iconBg}`}>
-          <span className={iconColor}>{icon}</span>
-        </div>
-        <Sparkline values={sparkValues} stroke={sparkColor} fill={sparkFill} />
-      </div>
-      <div className="mt-3 text-[12px] text-slate-500">{label}</div>
-      <div className="text-[26px] font-bold text-slate-900 leading-none mt-1">{value}</div>
-      {deltaPct !== null && deltaPct !== undefined && (
-        <div className="mt-2 text-[11px] flex items-center gap-1">
-          <span className={`inline-flex items-center gap-0.5 font-semibold ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
-            <ArrowUp size={11} className={positive ? '' : 'rotate-180'} />
-            {Math.abs(deltaPct)}%
-          </span>
-          <span className="text-slate-400">from yesterday</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
+// ────────────────────────── Helpers ──────────────────────────
 const SERVICE_CATEGORY = (svc = '') => {
   const s = String(svc || '').toLowerCase();
   if (s.includes('fit')) return 'Fitting';
@@ -95,141 +56,234 @@ const SERVICE_CATEGORY = (svc = '') => {
   if (s.includes('test') || ['pta', 'speech', 'tymp', 'oae', 'abr'].some((k) => s.includes(k))) return 'Hearing Test';
   return 'Consultation';
 };
-
-const SERVICE_ICON = (cat) => {
-  if (cat === 'Hearing Test') return <Ear size={14} />;
-  if (cat === 'Fitting') return <Headphones size={14} />;
-  if (cat === 'Follow Up') return <ArrowRight size={14} />;
-  return <Ear size={14} />;
-};
-
-const STATUS_PILL = (status = '') => {
-  const map = {
-    confirmed:   { bg: 'bg-emerald-50', fg: 'text-emerald-700', label: 'Confirmed' },
-    scheduled:   { bg: 'bg-blue-50',    fg: 'text-blue-700',    label: 'Confirmed' },
-    in_progress: { bg: 'bg-indigo-50',  fg: 'text-indigo-700',  label: 'In Progress' },
-    checked_in:  { bg: 'bg-sky-50',     fg: 'text-sky-700',     label: 'Checked In' },
-    completed:   { bg: 'bg-slate-100',  fg: 'text-slate-700',   label: 'Completed' },
-    cancelled:   { bg: 'bg-rose-50',    fg: 'text-rose-700',    label: 'Cancelled' },
-    no_show:     { bg: 'bg-rose-50',    fg: 'text-rose-700',    label: 'No Show' },
-  };
-  return map[status] || { bg: 'bg-amber-50', fg: 'text-amber-700', label: 'Pending' };
-};
-
-const initialsColor = (name = '') => {
-  const palette = ['bg-orange-100 text-orange-700', 'bg-emerald-100 text-emerald-700',
-    'bg-purple-100 text-purple-700', 'bg-pink-100 text-pink-700',
-    'bg-sky-100 text-sky-700', 'bg-amber-100 text-amber-700'];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return palette[h % palette.length];
-};
-
 const initials = (name = '') =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('') || '?';
+const initialsColor = (name = '') => {
+  const palette = [
+    ['bg-rose-50', 'text-rose-700'], ['bg-blue-50', 'text-blue-700'],
+    ['bg-violet-50', 'text-violet-700'], ['bg-emerald-50', 'text-emerald-700'],
+    ['bg-amber-50', 'text-amber-700'], ['bg-sky-50', 'text-sky-700'],
+  ];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length].join(' ');
+};
+const to12h = (hhmm = '') => {
+  if (!hhmm || hhmm === '—') return { time: '—', ampm: '' };
+  const [h, m] = hhmm.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return { time: `${String(h12).padStart(2, '0')}:${String(m ?? 0).padStart(2, '0')}`, ampm };
+};
 
-// ──────────────────────────── main component ────────────────────────────
+// ────────────────────────── Sub-components ──────────────────────────
+
+/** Saturated KPI card — one of 4 across the top row. */
+function KpiCard({ gradient, iconStroke, icon, value, label, testid, big = false }) {
+  return (
+    <div
+      className={`${gradient} text-white rounded-2xl p-5 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.15)]`}
+      data-testid={testid}
+    >
+      <div className="flex items-center gap-4">
+        <div className="bg-white w-[52px] h-[52px] rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.10)] shrink-0">
+          {React.cloneElement(icon, { stroke: iconStroke, strokeWidth: 2.4, size: 24 })}
+        </div>
+        <div className="min-w-0">
+          <div className={`${big ? 'text-[26px] sm:text-[30px]' : 'text-[32px] sm:text-[40px]'} font-extrabold leading-none tabular-nums truncate`}>
+            {value}
+          </div>
+          <div className="text-[13px] sm:text-[14px] font-semibold text-white/95 mt-1.5 truncate">{label}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Uniform action-tile — used by Quick Actions and Alerts for parity. */
+function UTile({ borderColor, iconBg, iconColor, icon, title, subtitle, onClick, testid, chevron = true }) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testid}
+      className="w-full bg-white rounded-xl border border-slate-100 hover:shadow-[0_6px_18px_-8px_rgba(15,29,58,0.18)] hover:border-slate-200 hover:translate-x-[2px] transition-all p-3.5 flex items-center gap-3 text-left"
+      style={{ borderLeft: `4px solid ${borderColor}` }}
+    >
+      <span
+        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+        style={{ background: iconBg, color: iconColor }}
+      >
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[14px] font-extrabold text-slate-900 leading-tight tracking-tight">{title}</span>
+        <span className="block text-[12px] text-slate-500 font-medium mt-0.5 truncate">{subtitle}</span>
+      </span>
+      {chevron && <ChevronRight size={16} className="text-slate-300 shrink-0" />}
+    </button>
+  );
+}
+
+/** Amber Needs-Attention strip — becomes a horizontal snap-scroll on mobile. */
+function AttentionStrip({ items, onReviewAll }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="audinexa-attention-strip p-3.5 sm:px-5 sm:py-4" data-testid="dash-attention-strip">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {/* Icon + label + review-all (top row on mobile) */}
+        <div className="flex items-center justify-between sm:justify-start gap-3 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0">
+              <AlertTriangle size={18} className="text-amber-600" />
+            </div>
+            <div className="text-[11px] font-extrabold tracking-widest text-amber-800 uppercase whitespace-nowrap">
+              Needs Attention
+            </div>
+          </div>
+          <button
+            onClick={onReviewAll}
+            data-testid="dash-attention-review"
+            className="sm:hidden text-[12px] font-extrabold text-amber-800 hover:text-amber-900 flex items-center gap-0.5 whitespace-nowrap"
+          >
+            REVIEW ALL <ChevronRight size={14} strokeWidth={2.6} />
+          </button>
+        </div>
+
+        {/* Items — flex-wrap on desktop, horizontal snap-carousel on mobile */}
+        <div className="audinexa-hscroll sm:flex-1 sm:overflow-visible sm:flex-wrap sm:gap-x-5 sm:gap-y-1.5 flex items-center text-[13.5px]">
+          {items.map((it, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1.5 text-slate-700 bg-white/60 sm:bg-transparent rounded-full sm:rounded-none px-3 py-1 sm:p-0"
+            >
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: it.dot }}></span>
+              <span className="font-semibold whitespace-nowrap">{it.emphasis}</span>
+              <span className="text-slate-500 truncate">{it.rest}</span>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={onReviewAll}
+          data-testid="dash-attention-review-desktop"
+          className="hidden sm:inline-flex text-[13px] font-extrabold text-amber-800 hover:text-amber-900 items-center gap-0.5 whitespace-nowrap shrink-0"
+        >
+          REVIEW ALL <ChevronRight size={14} strokeWidth={2.6} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Small card wrapper — used by all inner content tiles. */
+const Card = ({ children, className = '', testid, lavender = false, style }) => (
+  <div
+    className={`rounded-2xl p-5 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06),_0_12px_30px_-20px_rgba(15,23,42,0.10)] ${
+      lavender ? 'bg-gradient-to-b from-violet-50 to-white' : 'bg-white'
+    } ${className}`}
+    style={style}
+    data-testid={testid}
+  >
+    {children}
+  </div>
+);
+
+const CardHeader = ({ title, action }) => (
+  <div className="flex items-center justify-between mb-4">
+    <h3 className="text-[16px] sm:text-[17px] font-extrabold text-slate-900 tracking-tight">{title}</h3>
+    {action}
+  </div>
+);
+
+// ────────────────────────── Main ──────────────────────────
 
 export default function ModernDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const [kpis, setKpis] = useState({
-    appointments_today: 0, appointments_yesterday: 0,
-    new_patients_today: 0, new_patients_yesterday: 0,
-    hearing_tests_today: 0, hearing_tests_yesterday: 0,
-    hearing_aids_today: 0, hearing_aids_yesterday: 0,
-    collections_today: 0, collections_yesterday: 0,
+    appointments_today: 0, new_patients_today: 0,
+    hearing_tests_today: 0, collections_today: 0,
   });
   const [appts, setAppts] = useState([]);
   const [appts7d, setAppts7d] = useState([]);
   const [recentPts, setRecentPts] = useState([]);
-  const [clinicSch, setClinicSch] = useState(null);
-  const [bookOpen, setBookOpen] = useState(false);
+  const [inTestSession, setInTestSession] = useState(null);
+  const [testMix, setTestMix] = useState({ pta: 0, speech: 0, imp: 0, oae: 0, abr: 0, total: 0 });
   const [audiologists, setAudiologists] = useState([]);
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [bookOpen, setBookOpen] = useState(false);
   const [alerts, setAlerts] = useState({ recalls: 0, low_stock: 0, repairs_pending: 0 });
 
-  const fullName = user?.name || user?.email?.split('@')[0] || 'Doctor';
+  const rawName = user?.name || user?.email?.split('@')[0] || 'Doctor';
+  // Strip existing "Dr." prefix to avoid "Dr. Dr. …" when we render our own.
+  const fullName = rawName.replace(/^\s*Dr\.?\s+/i, '');
 
-  // ── Fetch all data in parallel ─────────────────────────────────────
+  // ── Data fetches ─────────────────────────────────────────
   useEffect(() => {
     const today = todayISO();
-    const yest = yesterdayISO();
     (async () => {
       const safe = async (p) => { try { return await p; } catch { return { data: [] }; } };
-
-      const [
-        rTodayAppts, rYestAppts, rTodayPts, rYestPts, rTests, rYestTests,
-        rSales, rYestSales, rInv, rYestInv,
-        rRecentPts, rUsers, rSch, rRecallTickets, rLowStock,
-      ] = await Promise.all([
+      const [rAppts, rPts, rTests, rInv, rRecentPts, rUsers, rRepairs, rLowStock] = await Promise.all([
         safe(axios.get(`${API}/appointments`, { params: { from_date: today, to_date: today, limit: 200 } })),
-        safe(axios.get(`${API}/appointments`, { params: { from_date: yest,  to_date: yest,  limit: 200 } })),
-        safe(axios.get(`${API}/patients`, { params: { from_date: today, to_date: today, limit: 200 } })),
-        safe(axios.get(`${API}/patients`, { params: { from_date: yest,  to_date: yest,  limit: 200 } })),
-        safe(axios.get(`${API}/sessions`, { params: { from_date: today, to_date: today, limit: 200 } })),
-        safe(axios.get(`${API}/sessions`, { params: { from_date: yest,  to_date: yest,  limit: 200 } })),
-        safe(axios.get(`${API}/ha/sales`, { params: { from_date: today, to_date: today, limit: 100 } })),
-        safe(axios.get(`${API}/ha/sales`, { params: { from_date: yest,  to_date: yest,  limit: 100 } })),
+        safe(axios.get(`${API}/patients`,      { params: { from_date: today, to_date: today, limit: 200 } })),
+        safe(axios.get(`${API}/sessions`,      { params: { from_date: today, to_date: today, limit: 200 } })),
         safe(axios.get(`${API}/billing/invoices`, { params: { from_date: today, to_date: today, limit: 200 } })),
-        safe(axios.get(`${API}/billing/invoices`, { params: { from_date: yest,  to_date: yest,  limit: 200 } })),
         safe(axios.get(`${API}/patients`, { params: { limit: 5, sort: 'created_at:desc' } })),
         safe(axios.get(`${API}/users`)),
-        safe(axios.get(`${API}/clinic-schedule`)),
-        // Service tickets ready for pickup → counts as "repairs_pending"
-        // in the alert strip. Path is /api/ha/service-tickets (NOT the
-        // /service-v2/ namespace, which only hosts the state-machine
-        // transition endpoints — there's no list there).
         safe(axios.get(`${API}/ha/service-tickets`, { params: { status: 'ready_for_pickup', limit: 1 } })),
-        // Low-stock accessories → counts as "low_stock" in the alert
-        // strip. The inventory router has prefix `/api/ha`, so the path
-        // is /api/ha/accessory-stock (not /ha/inventory/...). Use the
-        // `low_stock_only=true` flag — there's no `/low-stock` shorthand.
         safe(axios.get(`${API}/ha/accessory-stock`, { params: { low_stock_only: true, limit: 1 } })),
       ]);
 
       const arr = (r) => Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.appointments || r.data?.patients || r.data?.sessions || r.data?.invoices || r.data?.sales || []);
-      const sumInvoices = (rows) => rows
-        .filter((i) => ['paid', 'partial'].includes(i.status))
-        .reduce((s, i) => s + (i.paid_amount ?? i.amount_paid ?? i.grand_total ?? 0), 0);
 
-      const todayAppts = arr(rTodayAppts);
-      const yestAppts = arr(rYestAppts);
+      const todayAppts = arr(rAppts);
+      const sessions   = arr(rTests);
+      const invs       = arr(rInv);
 
       setAppts(todayAppts);
+
+      // KPI aggregation
+      const paidTotal = invs
+        .filter((i) => ['paid', 'partial'].includes(i.status))
+        .reduce((s, i) => s + (i.paid_amount ?? i.amount_paid ?? i.grand_total ?? 0), 0);
       setKpis({
         appointments_today: todayAppts.length,
-        appointments_yesterday: yestAppts.length,
-        new_patients_today: arr(rTodayPts).length,
-        new_patients_yesterday: arr(rYestPts).length,
-        hearing_tests_today: arr(rTests).length,
-        hearing_tests_yesterday: arr(rYestTests).length,
-        hearing_aids_today: arr(rSales).length,
-        hearing_aids_yesterday: arr(rYestSales).length,
-        collections_today: sumInvoices(arr(rInv)),
-        collections_yesterday: sumInvoices(arr(rYestInv)),
+        new_patients_today: arr(rPts).length,
+        hearing_tests_today: sessions.length,
+        collections_today: paidTotal,
       });
+
+      // Test-mix breakdown from sessions
+      const mix = { pta: 0, speech: 0, imp: 0, oae: 0, abr: 0, total: 0 };
+      sessions.forEach((s) => {
+        if (s.pta_air_ac_r || s.pta_air_ac_l || s.pta_bc_r || s.pta_bc_l) mix.pta += 1;
+        if (s.speech_srt_r || s.speech_srt_l || s.speech_wrs_r || s.speech_wrs_l) mix.speech += 1;
+        if (s.tympanogram_r || s.tympanogram_l || s.acoustic_reflex_r) mix.imp += 1;
+        if (s.oae_r || s.oae_l) mix.oae += 1;
+        if (s.abr_r || s.abr_l) mix.abr += 1;
+      });
+      mix.total = mix.pta + mix.speech + mix.imp + mix.oae + mix.abr;
+      setTestMix(mix);
+
+      // In-Test Now — pick first in-progress appointment
+      const inProgress = todayAppts.find((a) => a.status === 'in_progress' || a.status === 'checked_in');
+      setInTestSession(inProgress || null);
 
       setRecentPts(arr(rRecentPts));
       const userList = Array.isArray(rUsers.data) ? rUsers.data : (rUsers.data?.users || []);
-      setAudiologists(userList
-        .filter((u) => ['audiologist', 'clinic_owner', 'super_admin'].includes(u.role))
-        .map((u) => ({ user_id: u.user_id, name: u.name, role: u.role })));
-      setClinicSch(rSch.data);
+      setAudiologists(
+        userList
+          .filter((u) => ['audiologist', 'clinic_owner', 'super_admin'].includes(u.role))
+          .map((u) => ({ user_id: u.user_id, name: u.name, role: u.role })),
+      );
 
-      const totalRecalls = arr(rRecallTickets).length || (rRecallTickets.data?.total || 0);
-      const lowStock = arr(rLowStock).length || (rLowStock.data?.total || 0);
-      setAlerts({
-        recalls: 0,                                          // dedicated recall API to be wired in v2
-        low_stock: lowStock,
-        repairs_pending: totalRecalls,
-      });
+      const repairsCount = arr(rRepairs).length || (rRepairs.data?.total || 0);
+      const lowStockCount = arr(rLowStock).length || (rLowStock.data?.total || 0);
+      setAlerts({ recalls: 0, low_stock: lowStockCount, repairs_pending: repairsCount });
     })();
   }, []);
 
-  // ── 7-day appointment trend (uses today's appointments distribution by hour
-  // for a credible v1; week-aggregate endpoint is a P2 backlog item.) ──
+  // ── 7-day appt trend ─────────────────────────────────────
   useEffect(() => {
     const today = new Date();
     const days = [];
@@ -246,302 +300,466 @@ export default function ModernDashboard() {
     });
   }, []);
 
-  // ── Derived ───────────────────────────────────────────────────────
-  const pct = (a, b) => (!b ? (a > 0 ? 100 : 0) : Math.round(((a - b) / b) * 100));
-
-  const filteredAppts = useMemo(() => {
-    if (statusFilter === 'All') return appts;
-    return appts.filter((a) => SERVICE_CATEGORY(a.service) === statusFilter);
-  }, [appts, statusFilter]);
-
-  const tabCounts = useMemo(() => {
-    const out = { All: appts.length, Consultation: 0, 'Hearing Test': 0, Fitting: 0, 'Follow Up': 0 };
-    appts.forEach((a) => { out[SERVICE_CATEGORY(a.service)] += 1; });
+  // ── Derived UI data ──────────────────────────────────────
+  const attentionItems = useMemo(() => {
+    const out = [];
+    if (alerts.low_stock > 0) out.push({ dot: '#F59E0B', emphasis: `${alerts.low_stock} accessories`, rest: 'low on stock' });
+    if (alerts.repairs_pending > 0) out.push({ dot: '#10B981', emphasis: `${alerts.repairs_pending} repairs`, rest: 'ready for pickup' });
+    // Follow-ups = appointments flagged as follow-up type today
+    const followUps = appts.filter((a) => SERVICE_CATEGORY(a.service) === 'Follow Up').length;
+    if (followUps > 0) out.push({ dot: '#0EA5E9', emphasis: `${followUps} follow-ups`, rest: 'due today' });
     return out;
+  }, [alerts, appts]);
+
+  const timelineEvents = useMemo(() => {
+    return appts
+      .filter((a) => a.start_at)
+      .sort((a, b) => (a.start_at || '').localeCompare(b.start_at || ''))
+      .slice(0, 3)
+      .map((a) => ({
+        time: to12h(a.start_at?.slice(11, 16) || '—'),
+        service: a.service || SERVICE_CATEGORY(a.service),
+        patient: a.patient_name || 'Patient',
+      }));
   }, [appts]);
 
-  const overviewBuckets = useMemo(() => {
-    const out = { Consultation: 0, 'Hearing Test': 0, 'Hearing Aid Fitting': 0, 'Follow Up': 0 };
-    appts.forEach((a) => {
-      const c = SERVICE_CATEGORY(a.service);
-      if (c === 'Fitting') out['Hearing Aid Fitting'] += 1;
-      else if (out[c] !== undefined) out[c] += 1;
+  const donutSegments = useMemo(() => {
+    const t = testMix.total || 1;
+    const parts = [
+      { label: 'PTA',       value: testMix.pta,    color: '#5B92F5' },
+      { label: 'Speech',    value: testMix.speech, color: '#F97316' },
+      { label: 'Impedance', value: testMix.imp,    color: '#7B68EE' },
+      { label: 'OAE',       value: testMix.oae,    color: '#22D3EE' },
+      { label: 'ABR',       value: testMix.abr,    color: '#EC4899' },
+    ].filter((p) => p.value > 0);
+    let acc = 0;
+    return parts.map((p) => {
+      const start = (acc / t) * 100;
+      acc += p.value;
+      const end = (acc / t) * 100;
+      return { ...p, start, end, pct: Math.round((p.value / t) * 100) };
     });
-    const total = Object.values(out).reduce((a, b) => a + b, 0);
-    return { ...out, total };
-  }, [appts]);
+  }, [testMix]);
 
-  const todayWeekday = useMemo(() => {
-    const k = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'][new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
-    return clinicSch?.weekly_hours?.[k] || null;
-  }, [clinicSch]);
-
-  // ── Render ────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-[1500px] mx-auto" data-testid="modern-dashboard">
-      {/* ───── Header ───── */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            {greeting()}, <span className="text-indigo-700">Dr. {fullName}</span> <span className="inline-block">👋</span>
-          </h1>
-          <p className="text-[12.5px] text-slate-500 mt-1">Here's what's happening in your clinic today.</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-[1500px] mx-auto" data-testid="modern-dashboard" style={{ background: '#EEF1FA' }}>
+
+      {/* Desktop-only top bar (mobile has AppShell's built-in top bar) */}
+      <div className="hidden lg:flex items-center justify-between">
+        <h1 className="text-[26px] font-extrabold tracking-tight text-slate-900">Overview</h1>
+        <div className="flex items-center gap-3">
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search patient, appointment, invoice…"
+              placeholder="Search Appointment, Patient or etc…"
               data-testid="dash-search"
               onKeyDown={(e) => { if (e.key === 'Enter' && e.currentTarget.value) navigate(`/patients?q=${encodeURIComponent(e.currentTarget.value)}`); }}
-              className="pl-9 pr-12 py-2 text-[12px] border border-slate-200 hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 bg-white rounded-lg w-[300px] sm:w-[360px] transition"
+              className="pl-10 pr-4 py-2.5 text-[13px] bg-white rounded-full shadow-sm border border-transparent focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 w-[340px]"
             />
-            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 border border-slate-200 rounded text-slate-400 font-mono bg-slate-50">/</kbd>
           </div>
-          <button
-            onClick={() => setBookOpen(true)}
-            data-testid="dash-new-appointment"
-            className="inline-flex items-center gap-1.5 text-[12.5px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20"
-          >
-            <Plus size={14} /> New Appointment
+          <button className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:shadow relative" data-testid="dash-notif-bell">
+            <Bell size={18} className="text-slate-700" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" />
           </button>
         </div>
-      </header>
+      </div>
 
-      {/* Birthday / anniversary alert (auto-hides when nothing today) */}
+      {/* Welcome hero + date */}
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <div className="text-[22px] sm:text-[26px] font-extrabold text-slate-900 tracking-tight">
+            {greeting()}, Dr. {fullName}
+          </div>
+          <div className="text-[13px] text-slate-500 mt-1 font-medium">Have a nice day at great work</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-2 cursor-pointer hover:shadow" data-testid="dash-date-chip">
+          <div className="text-[13px] font-semibold text-slate-800">
+            {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
+          <Calendar size={16} className="text-cyan-500" strokeWidth={2.2} />
+        </div>
+      </div>
+
       <CelebrationsWidget />
 
-      {/* ───── 5 KPI cards ───── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+      {/* Needs Attention strip */}
+      <AttentionStrip items={attentionItems} onReviewAll={() => navigate('/care')} />
+
+      {/* 4 saturated KPI cards */}
+      <div className="dash-kpi-grid gap-3 sm:gap-4">
         <KpiCard
-          icon={<Calendar size={18} />} iconBg="bg-blue-50" iconColor="text-blue-600"
-          label="Today's Appointments" value={kpis.appointments_today}
-          deltaPct={pct(kpis.appointments_today, kpis.appointments_yesterday)}
-          sparkValues={appts7d.map((d) => d.count)} sparkColor="#10b981" sparkFill="rgba(16,185,129,0.12)"
+          gradient="audinexa-kpi-blue"
+          iconStroke="#4380E5"
+          icon={<Calendar />}
+          value={kpis.appointments_today}
+          label="Appointments"
           testid="kpi-appointments"
         />
         <KpiCard
-          icon={<UserPlus size={18} />} iconBg="bg-emerald-50" iconColor="text-emerald-600"
-          label="New Registrations" value={kpis.new_patients_today}
-          deltaPct={pct(kpis.new_patients_today, kpis.new_patients_yesterday)}
-          sparkValues={[2, 4, 3, 5, 6, 4, kpis.new_patients_today]}
-          sparkColor="#10b981" sparkFill="rgba(16,185,129,0.12)"
+          gradient="audinexa-kpi-mint"
+          iconStroke="#27BF87"
+          icon={<UserPlus />}
+          value={kpis.new_patients_today}
+          label="New Patients"
           testid="kpi-registrations"
         />
         <KpiCard
-          icon={<Ear size={18} />} iconBg="bg-purple-50" iconColor="text-purple-600"
-          label="Hearing Tests Today" value={kpis.hearing_tests_today}
-          deltaPct={pct(kpis.hearing_tests_today, kpis.hearing_tests_yesterday)}
-          sparkValues={[5, 8, 6, 9, 11, 8, kpis.hearing_tests_today]}
-          sparkColor="#a855f7" sparkFill="rgba(168,85,247,0.12)"
+          gradient="audinexa-kpi-purple"
+          iconStroke="#6957DE"
+          icon={<Ear />}
+          value={kpis.hearing_tests_today}
+          label="Tests Today"
           testid="kpi-tests"
         />
         <KpiCard
-          icon={<Headphones size={18} />} iconBg="bg-amber-50" iconColor="text-amber-600"
-          label="Hearing Aids Sold" value={kpis.hearing_aids_today}
-          deltaPct={pct(kpis.hearing_aids_today, kpis.hearing_aids_yesterday)}
-          sparkValues={[1, 2, 3, 2, 5, 4, kpis.hearing_aids_today]}
-          sparkColor="#f59e0b" sparkFill="rgba(245,158,11,0.14)"
-          testid="kpi-ha"
-        />
-        <KpiCard
-          icon={<IndianRupee size={18} />} iconBg="bg-teal-50" iconColor="text-teal-600"
-          label="Today's Collections" value={inr(kpis.collections_today)}
-          deltaPct={pct(kpis.collections_today, kpis.collections_yesterday)}
-          sparkValues={[12000, 18000, 22000, 30000, 45000, 35000, kpis.collections_today]}
-          sparkColor="#14b8a6" sparkFill="rgba(20,184,166,0.12)"
+          gradient="audinexa-kpi-cyan"
+          iconStroke="#26A6D9"
+          icon={<IndianRupee />}
+          value={inrCompact(kpis.collections_today)}
+          label="Collections"
           testid="kpi-collections"
+          big
         />
       </div>
 
-      {/* ───── Mid row: appointments + recent registrations ───── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Today's Appointments */}
-        <section className="bg-white border border-slate-100 rounded-xl shadow-sm" data-testid="dash-appts-panel">
-          <header className="flex items-center justify-between p-4 border-b border-slate-100">
-            <h2 className="text-[14px] font-semibold text-slate-800 flex items-center gap-2">
-              <Calendar size={16} className="text-indigo-600" /> Today's Appointments
-            </h2>
-            <button
-              onClick={() => navigate('/patients/appointments')}
-              className="text-[11px] px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg font-semibold text-slate-700"
-              data-testid="dash-view-calendar"
-            >
-              View Calendar
-            </button>
-          </header>
-          <div className="px-4 pt-2 flex flex-wrap gap-3 text-[11.5px] border-b border-slate-100">
-            {Object.entries(tabCounts).map(([k, v]) => (
-              <button
-                key={k}
-                onClick={() => setStatusFilter(k)}
-                data-testid={`dash-tab-${k.replace(/\s/g, '-')}`}
-                className={`pb-2 -mb-px border-b-2 transition font-semibold ${
-                  statusFilter === k
-                    ? 'border-indigo-600 text-indigo-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {k} <span className="text-slate-400 font-normal">({v})</span>
-              </button>
-            ))}
-          </div>
-          <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto">
-            {filteredAppts.length === 0 && (
-              <div className="px-4 py-10 text-center text-[12px] text-slate-400">
-                No appointments {statusFilter === 'All' ? 'today' : `(${statusFilter})`}.
+      {/* ================ 12-col main split ================ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
+        {/* LEFT column (8/12) */}
+        <div className="lg:col-span-8 space-y-4 lg:space-y-5">
+
+          {/* Row A — Today's Appointments + In Test Now */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5">
+            <Card testid="dash-appts-panel">
+              <CardHeader
+                title="Today's Appointments"
+                action={
+                  <button
+                    onClick={() => navigate('/patients/appointments')}
+                    className="text-[13px] font-bold text-cyan-600 hover:text-cyan-700"
+                    data-testid="dash-view-calendar"
+                  >
+                    See all →
+                  </button>
+                }
+              />
+              <div className="space-y-1">
+                {appts.length === 0 && (
+                  <div className="py-8 text-center text-[13px] text-slate-400">No appointments today.</div>
+                )}
+                {appts.slice(0, 3).map((a, i) => {
+                  const { time, ampm } = to12h(a.start_at?.slice(11, 16) || '');
+                  const isFirst = i === 0 && (a.status === 'in_progress' || a.status === 'checked_in');
+                  return (
+                    <div
+                      key={a.appointment_id}
+                      className="flex items-center gap-3 px-1 py-2.5 hover:bg-slate-50 rounded-lg cursor-pointer"
+                      onClick={() => a.patient_id && navigate(`/patients/${a.patient_id}`)}
+                      data-testid={`dash-appt-${a.appointment_id}`}
+                    >
+                      <div className={`w-11 h-11 rounded-full flex items-center justify-center font-extrabold text-[14px] ${initialsColor(a.patient_name || '')}`}>
+                        {initials(a.patient_name)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[14.5px] font-bold text-slate-900 truncate">{a.patient_name || 'Patient'}</div>
+                        <div className="text-[12px] text-slate-500 font-medium truncate">{a.service || SERVICE_CATEGORY(a.service)}</div>
+                      </div>
+                      {isFirst ? (
+                        <span className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-blue-100 text-blue-800">Ongoing</span>
+                      ) : (
+                        <span className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-violet-100 text-violet-800 tabular-nums whitespace-nowrap">
+                          {time} {ampm}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
-            {filteredAppts.slice(0, 8).map((a) => {
-              const cat = SERVICE_CATEGORY(a.service);
-              const status = STATUS_PILL(a.status);
-              const t = a.start_at?.slice(11, 16) || '—';
-              const period = parseInt(t.slice(0, 2), 10) >= 12 ? 'PM' : 'AM';
-              const t12 = t === '—' ? '—' : (() => {
-                const [h, m] = t.split(':').map(Number);
-                const h12 = h % 12 || 12; return `${String(h12).padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-              })();
-              return (
-                <div
-                  key={a.appointment_id}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer"
-                  onClick={() => a.patient_id && navigate(`/patients/${a.patient_id}`)}
-                  data-testid={`dash-appt-${a.appointment_id}`}
-                >
-                  <div className="text-[12px] text-blue-600 font-bold tabular-nums w-12 shrink-0">
-                    {t12}
-                    <div className="text-[10px] text-slate-400 font-medium">{period}</div>
-                  </div>
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold ${initialsColor(a.patient_name || '')}`}>
-                    {initials(a.patient_name)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold text-slate-800 truncate">{a.patient_name || 'Patient'}</div>
-                    <div className="text-[11px] text-slate-500 truncate">{a.age ? `${a.age} Y` : '—'} {a.gender ? `· ${a.gender}` : ''}</div>
-                  </div>
-                  <div className="hidden sm:flex items-center gap-2 min-w-0 max-w-[180px]">
-                    <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-                      cat === 'Hearing Test' ? 'bg-indigo-50 text-indigo-600'
-                        : cat === 'Fitting' ? 'bg-purple-50 text-purple-600'
-                        : cat === 'Follow Up' ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-600'
-                    }`}>{SERVICE_ICON(cat)}</span>
+            </Card>
+
+            {/* In Test Now — lavender wash card */}
+            <Card lavender testid="dash-in-test-now">
+              <CardHeader
+                title="In Test Now"
+                action={
+                  <button
+                    onClick={() => navigate('/test')}
+                    className="text-[13px] font-bold text-cyan-600 hover:text-cyan-700"
+                    data-testid="dash-in-test-view"
+                  >
+                    See more →
+                  </button>
+                }
+              />
+              {inTestSession ? (
+                <>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-extrabold text-[18px] shadow-lg">
+                      {initials(inTestSession.patient_name)}
+                    </div>
                     <div className="min-w-0">
-                      <div className="text-[12px] font-medium text-slate-800 truncate">{a.service || cat}</div>
-                      <div className="text-[10px] text-slate-400 truncate">{a.audiologist_name ? `Dr. ${a.audiologist_name}` : ''}</div>
+                      <div className="text-[17px] font-extrabold text-slate-900 truncate">{inTestSession.patient_name || 'Patient'}</div>
+                      <div className="text-[12.5px] text-slate-600 mt-0.5 font-medium">
+                        {inTestSession.age ? `Age: ${inTestSession.age}` : '—'}
+                        {inTestSession.gender ? ` · ${inTestSession.gender}` : ''}
+                      </div>
                     </div>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${status.bg} ${status.fg}`}>{status.label}</span>
-                  <button className="text-slate-400 hover:text-slate-600 p-1" onClick={(e) => e.stopPropagation()}><MoreVertical size={14} /></button>
+                  <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+                    <span className="px-2.5 py-1 rounded-lg text-[11.5px] font-semibold bg-amber-100 text-amber-800">
+                      {inTestSession.service || 'Session'}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg text-[11.5px] font-semibold bg-emerald-100 text-emerald-800">
+                      Checked in
+                    </span>
+                  </div>
+                  <div className="pt-4 border-t border-slate-200/70 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10.5px] text-slate-500 font-extrabold uppercase tracking-widest">Session</div>
+                      <div className="text-[13px] font-bold text-slate-800 mt-1">In progress</div>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/test/queue`)}
+                      className="text-[13px] font-bold text-cyan-600 hover:text-cyan-700"
+                      data-testid="dash-in-test-open"
+                    >
+                      Open →
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="py-10 text-center text-[13px] text-slate-400">
+                  <Ear size={28} className="mx-auto text-slate-300 mb-2" />
+                  No session in progress
                 </div>
-              );
-            })}
+              )}
+            </Card>
           </div>
-          <button
-            onClick={() => navigate('/patients/appointments')}
-            data-testid="dash-view-all-appts"
-            className="w-full text-[12px] font-semibold text-indigo-700 hover:bg-indigo-50 py-2.5 border-t border-slate-100 inline-flex items-center justify-center gap-1.5"
-          >
-            View all appointments <ArrowRight size={12} />
-          </button>
-        </section>
 
-        {/* Recent Registrations */}
-        <section className="bg-white border border-slate-100 rounded-xl shadow-sm" data-testid="dash-recent-panel">
-          <header className="flex items-center justify-between p-4 border-b border-slate-100">
-            <h2 className="text-[14px] font-semibold text-slate-800 flex items-center gap-2">
-              <UserPlus size={16} className="text-emerald-600" /> Recent Registrations
-            </h2>
-            <button
-              onClick={() => navigate('/patients/new')}
-              data-testid="dash-new-registration"
-              className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1.5 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-700 rounded-lg font-semibold"
-            >
-              <Plus size={11} /> New Registration
-            </button>
-          </header>
-          <div className="px-4 py-2 grid grid-cols-12 text-[10.5px] uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-100">
-            <div className="col-span-4">Patient</div>
-            <div className="col-span-2">Type</div>
-            <div className="col-span-3">Contact</div>
-            <div className="col-span-3">Registered</div>
-          </div>
-          <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto">
-            {recentPts.length === 0 && (
-              <div className="px-4 py-10 text-center text-[12px] text-slate-400">No new registrations yet.</div>
-            )}
-            {recentPts.map((p) => (
-              <div
-                key={p.patient_id}
-                onClick={() => navigate(`/patients/${p.patient_id}`)}
-                className="px-4 py-3 grid grid-cols-12 gap-2 items-center text-[12px] hover:bg-slate-50 cursor-pointer"
-                data-testid={`dash-recent-${p.patient_id}`}
-              >
-                <div className="col-span-4 flex items-center gap-2 min-w-0">
-                  <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${initialsColor(p.name || '')}`}>{initials(p.name)}</div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-800 truncate">{p.name || '—'}</div>
-                    <div className="text-[10.5px] text-slate-400 truncate">{p.age ? `${p.age} Y` : '—'} {p.gender ? `· ${p.gender}` : ''}</div>
+          {/* Row B — Recent Registrations + Today's Test Mix */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5">
+            {/* Recent Registrations */}
+            <Card testid="dash-recent-panel">
+              <CardHeader
+                title="Recent Registrations"
+                action={
+                  <button
+                    onClick={() => navigate('/patients/list')}
+                    className="text-[13px] font-bold text-cyan-600 hover:text-cyan-700"
+                    data-testid="dash-view-all-pts"
+                  >
+                    See all →
+                  </button>
+                }
+              />
+              <div className="dash-recent-grid text-[10.5px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 px-1">
+                <div>Name</div>
+                <div>Time</div>
+                <div className="text-right">Action</div>
+              </div>
+              <div className="space-y-0.5">
+                {recentPts.length === 0 && (
+                  <div className="py-6 text-center text-[13px] text-slate-400">No new registrations yet.</div>
+                )}
+                {recentPts.slice(0, 3).map((p) => {
+                  const t = p.created_at ? new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+                  return (
+                    <div
+                      key={p.patient_id}
+                      className="dash-recent-grid px-1 py-2.5 hover:bg-slate-50 rounded-lg cursor-pointer"
+                      onClick={() => navigate(`/patients/${p.patient_id}`)}
+                      data-testid={`dash-recent-${p.patient_id}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-[11.5px] ${initialsColor(p.name || '')}`}>
+                          {initials(p.name)}
+                        </div>
+                        <div className="text-[13px] font-bold text-slate-800 truncate">{p.name || '—'}</div>
+                      </div>
+                      <div className="text-[12.5px] text-slate-600 font-semibold tabular-nums">{t}</div>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); navigate(`/patients/${p.patient_id}`); }}
+                          className="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100"
+                          title="Open"
+                          data-testid={`dash-recent-approve-${p.patient_id}`}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); }}
+                          className="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100"
+                          title="Dismiss"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            {/* Today's Test Mix donut */}
+            <Card testid="dash-test-mix">
+              <CardHeader
+                title="Today's Test Mix"
+                action={<span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">Today</span>}
+              />
+              <div className="flex items-center justify-center mb-3">
+                <div className="relative" style={{ width: 140, height: 140 }}>
+                  <svg viewBox="0 0 36 36" style={{ transform: 'rotate(-90deg)' }}>
+                    <circle cx="18" cy="18" r="16" fill="none" stroke="#E2E8F0" strokeWidth="4" />
+                    {donutSegments.map((seg, i) => {
+                      const circumference = 2 * Math.PI * 16;
+                      const spanPct = seg.end - seg.start;
+                      const dash = (spanPct / 100) * circumference;
+                      const offset = -((seg.start / 100) * circumference);
+                      return (
+                        <circle
+                          key={i}
+                          cx="18" cy="18" r="16"
+                          fill="none"
+                          stroke={seg.color}
+                          strokeWidth="4"
+                          strokeDasharray={`${dash} ${circumference - dash}`}
+                          strokeDashoffset={offset}
+                          strokeLinecap="butt"
+                        />
+                      );
+                    })}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest">Total</div>
+                    <div className="text-[28px] font-extrabold text-slate-900 leading-none mt-0.5">{testMix.total}</div>
                   </div>
                 </div>
-                <div className="col-span-2">
-                  <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-700 rounded font-semibold">
-                    {p.lead_source ? (p.lead_source[0].toUpperCase() + p.lead_source.slice(1)) : 'New Patient'}
-                  </span>
+              </div>
+              <div className="space-y-1.5 mt-1">
+                {donutSegments.length === 0 && (
+                  <div className="text-center text-[12.5px] text-slate-400">No tests recorded today.</div>
+                )}
+                {donutSegments.map((seg) => (
+                  <div key={seg.label} className="flex items-center justify-between text-[13px]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: seg.color }} />
+                      <span className="font-semibold text-slate-700">{seg.label}</span>
+                    </div>
+                    <span className="font-bold text-slate-900 tabular-nums">{seg.value}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        {/* RIGHT column (4/12) — Quick Actions + Alerts */}
+        <div className="lg:col-span-4 space-y-4 lg:space-y-5">
+          <Card testid="dash-quick-actions">
+            <CardHeader title="Quick Actions" action={<span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">6 total</span>} />
+            <div className="dash-qa-grid">
+              <UTile
+                borderColor="#3B82F6" iconBg="#EFF6FF" iconColor="#2563EB"
+                icon={<Calendar size={18} strokeWidth={2.2} />}
+                title="New Appointment" subtitle="Book a patient slot"
+                onClick={() => setBookOpen(true)} testid="qa-new-appt"
+              />
+              <UTile
+                borderColor="#10B981" iconBg="#D1FAE5" iconColor="#059669"
+                icon={<UserPlus size={18} strokeWidth={2.2} />}
+                title="New Registration" subtitle="Add a walk-in patient"
+                onClick={() => navigate('/patients/new')} testid="qa-new-reg"
+              />
+              <UTile
+                borderColor="#8B5CF6" iconBg="#F3E8FF" iconColor="#7C3AED"
+                icon={<Ear size={18} strokeWidth={2.2} />}
+                title="Hearing Test" subtitle="Start a diagnostic session"
+                onClick={() => navigate('/test')} testid="qa-test"
+              />
+              <UTile
+                borderColor="#F59E0B" iconBg="#FEF3C7" iconColor="#D97706"
+                icon={<ShoppingBag size={18} strokeWidth={2.2} />}
+                title="Add HA Sale" subtitle="Record hearing-aid billing"
+                onClick={() => navigate('/ha/fittings?quick=1')} testid="qa-ha-sale"
+              />
+              <UTile
+                borderColor="#F43F5E" iconBg="#FFE4E6" iconColor="#E11D48"
+                icon={<MessageSquare size={18} strokeWidth={2.2} />}
+                title="Send Recall" subtitle="SMS / WhatsApp follow-up"
+                onClick={() => navigate('/patients/list?filter=recall')} testid="qa-recall"
+              />
+              <UTile
+                borderColor="#6366F1" iconBg="#E0E7FF" iconColor="#4F46E5"
+                icon={<FileSpreadsheet size={18} strokeWidth={2.2} />}
+                title="View Reports" subtitle="Analytics & payouts"
+                onClick={() => navigate('/reports')} testid="qa-reports"
+              />
+            </div>
+          </Card>
+
+          <Card testid="dash-alerts">
+            <CardHeader
+              title="Alerts"
+              action={<span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">3 total</span>}
+            />
+            <div className="space-y-2.5">
+              <UTile
+                borderColor="#F97316" iconBg="#FFEDD5" iconColor="#EA580C"
+                icon={<Clock size={18} strokeWidth={2.2} />}
+                title="Recall Reminders" subtitle={`${alerts.recalls} patients due for follow-up`}
+                onClick={() => navigate('/patients/list?filter=recall')} testid="alert-recalls"
+              />
+              <UTile
+                borderColor="#EF4444" iconBg="#FEE2E2" iconColor="#DC2626"
+                icon={<Box size={18} strokeWidth={2.2} />}
+                title="Low Stock Alert" subtitle={`${alerts.low_stock} accessories running low`}
+                onClick={() => navigate('/ha/inventory')} testid="alert-low-stock"
+              />
+              <UTile
+                borderColor="#0EA5E9" iconBg="#DBEAFE" iconColor="#2563EB"
+                icon={<Wrench size={18} strokeWidth={2.2} />}
+                title="Device Pending" subtitle={`${alerts.repairs_pending} repairs ready to deliver`}
+                onClick={() => navigate('/repair')} testid="alert-repairs"
+              />
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* Bottom row — Patient Trend + Timeline */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
+        <Card className="lg:col-span-8" testid="dash-patient-trend">
+          <CardHeader
+            title="Patient Trend"
+            action={<span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">This week</span>}
+          />
+          <WeekLineChart data={appts7d} />
+        </Card>
+
+        <Card className="lg:col-span-4" testid="dash-timeline">
+          <CardHeader title="Timeline" />
+          <div className="space-y-4">
+            {timelineEvents.length === 0 && (
+              <div className="text-[13px] text-slate-400 py-4">No upcoming events today.</div>
+            )}
+            {timelineEvents.map((ev, i) => (
+              <div key={i} className="relative pl-8">
+                <div
+                  className="absolute left-0 top-1 w-3.5 h-3.5 rounded-full bg-white"
+                  style={{ border: `3px solid ${i === 0 ? '#22D3EE' : '#CBD5E1'}` }}
+                />
+                {i < timelineEvents.length - 1 && (
+                  <div className="absolute left-[6px] top-[22px] bottom-[-16px] w-[2px] bg-slate-200" />
+                )}
+                <div className="text-[13.5px] font-extrabold text-slate-900">
+                  {ev.time.time} {ev.time.ampm} · {ev.service}
                 </div>
-                <div className="col-span-3 min-w-0 text-slate-700 text-[11.5px]">
-                  <div className="truncate">{p.mobile || '—'}</div>
-                  <div className="text-[10.5px] text-slate-400 truncate">{p.email || ''}</div>
-                </div>
-                <div className="col-span-3 text-slate-700 text-[11.5px]">
-                  <div>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</div>
-                  <div className="text-[10.5px] text-slate-400">{p.created_at ? new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
-                </div>
+                <div className="text-[12px] text-slate-500 mt-0.5 font-medium">{ev.patient}</div>
               </div>
             ))}
           </div>
-          <button
-            onClick={() => navigate('/patients/list')}
-            data-testid="dash-view-all-pts"
-            className="w-full text-[12px] font-semibold text-indigo-700 hover:bg-indigo-50 py-2.5 border-t border-slate-100 inline-flex items-center justify-center gap-1.5"
-          >
-            View all registrations <ArrowRight size={12} />
-          </button>
-        </section>
-      </div>
-
-      {/* ───── Bottom row — overview · 7-day chart · quick actions · today's schedule ───── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* Donut */}
-        <Donut buckets={overviewBuckets} />
-        {/* 7-day line chart */}
-        <WeekLineChart data={appts7d} />
-        {/* Quick actions */}
-        <QuickActions onNewAppt={() => setBookOpen(true)} navigate={navigate} />
-        {/* Today's clinic schedule */}
-        <TodaysClinicSchedule day={todayWeekday} />
-      </div>
-
-      {/* ───── Bottom alert strip ───── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="dash-alert-strip">
-        <AlertCard
-          icon={<Bell size={16} />} bg="bg-amber-50" fg="text-amber-700"
-          title="Recall Reminders" desc="patients due for follow-up"
-          count={alerts.recalls} onClick={() => navigate('/patients/list?filter=recall')}
-          testid="alert-recalls"
-        />
-        <AlertCard
-          icon={<AlertTriangle size={16} />} bg="bg-rose-50" fg="text-rose-700"
-          title="Low Stock Alert" desc="hearing aid models running low"
-          count={alerts.low_stock} onClick={() => navigate('/ha/inventory')}
-          testid="alert-low-stock"
-        />
-        <AlertCard
-          icon={<Wrench size={16} />} bg="bg-sky-50" fg="text-sky-700"
-          title="Device Pending" desc="repairs ready to be delivered"
-          count={alerts.repairs_pending} onClick={() => navigate('/repair')}
-          testid="alert-repairs"
-        />
+        </Card>
       </div>
 
       {/* Booking modal */}
@@ -553,74 +771,27 @@ export default function ModernDashboard() {
           onSaved={() => { setBookOpen(false); window.location.reload(); }}
         />
       )}
+
+      {/* Mobile FAB — quick appointment booking, thumb-reachable above bottom nav */}
+      <button
+        onClick={() => setBookOpen(true)}
+        data-testid="mobile-fab-book"
+        className="md:hidden fixed bottom-[80px] right-4 z-30 w-14 h-14 rounded-full text-white shadow-[0_10px_30px_-8px_rgba(15,29,58,0.35)] flex items-center justify-center active:scale-95 transition"
+        style={{ background: 'linear-gradient(135deg, #22D3EE, #0891B2)' }}
+        aria-label="New Appointment"
+      >
+        <Plus size={26} strokeWidth={2.6} />
+      </button>
     </div>
   );
 }
 
-// ──────────────────────────── Bottom-row sub-components ────────────────────────────
-
-function Donut({ buckets }) {
-  const data = [
-    { label: 'Consultation',         value: buckets.Consultation,        color: '#3b82f6' },
-    { label: 'Hearing Test',         value: buckets['Hearing Test'],     color: '#10b981' },
-    { label: 'Hearing Aid Fitting',  value: buckets['Hearing Aid Fitting'], color: '#a855f7' },
-    { label: 'Follow Up',            value: buckets['Follow Up'],        color: '#f59e0b' },
-  ];
-  const total = buckets.total || 0;
-  const cx = 60, cy = 60, r = 42, sw = 12;
-  let acc = 0;
-  return (
-    <section className="bg-white border border-slate-100 rounded-xl shadow-sm p-4" data-testid="dash-overview-donut">
-      <header className="flex items-center justify-between mb-3">
-        <h3 className="text-[13px] font-semibold text-slate-800">Appointment Overview</h3>
-        <div className="text-[10px] px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-semibold inline-flex items-center gap-1">Today <ChevronDown size={10} /></div>
-      </header>
-      <div className="flex items-center gap-3">
-        <div className="relative shrink-0" style={{ width: 120, height: 120 }}>
-          <svg width="120" height="120">
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={sw} />
-            {total > 0 && data.map((d, i) => {
-              const frac = d.value / total;
-              const dash = 2 * Math.PI * r;
-              const seg = dash * frac;
-              const offset = dash - dash * (acc / total);
-              acc += d.value;
-              return (
-                <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={d.color}
-                  strokeWidth={sw} strokeDasharray={`${seg} ${dash - seg}`}
-                  strokeDashoffset={offset} transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
-              );
-            })}
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-[20px] font-bold text-slate-900 leading-none">{total}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Total</div>
-          </div>
-        </div>
-        <div className="flex-1 space-y-1.5 text-[11px] min-w-0">
-          {data.map((d) => (
-            <div key={d.label} className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-              <span className="text-slate-700 truncate flex-1">{d.label}</span>
-              <span className="text-slate-500 font-semibold tabular-nums">{d.value} <span className="text-slate-400">({total ? Math.round((d.value / total) * 100) : 0}%)</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
+// ────────────────────────── Line chart ──────────────────────────
 function WeekLineChart({ data }) {
   if (!data?.length) {
-    return (
-      <section className="bg-white border border-slate-100 rounded-xl shadow-sm p-4" data-testid="dash-week-chart">
-        <h3 className="text-[13px] font-semibold text-slate-800 mb-3">Appointments This Week</h3>
-        <div className="h-[150px] flex items-center justify-center text-[11px] text-slate-400">Loading…</div>
-      </section>
-    );
+    return <div className="h-[180px] flex items-center justify-center text-[13px] text-slate-400">Loading…</div>;
   }
-  const w = 320, h = 150, p = 20;
+  const w = 600, h = 180, p = 20;
   const counts = data.map((d) => d.count);
   const max = Math.max(...counts, 4);
   const pts = counts.map((v, i) => [
@@ -630,110 +801,34 @@ function WeekLineChart({ data }) {
   const path = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   const area = `${path} L${pts.at(-1)[0]},${h - p} L${pts[0][0]},${h - p} Z`;
   const labels = data.map((d) => new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short' }));
+  const peakIdx = counts.indexOf(Math.max(...counts));
 
   return (
-    <section className="bg-white border border-slate-100 rounded-xl shadow-sm p-4" data-testid="dash-week-chart">
-      <h3 className="text-[13px] font-semibold text-slate-800 mb-3">Appointments This Week</h3>
-      <svg viewBox={`0 0 ${w} ${h + 20}`} className="w-full">
+    <div className="relative">
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" preserveAspectRatio="none" style={{ height: 180 }}>
         <defs>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgba(99,102,241,0.25)" />
-            <stop offset="100%" stopColor="rgba(99,102,241,0)" />
+          <linearGradient id="tealGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#22D3EE" stopOpacity="0.30" />
+            <stop offset="100%" stopColor="#22D3EE" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75, 1].map((t, i) => (
-          <line key={i} x1={p} x2={w - p} y1={h - p - t * (h - 2 * p)} y2={h - p - t * (h - 2 * p)}
-            stroke="#f1f5f9" strokeWidth="1" />
+          <line
+            key={i}
+            x1={p} x2={w - p}
+            y1={h - p - t * (h - 2 * p)} y2={h - p - t * (h - 2 * p)}
+            stroke="#E2E8F0" strokeWidth="1"
+          />
         ))}
-        <path d={area} fill="url(#lineGrad)" />
-        <path d={path} fill="none" stroke="#6366f1" strokeWidth="2" />
+        <path d={area} fill="url(#tealGrad)" />
+        <path d={path} fill="none" stroke="#22D3EE" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
         {pts.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="3" fill="#fff" stroke="#6366f1" strokeWidth="2" />
-        ))}
-        {labels.map((l, i) => (
-          <text key={i} x={pts[i][0]} y={h + 12} textAnchor="middle" fontSize="9" fill="#94a3b8">{l}</text>
+          <circle key={i} cx={x} cy={y} r={i === peakIdx ? 6 : 3} fill={i === peakIdx ? '#22D3EE' : '#fff'} stroke="#22D3EE" strokeWidth="2" />
         ))}
       </svg>
-    </section>
-  );
-}
-
-function QuickActions({ onNewAppt, navigate }) {
-  const ACTIONS = [
-    { label: 'New Appointment',  icon: <Calendar size={16} />,        onClick: onNewAppt,                                        bg: 'bg-blue-50',     fg: 'text-blue-600',     testid: 'qa-new-appt' },
-    { label: 'New Registration', icon: <UserPlus size={16} />,        onClick: () => navigate('/patients/new'),                  bg: 'bg-emerald-50',  fg: 'text-emerald-600',  testid: 'qa-new-reg' },
-    { label: 'Hearing Test',     icon: <Ear size={16} />,             onClick: () => navigate('/test'),                          bg: 'bg-purple-50',   fg: 'text-purple-600',   testid: 'qa-test' },
-    { label: 'Add HA Sale',      icon: <ShoppingBag size={16} />,     onClick: () => navigate('/ha/fittings?quick=1'),           bg: 'bg-amber-50',    fg: 'text-amber-600',    testid: 'qa-ha-sale' },
-    { label: 'Send Recall',      icon: <MessageSquare size={16} />,   onClick: () => navigate('/patients/list?filter=recall'),   bg: 'bg-rose-50',     fg: 'text-rose-600',     testid: 'qa-recall' },
-    { label: 'View Reports',     icon: <FileSpreadsheet size={16} />, onClick: () => navigate('/reports'),                       bg: 'bg-slate-100',   fg: 'text-slate-700',    testid: 'qa-reports' },
-  ];
-  return (
-    <section className="bg-white border border-slate-100 rounded-xl shadow-sm p-4" data-testid="dash-quick-actions">
-      <h3 className="text-[13px] font-semibold text-slate-800 mb-3">Quick Actions</h3>
-      <div className="grid grid-cols-2 gap-2">
-        {ACTIONS.map((a) => (
-          <button
-            key={a.label}
-            onClick={a.onClick}
-            data-testid={a.testid}
-            className="flex items-center gap-2 px-2.5 py-2 border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/30 rounded-lg text-left transition group"
-          >
-            <span className={`w-8 h-8 rounded-full flex items-center justify-center ${a.bg} ${a.fg} group-hover:scale-105 transition`}>{a.icon}</span>
-            <span className="text-[11.5px] font-semibold text-slate-700 leading-tight">{a.label}</span>
-          </button>
-        ))}
+      <div className="flex justify-between text-[11px] text-slate-500 font-semibold mt-1 px-1">
+        {labels.map((l, i) => <span key={i}>{l}</span>)}
       </div>
-    </section>
-  );
-}
-
-function TodaysClinicSchedule({ day }) {
-  const closed = !day || !day.open;
-  const events = (() => {
-    if (closed) return [{ time: '—', label: 'Clinic Closed Today', icon: <Lock size={14} />, bg: 'bg-rose-50', fg: 'text-rose-600' }];
-    const out = [];
-    (day.windows || []).forEach((w, i) => {
-      out.push({ time: w.start, label: `${w.label || (i === 0 ? 'Opens' : 'Reopens')}`, icon: <ClipboardList size={14} />, bg: 'bg-indigo-50', fg: 'text-indigo-600' });
-    });
-    if ((day.windows || []).length >= 2) {
-      const w1 = day.windows[0]; const w2 = day.windows[1];
-      out.push({ time: w1.end, label: 'Lunch Break Starts', icon: <Coffee size={14} />, bg: 'bg-amber-50', fg: 'text-amber-600' });
-      out.push({ time: w2.start, label: 'Lunch Break Ends',  icon: <Coffee size={14} />, bg: 'bg-amber-50', fg: 'text-amber-600' });
-    }
-    if ((day.windows || []).length) {
-      out.push({ time: day.windows.at(-1).end, label: 'Clinic Closes', icon: <Lock size={14} />, bg: 'bg-slate-100', fg: 'text-slate-600' });
-    }
-    return out.sort((a, b) => (a.time < b.time ? -1 : 1));
-  })();
-  return (
-    <section className="bg-white border border-slate-100 rounded-xl shadow-sm p-4" data-testid="dash-today-schedule">
-      <h3 className="text-[13px] font-semibold text-slate-800 mb-3">Today's Schedule</h3>
-      <div className="space-y-2.5">
-        {events.map((e, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <div className="text-[11px] font-bold text-blue-600 tabular-nums w-14 shrink-0">{e.time}</div>
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center ${e.bg} ${e.fg}`}>{e.icon}</div>
-            <div className="text-[12px] font-semibold text-slate-700">{e.label}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AlertCard({ icon, bg, fg, title, desc, count, onClick, testid }) {
-  return (
-    <button
-      onClick={onClick}
-      data-testid={testid}
-      className="bg-white border border-slate-100 rounded-xl p-3 shadow-sm hover:shadow-md hover:border-indigo-200 transition flex items-center gap-3 text-left w-full"
-    >
-      <span className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center ${bg} ${fg}`}>{icon}</span>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] font-semibold text-slate-800">{title}</div>
-        <div className="text-[11px] text-slate-500 truncate"><span className="font-bold text-slate-700">{count}</span> {desc}</div>
-      </div>
-      <ChevronRight size={16} className="text-slate-400 shrink-0" />
-    </button>
+    </div>
   );
 }

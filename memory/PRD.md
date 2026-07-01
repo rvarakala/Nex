@@ -1,5 +1,80 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎨 PHASE 16 — Global AUDINEXA Adopted-UI (Dashboard + Sidebar + Mobile-App) (2026-07-01)
+
+Shipped the fully-designed dashboard mockup
+(`/mockups/dashboard-audinexa-final.html`) into production React,
+plus global theme + mobile-app-like navigation.
+
+### 1. Global palette / typography
+- New CSS tokens in `index.css`:
+  - `--audinexa-navy #0F1D3A`, `--audinexa-teal #22D3EE`, `--audinexa-bg #EEF1FA`
+  - 4 KPI gradient utility classes: `audinexa-kpi-{blue,mint,purple,cyan}`
+  - `audinexa-attention-strip` amber banner utility
+  - `audinexa-hscroll` horizontal snap-carousel for mobile
+- 3 scoped dashboard grid classes bypass the global mobile `grid-cols-N → 1fr`
+  override without touching other pages: `dash-kpi-grid`, `dash-qa-grid`,
+  `dash-recent-grid`.
+
+### 2. AppShell repaint (`shell/AppShell.js`)
+- Sidebar: `bg-slate-950` → `#0F1D3A` navy, `rounded-r-[22px]` right edge.
+- Nav active state: white pill → teal accent (`bg-white/10 text-cyan-300`)
+  with inset 3px teal border stripe.
+- Main content wash: `bg-slate-50` → `#EEF1FA` off-white.
+- **New**: mobile bottom navigation (5 destinations: Home / Schedule /
+  Patients / Billing / Reports), safe-area padded, teal-active state.
+
+### 3. Modern Dashboard rewrite (`modules/patients/ModernDashboard.jsx`)
+Follows the approved mockup layout:
+- Amber ⚠️ Needs Attention strip (horizontal snap carousel on mobile)
+- 4 saturated gradient KPI cards (Appointments / New Patients /
+  Tests Today / Collections)
+- 12-col split:
+  - LEFT (8/12): Today's Appointments · In-Test Now (lavender wash)
+    · Recent Registrations · Today's Test Mix donut
+  - RIGHT (4/12): Quick Actions (6 uniform tiles) · Alerts (3 uniform
+    tiles). Same UTile component used for both — parity locked.
+- Full-width Patient Trend line chart + Timeline (8/4 split).
+- Mobile FAB (teal gradient) for "New Appointment", positioned above
+  bottom nav, thumb-reachable.
+
+### 4. Responsive breakpoints
+- **≥1024px**: full 3-column desktop (sidebar + main + right rail)
+- **640–1023px**: sidebar hidden, mobile topbar, KPIs 2×2, main stacks
+- **<640px**: mobile bottom-nav visible, KPIs 2×2, Quick Actions 2-col,
+  attention strip becomes horizontal snap carousel, FAB visible
+
+### 5. Data preserved
+Every existing API call is retained: `/appointments`, `/patients`,
+`/sessions`, `/billing/invoices`, `/users`, `/ha/service-tickets`,
+`/ha/accessory-stock`. No backend touch.
+
+### Files
+- Modified: `/app/frontend/src/index.css` (new palette + classes),
+  `/app/frontend/src/shell/AppShell.js` (sidebar navy + mobile bottom nav),
+  `/app/frontend/src/modules/patients/ModernDashboard.jsx` (full rewrite,
+  740 → 620 LOC).
+- Mockup: `/app/frontend/public/mockups/dashboard-audinexa-final.html`
+  (reference; not shipped in bundle).
+
+### Verified
+- ESLint clean on both modified files.
+- Desktop screenshot (1600×900): navy sidebar with teal-active
+  "Dashboard", 4 gradient KPIs, Today's Appts + In-Test-Now + Quick
+  Actions + Recent Reg + Test Mix donut all rendering with real data
+  from `owner@thesoundclinic.in` demo tenant.
+- Mobile screenshot (390×844): hamburger topbar, welcome + date chip,
+  KPIs 2×2, bottom nav with Home active in teal, FAB not yet in
+  viewport but rendered.
+
+### What's left after this
+- 🟢 Testing agent full regression pass (frontend + backend smoke).
+- 🟢 Hearing Tests Kanban redesign (mockup already prepared).
+- 🟢 Scheduled CSV email exports.
+- 🟠 MSG91 Hosted Sender Number → WhatsApp Phase 2 (blocked on user).
+
+---
+
 ## 📈 PHASE 15.9 — Diagnostics Analytics + Referral Corner (2026-06-30)
 
 Two interrelated owner-grade features shipped together:
