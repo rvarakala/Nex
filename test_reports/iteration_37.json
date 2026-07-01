@@ -1,0 +1,57 @@
+{
+  "summary": "Phase 16.1 regression pass (Global theme rewrite + ModernDashboard + mobile bottom-nav). Frontend: all 26 documented data-testids on ModernDashboard render, all theme variables apply globally (body bg rgb(238,241,250)=#EEF1FA, sidebar rgb(15,29,58)=#0F1D3A, body font-family='Inter, ...') on /patients, /patients/list, /billing, /reports — no theme regression detected. Front-Office Snapshot navigation 3/3 pass. Alerts navigation 3/3 pass. Quick Actions navigation 5/6 pass (qa-ha-sale drops '?quick=1' query param — see MINOR issue). qa-new-appt opens BookAppointmentModal (data-testid=book-apt-modal). Mobile bottom-nav renders at 390x844 and all 5 tabs (bnav-home/sched/patients/billing/reports) navigate correctly; mobile-fab-book is visible. Patients list (50 rows, search input) and Billing (table + Invoices tab) still fully functional. Auth session survives page reload (httpOnly cookie ok). Backend smoke: 7/7 dashboard endpoints (/appointments, /patients, /sessions, /billing/invoices, /users, /ha/service-tickets?status=ready_for_pickup, /ha/accessory-stock?low_stock_only=true) return 200 with owner token. Zero new console errors — one pre-existing React hydration warning about <span> nested inside <option> (unrelated to Phase 16.1, present on /patients/list).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ModernDashboard QuickActions",
+        "issue": "Clicking qa-ha-sale navigates to /ha/fittings without the '?quick=1' query param — the dashboard source correctly calls navigate('/ha/fittings?quick=1'), but /ha/fittings appears to strip / redirect the query on mount. Verify at the /ha/fittings route file (initial useEffect or Route redirect). Not a blocker — user still lands on the correct page — but the 'quick add' modal may not auto-open as designed.",
+        "selector": "[data-testid=qa-ha-sale]",
+        "priority": "MINOR"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/patients/list",
+        "issues": ["Pre-existing React hydration warning: 'In HTML, <span> cannot be a child of <option>'. Not introduced by Phase 16.1 (unrelated to theme rewrite). Consider replacing the span-in-option with a data attribute + parent styling."]
+      }
+    ]
+  },
+  "verified_features": {
+    "modern_dashboard_render": "PASS — all 14 top-level + 12 tile data-testids present (modern-dashboard, kpi-appointments/registrations/tests/collections, dash-appts-panel, dash-in-test-now, dash-recent-panel, dash-test-mix, dash-front-office, dash-quick-actions, dash-alerts, dash-patient-trend, dash-timeline, front-office-waiting/cash/pending, qa-new-appt/new-reg/test/ha-sale/recall/reports, alert-recalls/low-stock/repairs). 0 missing.",
+    "global_theme_variables": "PASS — body background rgb(238,241,250)=#EEF1FA and sidebar rgb(15,29,58)=#0F1D3A and body font-family starts with 'Inter' on all 4 tested routes (/patients, /patients/list, /billing, /reports).",
+    "front_office_navigation": "PASS 3/3 — waiting→/patients/appointments?filter=checked_in, cash→/billing?tab=today, pending→/billing?status=unpaid.",
+    "quick_actions_navigation": "PASS 5/6 — new-reg, test, recall, reports, new-appt (opens modal). ha-sale navigates to /ha/fittings but ?quick=1 param is missing at final URL.",
+    "qa_new_appt_modal": "PASS — clicking qa-new-appt renders BookAppointmentModal (data-testid=book-apt-modal is present in the DOM).",
+    "alerts_navigation": "PASS 3/3 — alert-recalls→/patients/list?filter=recall, alert-low-stock→/ha/inventory, alert-repairs→/repair/jobs.",
+    "mobile_bottom_nav": "PASS — [data-testid=mobile-bottom-nav] visible at 390x844; all 5 tabs bnav-home/sched/patients/billing/reports navigate to their routes. mobile-fab-book button visible on dashboard (uses same handler as qa-new-appt).",
+    "patients_list_module": "PASS — /patients/list renders with 1 search input and 50 table rows.",
+    "billing_module": "PASS — /billing renders with Invoices tab visible and invoice table (draft/partial/paid rows).",
+    "auth_regression": "PASS — reload of /patients keeps user logged in; modern-dashboard still rendered; no redirect to /login.",
+    "backend_dashboard_endpoints": "PASS 7/7 — /appointments, /patients, /sessions, /billing/invoices, /users, /ha/service-tickets?status=ready_for_pickup, /ha/accessory-stock?low_stock_only=true all return 200 with owner bearer token."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_dashboard_smoke.py",
+    "/app/test_reports/pytest/iter37_dashboard_smoke.xml"
+  ],
+  "action_items": [
+    "MINOR: Inspect /ha/fittings route to see why '?quick=1' query param is dropped when arriving from qa-ha-sale. Likely a useEffect that does navigate('/ha/fittings', { replace: true }) or a similar canonicalization. Should preserve searchParams on mount.",
+    "OPTIONAL: Fix the pre-existing React hydration warning on /patients/list — a <span> is nested inside an <option>. Replace with text content + a data-* attribute or a class on the <option>.",
+    "OPTIONAL: Consider adding a mobile-only fallback for the mobile FAB so its click is not intercepted by the sticky bottom-nav overlay in some scroll positions (currently z-30 vs bottom-nav's implicit z-index; observed one flaky non-open in the test run, but re-inspection confirmed the button exists and its handler is the same as the passing qa-new-appt)."
+  ],
+  "critical_code_review_comments": [
+    "ModernDashboard.jsx is 894 lines — approaching the 700-line threshold recommended in the code-review guidelines. Consider extracting KpiCard, UTile, AttentionStrip, WeekLineChart, and the Front-Office row into a components/ subdirectory to keep the top-level dashboard concise.",
+    "AppShell uses inline style={ background: '#0F1D3A' } / '#EEF1FA' — these hex values duplicate the CSS variables --audinexa-bg / navy. Prefer `style={ background: 'var(--audinexa-bg)' }` (or a utility class) so a future theme tweak requires only editing index.css.",
+    "BookAppointmentModal uses data-testid='book-apt-modal' — the review request expected 'book-appointment-modal'. Not a bug but naming is inconsistent with other modules; consider aliasing.",
+    "The 'qa-ha-sale' URL query drop is a genuine app bug worth root-causing in the target route rather than papering over in the dashboard."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter37_dashboard_smoke.py"],
+  "success_rate": {"backend": "100% (7/7 dashboard endpoints)", "frontend": "97% (30/31 assertions — only qa-ha-sale ?quick=1 param missing)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic_owner, tenant-sound-clinic-blr, PREMIUM)",
+  "seed_data_creation": "None — reused existing tenant-sound-clinic-blr seed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 16.1 (Global theme rewrite + ModernDashboard redesign + mobile bottom nav) is fully green. Only one MINOR issue: /ha/fittings strips the '?quick=1' query param — worth fixing in that route file. Note: BookAppointmentModal's testid is 'book-apt-modal', NOT 'book-appointment-modal' (review-request wording was slightly off). Backend smoke tests for dashboard endpoints live at /app/backend/tests/test_iter37_dashboard_smoke.py — reuse for future dashboard regression.",
+  "rca of the issue": "qa-ha-sale query-param loss: ModernDashboard.jsx L743 correctly calls navigate('/ha/fittings?quick=1'). Investigation should focus on the /ha/fittings route component — likely a useEffect(() => navigate(pathname, {replace:true})) or a route-level redirect that discards searchParams. Fix: read/preserve location.search in the target component before any redirect."
+}
