@@ -23,6 +23,7 @@ import {
   Calendar, UserPlus, Ear, ShoppingBag, IndianRupee, Bell, Search,
   ArrowRight, Plus, Headphones, FileSpreadsheet,
   AlertTriangle, Wrench, MessageSquare, ChevronRight, Clock, Box, Zap,
+  Users, AlertCircle, Coins,
 } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import BookAppointmentModal from '../appointments/components/BookAppointmentModal';
@@ -213,6 +214,13 @@ export default function ModernDashboard() {
   const [audiologists, setAudiologists] = useState([]);
   const [bookOpen, setBookOpen] = useState(false);
   const [alerts, setAlerts] = useState({ recalls: 0, low_stock: 0, repairs_pending: 0 });
+  // Front-office snapshot — clinically relevant + reception-actionable
+  const [frontOffice, setFrontOffice] = useState({
+    waiting_room: 0,        // # checked-in but not started
+    cash_today: 0,          // ₹ collected today (paid + partial)
+    pending_payments: 0,    // # invoices with balance > 0 today
+    pending_amount: 0,      // ₹ outstanding today
+  });
 
   const rawName = user?.name || user?.email?.split('@')[0] || 'Doctor';
   // Strip existing "Dr." prefix to avoid "Dr. Dr. …" when we render our own.
@@ -280,6 +288,24 @@ export default function ModernDashboard() {
       const repairsCount = arr(rRepairs).length || (rRepairs.data?.total || 0);
       const lowStockCount = arr(rLowStock).length || (rLowStock.data?.total || 0);
       setAlerts({ recalls: 0, low_stock: lowStockCount, repairs_pending: repairsCount });
+
+      // ── Front-office snapshot ─────────────────────────────
+      const waitingRoom = todayAppts.filter((a) => a.status === 'checked_in').length;
+      // Pending payments: invoices today with balance > 0 (unpaid or partial)
+      const pendingInvs = invs.filter((i) => {
+        const bal = (i.grand_total ?? 0) - (i.paid_amount ?? i.amount_paid ?? 0);
+        return bal > 0 && i.status !== 'cancelled';
+      });
+      const pendingAmount = pendingInvs.reduce((s, i) => {
+        const bal = (i.grand_total ?? 0) - (i.paid_amount ?? i.amount_paid ?? 0);
+        return s + bal;
+      }, 0);
+      setFrontOffice({
+        waiting_room: waitingRoom,
+        cash_today: paidTotal,
+        pending_payments: pendingInvs.length,
+        pending_amount: pendingAmount,
+      });
     })();
   }, []);
 
@@ -652,9 +678,42 @@ export default function ModernDashboard() {
               </div>
             </Card>
           </div>
-        </div>
 
-        {/* RIGHT column (4/12) — Quick Actions + Alerts */}
+          {/* Row C — Front-Office Snapshot (3 tiles): fills the vertical
+              gap in the left column with clinic-reception-actionable data.
+              Uses the same UTile pattern as Alerts/Quick-Actions for parity. */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4" data-testid="dash-front-office">
+            <UTile
+              borderColor="#0EA5E9" iconBg="#DBEAFE" iconColor="#0284C7"
+              icon={<Users size={18} strokeWidth={2.2} />}
+              title="Waiting Room"
+              subtitle={frontOffice.waiting_room === 0
+                ? 'Reception queue is empty'
+                : `${frontOffice.waiting_room} ${frontOffice.waiting_room === 1 ? 'patient' : 'patients'} checked in`}
+              onClick={() => navigate('/patients/appointments?filter=checked_in')}
+              testid="front-office-waiting"
+            />
+            <UTile
+              borderColor="#10B981" iconBg="#D1FAE5" iconColor="#059669"
+              icon={<Coins size={18} strokeWidth={2.2} />}
+              title="Today's Cash Register"
+              subtitle={`${inrCompact(frontOffice.cash_today)} collected · reconcile at end-of-day`}
+              onClick={() => navigate('/billing?tab=today')}
+              testid="front-office-cash"
+            />
+            <UTile
+              borderColor="#F43F5E" iconBg="#FFE4E6" iconColor="#E11D48"
+              icon={<AlertCircle size={18} strokeWidth={2.2} />}
+              title="Pending Payments"
+              subtitle={frontOffice.pending_payments === 0
+                ? 'All invoices settled today'
+                : `${frontOffice.pending_payments} unpaid · ${inrCompact(frontOffice.pending_amount)} outstanding`}
+              onClick={() => navigate('/billing?status=unpaid')}
+              testid="front-office-pending"
+            />
+          </div>
+
+        </div>
         <div className="lg:col-span-4 space-y-4 lg:space-y-5">
           <Card testid="dash-quick-actions">
             <CardHeader title="Quick Actions" action={<span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">6 total</span>} />

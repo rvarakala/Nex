@@ -1,5 +1,59 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎨 PHASE 16.1 — Global Theme + Front-Office Snapshot (2026-07-01, evening)
+
+Extended Phase 16 with two user-driven improvements:
+
+### 1. Truly-global theme adoption
+- **shadcn CSS variables updated** in `index.css` `@layer base`:
+  - `--background 224 47% 95%` → off-white `#EEF1FA` (was pure white)
+  - `--primary 220 61% 14%` → navy `#0F1D3A` (was near-black)
+  - `--accent 187 84% 53%` → teal `#22D3EE`
+  - `--ring 187 84% 53%` → teal focus ring
+  - `--chart-1..5` → AUDINEXA palette (navy / teal / blue / mint / purple)
+- **Body font globally Inter** — loaded from Google Fonts, applied
+  via `body { font-family: 'Inter', … }` so every module inherits it.
+- **Body background** hard-set to `var(--audinexa-bg)` in `body {}`.
+
+Result: every shadcn Button, Card, Input, focus ring, chart, and
+background across the entire app now inherits the AUDINEXA palette
+without touching any individual module. Verified live on Patients
+list, Billing, Dashboard — all render with navy sidebar, off-white
+main wash, Inter typography, and teal accents.
+
+Computed styles confirmed:
+- `document.body` `background-color` → `rgb(238, 241, 250)` ✓
+- Sidebar `nav` `background-color` → `rgb(15, 29, 58)` ✓
+- Body `font-family` → `Inter, …` ✓
+
+### 2. Front-Office Snapshot row (Dashboard)
+Filled the vertical gap in the left column with 3 clinic-reception-
+actionable tiles styled identically to the Alerts row (colored
+left-border · icon · title · subtitle · chevron):
+
+| Tile | Data | Color | Route |
+|---|---|---|---|
+| Waiting Room | Appointments where `status='checked_in'` today | cyan | `/patients/appointments?filter=checked_in` |
+| Today's Cash Register | ₹ collected today (paid + partial) | mint | `/billing?tab=today` |
+| Pending Payments | # invoices with balance > 0 · outstanding ₹ | rose | `/billing?status=unpaid` |
+
+All backed by existing API responses — no new endpoints needed.
+
+### Files
+- `/app/frontend/src/index.css` — shadcn variables + Inter font +
+  body background.
+- `/app/frontend/src/modules/patients/ModernDashboard.jsx` — added
+  `frontOffice` state, compute, and Row C tiles.
+
+### What's next after this
+- 🟢 Testing agent regression pass (recommended after the
+  global variable change).
+- 🟢 Hearing Tests Kanban redesign.
+- 🟢 Scheduled CSV email exports.
+- 🟠 MSG91 Hosted Sender Number.
+
+---
+
 ## 🎨 PHASE 16 — Global AUDINEXA Adopted-UI (Dashboard + Sidebar + Mobile-App) (2026-07-01)
 
 Shipped the fully-designed dashboard mockup
