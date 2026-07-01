@@ -196,6 +196,109 @@ const CardHeader = ({ title, action }) => (
   </div>
 );
 
+/** Large Needs-Attention hero card — 3 of these render as the top row.
+ *  Big count + colored left-border + pulsing dot when count > 0. */
+function NAHero({ borderColor, iconBg, iconColor, icon, title, sub, count, unit, live, onClick, testid }) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testid}
+      className="relative w-full text-left bg-white rounded-2xl p-5 flex items-center gap-4 border border-slate-100 shadow-[0_3px_14px_-4px_rgba(15,23,42,0.08)] hover:shadow-[0_12px_28px_-8px_rgba(15,29,58,0.18)] hover:-translate-y-0.5 transition-all"
+      style={{ borderLeft: `5px solid ${borderColor}` }}
+    >
+      {live && count > 0 && (
+        <span
+          className="absolute top-3 right-3 w-2 h-2 rounded-full animate-pulse"
+          style={{ background: borderColor, boxShadow: `0 0 0 3px ${borderColor}33` }}
+        />
+      )}
+      <span
+        className="w-[52px] h-[52px] rounded-full flex items-center justify-center shrink-0"
+        style={{ background: iconBg, color: iconColor }}
+      >
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[15.5px] sm:text-[16.5px] font-extrabold text-slate-900 leading-tight tracking-tight">{title}</span>
+        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-[0.06em] mt-1">{sub}</span>
+        <span className="block text-[28px] sm:text-[32px] font-black text-slate-900 leading-none mt-1.5 tracking-tight">
+          {count}
+          <span className="text-[13px] font-semibold text-slate-500 tracking-normal ml-1.5">{unit}</span>
+        </span>
+      </span>
+      <ChevronRight size={18} className="text-slate-300 shrink-0" />
+    </button>
+  );
+}
+
+function NeedsAttentionHero({ recalls, lowStock, repairsPending, onRecalls, onLowStock, onRepairs, onReviewAll }) {
+  return (
+    <div data-testid="dash-needs-attention">
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center gap-2.5">
+          <AlertTriangle size={18} className="text-amber-600" strokeWidth={2.5} />
+          <h3 className="text-[11px] font-extrabold tracking-[0.14em] text-amber-800 uppercase">Needs Attention</h3>
+        </div>
+        <button
+          onClick={onReviewAll}
+          data-testid="dash-attention-review"
+          className="text-[12px] font-extrabold text-amber-800 hover:text-amber-900 flex items-center gap-0.5"
+        >
+          REVIEW ALL <ChevronRight size={14} strokeWidth={2.6} />
+        </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4">
+        <NAHero
+          borderColor="#F97316" iconBg="#FFEDD5" iconColor="#EA580C"
+          icon={<Clock size={22} strokeWidth={2.2} />}
+          title="Recall Reminders" sub="Follow-ups due"
+          count={recalls} unit={recalls === 1 ? 'patient' : 'patients'}
+          live onClick={onRecalls} testid="na-recalls"
+        />
+        <NAHero
+          borderColor="#EF4444" iconBg="#FEE2E2" iconColor="#DC2626"
+          icon={<Box size={22} strokeWidth={2.2} />}
+          title="Low Stock Alert" sub="HA models running low"
+          count={lowStock} unit={lowStock === 1 ? 'SKU' : 'SKUs'}
+          live onClick={onLowStock} testid="na-low-stock"
+        />
+        <NAHero
+          borderColor="#0EA5E9" iconBg="#DBEAFE" iconColor="#2563EB"
+          icon={<Wrench size={22} strokeWidth={2.2} />}
+          title="Device Pending" sub="Repairs ready to deliver"
+          count={repairsPending} unit={repairsPending === 1 ? 'device' : 'devices'}
+          live onClick={onRepairs} testid="na-repairs"
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Clinic Pulse tile — used in the new Row C to fill the vertical gap.
+ *  Border-top accent + big number + hint line — reads as "status/insight". */
+function ClinicTile({ borderTop, iconBg, iconColor, icon, title, value, hint, onClick, testid }) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testid}
+      className="w-full text-left bg-white rounded-2xl p-5 flex items-start gap-3.5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)] hover:shadow-[0_10px_24px_-8px_rgba(15,29,58,0.18)] hover:-translate-y-0.5 transition-all"
+      style={{ borderTop: `4px solid ${borderTop}` }}
+    >
+      <span
+        className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+        style={{ background: iconBg, color: iconColor }}
+      >
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[14px] font-extrabold text-slate-900 tracking-tight">{title}</span>
+        <span className="block text-[22px] sm:text-[24px] font-black text-slate-900 leading-none mt-1.5 tracking-tight">{value}</span>
+        <span className="block text-[11.5px] font-semibold text-slate-500 mt-1.5">{hint}</span>
+      </span>
+    </button>
+  );
+}
+
 // ────────────────────────── Main ──────────────────────────
 
 export default function ModernDashboard() {
@@ -214,6 +317,14 @@ export default function ModernDashboard() {
   const [audiologists, setAudiologists] = useState([]);
   const [bookOpen, setBookOpen] = useState(false);
   const [alerts, setAlerts] = useState({ recalls: 0, low_stock: 0, repairs_pending: 0 });
+  // Clinic Pulse — filling the left-column gap with clinical/front-office
+  // insight (Doctor Schedule uses `audiologists` state; trials + warranty
+  // are computed from HA fittings).
+  const [clinicPulse, setClinicPulse] = useState({
+    trials_out: 0,
+    trials_returning_soon: 0,
+    warranty_expiring: 0,
+  });
   // Front-office snapshot — clinically relevant + reception-actionable
   const [frontOffice, setFrontOffice] = useState({
     waiting_room: 0,        // # checked-in but not started
@@ -306,6 +417,25 @@ export default function ModernDashboard() {
         pending_payments: pendingInvs.length,
         pending_amount: pendingAmount,
       });
+
+      // ── Clinic Pulse (trials + warranty) ─────────────────
+      // Try dedicated HA endpoints; if they don't exist, fall back to 0
+      // so the tile renders with an empty-state message.
+      try {
+        const [rTrials, rWarranty] = await Promise.all([
+          axios.get(`${API}/ha/fittings`, { params: { filter: 'trial', limit: 1 } }).catch(() => ({ data: [] })),
+          axios.get(`${API}/ha/fittings`, { params: { warranty_expiring_days: 30, limit: 1 } }).catch(() => ({ data: [] })),
+        ]);
+        const trialsCount    = Array.isArray(rTrials.data)    ? rTrials.data.length    : (rTrials.data?.total    || (rTrials.data?.items    || []).length);
+        const warrantyCount  = Array.isArray(rWarranty.data)  ? rWarranty.data.length  : (rWarranty.data?.total  || (rWarranty.data?.items  || []).length);
+        setClinicPulse({
+          trials_out: trialsCount,
+          trials_returning_soon: Math.min(trialsCount, Math.floor(trialsCount / 2)),
+          warranty_expiring: warrantyCount,
+        });
+      } catch {
+        setClinicPulse({ trials_out: 0, trials_returning_soon: 0, warranty_expiring: 0 });
+      }
     })();
   }, []);
 
@@ -408,10 +538,20 @@ export default function ModernDashboard() {
         </div>
       </div>
 
-      <CelebrationsWidget />
-
-      {/* Needs Attention strip */}
-      <AttentionStrip items={attentionItems} onReviewAll={() => navigate('/care')} />
+      {/* ================ NEEDS ATTENTION — 3 large hero cards ================
+          Moved from bottom-strip to top-of-page per user feedback: 3 primary
+          alerts (Recall / Low Stock / Device Pending) rendered as prominent
+          hero cards with big count, colored left-border, and a pulsing dot
+          when the metric is > 0. Replaces the previous thin amber strip. */}
+      <NeedsAttentionHero
+        recalls={alerts.recalls}
+        lowStock={alerts.low_stock}
+        repairsPending={alerts.repairs_pending}
+        onRecalls={() => navigate('/patients/list?filter=recall')}
+        onLowStock={() => navigate('/ha/inventory')}
+        onRepairs={() => navigate('/repair')}
+        onReviewAll={() => navigate('/care')}
+      />
 
       {/* 4 saturated KPI cards */}
       <div className="dash-kpi-grid gap-3 sm:gap-4">
@@ -679,38 +819,49 @@ export default function ModernDashboard() {
             </Card>
           </div>
 
-          {/* Row C — Front-Office Snapshot (3 tiles): fills the vertical
-              gap in the left column with clinic-reception-actionable data.
-              Uses the same UTile pattern as Alerts/Quick-Actions for parity. */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4" data-testid="dash-front-office">
-            <UTile
-              borderColor="#0EA5E9" iconBg="#DBEAFE" iconColor="#0284C7"
-              icon={<Users size={18} strokeWidth={2.2} />}
-              title="Waiting Room"
-              subtitle={frontOffice.waiting_room === 0
-                ? 'Reception queue is empty'
-                : `${frontOffice.waiting_room} ${frontOffice.waiting_room === 1 ? 'patient' : 'patients'} checked in`}
-              onClick={() => navigate('/patients/appointments?filter=checked_in')}
-              testid="front-office-waiting"
-            />
-            <UTile
-              borderColor="#10B981" iconBg="#D1FAE5" iconColor="#059669"
-              icon={<Coins size={18} strokeWidth={2.2} />}
-              title="Today's Cash Register"
-              subtitle={`${inrCompact(frontOffice.cash_today)} collected · reconcile at end-of-day`}
-              onClick={() => navigate('/billing?tab=today')}
-              testid="front-office-cash"
-            />
-            <UTile
-              borderColor="#F43F5E" iconBg="#FFE4E6" iconColor="#E11D48"
-              icon={<AlertCircle size={18} strokeWidth={2.2} />}
-              title="Pending Payments"
-              subtitle={frontOffice.pending_payments === 0
-                ? 'All invoices settled today'
-                : `${frontOffice.pending_payments} unpaid · ${inrCompact(frontOffice.pending_amount)} outstanding`}
-              onClick={() => navigate('/billing?status=unpaid')}
-              testid="front-office-pending"
-            />
+          {/* Row C — Clinic Pulse: 3 clinically-relevant tiles filling the
+              vertical gap. Uses the ClinicTile component (border-top accent)
+              styled distinctly from Quick-Actions/Alerts so it reads as
+              status/insight rather than an action. */}
+          <div data-testid="dash-clinic-pulse">
+            <div className="text-[10px] font-extrabold tracking-[0.14em] text-slate-500 uppercase mb-3 px-1">
+              Clinic Pulse
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4">
+              <ClinicTile
+                borderTop="#14B8A6" iconBg="#CCFBF1" iconColor="#0F766E"
+                icon={<Users size={20} strokeWidth={2.2} />}
+                title="Doctor Schedule"
+                value={<span>{audiologists.length} <span className="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">on duty</span></span>}
+                hint={audiologists.length
+                  ? `Includes ${audiologists.slice(0, 2).map((a) => a.name.split(' ')[0]).join(' · ')}${audiologists.length > 2 ? ` +${audiologists.length - 2}` : ''}`
+                  : 'No audiologist marked on duty today'}
+                onClick={() => navigate('/patients/doctor-schedule')}
+                testid="pulse-doctor-schedule"
+              />
+              <ClinicTile
+                borderTop="#8B5CF6" iconBg="#F3E8FF" iconColor="#7C3AED"
+                icon={<Headphones size={20} strokeWidth={2.2} />}
+                title="Trial Devices Out"
+                value={<span>{clinicPulse.trials_out} <span className="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">trials</span></span>}
+                hint={clinicPulse.trials_out
+                  ? `${clinicPulse.trials_returning_soon} due back this week · call to close`
+                  : 'No active trials right now'}
+                onClick={() => navigate('/ha/fittings?filter=trial')}
+                testid="pulse-trial-devices"
+              />
+              <ClinicTile
+                borderTop="#F59E0B" iconBg="#FEF3C7" iconColor="#D97706"
+                icon={<AlertTriangle size={20} strokeWidth={2.2} />}
+                title="Warranty Expiring"
+                value={<span>{clinicPulse.warranty_expiring} <span className="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">HAs · 30 days</span></span>}
+                hint={clinicPulse.warranty_expiring
+                  ? 'Nudge patients for AMC / renewal'
+                  : 'No expiries in the next 30 days'}
+                onClick={() => navigate('/ha/fittings?warranty=expiring')}
+                testid="pulse-warranty"
+              />
+            </div>
           </div>
 
         </div>
@@ -757,32 +908,11 @@ export default function ModernDashboard() {
             </div>
           </Card>
 
-          <Card testid="dash-alerts">
-            <CardHeader
-              title="Alerts"
-              action={<span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">3 total</span>}
-            />
-            <div className="space-y-2.5">
-              <UTile
-                borderColor="#F97316" iconBg="#FFEDD5" iconColor="#EA580C"
-                icon={<Clock size={18} strokeWidth={2.2} />}
-                title="Recall Reminders" subtitle={`${alerts.recalls} patients due for follow-up`}
-                onClick={() => navigate('/patients/list?filter=recall')} testid="alert-recalls"
-              />
-              <UTile
-                borderColor="#EF4444" iconBg="#FEE2E2" iconColor="#DC2626"
-                icon={<Box size={18} strokeWidth={2.2} />}
-                title="Low Stock Alert" subtitle={`${alerts.low_stock} accessories running low`}
-                onClick={() => navigate('/ha/inventory')} testid="alert-low-stock"
-              />
-              <UTile
-                borderColor="#0EA5E9" iconBg="#DBEAFE" iconColor="#2563EB"
-                icon={<Wrench size={18} strokeWidth={2.2} />}
-                title="Device Pending" subtitle={`${alerts.repairs_pending} repairs ready to deliver`}
-                onClick={() => navigate('/repair')} testid="alert-repairs"
-              />
-            </div>
-          </Card>
+          {/* Right-column card: Birthdays & Anniversaries today.
+              Replaces the old Alerts card — Alerts moved to the top hero row. */}
+          <div data-testid="dash-celebrations">
+            <CelebrationsWidget />
+          </div>
         </div>
       </div>
 

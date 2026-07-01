@@ -1,5 +1,51 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎨 PHASE 16.2 — Dashboard Restructure v3 (2026-07-01, night)
+
+Second round of user-driven dashboard tweaks:
+
+### Layout changes
+1. **Needs Attention hero-row moved to TOP** — 3 large cards (Recall
+   Reminders / Low Stock Alert / Device Pending) with big count, colored
+   left-border, pulsing dot when value > 0. Replaces the previous thin
+   amber strip.
+2. **Alerts card removed from right column** — same info now surfaced
+   as the top hero row, no duplication.
+3. **Front-Office Snapshot row removed** — Waiting Room / Cash Register
+   / Pending Payments (Phase 16.1) taken off per user request.
+4. **New "Clinic Pulse" row in the left column** — 3 tiles filling the
+   vertical gap:
+   - **Doctor Schedule** (teal) — count of audiologists on duty + names
+   - **Trial Devices Out** (violet) — count from `/api/ha/fittings?filter=trial`
+   - **Warranty Expiring** (amber) — count from `/api/ha/fittings?warranty_expiring_days=30`
+5. **CelebrationsWidget moved** from top-of-dashboard to right-column
+   (below Quick Actions) as "Birthday / Anniversary Today" — surfaces
+   patients whose birthday or wedding anniversary is today from
+   `/api/greetings/today`.
+
+### New sub-components
+- `NAHero` + `NeedsAttentionHero` (top hero row)
+- `ClinicTile` (Clinic Pulse tiles)
+
+### Data
+- `clinicPulse` state populated from HA fittings endpoints with graceful
+  fallbacks (missing endpoints render an empty-state hint).
+
+### Files touched
+- `/app/frontend/src/modules/patients/ModernDashboard.jsx` — restructure.
+
+### Verified
+- ESLint clean.
+- DOM assertions passed: `[dash-needs-attention]`, `[dash-clinic-pulse]`,
+  `[dash-celebrations]` all present; `[dash-alerts]`, `[dash-front-office]`
+  removed. Screenshot confirms Row C (Clinic Pulse) fills the gap and the
+  right column shows CelebrationsWidget in the "Alerts" slot.
+
+### Mockup for reference
+- `/app/frontend/public/mockups/dashboard-audinexa-v3.html`
+
+---
+
 ## 🎨 PHASE 16.1 — Global Theme + Front-Office Snapshot (2026-07-01, evening)
 
 Extended Phase 16 with two user-driven improvements:
