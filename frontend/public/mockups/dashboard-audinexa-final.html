@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=1440" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   :root {
@@ -25,108 +25,50 @@
     --kpi-cyan: #3ABBED;
     --kpi-cyan-deep: #26A6D9;
   }
-  html { font-size: 16px; }
-  body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background: var(--bg);
-    color: #0F172A;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-  h1, h2, h3, .card-title, .u-title { letter-spacing: -0.02em; }
+  html { font-size: 15px; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #0F172A; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02","cv03","cv04","cv11"; }
 
-  /* Sidebar */
   .sidebar {
-    background: var(--navy);
-    width: 260px;
-    min-height: 100vh;
-    padding: 24px 18px;
-    color: white;
-    border-radius: 0 22px 22px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    position: sticky;
-    top: 0;
+    background: var(--navy); width: 260px; min-height: 100vh;
+    padding: 24px 18px; color: white; border-radius: 0 22px 22px 0;
+    display: flex; flex-direction: column; gap: 6px;
+    position: sticky; top: 0;
   }
   .nav-item {
     display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px;
-    border-radius: 10px;
-    color: rgba(255,255,255,0.70);
-    font-size: 14.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all .15s;
+    padding: 12px 16px; border-radius: 10px;
+    color: rgba(255,255,255,0.70); font-size: 14.5px; font-weight: 600;
+    cursor: pointer; transition: all .15s;
   }
   .nav-item:hover { background: var(--navy-hover); color: white; }
-  .nav-item.active {
-    background: var(--navy-active);
-    color: var(--teal);
-    box-shadow: inset 3px 0 0 var(--teal);
-  }
+  .nav-item.active { background: var(--navy-active); color: var(--teal); box-shadow: inset 3px 0 0 var(--teal); }
 
-  /* KPI cards */
-  .kpi-card {
-    border-radius: 16px;
-    padding: 22px 20px;
-    color: white;
-    position: relative;
-    box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15);
-  }
+  .kpi-card { border-radius: 16px; padding: 22px 20px; color: white; position: relative; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.15); }
   .kpi-blue   { background: linear-gradient(135deg, var(--kpi-blue) 0%, var(--kpi-blue-deep) 100%); }
   .kpi-mint   { background: linear-gradient(135deg, var(--kpi-mint) 0%, var(--kpi-mint-deep) 100%); }
   .kpi-purple { background: linear-gradient(135deg, var(--kpi-purple) 0%, var(--kpi-purple-deep) 100%); }
   .kpi-cyan   { background: linear-gradient(135deg, var(--kpi-cyan) 0%, var(--kpi-cyan-deep) 100%); }
-  .kpi-icon-wrap {
-    background: white; width: 60px; height: 60px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.10);
-  }
+  .kpi-icon-wrap { background: white; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.10); }
 
-  /* Cards */
-  .card {
-    background: #fff;
-    border-radius: 16px;
-    padding: 22px;
-    box-shadow: 0 2px 10px -4px rgba(15,23,42,0.06), 0 12px 30px -20px rgba(15,23,42,0.10);
-  }
+  .card { background: #fff; border-radius: 16px; padding: 22px; box-shadow: 0 2px 10px -4px rgba(15,23,42,0.06), 0 12px 30px -20px rgba(15,23,42,0.10); }
 
-  /* Patient list rows */
-  .patient-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 4px;
-    border-radius: 10px;
-  }
+  .patient-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-radius: 10px; }
   .patient-row:hover { background: #F8FAFC; }
   .status-pill { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
   .status-ongoing { background: #DBEAFE; color: #1E3A8A; }
   .status-time    { background: #F3E8FF; color: #6D28D9; }
 
-  .search-input {
-    background: white; border-radius: 999px;
-    padding: 10px 16px 10px 44px; width: 380px;
-    box-shadow: 0 2px 10px -4px rgba(0,0,0,0.06);
-    font-size: 14px; outline: none;
-  }
+  .search-input { background: white; border-radius: 999px; padding: 10px 16px 10px 44px; width: 380px; box-shadow: 0 2px 10px -4px rgba(0,0,0,0.06); font-size: 14px; outline: none; }
 
-  /* Chip tags */
   .chip { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
   .chip-amber { background: #FEF3C7; color: #92400E; }
   .chip-mint  { background: #D1FAE5; color: #065F46; }
   .chip-blue  { background: #DBEAFE; color: #1E40AF; }
 
-  /* Timeline */
   .timeline-item { position: relative; padding-left: 32px; padding-bottom: 20px; }
-  .timeline-item::before {
-    content: ''; position: absolute; left: 6px; top: 22px; bottom: 0; width: 2px;
-    background: #E2E8F0; border-left: 2px dashed #CBD5E1; border-color: transparent;
-  }
+  .timeline-item::before { content: ''; position: absolute; left: 6px; top: 22px; bottom: 0; width: 2px; background: #E2E8F0; border-left: 2px dashed #CBD5E1; border-color: transparent; }
   .timeline-item:last-child::before { display: none; }
-  .timeline-dot {
-    position: absolute; left: 0; top: 4px; width: 14px; height: 14px; border-radius: 50%;
-    background: white; border: 3px solid var(--teal);
-  }
+  .timeline-dot { position: absolute; left: 0; top: 4px; width: 14px; height: 14px; border-radius: 50%; background: white; border: 3px solid var(--teal); }
   .timeline-dot.past { border-color: #CBD5E1; }
   .donut-svg { transform: rotate(-90deg); }
   .subcard-lavender { background: linear-gradient(180deg, #FAF5FF 0%, #FFFFFF 100%); }
@@ -134,75 +76,46 @@
   /* Needs Attention amber banner */
   .attention-strip {
     background: linear-gradient(90deg, #FFF7ED 0%, #FEF3C7 100%);
-    border: 1px solid #FED7AA;
-    border-radius: 14px;
+    border: 1px solid #FED7AA; border-radius: 14px;
     padding: 14px 20px;
     display: flex; align-items: center; gap: 16px;
     box-shadow: 0 2px 10px -4px rgba(217, 119, 6, 0.15);
   }
 
-  /* ============ UNIFIED ACTION TILE ============
-     Used by BOTH Quick Actions and Alerts for perfect visual parity.
-     Same padding, same 40px icon, same 2-line text, same chevron,
-     same left-border accent, same hover. */
-  .u-tile {
-    background: white;
-    border-radius: 12px;
-    padding: 14px 16px;
-    display: flex; align-items: center; gap: 14px;
-    cursor: pointer;
-    transition: all .18s ease;
+  /* Quick Action tiles — 2-col compact grid */
+  .qa-tile {
+    background: white; border-radius: 14px; padding: 14px 14px;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer; transition: all .15s;
     box-shadow: 0 1px 4px -2px rgba(15,23,42,0.05);
     border: 1px solid #F1F5F9;
-    border-left: 4px solid transparent;
-    min-height: 70px;
   }
-  .u-tile:hover {
-    transform: translateX(2px);
-    box-shadow: 0 6px 18px -8px rgba(15, 29, 58, 0.18);
-    border-color: #E2E8F0;
-  }
-  .u-icon {
-    width: 40px; height: 40px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .u-body { flex: 1; min-width: 0; }
-  .u-title { font-size: 15px; font-weight: 800; color: #0F172A; line-height: 1.2; letter-spacing: -0.015em; }
-  .u-sub   { font-size: 12.5px; font-weight: 500; color: #64748B; margin-top: 3px; line-height: 1.3; }
-  .u-chev  { color: #CBD5E1; flex-shrink: 0; transition: transform .15s; }
-  .u-tile:hover .u-chev { transform: translateX(2px); color: #94A3B8; }
+  .qa-tile:hover { transform: translateY(-2px); box-shadow: 0 8px 20px -8px rgba(15, 29, 58, 0.20); border-color: rgba(34, 211, 238, 0.35); }
+  .qa-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .qa-icon-blue   { background: #EFF6FF; color: #2563EB; }
+  .qa-icon-mint   { background: #D1FAE5; color: #059669; }
+  .qa-icon-purple { background: #F3E8FF; color: #7C3AED; }
+  .qa-icon-amber  { background: #FEF3C7; color: #D97706; }
+  .qa-icon-rose   { background: #FFE4E6; color: #E11D48; }
+  .qa-icon-slate  { background: #E0E7FF; color: #4F46E5; }
+  .qa-label { font-size: 13.5px; font-weight: 700; color: #0F172A; line-height: 1.3; }
 
-  /* Left-border accent + icon palette (shared across QA + Alerts) */
-  .u-blue    { border-left-color: #3B82F6; }  .u-i-blue    { background: #EFF6FF; color: #2563EB; }
-  .u-mint    { border-left-color: #10B981; }  .u-i-mint    { background: #D1FAE5; color: #059669; }
-  .u-purple  { border-left-color: #8B5CF6; }  .u-i-purple  { background: #F3E8FF; color: #7C3AED; }
-  .u-amber   { border-left-color: #F59E0B; }  .u-i-amber   { background: #FEF3C7; color: #D97706; }
-  .u-rose    { border-left-color: #F43F5E; }  .u-i-rose    { background: #FFE4E6; color: #E11D48; }
-  .u-slate   { border-left-color: #6366F1; }  .u-i-slate   { background: #E0E7FF; color: #4F46E5; }
-  .u-orange  { border-left-color: #F97316; }  .u-i-orange  { background: #FFEDD5; color: #EA580C; }
-  .u-red     { border-left-color: #EF4444; }  .u-i-red     { background: #FEE2E2; color: #DC2626; }
-  .u-sky     { border-left-color: #0EA5E9; }  .u-i-sky     { background: #DBEAFE; color: #2563EB; }
+  /* Alert mini card — colored left border */
+  .alert-card { background: white; border-radius: 14px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; box-shadow: 0 2px 10px -4px rgba(15,23,42,0.06); border-left: 4px solid transparent; }
+  .alert-card-recall { border-left-color: #F97316; }
+  .alert-card-stock  { border-left-color: #EF4444; }
+  .alert-card-device { border-left-color: #3B82F6; }
+  .alert-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
-  /* Card headers */
-  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .card-title  { font-size: 18px; font-weight: 800; color: #0F172A; letter-spacing: -0.02em; }
-  .card-link   { font-size: 13.5px; font-weight: 700; color: var(--teal-deep); }
-
-  .zone-label {
-    text-transform: uppercase;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    color: #64748B;
-    margin-bottom: 12px;
-  }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .card-title  { font-size: 16px; font-weight: 800; color: #0F172A; letter-spacing: -0.01em; }
+  .card-link   { font-size: 13px; font-weight: 700; color: var(--teal-deep); }
 </style>
 </head>
 <body class="min-h-screen">
   <div class="flex">
 
-    <!-- ============ SIDEBAR ============ -->
+    <!-- SIDEBAR -->
     <aside class="sidebar">
       <div class="flex items-center gap-2 mb-8 px-2">
         <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #22D3EE, #0891B2);">
@@ -210,7 +123,6 @@
         </div>
         <div class="text-white font-extrabold text-[19px] tracking-tight">AUDINEXA</div>
       </div>
-
       <div class="flex flex-col items-center mb-8 pb-6 border-b border-white/10">
         <div class="w-24 h-24 rounded-full mb-3 bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center overflow-hidden ring-4 ring-white/10">
           <div class="w-full h-full flex items-center justify-center text-white font-extrabold text-[28px]">RI</div>
@@ -218,56 +130,20 @@
         <div class="text-white font-bold text-[16px]">Dr. Rajesh Iyer</div>
         <div class="text-[12px] text-white/60 font-medium mt-1">Clinical Audiologist · MASLP</div>
       </div>
-
-      <div class="nav-item active">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Overview
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
-        Appointments
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-        Patients
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>
-        Hearing Tests
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
-        Hearing Aids
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-        Billing
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        Reports & Analytics
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Messages
-        <span class="ml-auto text-[11px] font-extrabold text-navy px-2 py-0.5 rounded-full" style="background: var(--teal);">5</span>
-      </div>
-      <div class="nav-item">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
-        Settings
-      </div>
-
-      <div class="mt-auto pt-8">
-        <div class="nav-item">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          Logout
-        </div>
-      </div>
+      <div class="nav-item active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Overview</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Appointments</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Patients</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>Hearing Tests</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>Hearing Aids</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Billing</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Reports & Analytics</div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Messages<span class="ml-auto text-[11px] font-extrabold text-navy px-2 py-0.5 rounded-full" style="background: var(--teal);">5</span></div>
+      <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>Settings</div>
+      <div class="mt-auto pt-8"><div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Logout</div></div>
     </aside>
 
-    <!-- ============ MAIN CONTENT ============ -->
+    <!-- MAIN -->
     <main class="flex-1 p-8" style="max-width: 1400px;">
-
       <!-- Top bar -->
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-[28px] font-extrabold tracking-tight text-slate-900">Overview</h1>
@@ -276,13 +152,8 @@
             <svg class="absolute left-4 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input class="search-input" placeholder="Search Appointment, Patient or etc..." />
           </div>
-          <button class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:shadow-md relative">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          </button>
-          <button class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:shadow-md relative">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></span>
-          </button>
+          <button class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:shadow-md relative"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></button>
+          <button class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:shadow-md relative"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></span></button>
         </div>
       </div>
 
@@ -298,216 +169,62 @@
         </div>
       </div>
 
-      <!-- ⚠️ NEEDS ATTENTION STRIP -->
+      <!-- Needs Attention strip -->
       <div class="attention-strip mb-5">
-        <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm flex-shrink-0">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </div>
+        <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm flex-shrink-0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
         <div class="flex items-center gap-6 flex-1 text-[13.5px]">
           <span class="text-[11px] font-extrabold uppercase tracking-widest text-amber-800">Needs Attention</span>
-          <span class="text-slate-700 flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-            <span class="font-semibold">2 accessories</span> low on stock · <span class="text-slate-500">Tubing 12mm, Wax filters</span>
-          </span>
-          <span class="text-slate-700 flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span class="font-semibold">3 repairs</span> ready for pickup
-          </span>
-          <span class="text-slate-700 flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
-            <span class="font-semibold">5 follow-ups</span> due
-          </span>
+          <span class="text-slate-700 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="font-semibold">2 accessories</span> low on stock · <span class="text-slate-500">Tubing 12mm, Wax filters</span></span>
+          <span class="text-slate-700 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="font-semibold">3 repairs</span> ready for pickup</span>
+          <span class="text-slate-700 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span><span class="font-semibold">5 follow-ups</span> due</span>
         </div>
-        <a class="text-[13px] font-extrabold text-amber-800 hover:text-amber-900 whitespace-nowrap flex items-center gap-1">
-          REVIEW ALL
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        </a>
+        <a class="text-[13px] font-extrabold text-amber-800 hover:text-amber-900 whitespace-nowrap flex items-center gap-1">REVIEW ALL<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></a>
       </div>
 
-      <!-- 4 SATURATED KPI CARDS -->
+      <!-- 4 KPI cards -->
       <div class="grid grid-cols-4 gap-4 mb-6">
-        <div class="kpi-card kpi-blue">
-          <div class="flex items-center gap-4">
-            <div class="kpi-icon-wrap">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4380E5" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            </div>
-            <div>
-              <div class="text-[44px] font-extrabold leading-none">6</div>
-              <div class="text-[15px] font-semibold text-white/95 mt-1.5">Appointments</div>
-            </div>
-          </div>
-        </div>
-        <div class="kpi-card kpi-mint">
-          <div class="flex items-center gap-4">
-            <div class="kpi-icon-wrap">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#27BF87" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-            </div>
-            <div>
-              <div class="text-[44px] font-extrabold leading-none">12</div>
-              <div class="text-[15px] font-semibold text-white/95 mt-1.5">New Patients</div>
-            </div>
-          </div>
-        </div>
-        <div class="kpi-card kpi-purple">
-          <div class="flex items-center gap-4">
-            <div class="kpi-icon-wrap">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6957DE" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3v4z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3v4z"/></svg>
-            </div>
-            <div>
-              <div class="text-[44px] font-extrabold leading-none">7</div>
-              <div class="text-[15px] font-semibold text-white/95 mt-1.5">Tests Today</div>
-            </div>
-          </div>
-        </div>
-        <div class="kpi-card kpi-cyan">
-          <div class="flex items-center gap-4">
-            <div class="kpi-icon-wrap">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#26A6D9" stroke-width="2.5"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            </div>
-            <div>
-              <div class="text-[32px] font-extrabold leading-none">₹1.84L</div>
-              <div class="text-[15px] font-semibold text-white/95 mt-1.5">Collections</div>
-            </div>
-          </div>
-        </div>
+        <div class="kpi-card kpi-blue"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4380E5" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">6</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Appointments</div></div></div></div>
+        <div class="kpi-card kpi-mint"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#27BF87" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">12</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">New Patients</div></div></div></div>
+        <div class="kpi-card kpi-purple"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6957DE" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3v4z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3v4z"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">7</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Tests Today</div></div></div></div>
+        <div class="kpi-card kpi-cyan"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#26A6D9" stroke-width="2.5"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="text-[32px] font-extrabold leading-none">₹1.84L</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Collections</div></div></div></div>
       </div>
 
-      <!-- ================================================================================================== -->
-      <!-- 12-COL SPLIT — LEFT (8) = main data · RIGHT (4) = Quick Actions rail + Alerts rail -->
-      <!-- ================================================================================================== -->
+      <!-- 12-col split — LEFT (8) main data · RIGHT (4) Quick Actions + Alerts -->
       <div class="grid grid-cols-12 gap-5 mb-5">
 
-        <!-- ============ LEFT COLUMN (8/12) ============ -->
         <div class="col-span-8 space-y-5">
-
-          <!-- Row A: Today's Appointments + In Test Now -->
+          <!-- Row A -->
           <div class="grid grid-cols-2 gap-5">
             <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Today's Appointments</h3>
-                <a class="card-link">See all →</a>
-              </div>
+              <div class="card-header"><h3 class="card-title">Today's Appointments</h3><a class="card-link">See all →</a></div>
               <div>
-                <div class="patient-row">
-                  <div class="w-11 h-11 rounded-full bg-rose-50 text-rose-700 flex items-center justify-center font-extrabold text-[15px]">AS</div>
-                  <div class="flex-1">
-                    <div class="text-[15px] font-bold text-slate-900">Aditi Sharma</div>
-                    <div class="text-[12.5px] text-slate-500 font-medium mt-0.5">Hearing Test</div>
-                  </div>
-                  <span class="status-pill status-ongoing">Ongoing</span>
-                </div>
-                <div class="patient-row">
-                  <div class="w-11 h-11 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-extrabold text-[15px]">VM</div>
-                  <div class="flex-1">
-                    <div class="text-[15px] font-bold text-slate-900">Vikram Mehta</div>
-                    <div class="text-[12.5px] text-slate-500 font-medium mt-0.5">HA Fitting</div>
-                  </div>
-                  <span class="status-pill status-time">02:30 PM</span>
-                </div>
-                <div class="patient-row">
-                  <div class="w-11 h-11 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center font-extrabold text-[15px]">PB</div>
-                  <div class="flex-1">
-                    <div class="text-[15px] font-bold text-slate-900">Priya Banerjee</div>
-                    <div class="text-[12.5px] text-slate-500 font-medium mt-0.5">Consultation</div>
-                  </div>
-                  <span class="status-pill status-time">03:15 PM</span>
-                </div>
+                <div class="patient-row"><div class="w-11 h-11 rounded-full bg-rose-50 text-rose-700 flex items-center justify-center font-extrabold text-[15px]">AS</div><div class="flex-1"><div class="text-[15px] font-bold text-slate-900">Aditi Sharma</div><div class="text-[12.5px] text-slate-500 font-medium mt-0.5">Hearing Test</div></div><span class="status-pill status-ongoing">Ongoing</span></div>
+                <div class="patient-row"><div class="w-11 h-11 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-extrabold text-[15px]">VM</div><div class="flex-1"><div class="text-[15px] font-bold text-slate-900">Vikram Mehta</div><div class="text-[12.5px] text-slate-500 font-medium mt-0.5">HA Fitting</div></div><span class="status-pill status-time">02:30 PM</span></div>
+                <div class="patient-row"><div class="w-11 h-11 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center font-extrabold text-[15px]">PB</div><div class="flex-1"><div class="text-[15px] font-bold text-slate-900">Priya Banerjee</div><div class="text-[12.5px] text-slate-500 font-medium mt-0.5">Consultation</div></div><span class="status-pill status-time">03:15 PM</span></div>
               </div>
             </div>
-
             <div class="card subcard-lavender">
-              <div class="card-header">
-                <h3 class="card-title">In Test Now</h3>
-                <a class="card-link">See more →</a>
-              </div>
-              <div class="flex items-center gap-3 mb-3">
-                <div class="w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-extrabold text-[18px] shadow-lg">NK</div>
-                <div>
-                  <div class="text-[17px] font-extrabold text-slate-900">Neha Kulkarni</div>
-                  <div class="text-[13px] text-slate-600 mt-0.5 font-medium">Sex: F · Age: 39</div>
-                </div>
-              </div>
-              <div class="flex items-center gap-1.5 mb-4">
-                <span class="chip chip-amber">Speech running</span>
-                <span class="chip chip-mint">PTA done</span>
-              </div>
-              <div class="pt-4 border-t border-slate-200/70 flex items-center justify-between">
-                <div>
-                  <div class="text-[11px] text-slate-500 font-extrabold uppercase tracking-widest">Session</div>
-                  <div class="text-[13.5px] font-bold text-slate-800 mt-1">3 tests · 1 pending</div>
-                </div>
-                <a class="card-link">Open →</a>
-              </div>
+              <div class="card-header"><h3 class="card-title">In Test Now</h3><a class="card-link">See more →</a></div>
+              <div class="flex items-center gap-3 mb-3"><div class="w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-extrabold text-[18px] shadow-lg">NK</div><div><div class="text-[17px] font-extrabold text-slate-900">Neha Kulkarni</div><div class="text-[13px] text-slate-600 mt-0.5 font-medium">Sex: F · Age: 39</div></div></div>
+              <div class="flex items-center gap-1.5 mb-4"><span class="chip chip-amber">Speech running</span><span class="chip chip-mint">PTA done</span></div>
+              <div class="pt-4 border-t border-slate-200/70 flex items-center justify-between"><div><div class="text-[11px] text-slate-500 font-extrabold uppercase tracking-widest">Session</div><div class="text-[13.5px] font-bold text-slate-800 mt-1">3 tests · 1 pending</div></div><a class="card-link">Open →</a></div>
             </div>
           </div>
 
-          <!-- Row B: Recent Registrations + Today's Test Mix -->
+          <!-- Row B -->
           <div class="grid grid-cols-2 gap-5">
             <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Recent Registrations</h3>
-                <a class="card-link">See all →</a>
-              </div>
-              <div class="grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">
-                <div>Name</div>
-                <div>Time</div>
-                <div class="text-right">Action</div>
-              </div>
+              <div class="card-header"><h3 class="card-title">Recent Registrations</h3><a class="card-link">See all →</a></div>
+              <div class="grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"><div>Name</div><div>Time</div><div class="text-right">Action</div></div>
               <div>
-                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg">
-                  <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center font-extrabold text-[12px]">SK</div>
-                    <div class="text-[13.5px] font-bold text-slate-800 truncate">Suresh</div>
-                  </div>
-                  <div class="text-[13px] text-slate-600 font-semibold">15:00</div>
-                  <div class="flex items-center justify-end gap-2">
-                    <button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                    </button>
-                    <button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg">
-                  <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-full bg-sky-50 text-sky-700 flex items-center justify-center font-extrabold text-[12px]">RD</div>
-                    <div class="text-[13.5px] font-bold text-slate-800 truncate">Ravi</div>
-                  </div>
-                  <div class="text-[13px] text-slate-600 font-semibold">14:20</div>
-                  <div class="flex items-center justify-end gap-2">
-                    <button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                    </button>
-                    <button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg">
-                  <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center font-extrabold text-[12px]">MI</div>
-                    <div class="text-[13.5px] font-bold text-slate-800 truncate">Meena</div>
-                  </div>
-                  <div class="text-[13px] text-slate-600 font-semibold">12:45</div>
-                  <div class="flex items-center justify-end gap-2">
-                    <button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                    </button>
-                    <button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center font-extrabold text-[12px]">SK</div><div class="text-[13.5px] font-bold text-slate-800 truncate">Suresh</div></div><div class="text-[13px] text-slate-600 font-semibold">15:00</div><div class="flex items-center justify-end gap-2"><button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button><button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-sky-50 text-sky-700 flex items-center justify-center font-extrabold text-[12px]">RD</div><div class="text-[13.5px] font-bold text-slate-800 truncate">Ravi</div></div><div class="text-[13px] text-slate-600 font-semibold">14:20</div><div class="flex items-center justify-end gap-2"><button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button><button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+                <div class="grid grid-cols-3 gap-2 items-center px-1 py-2.5 hover:bg-slate-50 rounded-lg"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-violet-50 text-violet-700 flex items-center justify-center font-extrabold text-[12px]">MI</div><div class="text-[13.5px] font-bold text-slate-800 truncate">Meena</div></div><div class="text-[13px] text-slate-600 font-semibold">12:45</div><div class="flex items-center justify-end gap-2"><button class="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button><button class="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
               </div>
             </div>
 
-            <!-- Test Mix donut -->
             <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Today's Test Mix</h3>
-                <a class="card-link">This week ▾</a>
-              </div>
+              <div class="card-header"><h3 class="card-title">Today's Test Mix</h3><a class="card-link">This week ▾</a></div>
               <div class="flex items-center justify-center mb-3">
                 <div class="relative w-[140px] h-[140px]">
                   <svg viewBox="0 0 36 36" class="donut-svg">
@@ -516,185 +233,67 @@
                     <path d="M31.86 10 a 16 16 0 0 1 -6.86 20" fill="none" stroke="#F97316" stroke-width="4" stroke-linecap="round"/>
                     <path d="M25 30 a 16 16 0 0 1 -20 -12" fill="none" stroke="#7B68EE" stroke-width="4" stroke-linecap="round"/>
                   </svg>
-                  <div class="absolute inset-0 flex flex-col items-center justify-center">
-                    <div class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest">Total</div>
-                    <div class="text-[26px] font-extrabold text-slate-900 leading-none mt-0.5">7</div>
-                  </div>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center"><div class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest">Total</div><div class="text-[26px] font-extrabold text-slate-900 leading-none mt-0.5">7</div></div>
                 </div>
               </div>
               <div class="space-y-1.5 mt-2">
-                <div class="flex items-center justify-between text-[13px]">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full" style="background:#5B92F5"></span>
-                    <span class="font-semibold text-slate-700">PTA</span>
-                  </div>
-                  <span class="font-bold text-slate-900">3</span>
-                </div>
-                <div class="flex items-center justify-between text-[13px]">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full" style="background:#F97316"></span>
-                    <span class="font-semibold text-slate-700">Speech</span>
-                  </div>
-                  <span class="font-bold text-slate-900">2</span>
-                </div>
-                <div class="flex items-center justify-between text-[13px]">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full" style="background:#7B68EE"></span>
-                    <span class="font-semibold text-slate-700">Impedance</span>
-                  </div>
-                  <span class="font-bold text-slate-900">2</span>
-                </div>
+                <div class="flex items-center justify-between text-[13px]"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#5B92F5"></span><span class="font-semibold text-slate-700">PTA</span></div><span class="font-bold text-slate-900">3</span></div>
+                <div class="flex items-center justify-between text-[13px]"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#F97316"></span><span class="font-semibold text-slate-700">Speech</span></div><span class="font-bold text-slate-900">2</span></div>
+                <div class="flex items-center justify-between text-[13px]"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#7B68EE"></span><span class="font-semibold text-slate-700">Impedance</span></div><span class="font-bold text-slate-900">2</span></div>
               </div>
             </div>
           </div>
-
         </div>
 
-        <!-- ============ RIGHT COLUMN (4/12) ============ -->
+        <!-- RIGHT COLUMN (4/12) — Quick Actions + Alerts -->
         <div class="col-span-4 space-y-5">
-
-          <!-- Quick Actions rail — uniform tile pattern -->
           <div class="card">
-            <div class="card-header">
-              <h3 class="card-title">Quick Actions</h3>
-              <span class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">6 total</span>
-            </div>
-            <div class="space-y-2.5">
-              <div class="u-tile u-blue">
-                <div class="u-icon u-i-blue">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                </div>
-                <div class="u-body">
-                  <div class="u-title">New Appointment</div>
-                  <div class="u-sub">Book a patient slot</div>
-                </div>
-                <svg class="u-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
-
-              <div class="u-tile u-mint">
-                <div class="u-icon u-i-mint">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                </div>
-                <div class="u-body">
-                  <div class="u-title">New Registration</div>
-                  <div class="u-sub">Add a walk-in patient</div>
-                </div>
-                <svg class="u-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
-
-              <div class="u-tile u-purple">
-                <div class="u-icon u-i-purple">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 8.5A6.5 6.5 0 0 1 12.5 2 6.5 6.5 0 0 1 19 8.5c0 2.5-2 4.5-4 6-1 .75-1 1.5-1 2.5"/><path d="M15 21a2 2 0 0 1-2 2h0a2 2 0 0 1-2-2"/></svg>
-                </div>
-                <div class="u-body">
-                  <div class="u-title">Hearing Test</div>
-                  <div class="u-sub">Start a diagnostic session</div>
-                </div>
-                <svg class="u-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
-
-              <div class="u-tile u-amber">
-                <div class="u-icon u-i-amber">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                </div>
-                <div class="u-body">
-                  <div class="u-title">Add HA Sale</div>
-                  <div class="u-sub">Record hearing-aid billing</div>
-                </div>
-                <svg class="u-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
-
-              <div class="u-tile u-rose">
-                <div class="u-icon u-i-rose">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                </div>
-                <div class="u-body">
-                  <div class="u-title">Send Recall</div>
-                  <div class="u-sub">SMS / WhatsApp follow-up</div>
-                </div>
-                <svg class="u-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
-
-              <div class="u-tile u-slate">
-                <div class="u-icon u-i-slate">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
-                </div>
-                <div class="u-body">
-                  <div class="u-title">View Reports</div>
-                  <div class="u-sub">Analytics & payouts</div>
-                </div>
-                <svg class="u-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
+            <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <div class="qa-tile"><div class="qa-icon qa-icon-blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="qa-label">New<br/>Appointment</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-icon-mint"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div><div class="qa-label">New<br/>Registration</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-icon-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 8.5A6.5 6.5 0 0 1 12.5 2 6.5 6.5 0 0 1 19 8.5c0 2.5-2 4.5-4 6-1 .75-1 1.5-1 2.5"/><path d="M15 21a2 2 0 0 1-2 2h0a2 2 0 0 1-2-2"/></svg></div><div class="qa-label">Hearing<br/>Test</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-icon-amber"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div><div class="qa-label">Add HA<br/>Sale</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-icon-rose"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="qa-label">Send<br/>Recall</div></div>
+              <div class="qa-tile"><div class="qa-icon qa-icon-slate"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></div><div class="qa-label">View<br/>Reports</div></div>
             </div>
           </div>
 
-          <!-- Alerts stack removed — same signal is surfaced by the Needs Attention strip at top -->
-
-
-
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">Alerts</h3><span class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">3 total</span></div>
+            <div class="space-y-2.5">
+              <div class="alert-card alert-card-recall"><div class="alert-icon" style="background:#FFEDD5; color:#EA580C;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="flex-1"><div class="text-[13.5px] font-extrabold text-slate-900">Recall Reminders</div><div class="text-[12px] text-slate-500 font-medium mt-0.5">0 patients due for follow-up</div></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+              <div class="alert-card alert-card-stock"><div class="alert-icon" style="background:#FEE2E2; color:#DC2626;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div class="flex-1"><div class="text-[13.5px] font-extrabold text-slate-900">Low Stock Alert</div><div class="text-[12px] text-slate-500 font-medium mt-0.5">2 hearing aid models running low</div></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+              <div class="alert-card alert-card-device"><div class="alert-icon" style="background:#DBEAFE; color:#2563EB;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg></div><div class="flex-1"><div class="text-[13.5px] font-extrabold text-slate-900">Device Pending</div><div class="text-[12px] text-slate-500 font-medium mt-0.5">3 repairs ready to be delivered</div></div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- ============ FULL-WIDTH: Patient Trend + Timeline side by side ============ -->
+      <!-- Patient Trend + Timeline -->
       <div class="grid grid-cols-12 gap-5 mb-5">
         <div class="card col-span-8">
-          <div class="card-header">
-            <h3 class="card-title">Patient Trend</h3>
-            <div class="flex items-center gap-2">
-              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">This week</span>
-              <span class="text-[11px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded">Month</span>
-            </div>
-          </div>
+          <div class="card-header"><h3 class="card-title">Patient Trend</h3><div class="flex items-center gap-2"><span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">This week</span><span class="text-[11px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded">Month</span></div></div>
           <div class="relative">
             <svg width="100%" height="180" viewBox="0 0 600 180" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="teal-grad-full" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.30"/>
-                  <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
-                </linearGradient>
-              </defs>
-              <line x1="0" y1="40" x2="600" y2="40" stroke="#E2E8F0" stroke-width="1"/>
-              <line x1="0" y1="80" x2="600" y2="80" stroke="#E2E8F0" stroke-width="1"/>
-              <line x1="0" y1="120" x2="600" y2="120" stroke="#E2E8F0" stroke-width="1"/>
-              <line x1="0" y1="160" x2="600" y2="160" stroke="#E2E8F0" stroke-width="1"/>
+              <defs><linearGradient id="teal-grad-full" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#22D3EE" stop-opacity="0.30"/><stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/></linearGradient></defs>
+              <line x1="0" y1="40" x2="600" y2="40" stroke="#E2E8F0" stroke-width="1"/><line x1="0" y1="80" x2="600" y2="80" stroke="#E2E8F0" stroke-width="1"/><line x1="0" y1="120" x2="600" y2="120" stroke="#E2E8F0" stroke-width="1"/><line x1="0" y1="160" x2="600" y2="160" stroke="#E2E8F0" stroke-width="1"/>
               <path d="M0,130 C40,110 80,120 120,100 C160,80 200,50 260,55 C320,60 360,25 420,30 C480,35 520,70 600,60 L600,180 L0,180 Z" fill="url(#teal-grad-full)"/>
               <path d="M0,130 C40,110 80,120 120,100 C160,80 200,50 260,55 C320,60 360,25 420,30 C480,35 520,70 600,60" fill="none" stroke="#22D3EE" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
               <circle cx="420" cy="30" r="6" fill="#22D3EE" stroke="white" stroke-width="2"/>
             </svg>
-            <div class="absolute" style="left: 68%; top: 0%;">
-              <div class="bg-slate-900 text-white text-[12px] font-bold px-3 py-2 rounded-lg shadow-lg">
-                48 Patients
-                <div class="text-[10px] text-white/70 font-medium">30 Jun</div>
-              </div>
-            </div>
+            <div class="absolute" style="left: 68%; top: 0%;"><div class="bg-slate-900 text-white text-[12px] font-bold px-3 py-2 rounded-lg shadow-lg">48 Patients<div class="text-[10px] text-white/70 font-medium">30 Jun</div></div></div>
           </div>
-          <div class="flex justify-between text-[11px] text-slate-500 font-semibold mt-2 px-1">
-            <span>Mo</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-          </div>
+          <div class="flex justify-between text-[11px] text-slate-500 font-semibold mt-2 px-1"><span>Mo</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
         </div>
 
         <div class="card col-span-4">
-          <div class="card-header">
-            <h3 class="card-title">Timeline</h3>
-          </div>
-          <div class="timeline-item">
-            <div class="timeline-dot"></div>
-            <div class="text-[13.5px] font-extrabold text-slate-900">11:30 AM · Clinic Consultation</div>
-            <div class="text-[12px] text-slate-500 mt-1 font-medium">Rahul Kapoor + 2 walk-ins</div>
-          </div>
-          <div class="timeline-item">
-            <div class="timeline-dot past"></div>
-            <div class="text-[13.5px] font-extrabold text-slate-900">02:30 PM · HA Fitting</div>
-            <div class="text-[12px] text-slate-500 mt-1 font-medium">Vikram Mehta · 30 min</div>
-          </div>
-          <div class="timeline-item">
-            <div class="timeline-dot past"></div>
-            <div class="text-[13.5px] font-extrabold text-slate-900">05:30 PM · Team Meet</div>
-            <div class="text-[12px] text-slate-500 mt-1 font-medium">Weekly review · Dr. Sam</div>
-          </div>
+          <div class="card-header"><h3 class="card-title">Timeline</h3></div>
+          <div class="timeline-item"><div class="timeline-dot"></div><div class="text-[13.5px] font-extrabold text-slate-900">11:30 AM · Clinic Consultation</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Rahul Kapoor + 2 walk-ins</div></div>
+          <div class="timeline-item"><div class="timeline-dot past"></div><div class="text-[13.5px] font-extrabold text-slate-900">02:30 PM · HA Fitting</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Vikram Mehta · 30 min</div></div>
+          <div class="timeline-item"><div class="timeline-dot past"></div><div class="text-[13.5px] font-extrabold text-slate-900">05:30 PM · Team Meet</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Weekly review · Dr. Sam</div></div>
         </div>
       </div>
-
     </main>
   </div>
 </body>
