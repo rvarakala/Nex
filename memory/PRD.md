@@ -1,5 +1,37 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📋 PHASE 16.5.1 — Appointments Regression PASS + Cancel wired (2026-07-01, night+++)
+
+Regression pass on the new Appointments List (iteration_38.json):
+- **Backend 100%** (1/1) · **Frontend 100%** (14/14) · zero critical bugs
+- All 9 column headers verified in exact order: Name / Email / Appointment / Time / Mode / Contact / Doctor / Tests / Recs
+- All 10 test-chip abbreviations rendered (PTA / SPEECH / IA / HAT / OAE / ABR / TIN / SFA / VRA / VEMP)
+- Cyan-600 palette confirmed on Add Appointment, view-toggle, active status chip
+
+### Follow-up fix from the test agent's UX callout
+- Wired the `✗ Cancel` button (was inert) — now confirms → optimistic UI update → `POST /api/appointments/{id}/cancel` with reason. Verified live via curl (endpoint returned `{"message": "Cancelled"}`).
+
+### Pre-existing issues (NOT from Phase 16.5)
+- BookAppointmentModal hydration warning (span in option) — from iter_37.
+- 4× 500-ing background requests on Appointments page load.
+
+---
+
+## 📋 PHASE 16.5 — Appointments Table Redesign (2026-07-01, night+++)
+
+- Default view now List (was Board), with a MedicDr-style table:
+  - Columns: **Name · Email · Appointment · Time · Mode · Contact · Doctor · Tests · Recs**
+  - **Tests** (renamed from `Reason`) — colored chip badges with short forms (PTA · SPEECH · IA · HAT · OAE · ABR · TIN · SFA · VRA · VEMP), regex-mapped from `recommended_tests[]`
+  - **Recs** (renamed from `Action`) — recommendation text + ✓/✗ quick-action icons
+  - **Mode** pill: cyan Online / slate Offline
+  - Avatar: teal-cyan gradient circle with initials
+- Full palette swap: all `bg-indigo-*` → `bg-cyan-*` (Add Appointment, view toggle, chips, Book Appointment) — v3 theme consistency
+
+### File
+- `/app/frontend/src/modules/patients/AppointmentsBoard.jsx` — `ListView` rewritten, TEST_ABBR regex map, palette sweep.
+
+---
+
 ## 📲 PHASE 16.4 — PWA Installable Prompt (2026-07-01, night++)
 
 Enabled the app-installability nudge so audiologists / front-desk staff

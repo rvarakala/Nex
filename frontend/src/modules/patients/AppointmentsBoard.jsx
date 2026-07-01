@@ -105,6 +105,29 @@ export default function AppointmentsBoard() {
   }, [date]);
   useEffect(() => { load(); }, [load]);
 
+  // Cancel handler — confirm dialog + backend PATCH + optimistic UI update.
+  // Called from the row-level ✗ button in ListView.
+  const handleCancel = useCallback(async (appt) => {
+    if (!appt?.appointment_id) return;
+    if (!window.confirm(`Cancel appointment for ${appt.patient_name || 'this patient'}?`)) return;
+    // Optimistic UI — mark cancelled locally before the network round-trip.
+    setRows((prev) => prev.map((r) =>
+      r.appointment_id === appt.appointment_id ? { ...r, status: 'cancelled' } : r
+    ));
+    try {
+      await axios.post(`${API}/appointments/${appt.appointment_id}/cancel`, {
+        reason: 'Cancelled from Appointments list',
+      });
+    } catch (e) {
+      // rollback + surface error
+      setRows((prev) => prev.map((r) =>
+        r.appointment_id === appt.appointment_id ? { ...r, status: appt.status } : r
+      ));
+      // Surface backend error to the user via native confirm — matches existing UX in this file.
+      alert(`Could not cancel appointment: ${e?.response?.data?.detail || e.message}`);
+    }
+  }, []);
+
   // Counts per status bucket — drives the chip badges
   const counts = useMemo(() => {
     const c = { all: rows.length };
@@ -235,7 +258,7 @@ export default function AppointmentsBoard() {
           </button>
         </div>
       ) : view === 'list' ? (
-        <ListView rows={filtered} onView={(pid) => navigate(`/patients/${pid}`)} />
+        <ListView rows={filtered} onView={(pid) => navigate(`/patients/${pid}`)} onCancel={handleCancel} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
           {filtered.map((a) => (
@@ -286,7 +309,7 @@ const modeOf = (a) => {
   return 'Offline';
 };
 
-function ListView({ rows, onView }) {
+function ListView({ rows, onView, onCancel }) {
   return (
     <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)]" data-testid="appts-list-view">
       <div className="overflow-x-auto">
@@ -394,7 +417,7 @@ function ListView({ rows, onView }) {
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                         </button>
                         <button
-                          onClick={(e) => e.preventDefault()}
+                          onClick={() => onCancel(a)}
                           data-testid={`appts-list-cancel-${a.appointment_id}`}
                           className="w-7 h-7 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center border border-rose-200"
                           title="Cancel appointment"
