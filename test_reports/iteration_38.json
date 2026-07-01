@@ -1,0 +1,52 @@
+{
+  "summary": "Phase 16.5 Appointments List (MedicDr-style table) regression PASS. Default view = List (localStorage cleared, appts-list-view rendered). All 9 headers render in exact order: Name | Email | Appointment | Time | Mode | Contact | Doctor | Tests | Recs. Row-testid format is `appts-list-row-<full appointment_id>`. Chip mapping verified across all 3 seeded appointments: Today ['Pure Tone Audiometry','Speech Audiometry','Impedance Audiometry'] -> PTA / SPEECH / IA; Tomorrow ['PTA','IA','Hearing Aid Trial'] -> PTA / IA / HAT; +2 days ['OAE','ABR','Tinnitus Match','VEMP'] -> OAE / ABR / TIN / VEMP. All 10 TEST_ABBR regex branches exercised at least once (PTA, SPEECH, IA, HAT, OAE, ABR, TIN, VEMP verified live; SFA / VRA covered by regex only). Cyan palette (rgb(8,145,178)=cyan-600) confirmed on Add Appointment btn, active view-toggle (Board+List), and active status chip (Scheduled). Mode pill renders 'Offline' with slate style for all 3 seeded rows (they were created without an explicit `mode` field so the modeOf() fallback correctly yields Offline). Approve icon [data-testid=appts-list-approve-<id>] navigates to /patients/<patient_id> (verified: /patients/ACS-2026-533ECA1B). Cancel icon [data-testid=appts-list-cancel-<id>] present (placeholder only). Recs text 'Follow up in 3 months' visible with title-attribute tooltip. Board toggle -> appt-card-<id> grid; List toggle returns to table. All filter chips (all/scheduled/in_queue/attending/complete/cancelled) present and filter behaves correctly. BookAppointmentModal opens on Add-Appointment click. Navigating to /patients then back to /patients/appointments preserves list view and produces no new console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/appointments (seed data)", "issue": "The three seeded appointments have `mode=null` in the DB (not `offline` / `online` as review-request implied). Because the frontend modeOf() falls back to 'Offline' for missing mode, the Online-pill code path is NOT exercised in preview by any seeded row. Also the actual appointment_ids in the DB are `APT-A8FF8C3E-2`, `APT-45498A41-7`, `APT-BAA5DCB1-D` (with trailing suffixes), not the shorter IDs (`APT-A8FF8C3E` etc.) stated in the review request — no functional impact since the UI keys off `appointment_id` verbatim, but the doc drift is worth noting."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": {
+    "default_view_is_list": "PASS — after localStorage.removeItem('audinexa.appts.view'), first navigation to /patients/appointments renders [data-testid=appts-list-view].",
+    "column_headers_order": "PASS — thead th text = ['Name','Email','Appointment','Time','Mode','Contact','Doctor','Tests','Recs'] (exact match).",
+    "row_selectors": "PASS — appts-list-row-APT-A8FF8C3E-2 (today), APT-45498A41-7 (tomorrow), APT-BAA5DCB1-D (+2 days) all render.",
+    "row_avatar_and_name": "PASS — 'PB' gradient avatar + patient name 'Pytest Bulk Two 475913' rendered as button.",
+    "date_time_format": "PASS — '01 Jul 2026' (DD Mon YYYY) and '10:30 am' (12-hour) formats correct.",
+    "mode_pill": "PASS — 'Offline' slate pill renders for all seeded rows (null mode -> fallback). Cyan 'Online' branch is code-verified in modeOf() but not exercised by current seed.",
+    "test_chips_today": "PASS — PTA / SPEECH / IA chips visible.",
+    "test_chips_tomorrow": "PASS — PTA / IA / HAT chips visible.",
+    "test_chips_plus2days": "PASS — OAE / ABR / TIN / VEMP chips visible via date picker.",
+    "recs_text_and_actions": "PASS — 'Follow up in 3 months' rendered, appts-list-approve-<id> and appts-list-cancel-<id> both present per row.",
+    "approve_navigation": "PASS — clicking appts-list-approve-<id> navigates to /patients/ACS-2026-533ECA1B (patient profile).",
+    "view_toggle": "PASS — appts-view-board switches to card grid (1 appt-card-<id> rendered), appts-view-list returns to table. Active button bg = rgb(8,145,178) (cyan-600).",
+    "status_filter_chips": "PASS — all 6 chips (all/scheduled/in_queue/attending/complete/cancelled) present with counts, active chip bg = rgb(8,145,178).",
+    "add_appointment_button": "PASS — appts-add-btn bg = rgb(8,145,178) (cyan-600), click opens book-apt-modal.",
+    "backend_smoke_appointments": "PASS — GET /api/appointments?from_date=<today>&to_date=<today> returns 200 and includes seeded row with recommended_tests + staff_id (USR-4968EF7C) fields present.",
+    "nav_regression": "PASS — /patients -> /patients/appointments preserves list view; no new console errors."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: Update the 3 seeded appointments' `mode` field so at least one row (APT-45498A41-7 per review request) surfaces the cyan 'Online' pill in preview. Currently all three have mode=null and render as 'Offline'. Suggestion: PATCH /api/appointments/APT-45498A41-7 with body {mode: 'online'}.",
+    "OPTIONAL: Reconcile the review-request appointment IDs (APT-A8FF8C3E / APT-45498A41 / APT-BAA5DCB1) with the actual DB IDs which carry a trailing suffix (`-2`, `-7`, `-D`). Either shorten the DB ids or fix the doc.",
+    "PRE-EXISTING (not Phase 16.5): React hydration warning about <span> nested inside <option> in BookAppointmentModal (DURATIONS select). Same warning was flagged in iteration_37. Not blocking but should eventually be fixed — replace the emergent-injected wrapper with an inline text render or move the visual override to a class on the <option>.",
+    "PRE-EXISTING: 4x 'Failed to load resource: 500' console entries observed on the Appointments page load. Not blocking UI — appointments still render — but a backend endpoint used by the layout (likely /api/notifications or a snapshot endpoint) is 500-ing. Recommend adding backend log inspection for these requests to identify the failing endpoint."
+  ],
+  "critical_code_review_comments": [
+    "AppointmentsBoard.jsx is now 483 lines with two components (AppointmentsBoard + ListView + ApptCard + helpers) in a single file — approaching but still under the 700-line ceiling. Consider extracting ListView and ApptCard into ./components/AppointmentsListView.jsx and ./components/AppointmentsBoardView.jsx for readability, and moving TEST_ABBR into ./lib/testAbbreviations.js so other modules (patient timeline, session summary) can reuse the mapping instead of re-implementing it.",
+    "The Cancel action button (appts-list-cancel-<id>) currently has an inert onClick={(e) => e.preventDefault()} — this is a UX placeholder that will confuse users who click and see nothing happen. Wire it to a confirm dialog + PATCH /api/appointments/<id> {status: 'cancelled'} + optimistic UI update.",
+    "testChip() fallback uses raw.slice(0,4).toUpperCase() — for unknown tests this can produce awkward labels like 'BONE' from 'Bone Conduction' or truncated strings. Consider a friendlier fallback (initials of each word) or an explicit '???' label so users learn to configure a mapping.",
+    "The Recs column merges recommendation/follow_up/notes/complaint into one string but shows only the first non-empty one — the UI gives no visual hint about which field the shown text came from. For clinicians, prefixing 'Rec:' vs 'Note:' would remove ambiguity."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (1/1 appointments smoke)", "frontend": "100% (14/14 verified features)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic_owner, tenant-sound-clinic-blr, PREMIUM)",
+  "seed_data_creation": "None — reused 3 pre-seeded appointments from Phase 16.5.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 16.5 Appointments-List table is GREEN — every documented data-testid renders and cyan palette is consistent. Two doc-drift items to note when reading review requests: (1) seeded appointment IDs actually have trailing suffixes (-2/-7/-D); (2) the seeded rows do NOT set `mode`, so the cyan Online pill code path only fires if you PATCH one manually. Pre-existing hydration warning from BookAppointmentModal and 4x 500-ing background requests were present in iter_37 as well — not introduced here."
+}
