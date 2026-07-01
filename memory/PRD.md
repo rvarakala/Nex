@@ -1,5 +1,51 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📲 PHASE 16.4 — PWA Installable Prompt (2026-07-01, night++)
+
+Enabled the app-installability nudge so audiologists / front-desk staff
+can add AUDINEXA to their device home-screen and launch it full-screen
+like a native mobile app.
+
+### 1. Component
+- New file `/app/frontend/src/components/PwaInstallPrompt.jsx`:
+  - Captures `beforeinstallprompt` on Chrome/Edge/Samsung Internet
+    → shows an "Install" pill that fires the native install dialog.
+  - Detects iOS via UA and renders an "Share ▸ Add to Home Screen"
+    hint chip (Safari doesn't fire `beforeinstallprompt`).
+  - Auto-hides when the app is already in `display-mode: standalone`.
+  - Dismiss persisted in `localStorage['audinexa.pwa.dismissed']`
+    for 30 days; iOS variant guarded via `sessionStorage` to fire
+    once per session.
+
+### 2. Mount point
+- Rendered at the very top of the Modern Dashboard, just above the
+  Needs Attention hero row. Beautiful gradient banner (navy → teal)
+  with icon medallion, copy, primary + secondary actions.
+
+### 3. Theme color alignment
+- `manifest.json` — `theme_color #4338ca → #0F1D3A`,
+  `background_color #0f172a → #EEF1FA`.
+- `public/index.html` — `<meta name="theme-color" #4338ca → #0F1D3A>`.
+- Status-bar, PWA splash-screen, and address-bar chrome now match
+  AUDINEXA v3 palette.
+
+### 4. Verified
+- ESLint clean.
+- Manual smoke test: dispatched a fake `beforeinstallprompt` event in
+  Chrome headless; `[data-testid=pwa-install-prompt]` + `[data-testid=pwa-install-btn]`
+  both present in DOM, banner renders correctly.
+- Real-device install (Chrome-Android / Safari-iOS) will surface the
+  banner naturally after the engagement criteria are met.
+
+### 5. What's next
+- 🟢 Testing agent regression for the new component + dashboard change.
+- 🟢 Hearing Tests full-flow regression (backend row shape changed
+  in 16.3).
+- 🟢 Scheduled CSV email exports.
+- 🟠 MSG91 Hosted Sender Number.
+
+---
+
 ## 🎨 PHASE 16.3 — Hearing Tests Kanban v3-aligned redesign (2026-07-01, night+)
 
 Delivered the Hearing Tests module redesign per the approved mockup

@@ -28,6 +28,7 @@ import {
 import { useAuth } from '../../AuthContext';
 import BookAppointmentModal from '../appointments/components/BookAppointmentModal';
 import CelebrationsWidget from '../../components/CelebrationsWidget';
+import PwaInstallPrompt from '../../components/PwaInstallPrompt';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -537,6 +538,11 @@ export default function ModernDashboard() {
           <Calendar size={16} className="text-cyan-500" strokeWidth={2.2} />
         </div>
       </div>
+
+      {/* PWA install prompt — one-time banner nudging installation.
+          Hidden when already installed, dismissed for 30 days, or on
+          unsupported browsers. */}
+      <PwaInstallPrompt />
 
       {/* ================ NEEDS ATTENTION — 3 large hero cards ================
           Moved from bottom-strip to top-of-page per user feedback: 3 primary
