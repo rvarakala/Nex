@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AUDINEXA · Hearing Tests V2 — Dense, Legible, Confident</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --bg: #F5F6F8; }
+  html { font-size: 15px; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #0F172A; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02","cv03","cv04","cv11"; }
+
+  /* CARDS — tighter radius, denser padding */
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px -6px rgba(0,0,0,0.06); }
+  .card:hover { box-shadow: 0 4px 8px -1px rgba(0,0,0,0.06), 0 8px 24px -8px rgba(0,0,0,0.10); transition: box-shadow .15s; }
+
+  /* Column headers — solid, not pastel */
+  .col-hdr { border-radius: 10px 10px 0 0; padding: 12px 14px; font-weight: 700; font-size: 13px; letter-spacing: 0.02em; text-transform: uppercase; }
+  .col-body { background: #fff; border-radius: 0 0 10px 10px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px -6px rgba(0,0,0,0.06); }
+
+  .col-amber   { background: #D97706; color: white; }
+  .col-indigo  { background: #4338CA; color: white; }
+  .col-violet  { background: #6D28D9; color: white; }
+  .col-emerald { background: #047857; color: white; }
+
+  /* Patient card — denser, higher-contrast */
+  .p-card { background: #fff; border-radius: 8px; padding: 12px 13px; border: 1px solid #E2E8F0; margin-bottom: 8px; cursor: pointer; transition: all .15s; }
+  .p-card:hover { border-color: #94A3B8; box-shadow: 0 4px 10px -3px rgba(15,23,42,0.10); }
+  .p-card.active {
+    border: 2px solid #4338CA;
+    background: linear-gradient(180deg, #EEF2FF 0%, #FFFFFF 100%);
+    box-shadow: 0 4px 16px -4px rgba(67,56,202,0.30);
+  }
+
+  /* Test chips — 12px MIN, bolder */
+  .chip { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.01em; }
+  .chip-pta    { background: #DBEAFE; color: #1E3A8A; }
+  .chip-imp    { background: #EDE9FE; color: #5B21B6; }
+  .chip-oae    { background: #D1FAE5; color: #065F46; }
+  .chip-abr    { background: #FEE2E2; color: #991B1B; }
+  .chip-speech { background: #FED7AA; color: #9A3412; }
+  .chip-vemp   { background: #FCE7F3; color: #9D174D; }
+
+  /* Tile launcher — bolder */
+  .tile { background: #fff; border-radius: 12px; padding: 18px; cursor: pointer; border: 1px solid #E2E8F0; transition: all .15s; position: relative; }
+  .tile:hover { border-color: #4338CA; transform: translateY(-1px); box-shadow: 0 8px 20px -8px rgba(67,56,202,0.25); }
+  .tile-recommended {
+    border: 2px solid #10B981;
+    box-shadow: 0 4px 12px -4px rgba(16,185,129,0.25);
+  }
+  .tile-active {
+    border: 2px solid #4338CA;
+    background: linear-gradient(180deg, #EEF2FF 0%, #FFFFFF 100%);
+    box-shadow: 0 6px 18px -6px rgba(67,56,202,0.40);
+  }
+  .tile-off { opacity: 0.72; }
+
+  .tile-badge {
+    position: absolute; top: 12px; right: 12px;
+    font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .tile-badge-hot     { background: #F59E0B; color: white; }
+  .tile-badge-running { background: #4338CA; color: white; }
+  .tile-badge-quiet   { background: #F1F5F9; color: #475569; }
+
+  /* Icon backgrounds — bolder + more contrasted */
+  .ico { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+  .ico-pta    { background: #DBEAFE; color: #1D4ED8; }
+  .ico-speech { background: #FED7AA; color: #C2410C; }
+  .ico-imp    { background: #DDD6FE; color: #6D28D9; }
+  .ico-oae    { background: #A7F3D0; color: #047857; }
+  .ico-abr    { background: #FECACA; color: #B91C1C; }
+  .ico-tinn   { background: #FBCFE8; color: #BE185D; }
+  .ico-sf     { background: #BAE6FD; color: #0369A1; }
+  .ico-ped    { background: #FED7AA; color: #C2410C; }
+  .ico-spec   { background: #CBD5E1; color: #334155; }
+  .ico-vemp   { background: #E9D5FF; color: #7E22CE; }
+
+  /* Active patient banner */
+  .active-banner {
+    background: linear-gradient(90deg, #4338CA 0%, #6366F1 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+</style>
+</head>
+<body class="min-h-screen p-8">
+  <div class="max-w-[1400px] mx-auto">
+    <!-- Compare label -->
+    <div class="mb-5 flex items-center gap-3">
+      <span class="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded uppercase tracking-wider">V2 · Fixed</span>
+      <span class="text-[13px] text-slate-500">15px base · dense padding · bold numbers · saturated accents</span>
+    </div>
+
+    <!-- ============ HEADER ============ -->
+    <div class="flex items-end justify-between mb-6">
+      <div>
+        <h1 class="text-[28px] font-extrabold tracking-tight text-slate-900 leading-tight">Hearing Tests</h1>
+        <p class="text-[14px] text-slate-600 mt-1 font-medium">
+          <span class="text-slate-900 font-bold">12 pending</span> · <span class="text-emerald-700 font-bold">7 completed</span> today · Tue 30 Jun
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="bg-white hover:bg-slate-50 text-slate-800 text-[13px] font-semibold rounded-lg px-4 py-2.5 border border-slate-200 flex items-center gap-2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+          Today
+        </button>
+        <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold rounded-lg px-4 py-2.5 shadow-[0_4px_12px_-3px_rgba(79,70,229,0.40)]">+ Walk-in Test</button>
+      </div>
+    </div>
+
+    <!-- ============ COMPACT KANBAN ============ -->
+    <div class="grid grid-cols-4 gap-4 mb-6">
+
+      <!-- Waiting -->
+      <div>
+        <div class="col-hdr col-amber flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Waiting
+          </div>
+          <span class="text-[14px] font-extrabold bg-white/25 rounded-md px-2 py-0.5">7</span>
+        </div>
+        <div class="col-body">
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Aditi Sharma</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">42 · F · Tinnitus · 14:32</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-08</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+              <span class="chip chip-imp">IMP</span>
+              <span class="chip chip-oae">OAE</span>
+            </div>
+          </div>
+
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Suresh Kumar</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">67 · M · Follow-up · 15:00</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-11</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+              <span class="chip chip-speech">SPEECH</span>
+            </div>
+          </div>
+
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Priya Banerjee</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">31 · F · Screening · 15:15</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-13</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-speech">SPEECH</span>
+              <span class="chip chip-imp">IMP</span>
+            </div>
+          </div>
+
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Rahul Kapoor</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">28 · M · Wax mgmt · 15:30</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-14</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-imp">IMP</span>
+            </div>
+          </div>
+
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Meena Iyer</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">54 · F · Consult · 15:45</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-15</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+            </div>
+          </div>
+
+          <button class="w-full py-2 mt-1 text-[12.5px] font-bold text-amber-700 hover:bg-amber-50 rounded-md">+ 2 more waiting</button>
+        </div>
+      </div>
+
+      <!-- Checked In -->
+      <div>
+        <div class="col-hdr col-indigo flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Checked In
+          </div>
+          <span class="text-[14px] font-extrabold bg-white/25 rounded-md px-2 py-0.5">3</span>
+        </div>
+        <div class="col-body">
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Vikram Mehta</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">58 · M · HA trial · 12:08</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-07</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+              <span class="chip chip-speech">SPEECH</span>
+              <span class="chip chip-imp">IMP</span>
+            </div>
+          </div>
+
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Ravi Deshmukh</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">45 · M · Wax mgmt · 09:03</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-04</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-imp">IMP</span>
+              <span class="chip chip-oae">OAE</span>
+            </div>
+          </div>
+
+          <div class="p-card">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Arjun Sethi</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">36 · M · Consult · 14:00</div>
+              </div>
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">T-06</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+              <span class="chip chip-speech">SPEECH</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- In Progress -->
+      <div>
+        <div class="col-hdr col-violet flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            In Progress
+          </div>
+          <span class="text-[14px] font-extrabold bg-white/25 rounded-md px-2 py-0.5">1</span>
+        </div>
+        <div class="col-body">
+          <div class="p-card active">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight flex items-center gap-2">
+                  Neha Kulkarni
+                  <span class="inline-flex items-center gap-1 text-[11px] font-extrabold text-white bg-indigo-600 px-2 py-0.5 rounded-full">
+                    <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> LIVE
+                  </span>
+                </div>
+                <div class="text-[12px] text-slate-700 mt-0.5 font-medium">39 · F · Follow-up · 14:15</div>
+              </div>
+              <span class="text-[11px] font-extrabold bg-white text-indigo-700 border border-indigo-300 px-2 py-0.5 rounded">T-05</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta" style="opacity:0.55; text-decoration:line-through">PTA</span>
+              <span class="chip chip-speech" style="box-shadow:inset 0 0 0 1.5px #C2410C">SPEECH</span>
+              <span class="chip chip-imp">IMP</span>
+            </div>
+            <div class="mt-2.5 text-[12px] text-indigo-800 font-bold">
+              ✓ PTA done · ⏵ Running Speech · ○ IMP pending
+            </div>
+          </div>
+          <div class="rounded-lg border-2 border-dashed border-indigo-300 bg-indigo-50/50 p-4 text-[13px] text-indigo-700 text-center font-semibold">
+            Drop a patient here to start
+          </div>
+        </div>
+      </div>
+
+      <!-- Completed -->
+      <div>
+        <div class="col-hdr col-emerald flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Completed
+          </div>
+          <span class="text-[14px] font-extrabold bg-white/25 rounded-md px-2 py-0.5">7</span>
+        </div>
+        <div class="col-body">
+          <div class="p-card" style="opacity:0.85">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Kavita Rao</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">61 · F · PTA + IMP · 13:40</div>
+              </div>
+              <span class="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">✓ RPT</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+              <span class="chip chip-imp">IMP</span>
+            </div>
+          </div>
+
+          <div class="p-card" style="opacity:0.85">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Deepak Verma</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">52 · M · PTA · 12:30</div>
+              </div>
+              <span class="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">✓ RPT</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-pta">PTA</span>
+            </div>
+          </div>
+
+          <div class="p-card" style="opacity:0.85">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="text-[15px] font-bold text-slate-900 leading-tight">Sunita Patil</div>
+                <div class="text-[12px] text-slate-600 mt-0.5 font-medium">47 · F · Speech · 11:50</div>
+              </div>
+              <span class="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">✓ RPT</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="chip chip-speech">SPEECH</span>
+            </div>
+          </div>
+
+          <button class="w-full py-2 mt-1 text-[12.5px] font-bold text-emerald-700 hover:bg-emerald-50 rounded-md">+ 4 more completed</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ACTIVE PATIENT BANNER (saturated, confident) ============ -->
+    <div class="active-banner mb-6 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center font-extrabold text-[18px]">NK</div>
+        <div>
+          <div class="text-[17px] font-extrabold flex items-center gap-2">
+            Testing: Neha Kulkarni
+            <span class="text-[11px] font-mono bg-white/20 px-2 py-0.5 rounded">T-05</span>
+          </div>
+          <div class="text-[13px] text-white/90 mt-0.5 font-medium">
+            39 · F · 3 tests recommended ·
+            <span class="text-emerald-300 font-bold ml-1">1 done</span> ·
+            <span class="text-amber-300 font-bold">1 running</span> ·
+            <span class="text-white/70">1 pending</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="text-[13px] font-bold text-white/80 hover:text-white px-4 py-2 hover:bg-white/10 rounded-lg">Pause session</button>
+        <button class="text-[13px] font-extrabold text-indigo-900 bg-white hover:bg-slate-100 rounded-lg px-4 py-2.5 shadow-lg">Complete session →</button>
+      </div>
+    </div>
+
+    <!-- ============ TEST TILE LAUNCHER ============ -->
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-1">
+        <div>
+          <h2 class="text-[18px] font-extrabold text-slate-900 flex items-center gap-2 leading-tight">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4338CA" stroke-width="2.2"><path d="M3 3h18v18H3z"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+            Available Tests
+            <span class="text-[11px] bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-md font-extrabold uppercase tracking-wider">for Neha</span>
+          </h2>
+          <p class="text-[13px] text-slate-600 mt-1 font-medium">Click a tile to launch that test for the active patient · <span class="text-slate-500">Badges show today's queue</span></p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-5 gap-3 mt-4">
+        <!-- PTA -->
+        <div class="tile tile-recommended">
+          <span class="tile-badge tile-badge-hot">5 due</span>
+          <div class="ico ico-pta mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Pure-Tone Audiometry</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">Air + bone thresholds</div>
+          <div class="mt-2.5 text-[11px] font-extrabold text-emerald-700 uppercase tracking-wider">✓ Recommended</div>
+        </div>
+
+        <!-- Speech (running) -->
+        <div class="tile tile-active">
+          <span class="tile-badge tile-badge-running">Running</span>
+          <div class="ico ico-speech mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Speech Audiometry</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">SRT + SDS</div>
+          <div class="mt-2.5 text-[11px] font-extrabold text-indigo-700 uppercase tracking-wider">◉ In Progress</div>
+        </div>
+
+        <!-- Impedance -->
+        <div class="tile tile-recommended">
+          <span class="tile-badge tile-badge-hot">3 due</span>
+          <div class="ico ico-imp mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c1.3 0 2.5.28 3.6.78"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Impedance</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">Tympanometry + reflexes</div>
+          <div class="mt-2.5 text-[11px] font-extrabold text-emerald-700 uppercase tracking-wider">◯ Pending</div>
+        </div>
+
+        <!-- OAE -->
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">2 due</span>
+          <div class="ico ico-oae mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">OAE</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">DPOAE / TEOAE</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+
+        <!-- ABR -->
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">0 due</span>
+          <div class="ico ico-abr mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">ABR / BERA</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">Brainstem evoked</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+
+        <!-- Second row -->
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">1 due</span>
+          <div class="ico ico-tinn mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9v6M10 5v14M14 3v18M18 7v10M22 10v4M2 10v4"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Tinnitus Match</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">Pitch + loudness</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">0 due</span>
+          <div class="ico ico-sf mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12a9 9 0 1 0 18 0M12 3v9"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Soundfield</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">Aided threshold</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">0 due</span>
+          <div class="ico ico-ped mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Paediatric</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">VRA / play audio</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">1 due</span>
+          <div class="ico ico-vemp mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polygon points="12 2 15 8.5 22 9.3 17 14 18.2 21 12 17.8 5.8 21 7 14 2 9.3 9 8.5 12 2"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">VEMP</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">Vestibular evoked</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+
+        <div class="tile tile-off">
+          <span class="tile-badge tile-badge-quiet">0 due</span>
+          <div class="ico ico-spec mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="text-[15px] font-extrabold text-slate-900 leading-tight">Special Tests</div>
+          <div class="text-[12px] text-slate-600 mt-1 font-medium">SISI · ABLB · TDT</div>
+          <div class="mt-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Optional</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
