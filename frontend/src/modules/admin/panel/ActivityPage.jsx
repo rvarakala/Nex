@@ -266,7 +266,7 @@ const OnlineNow = ({ rows, windowMin, onWindow, onSelectUser }) => {
             className="bg-slate-50 border border-slate-300 rounded px-2 py-0.5"
             data-testid="online-window-filter"
           >
-            {[5, 15, 30, 60].map((m) => <option key={m} value={m}>{m} min</option>)}
+            {[5, 15, 30, 60].map((m) => <option key={m} value={m}>{`${m} min`}</option>)}
           </select>
         </div>
       </div>
@@ -438,7 +438,7 @@ const InactiveTenants = ({ rows, days, onDays }) => (
           className="bg-slate-50 border border-slate-300 rounded px-2 py-0.5"
           data-testid="inactive-days-filter"
         >
-          {[3, 7, 14, 30].map((d) => <option key={d} value={d}>{d} days</option>)}
+          {[3, 7, 14, 30].map((d) => <option key={d} value={d}>{`${d} days`}</option>)}
         </select>
         <AlertTriangle size={16} className="text-amber-500" />
       </div>

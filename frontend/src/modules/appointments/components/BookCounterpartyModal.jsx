@@ -281,7 +281,7 @@ export default function BookCounterpartyModal({
             >
               {staff.map((s) => (
                 <option key={s.user_id} value={s.user_id}>
-                  {s.name} — {(s.role || '').replace('_', ' ')}
+                  {`${s.name} — ${(s.role || '').replace('_', ' ')}`}
                 </option>
               ))}
             </select>
@@ -318,7 +318,7 @@ export default function BookCounterpartyModal({
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:border-blue-500 bg-white"
               >
                 {DURATIONS.map((d) => (
-                  <option key={d} value={d}>{d} min</option>
+                  <option key={d} value={d}>{`${d} min`}</option>
                 ))}
               </select>
             </div>

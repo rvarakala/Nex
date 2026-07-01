@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 39 (P0+P1 fixes + Feature #1 test-type chips + Feature #2 scheduled CSV email exports) is GREEN end-to-end. Backend: 13/13 pytest cases pass in /app/backend/tests/test_iter39_slots_and_csv_exports.py — both slot endpoints return 200 (tz bug fixed), full CSV-exports CRUD works (list/subscribe/idempotent-subscribe/unsubscribe), send-now returns the exact contract shape {ok,status,provider,to,kind} with no 500 (ZeptoMail 'error' status is EXPECTED, as documented), invalid kind rejected with 400/422, and front_desk role gets 403 on subscribe and send-now while still being able to list own subs. Frontend: (1) Test-type chip row renders on /patients/appointments with data-testid=appts-test-chips + PTA/SPEECH/IA/all chips showing counts. Clicking PTA adds ring-2 and filters table to 1 visible row. Row-level chip data-testid=appts-row-chip-APT-A8FF8C3E-2-PTA is clickable. Clicking `all` resets filter. (2) Book Appointment modal opens; DOM audit shows 0 <option> elements with <span> children out of 29 total options, and 0 hydration warnings containing 'cannot be a child of' + 'option' were emitted while opening the modal — the 11-pattern fix is verified. (3) EmailWeeklyCsvToggle renders on /patients/list (csv-weekly-toggle-patients + checkbox) and on /billing (csv-weekly-toggle-invoices + checkbox). Checking the box triggers POST /subscribe and reveals csv-weekly-send-now-{kind}; unchecking triggers DELETE and hides the button. Send-now click on invoices did not crash the page. Zero console errors and zero hydration warnings across all three pages.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": {
+    "P0_availability_slots": "PASS — GET /api/availability/slots?staff_id=USR-4968EF7C&date=2026-07-01&duration_minutes=30&override=false returns 200 with {slots:[...]} (previously 500 tz bug)",
+    "P0_appointments_slots": "PASS — GET /api/appointments/slots?audiologist_id=USR-4968EF7C&date=2026-07-01&duration_minutes=30 returns 200 with {slots:[...]} (previously 500 tz bug)",
+    "P1_hydration_option_span": "PASS — modal open produced 0 warnings matching 'cannot be a child of' + 'option'; DOM has 0/29 options containing a span child",
+    "F1_test_type_chip_row": "PASS — appts-test-chips renders with PTA(1) / SPEECH(1) / IA(1) / All chips; ring-2 applied on active chip",
+    "F1_chip_filters_table": "PASS — clicking appts-test-chip-PTA filters visible rows to 1",
+    "F1_row_level_chip": "PASS — appts-row-chip-APT-A8FF8C3E-2-PTA present and clickable",
+    "F1_reset_all_chip": "PASS — appts-test-chip-all click clears filter",
+    "F2_csv_list_endpoint": "PASS — GET /api/csv-exports/subscriptions returns 200 list for owner",
+    "F2_csv_subscribe_patients": "PASS — POST subscribe (patients) 200; GET list reflects it",
+    "F2_csv_subscribe_idempotent": "PASS — 2nd POST returns same sub_id",
+    "F2_csv_subscribe_invoices": "PASS",
+    "F2_csv_unsubscribe": "PASS — DELETE removes doc; list no longer shows kind",
+    "F2_send_now_no_500": "PASS — /send-now returns 200 with {ok,status,provider,to,kind}; status='error' expected because ZeptoMail is misconfigured in preview (documented mock)",
+    "F2_invalid_kind_rejected": "PASS — 422 (pydantic Literal)",
+    "F2_role_gate_front_desk": "PASS — front_desk gets 403 on POST /subscribe and POST /send-now; still 200 on GET /subscriptions with []",
+    "F2_toggle_patients_page": "PASS — csv-weekly-toggle-patients + csv-weekly-checkbox-patients render on /patients/list; check reveals csv-weekly-send-now-patients; uncheck hides it",
+    "F2_toggle_billing_page": "PASS — csv-weekly-toggle-invoices + csv-weekly-checkbox-invoices render on /billing; check reveals csv-weekly-send-now-invoices; uncheck hides it",
+    "F2_send_now_ui_click": "PASS — clicking csv-weekly-send-now-invoices did not throw or crash (accepts backend status='error' silently)"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter39_slots_and_csv_exports.py",
+    "/app/test_reports/pytest/iter39_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "csv_email_exports.py subscribe endpoint uses `existing.get('created_at')` inside the doc dict but reads it only when existing is truthy; the current code path is fine but the ternary is subtle — extract to a named var for readability.",
+    "SubscribeIn uses Literal['patients','invoices'] so invalid kinds return 422 (pydantic), not 400 as the docstring/manual check implies. This is fine — pytest accepts both — but consider adding a matching custom exception handler if you want a consistent 400 contract for all validation failures on this router.",
+    "send-now returns ok=(status in {sent,mocked}). Preview always returns status='error' so ok=False — UI should not treat this as a hard failure (currently the click didn't crash, but a toast reflecting the actual provider error would be a nicer UX)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter39_slots_and_csv_exports.py (new — 13 tests, pytest-style)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (18/18 verified features)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic_owner); meera@thesoundclinic.in / demo123 (front_desk)",
+  "seed_data_creation": "None — reused Phase-16.5 seeded appointments. Test suite creates & deletes its own csv_export_subscriptions rows and cleans up between tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 39 is GREEN. P0 tz-bug fix on both slot endpoints, P1 hydration <option>/<span> fix, Feature-1 inline test-type chips, and Feature-2 /api/csv-exports subscribe/list/delete/send-now with role gate all verified. Reusable regression file: /app/backend/tests/test_iter39_slots_and_csv_exports.py (13 tests, ~4s). The frontend App uses continual polling so DO NOT use wait_for_load_state('networkidle') — it will time out; use wait_until='domcontentloaded' + explicit wait_for_timeout instead (this is how iter39 script eventually succeeded).",
+  "rca of the issue": "N/A — no bugs found in this iteration. The two P0/P1 fixes and both features work as designed. Preview send-now returning status='error' is due to invalid ZeptoMail token in preview env (documented in review request); scheduler and subscription state machine are fully wired and idempotent."
+}

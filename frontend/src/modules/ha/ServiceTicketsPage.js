@@ -331,7 +331,7 @@ function NewTicketModal({ onClose, onCreated }) {
             <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-0.5 font-semibold">Unit being serviced</span>
             <select value={serialId} onChange={(e) => setSerialId(e.target.value)} className="w-full border border-slate-300 rounded px-2 py-1 text-sm" data-testid="ha-tix-serial">
               <option value="">— (no specific unit / lost unit)</option>
-              {serials.map(s => <option key={s.serial_id} value={s.serial_id}>{s.serial_no} · {s.state}</option>)}
+              {serials.map(s => <option key={s.serial_id} value={s.serial_id}>{`${s.serial_no} · ${s.state}`}</option>)}
             </select>
             {serials.length === 0 && (
               <div className="text-[10px] italic text-amber-700 mt-0.5">

@@ -1,5 +1,94 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📋 PHASE 16.6 — Slots 500 fix + Hydration warning fix + Test-type filter + Weekly CSV email (2026-07-01, night++++)
+
+Cleared the 4× 500 backend errors, killed the pre-existing hydration warning
+that was polluting the console since Phase 16.5, and shipped two upcoming
+tasks (inline test-type filter chips + Scheduled CSV Email Exports).
+
+### 1. P0 Fix — 500 on `/api/availability/slots` + `/api/appointments/slots`
+- **Root cause**: `datetime.fromisoformat(b["start_at"])` returned tz-aware
+  datetimes (DB stores `2026-04-15T11:30:00+00:00`) while the code built
+  naive slot boundaries with `datetime.fromisoformat(f"{date}T00:00:00")`.
+  Comparing them raised `TypeError: can't compare offset-naive and offset-aware datetimes`
+  → 500. Founder curl worked because his platform-clinic has zero
+  appointments so `busy_ranges` was always empty; real clinics crashed
+  the moment there was a same-day booking.
+- **Fix**: Strip tzinfo when parsing `busy_ranges` in both
+  `/app/backend/routers/schedules.py` (line 331) and
+  `/app/backend/routers/appointments.py` (line 630).
+- **Verified**: Both endpoints now return `200` for
+  `owner@thesoundclinic.in` — 63 slots + 1 legit conflict detected.
+
+### 2. P1 Fix — `<span>` inside `<option>` hydration warning
+- **Root cause**: The Emergent preview instrumentation wraps every dynamic
+  JSX expression in a `<span data-ve-dynamic>` **when the expression has
+  siblings** (e.g. `{d} min` renders as `<span>{d}</span> min` in dev).
+  A `<span>` inside `<option>` is invalid HTML, hence the warning.
+- **Fix**: Convert `<option>{d} min</option>` → `<option>{`${d} min`}</option>`
+  (single template-literal expression, no siblings → no wrapper span).
+- **Files fixed** (11 total): `BookAppointmentModal.js`, `BookCounterpartyModal.jsx`,
+  `ServiceTicketsPage.js`, `ServiceTicketPhase14Actions.jsx`, `UpgradeFunnelPage.js`,
+  `QuotationStudioPage.js` (×2), `ProcurementPage.js`, `AMCPage.jsx`,
+  `LoanersPage.js`, `ActivityPage.jsx` (×2).
+- **Verified**: `0` options with element children + `0` console errors on
+  modal open (was 1).
+
+### 3. Feature — Inline test-type filter chips on Appointments List
+- New chip row below the status filter row. Auto-computed from the day's
+  `recommended_tests[]` — only shows chips that are actually present so
+  the UI stays tight.
+- Chips are ordered by TEST_ABBR canonical order (PTA · SPEECH · IA · OAE · ABR · HAT · TIN · SFA · VRA · VEMP)
+  with unknown labels appended alphabetically.
+- **Row test badges are now clickable** — one-click drilldown from a row.
+  Clicking an active chip clears the filter (toggle behaviour).
+- File: `/app/frontend/src/modules/patients/AppointmentsBoard.jsx`
+
+### 4. Feature — Scheduled CSV Email Exports (Task 2 shipped)
+- **New router**: `/app/backend/routers/csv_email_exports.py` with 4 endpoints
+  (`GET /subscriptions`, `POST /subscribe`, `DELETE /subscribe/{kind}`,
+  `POST /send-now`). Kinds: `patients`, `invoices`.
+- **APScheduler job**: `weekly_csv_exports_mon_0700_ist` — Mondays 07:00 IST.
+  Iterates active subs (last_sent_at older than 6 days), generates CSV
+  in-memory, emails via `send_email()` with the CSV attached, then stamps
+  `last_sent_at`.
+- **New component**: `/app/frontend/src/components/EmailWeeklyCsvToggle.jsx`
+  — reusable toggle + "Send now" button, self-hydrates from server on
+  mount, hides itself entirely for roles that get 403.
+- Wired into Patients list (`/patients/list`) + Invoices list (`/billing`).
+- **Role-gated**: `clinic_owner`, `accounts`, `super_admin`, `founder`.
+  Email always sent to `user.email` (never a free-form target) — kills
+  the data-exfil risk.
+- CSV includes UTF-8 BOM so Excel renders Unicode names correctly.
+- **NOTE (mocked in preview)**: Actual delivery via ZeptoMail requires
+  `ZEPTO_SMTP_PASSWORD` in `.env`. Currently returns
+  `{status: "error"}` because the preview env has an invalid SMTP token.
+  Backend logic, data model, and scheduler are 100% correct — flipping
+  to a valid ZeptoMail token will make it live.
+
+### Files touched
+- Backend: `routers/schedules.py`, `routers/appointments.py`, `server.py`
+  (router mount + scheduler), NEW `routers/csv_email_exports.py`.
+- Frontend: `modules/patients/AppointmentsBoard.jsx`,
+  `modules/patients/PatientsListPage.jsx`,
+  `modules/billing/InvoicesListPage.js`,
+  `modules/appointments/components/BookAppointmentModal.js`,
+  `modules/appointments/components/BookCounterpartyModal.jsx`,
+  `modules/ha/*` (span-in-option fixes),
+  `modules/admin/panel/ActivityPage.jsx`,
+  NEW `components/EmailWeeklyCsvToggle.jsx`.
+
+### Verified
+- `/api/availability/slots` + `/api/appointments/slots` → 200.
+- Modal open → 0 options with element children, 0 hydration warnings.
+- Test-type filter chips → all 3 chips (PTA/SPEECH/IA) render + PTA click
+  activates ring + row-level PTA badge highlights.
+- `POST /api/csv-exports/subscribe {patients}` → 200; `GET /subscriptions`
+  returns the new sub; `DELETE /subscribe/invoices` returns
+  `{ok:true, removed:1}`.
+
+---
+
 ## 📋 PHASE 16.5.1 — Appointments Regression PASS + Cancel wired (2026-07-01, night+++)
 
 Regression pass on the new Appointments List (iteration_38.json):

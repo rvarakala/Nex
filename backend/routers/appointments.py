@@ -616,7 +616,15 @@ async def suggest_slots(
     busy_ranges = []
     for b in busy:
         try:
-            busy_ranges.append((datetime.fromisoformat(b["start_at"]), datetime.fromisoformat(b["end_at"])))
+            bs = datetime.fromisoformat(b["start_at"])
+            be = datetime.fromisoformat(b["end_at"])
+            # Strip tzinfo so we can compare against naive `cur` / `slot_end`
+            # datetimes constructed below.
+            if bs.tzinfo is not None:
+                bs = bs.replace(tzinfo=None)
+            if be.tzinfo is not None:
+                be = be.replace(tzinfo=None)
+            busy_ranges.append((bs, be))
         except Exception:
             pass
 

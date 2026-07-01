@@ -400,6 +400,22 @@ async def lifespan(_app: FastAPI):
                 logging.getLogger(__name__).info("APScheduler job added: pdf_retention_sweep_0315_ist (03:15 IST)")
             except Exception as e:
                 logging.getLogger(__name__).warning(f"PDF retention sweeper skipped: {e}")
+            # Weekly CSV email exports — Mondays 07:00 IST.
+            # Iterates `csv_export_subscriptions` docs where active=true and
+            # last_sent_at is >6 days ago, generating + emailing the CSV.
+            try:
+                from routers.csv_email_exports import run_weekly_csv_exports
+                scheduler.add_job(
+                    run_weekly_csv_exports,
+                    trigger=CronTrigger(day_of_week="mon", hour=7, minute=0, timezone=IST),
+                    args=[db],
+                    id="weekly_csv_exports_mon_0700_ist",
+                    replace_existing=True,
+                    misfire_grace_time=3600,
+                )
+                logging.getLogger(__name__).info("APScheduler job added: weekly_csv_exports_mon_0700_ist")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Weekly CSV exports scheduler skipped: {e}")
         except Exception as e:
             logging.getLogger(__name__).warning(f"FollowUp scheduler job skipped: {e}")
     except Exception as e:
@@ -893,6 +909,7 @@ from routers import accounts as accounts_router                   # noqa: E402
 from routers import legal as legal_router                         # noqa: E402
 from routers import password_reset as password_reset_router       # noqa: E402
 from routers import ha_quick_sale as ha_quick_sale_router         # noqa: E402
+from routers import csv_email_exports as csv_email_exports_router # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -934,6 +951,7 @@ app.include_router(admin_panel_b_router.router)
 app.include_router(admin_activity_router.router)
 app.include_router(schedules_router.router)
 app.include_router(export_data_router.router)
+app.include_router(csv_email_exports_router.router)
 app.include_router(report_handover_router.router)
 app.include_router(settings_router.router)
 app.include_router(stock_transfers_router.router)

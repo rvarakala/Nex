@@ -298,8 +298,15 @@ async def availability_slots(
     busy_ranges = []
     for b in busy:
         try:
-            busy_ranges.append((datetime.fromisoformat(b["start_at"]),
-                                datetime.fromisoformat(b["end_at"])))
+            # Strip tzinfo so we can compare against naive slot datetimes
+            # (slot_start_dt / slot_end_dt below are also naive wall-clock).
+            bs = datetime.fromisoformat(b["start_at"])
+            be = datetime.fromisoformat(b["end_at"])
+            if bs.tzinfo is not None:
+                bs = bs.replace(tzinfo=None)
+            if be.tzinfo is not None:
+                be = be.replace(tzinfo=None)
+            busy_ranges.append((bs, be))
         except (TypeError, ValueError):
             continue
 

@@ -181,7 +181,7 @@ function CreatePOModal({ onClose, onCreated }) {
                       setLines(copy);
                     }} data-testid={`ha-po-line-${i}-prod`} className="w-full border border-slate-300 rounded px-1 py-0.5 text-xs">
                       <option value="">—</option>
-                      {products.map(p => <option key={p.product_id} value={p.product_id}>{p.brand} {p.model}</option>)}
+                      {products.map(p => <option key={p.product_id} value={p.product_id}>{`${p.brand} ${p.model}`}</option>)}
                     </select>
                   </td>
                   <td className="px-2 py-1 text-right"><input type="number" min={1} value={l.qty} onChange={(e) => { const c=[...lines]; c[i]={...c[i],qty:Number(e.target.value)}; setLines(c); }} data-testid={`ha-po-line-${i}-qty`} className="w-16 border border-slate-300 rounded px-1 py-0.5 text-right text-xs" /></td>

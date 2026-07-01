@@ -57,7 +57,7 @@ export default function UpgradeFunnelPage() {
             <select value={yearsMin} onChange={(e) => setYearsMin(Number(e.target.value))}
                     data-testid="ha-upgrade-years-filter"
                     className="border border-slate-300 rounded px-2 py-0.5 text-xs">
-              {[2, 3, 4, 5, 6].map(y => <option key={y} value={y}>{y} yrs</option>)}
+              {[2, 3, 4, 5, 6].map(y => <option key={y} value={y}>{`${y} yrs`}</option>)}
             </select>
           </label>
           <button onClick={load} className="text-[11px] text-indigo-600 font-semibold hover:underline"

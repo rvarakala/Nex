@@ -142,7 +142,7 @@ function LoanerIssueModal({ ticket, onClose, onDone }) {
         <select value={sid} onChange={(e) => setSid(e.target.value)}
                 data-testid="ha-tix-loaner-issue-serial"
                 className="w-full border border-slate-300 rounded px-2 py-1 text-sm mb-3">
-          <option value="">— Pick an IN_STOCK unit ({serials.length} available)</option>
+          <option value="">{`— Pick an IN_STOCK unit (${serials.length} available)`}</option>
           {serials.map(s => (
             <option key={s.serial_id} value={s.serial_id}>
               {s.serial_no} {s.product_id ? `· ${s.product_id}` : ''}

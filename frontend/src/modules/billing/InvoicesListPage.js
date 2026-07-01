@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
+import EmailWeeklyCsvToggle from '../../components/EmailWeeklyCsvToggle';
 import { API, fmtINR, fmtDate, StatusPill } from './billingUtils';
 import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
 
@@ -112,6 +113,7 @@ export default function InvoicesListPage() {
           className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 font-semibold rounded">
           <Download size={12} /> Export CSV
         </button>
+        <EmailWeeklyCsvToggle kind="invoices" />
       </div>
 
       {/* List */}

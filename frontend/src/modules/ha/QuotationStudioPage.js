@@ -242,7 +242,7 @@ function NewQuoteModal({ onClose, onCreated }) {
                         setLines(copy);
                       }} data-testid={`ha-quote-line-${i}-prod`} className="w-full border border-slate-300 rounded px-1 py-0.5 text-xs">
                         <option value="">—</option>
-                        {products.map(pp => <option key={pp.product_id} value={pp.product_id}>{pp.brand} {pp.model}</option>)}
+                        {products.map(pp => <option key={pp.product_id} value={pp.product_id}>{`${pp.brand} ${pp.model}`}</option>)}
                       </select>
                       {under && p && <div className="text-[10px] text-rose-600 mt-0.5">⚠ below floor ({fmtINR(p.min_sell_price)})</div>}
                     </td>
@@ -475,7 +475,7 @@ function QuoteDetailDrawer({ quoteNo, onClose, onChanged }) {
                   ⚠ <b>Margin floor alert:</b> {below.length} line(s) priced below min_sell_price. Pick a clinic-owner / super-admin approver:
                   <select value={approvalUser} onChange={(e) => setApprovalUser(e.target.value)} data-testid="ha-quote-approver" className="ml-2 border border-slate-300 rounded px-1 py-0.5 text-xs">
                     <option value="">—</option>
-                    {users.map(u => <option key={u.user_id} value={u.user_id}>{u.name} ({u.role})</option>)}
+                    {users.map(u => <option key={u.user_id} value={u.user_id}>{`${u.name} (${u.role})`}</option>)}
                   </select>
                 </div>
               )}

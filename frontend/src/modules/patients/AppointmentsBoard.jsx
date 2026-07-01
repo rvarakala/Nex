@@ -57,6 +57,36 @@ const filterBucket = (raw) => {
   return k;
 };
 
+// ─── Test abbreviation mapping — used by the Tests column chips ───
+// Free-form recommended_tests strings map to a compact 3-4 char label
+// so the row stays readable. Colors follow the AUDINEXA v3 palette.
+const TEST_ABBR = [
+  { match: /pta|puretone|pure.?tone/i,        label: 'PTA',    bg: '#DBEAFE', color: '#1E40AF' },
+  { match: /speech|srt|sds|wrs/i,             label: 'SPEECH', bg: '#FED7AA', color: '#9A3412' },
+  { match: /tymp|imp|impedance|acoustic/i,    label: 'IA',     bg: '#EDE9FE', color: '#5B21B6' },
+  { match: /oae|dpoae|teoae/i,                label: 'OAE',    bg: '#CFFAFE', color: '#155E75' },
+  { match: /abr|bera|brainstem/i,             label: 'ABR',    bg: '#FFE4E6', color: '#9F1239' },
+  { match: /hearing.?aid.?trial|hat|ha.?trial/i,  label: 'HAT',    bg: '#DCFCE7', color: '#166534' },
+  { match: /tinn/i,                           label: 'TIN',    bg: '#FCE7F3', color: '#9D174D' },
+  { match: /sound.?field|sfa|aided/i,         label: 'SFA',    bg: '#D1FAE5', color: '#065F46' },
+  { match: /paed|vra|play/i,                  label: 'VRA',    bg: '#FEF3C7', color: '#854D0E' },
+  { match: /vemp/i,                           label: 'VEMP',   bg: '#F3E8FF', color: '#6B21A8' },
+];
+const testChip = (raw = '') => {
+  const match = TEST_ABBR.find((t) => t.match.test(String(raw)));
+  return match || { label: String(raw).slice(0, 4).toUpperCase(), bg: '#E0E7FF', color: '#3730A3' };
+};
+// Returns the chip.label for a raw test — used for filter counts + match logic
+const chipLabelFor = (raw) => testChip(raw).label;
+
+// Detect appointment "mode" — telehealth vs walk-in / in-clinic — with
+// sensible fallbacks since older rows won't have an explicit `mode`.
+const modeOf = (a) => {
+  const raw = (a.mode || a.appointment_mode || '').toLowerCase();
+  if (raw === 'online' || raw === 'video' || raw === 'tele' || raw === 'telehealth') return 'Online';
+  return 'Offline';
+};
+
 export default function AppointmentsBoard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -68,6 +98,7 @@ export default function AppointmentsBoard() {
   const [loading, setLoading] = useState(true);
   const [view, setView]   = useState(() => localStorage.getItem('audinexa.appts.view') || 'list');
   const [status, setStatus] = useState('all');
+  const [testType, setTestType] = useState('all');
   const [bookOpen, setBookOpen]   = useState(false);
   const [audiologists, setAudiologists] = useState([]);
 
@@ -138,15 +169,40 @@ export default function AppointmentsBoard() {
     return c;
   }, [rows]);
 
+  // Test-type filter chips: only show types actually present in today's rows.
+  // Each row's `recommended_tests` may hold free-form strings — normalize
+  // each to its chip label so 'PTA at 4kHz' and 'pure-tone audiometry'
+  // collapse into the same PTA bucket.
+  const testTypeChips = useMemo(() => {
+    const c = {};
+    for (const r of rows) {
+      const seen = new Set();
+      for (const t of (r.recommended_tests || [])) {
+        const label = chipLabelFor(t);
+        if (seen.has(label)) continue;
+        seen.add(label);
+        c[label] = (c[label] || 0) + 1;
+      }
+    }
+    // Preserve TEST_ABBR order + suffix any extras alphabetically
+    const known = TEST_ABBR.map(t => t.label).filter(l => c[l]);
+    const extras = Object.keys(c).filter(l => !known.includes(l)).sort();
+    return [...known, ...extras].map(label => ({ label, count: c[label], style: testChip(label) }));
+  }, [rows]);
+
   const filtered = useMemo(() => rows.filter((a) => {
     if (status !== 'all' && filterBucket(a.status) !== status) return false;
+    if (testType !== 'all') {
+      const labels = (a.recommended_tests || []).map(chipLabelFor);
+      if (!labels.includes(testType)) return false;
+    }
     if (q.trim()) {
       const term = q.toLowerCase();
       if (!(a.patient_name || '').toLowerCase().includes(term)
           && !(a.mobile || '').includes(term)) return false;
     }
     return true;
-  }), [rows, status, q]);
+  }), [rows, status, testType, q]);
 
   const datePreset = (label, iso) => (
     <button
@@ -243,12 +299,47 @@ export default function AppointmentsBoard() {
         })}
       </div>
 
+      {/* Test-type filter chips — only shown when at least one row has recommended_tests */}
+      {testTypeChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" data-testid="appts-test-chips">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Tests</span>
+          <button
+            onClick={() => setTestType('all')}
+            data-testid="appts-test-chip-all"
+            className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full font-semibold border transition ${
+              testType === 'all'
+                ? 'bg-slate-900 border-slate-900 text-white'
+                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+            All
+          </button>
+          {testTypeChips.map(({ label, count, style }) => {
+            const active = testType === label;
+            return (
+              <button
+                key={label}
+                onClick={() => setTestType(active ? 'all' : label)}
+                data-testid={`appts-test-chip-${label}`}
+                title={active ? `Clear ${label} filter` : `Filter to ${label}`}
+                className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full font-extrabold border transition uppercase tracking-wide ${
+                  active ? 'ring-2 ring-offset-1 ring-cyan-500 shadow-sm' : 'hover:shadow-sm'
+                }`}
+                style={{ background: style.bg, color: style.color, borderColor: style.color + '40' }}>
+                {label}
+                <span className="tabular-nums text-[10px] font-bold px-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.6)', color: style.color }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {loading ? (
         <div className="py-16 text-center italic text-slate-400 text-sm">Loading appointments…</div>
       ) : filtered.length === 0 ? (
         <div className="bg-white border border-dashed border-slate-200 rounded-xl py-16 text-center">
           <div className="text-sm font-semibold text-slate-700">
-            No appointments {q ? 'match this filter' : (status !== 'all' ? `with status "${status.replace(/_/g, ' ')}"` : 'on this date')}.
+            No appointments {q ? 'match this filter' : (testType !== 'all' ? `require ${testType} today` : (status !== 'all' ? `with status "${status.replace(/_/g, ' ')}"` : 'on this date'))}.
           </div>
           <button
             type="button"
@@ -258,7 +349,7 @@ export default function AppointmentsBoard() {
           </button>
         </div>
       ) : view === 'list' ? (
-        <ListView rows={filtered} onView={(pid) => navigate(`/patients/${pid}`)} onCancel={handleCancel} />
+        <ListView rows={filtered} onView={(pid) => navigate(`/patients/${pid}`)} onCancel={handleCancel} onChipClick={(label) => setTestType(label)} activeTest={testType} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
           {filtered.map((a) => (
@@ -281,35 +372,9 @@ export default function AppointmentsBoard() {
   );
 }
 
-// ─── Test abbreviation mapping — used by the Tests column chips ───
-// Free-form recommended_tests strings map to a compact 3-4 char label
-// so the row stays readable. Colors follow the AUDINEXA v3 palette.
-const TEST_ABBR = [
-  { match: /pta|puretone|pure.?tone/i,        label: 'PTA',    bg: '#DBEAFE', color: '#1E40AF' },
-  { match: /speech|srt|sds|wrs/i,             label: 'SPEECH', bg: '#FED7AA', color: '#9A3412' },
-  { match: /tymp|imp|impedance|acoustic/i,    label: 'IA',     bg: '#EDE9FE', color: '#5B21B6' },
-  { match: /oae|dpoae|teoae/i,                label: 'OAE',    bg: '#CFFAFE', color: '#155E75' },
-  { match: /abr|bera|brainstem/i,             label: 'ABR',    bg: '#FFE4E6', color: '#9F1239' },
-  { match: /hearing.?aid.?trial|hat|ha.?trial/i,  label: 'HAT',    bg: '#DCFCE7', color: '#166534' },
-  { match: /tinn/i,                           label: 'TIN',    bg: '#FCE7F3', color: '#9D174D' },
-  { match: /sound.?field|sfa|aided/i,         label: 'SFA',    bg: '#D1FAE5', color: '#065F46' },
-  { match: /paed|vra|play/i,                  label: 'VRA',    bg: '#FEF3C7', color: '#854D0E' },
-  { match: /vemp/i,                           label: 'VEMP',   bg: '#F3E8FF', color: '#6B21A8' },
-];
-const testChip = (raw = '') => {
-  const match = TEST_ABBR.find((t) => t.match.test(String(raw)));
-  return match || { label: String(raw).slice(0, 4).toUpperCase(), bg: '#E0E7FF', color: '#3730A3' };
-};
+// ─── ListView ───
 
-// Detect appointment "mode" — telehealth vs walk-in / in-clinic — with
-// sensible fallbacks since older rows won't have an explicit `mode`.
-const modeOf = (a) => {
-  const raw = (a.mode || a.appointment_mode || '').toLowerCase();
-  if (raw === 'online' || raw === 'video' || raw === 'tele' || raw === 'telehealth') return 'Online';
-  return 'Offline';
-};
-
-function ListView({ rows, onView, onCancel }) {
+function ListView({ rows, onView, onCancel, onChipClick, activeTest }) {
   return (
     <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)]" data-testid="appts-list-view">
       <div className="overflow-x-auto">
@@ -375,21 +440,30 @@ function ListView({ rows, onView, onCancel }) {
                   <td className="px-3 py-3 text-slate-700 tabular-nums whitespace-nowrap">{contact}</td>
                   {/* Doctor */}
                   <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{doctor}</td>
-                  {/* Tests — chip badges with abbreviations */}
+                  {/* Tests — chip badges with abbreviations (clickable to filter) */}
                   <td className="px-3 py-3">
                     {chips.length === 0 ? (
                       <span className="text-slate-300 text-[11px]">—</span>
                     ) : (
                       <div className="flex items-center gap-1 flex-wrap min-w-[110px]">
-                        {chips.map((c, idx) => (
-                          <span
-                            key={idx}
-                            className="text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide whitespace-nowrap"
-                            style={{ background: c.bg, color: c.color }}
-                          >
-                            {c.label}
-                          </span>
-                        ))}
+                        {chips.map((c, idx) => {
+                          const isActive = activeTest === c.label;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onChipClick && onChipClick(isActive ? 'all' : c.label); }}
+                              data-testid={`appts-row-chip-${a.appointment_id}-${c.label}`}
+                              title={isActive ? `Clear ${c.label} filter` : `Filter table to show only ${c.label} appointments`}
+                              className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide whitespace-nowrap transition cursor-pointer hover:brightness-95 ${
+                                isActive ? 'ring-2 ring-offset-1 ring-cyan-500' : ''
+                              }`}
+                              style={{ background: c.bg, color: c.color }}
+                            >
+                              {c.label}
+                            </button>
+                          );
+                        })}
                         {extraTests > 0 && (
                           <span className="text-[10px] font-bold text-slate-400">+{extraTests}</span>
                         )}

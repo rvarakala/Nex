@@ -612,7 +612,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
                 onChange={(e) => { setDuration(parseInt(e.target.value, 10)); setDurationManuallySet(true); }}
                 data-testid="bk-duration"
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white">
-                {DURATIONS.map((d) => <option key={d} value={d}>{d} min</option>)}
+                {DURATIONS.map((d) => <option key={d} value={d}>{`${d} min`}</option>)}
               </select>
             </div>
             <div>

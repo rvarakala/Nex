@@ -313,7 +313,7 @@ const ContractForm = ({ plans, onClose, onSaved }) => {
         <label className="block">
           <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Plan *</span>
           <select data-testid="amc-contract-plan-select" value={planId} onChange={(e) => setPlanId(e.target.value)} required className="mt-0.5 w-full px-2 py-1.5 text-sm border border-slate-300 rounded">
-            {plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{p.name} — {fmtINR(p.price)}</option>)}
+            {plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{`${p.name} — ${fmtINR(p.price)}`}</option>)}
           </select>
         </label>
         <div className="grid grid-cols-2 gap-3">

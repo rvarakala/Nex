@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { Search, UserPlus, Users, Download } from 'lucide-react';
 import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
+import EmailWeeklyCsvToggle from '../../components/EmailWeeklyCsvToggle';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 const PAGE_SIZE = 50;
@@ -93,6 +94,7 @@ export default function PatientsListPage() {
           className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 rounded-lg font-semibold">
           <Download size={13} /> Export CSV
         </button>
+        <EmailWeeklyCsvToggle kind="patients" />
       </header>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
