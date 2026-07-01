@@ -110,9 +110,79 @@
   .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .card-title  { font-size: 16px; font-weight: 800; color: #0F172A; letter-spacing: -0.01em; }
   .card-link   { font-size: 13px; font-weight: 700; color: var(--teal-deep); }
+
+  /* Mobile hamburger bar (hidden on desktop) */
+  .mobile-topbar { display: none; }
+
+  /* ============ RESPONSIVE — TABLET (< 1024px) ============ */
+  @media (max-width: 1023px) {
+    .sidebar { display: none; }
+    .mobile-topbar {
+      display: flex !important;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--navy);
+      padding: 12px 16px;
+      color: white;
+      position: sticky; top: 0; z-index: 20;
+    }
+    main { max-width: 100% !important; padding: 18px !important; }
+    .search-input { width: 100% !important; max-width: 320px; }
+    .grid-kpi { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    .grid-main { grid-template-columns: 1fr !important; }
+    .grid-inner { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    .grid-bottom { grid-template-columns: 1fr !important; }
+    .kpi-big-num { font-size: 32px !important; }
+    .kpi-big-money { font-size: 26px !important; }
+    .attention-strip { flex-wrap: wrap; padding: 12px 14px; gap: 8px 14px; }
+    .attention-strip > div:nth-child(2) {
+      flex-basis: 100%;
+      order: 3;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+    }
+  }
+
+  /* ============ RESPONSIVE — MOBILE (< 640px) ============ */
+  @media (max-width: 639px) {
+    main { padding: 14px !important; }
+    .search-input { display: none; }
+    .grid-kpi { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    .kpi-card { padding: 14px 12px; }
+    .kpi-icon-wrap { width: 42px; height: 42px; }
+    .kpi-icon-wrap svg { width: 20px !important; height: 20px !important; }
+    .kpi-big-num { font-size: 26px !important; }
+    .kpi-big-money { font-size: 20px !important; }
+    .grid-inner { grid-template-columns: 1fr !important; }
+    .qa-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    .attention-strip { padding: 12px; }
+    .attention-strip > .att-icon { width: 34px !important; height: 34px !important; }
+    .welcome-hero-num { font-size: 20px !important; }
+    .card { padding: 16px; }
+  }
 </style>
 </head>
 <body class="min-h-screen">
+  <!-- MOBILE TOP BAR (visible < 1024px only) -->
+  <div class="mobile-topbar lg:hidden">
+    <div class="flex items-center gap-2">
+      <button class="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-white/10">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #22D3EE, #0891B2);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3v4z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3v4z"/></svg>
+      </div>
+      <div class="text-white font-extrabold text-[16px] tracking-tight">AUDINEXA</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center relative">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500"></span>
+      </button>
+      <div class="w-9 h-9 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-extrabold text-[13px]">RI</div>
+    </div>
+  </div>
+
   <div class="flex">
 
     <!-- SIDEBAR -->
@@ -144,8 +214,8 @@
 
     <!-- MAIN -->
     <main class="flex-1 p-8" style="max-width: 1400px;">
-      <!-- Top bar -->
-      <div class="flex items-center justify-between mb-6">
+      <!-- Top bar (hidden on mobile — replaced by mobile-topbar) -->
+      <div class="hidden lg:flex items-center justify-between mb-6">
         <h1 class="text-[28px] font-extrabold tracking-tight text-slate-900">Overview</h1>
         <div class="flex items-center gap-3">
           <div class="relative">
@@ -171,7 +241,7 @@
 
       <!-- Needs Attention strip -->
       <div class="attention-strip mb-5">
-        <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm flex-shrink-0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+        <div class="att-icon w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm flex-shrink-0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
         <div class="flex items-center gap-6 flex-1 text-[13.5px]">
           <span class="text-[11px] font-extrabold uppercase tracking-widest text-amber-800">Needs Attention</span>
           <span class="text-slate-700 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="font-semibold">2 accessories</span> low on stock · <span class="text-slate-500">Tubing 12mm, Wax filters</span></span>
@@ -182,19 +252,19 @@
       </div>
 
       <!-- 4 KPI cards -->
-      <div class="grid grid-cols-4 gap-4 mb-6">
-        <div class="kpi-card kpi-blue"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4380E5" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">6</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Appointments</div></div></div></div>
-        <div class="kpi-card kpi-mint"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#27BF87" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">12</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">New Patients</div></div></div></div>
-        <div class="kpi-card kpi-purple"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6957DE" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3v4z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3v4z"/></svg></div><div><div class="text-[44px] font-extrabold leading-none">7</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Tests Today</div></div></div></div>
-        <div class="kpi-card kpi-cyan"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#26A6D9" stroke-width="2.5"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="text-[32px] font-extrabold leading-none">₹1.84L</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Collections</div></div></div></div>
+      <div class="grid grid-kpi grid-cols-4 gap-4 mb-6">
+        <div class="kpi-card kpi-blue"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4380E5" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div><div class="kpi-big-num text-[44px] font-extrabold leading-none">6</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Appointments</div></div></div></div>
+        <div class="kpi-card kpi-mint"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#27BF87" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div><div><div class="kpi-big-num text-[44px] font-extrabold leading-none">12</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">New Patients</div></div></div></div>
+        <div class="kpi-card kpi-purple"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6957DE" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3v4z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3v4z"/></svg></div><div><div class="kpi-big-num text-[44px] font-extrabold leading-none">7</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Tests Today</div></div></div></div>
+        <div class="kpi-card kpi-cyan"><div class="flex items-center gap-4"><div class="kpi-icon-wrap"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#26A6D9" stroke-width="2.5"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="kpi-big-money text-[32px] font-extrabold leading-none">₹1.84L</div><div class="text-[15px] font-semibold text-white/95 mt-1.5">Collections</div></div></div></div>
       </div>
 
       <!-- 12-col split — LEFT (8) main data · RIGHT (4) Quick Actions + Alerts -->
-      <div class="grid grid-cols-12 gap-5 mb-5">
+      <div class="grid grid-main grid-cols-12 gap-5 mb-5">
 
-        <div class="col-span-8 space-y-5">
+        <div class="col-span-12 lg:col-span-8 space-y-5">
           <!-- Row A -->
-          <div class="grid grid-cols-2 gap-5">
+          <div class="grid grid-inner grid-cols-2 gap-5">
             <div class="card">
               <div class="card-header"><h3 class="card-title">Today's Appointments</h3><a class="card-link">See all →</a></div>
               <div>
@@ -212,7 +282,7 @@
           </div>
 
           <!-- Row B -->
-          <div class="grid grid-cols-2 gap-5">
+          <div class="grid grid-inner grid-cols-2 gap-5">
             <div class="card">
               <div class="card-header"><h3 class="card-title">Recent Registrations</h3><a class="card-link">See all →</a></div>
               <div class="grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"><div>Name</div><div>Time</div><div class="text-right">Action</div></div>
@@ -246,10 +316,10 @@
         </div>
 
         <!-- RIGHT COLUMN (4/12) — Quick Actions + Alerts -->
-        <div class="col-span-4 space-y-5">
+        <div class="col-span-12 lg:col-span-4 space-y-5">
           <div class="card">
             <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
-            <div class="grid grid-cols-2 gap-2.5">
+            <div class="grid qa-grid grid-cols-2 gap-2.5">
               <div class="qa-tile"><div class="qa-icon qa-icon-blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="qa-label">New<br/>Appointment</div></div>
               <div class="qa-tile"><div class="qa-icon qa-icon-mint"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></div><div class="qa-label">New<br/>Registration</div></div>
               <div class="qa-tile"><div class="qa-icon qa-icon-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 8.5A6.5 6.5 0 0 1 12.5 2 6.5 6.5 0 0 1 19 8.5c0 2.5-2 4.5-4 6-1 .75-1 1.5-1 2.5"/><path d="M15 21a2 2 0 0 1-2 2h0a2 2 0 0 1-2-2"/></svg></div><div class="qa-label">Hearing<br/>Test</div></div>
@@ -271,8 +341,8 @@
       </div>
 
       <!-- Patient Trend + Timeline -->
-      <div class="grid grid-cols-12 gap-5 mb-5">
-        <div class="card col-span-8">
+      <div class="grid grid-bottom grid-cols-12 gap-5 mb-5">
+        <div class="card col-span-12 lg:col-span-8">
           <div class="card-header"><h3 class="card-title">Patient Trend</h3><div class="flex items-center gap-2"><span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">This week</span><span class="text-[11px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded">Month</span></div></div>
           <div class="relative">
             <svg width="100%" height="180" viewBox="0 0 600 180" preserveAspectRatio="none">
@@ -287,7 +357,7 @@
           <div class="flex justify-between text-[11px] text-slate-500 font-semibold mt-2 px-1"><span>Mo</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
         </div>
 
-        <div class="card col-span-4">
+        <div class="card col-span-12 lg:col-span-4">
           <div class="card-header"><h3 class="card-title">Timeline</h3></div>
           <div class="timeline-item"><div class="timeline-dot"></div><div class="text-[13.5px] font-extrabold text-slate-900">11:30 AM · Clinic Consultation</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Rahul Kapoor + 2 walk-ins</div></div>
           <div class="timeline-item"><div class="timeline-dot past"></div><div class="text-[13.5px] font-extrabold text-slate-900">02:30 PM · HA Fitting</div><div class="text-[12px] text-slate-500 mt-1 font-medium">Vikram Mehta · 30 min</div></div>
