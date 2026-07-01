@@ -66,7 +66,7 @@ export default function AppointmentsBoard() {
   const [q, setQ]         = useState('');
   const [rows, setRows]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView]   = useState(() => localStorage.getItem('audinexa.appts.view') || 'board');
+  const [view, setView]   = useState(() => localStorage.getItem('audinexa.appts.view') || 'list');
   const [status, setStatus] = useState('all');
   const [bookOpen, setBookOpen]   = useState(false);
   const [audiologists, setAudiologists] = useState([]);
@@ -132,7 +132,7 @@ export default function AppointmentsBoard() {
       data-testid={`appts-preset-${label.toLowerCase().replace(/\s/g, '-')}`}
       className={`text-[11px] px-2.5 py-1 rounded-md font-semibold border transition ${
         date === iso
-          ? 'bg-indigo-600 text-white border-indigo-600'
+          ? 'bg-cyan-600 text-white border-cyan-600'
           : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
       {label}
     </button>
@@ -160,14 +160,14 @@ export default function AppointmentsBoard() {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search"
               data-testid="appts-search"
-              className="text-[12px] pl-8 pr-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:border-indigo-500 w-44"
+              className="text-[12px] pl-8 pr-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:border-cyan-500 w-44"
             />
           </div>
           <button
             type="button"
             onClick={() => setBookOpen(true)}
             data-testid="appts-add-btn"
-            className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
+            className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold shadow-sm shadow-cyan-600/20">
             <Plus size={13} /> Add Appointment
           </button>
         </div>
@@ -185,13 +185,13 @@ export default function AppointmentsBoard() {
           <button
             onClick={() => setView('board')}
             data-testid="appts-view-board"
-            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded ${view === 'board' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded ${view === 'board' ? 'bg-cyan-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
             <LayoutGrid size={12} /> Board
           </button>
           <button
             onClick={() => setView('list')}
             data-testid="appts-view-list"
-            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded ${view === 'list' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded ${view === 'list' ? 'bg-cyan-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
             <ListIcon size={12} /> List
           </button>
         </div>
@@ -209,7 +209,7 @@ export default function AppointmentsBoard() {
               data-testid={`appts-chip-${f.id}`}
               className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full font-semibold border transition ${
                 active
-                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  ? 'bg-cyan-600 border-cyan-600 text-white'
                   : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
               {f.label}
               <span className={`tabular-nums px-1.5 rounded-full text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
@@ -230,7 +230,7 @@ export default function AppointmentsBoard() {
           <button
             type="button"
             onClick={() => setBookOpen(true)}
-            className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">
+            className="mt-3 inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold">
             <Plus size={13} /> Book Appointment
           </button>
         </div>
@@ -258,48 +258,158 @@ export default function AppointmentsBoard() {
   );
 }
 
+// ─── Test abbreviation mapping — used by the Tests column chips ───
+// Free-form recommended_tests strings map to a compact 3-4 char label
+// so the row stays readable. Colors follow the AUDINEXA v3 palette.
+const TEST_ABBR = [
+  { match: /pta|puretone|pure.?tone/i,        label: 'PTA',    bg: '#DBEAFE', color: '#1E40AF' },
+  { match: /speech|srt|sds|wrs/i,             label: 'SPEECH', bg: '#FED7AA', color: '#9A3412' },
+  { match: /tymp|imp|impedance|acoustic/i,    label: 'IA',     bg: '#EDE9FE', color: '#5B21B6' },
+  { match: /oae|dpoae|teoae/i,                label: 'OAE',    bg: '#CFFAFE', color: '#155E75' },
+  { match: /abr|bera|brainstem/i,             label: 'ABR',    bg: '#FFE4E6', color: '#9F1239' },
+  { match: /hearing.?aid.?trial|hat|ha.?trial/i,  label: 'HAT',    bg: '#DCFCE7', color: '#166534' },
+  { match: /tinn/i,                           label: 'TIN',    bg: '#FCE7F3', color: '#9D174D' },
+  { match: /sound.?field|sfa|aided/i,         label: 'SFA',    bg: '#D1FAE5', color: '#065F46' },
+  { match: /paed|vra|play/i,                  label: 'VRA',    bg: '#FEF3C7', color: '#854D0E' },
+  { match: /vemp/i,                           label: 'VEMP',   bg: '#F3E8FF', color: '#6B21A8' },
+];
+const testChip = (raw = '') => {
+  const match = TEST_ABBR.find((t) => t.match.test(String(raw)));
+  return match || { label: String(raw).slice(0, 4).toUpperCase(), bg: '#E0E7FF', color: '#3730A3' };
+};
+
+// Detect appointment "mode" — telehealth vs walk-in / in-clinic — with
+// sensible fallbacks since older rows won't have an explicit `mode`.
+const modeOf = (a) => {
+  const raw = (a.mode || a.appointment_mode || '').toLowerCase();
+  if (raw === 'online' || raw === 'video' || raw === 'tele' || raw === 'telehealth') return 'Online';
+  return 'Offline';
+};
+
 function ListView({ rows, onView }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" data-testid="appts-list-view">
-      <table className="w-full text-[12.5px]">
-        <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
-          <tr>
-            <th className="text-left px-4 py-2.5">Patient</th>
-            <th className="text-left px-4 py-2.5">Contact</th>
-            <th className="text-left px-4 py-2.5">Time</th>
-            <th className="text-left px-4 py-2.5">Service / Note</th>
-            <th className="text-left px-4 py-2.5">Status</th>
-            <th className="px-4 py-2.5"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((a) => {
-            const s = STATUS_STYLES[String(a.status || '').toLowerCase()] || { bg: 'bg-slate-100', text: 'text-slate-700', label: a.status || '—' };
-            return (
-              <tr key={a.appointment_id} className="border-t border-slate-100 hover:bg-indigo-50/30 transition" data-testid={`appts-list-row-${a.appointment_id}`}>
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px] flex-shrink-0">
-                      {initials(a.patient_name)}
-                    </span>
-                    <button onClick={() => onView(a.patient_id)} className="font-semibold text-slate-900 hover:text-indigo-700 text-left">
-                      {a.patient_name || '—'}
-                      <span className="block text-[10.5px] text-slate-500 font-normal mt-0.5">{a.age ? `${a.age} y` : '—'} · {a.gender || '—'}</span>
+    <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)]" data-testid="appts-list-view">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead className="bg-slate-50">
+            <tr className="text-cyan-700 uppercase text-[10.5px] font-extrabold tracking-[0.08em]">
+              <th className="text-left px-4 py-3.5 whitespace-nowrap">Name</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Email</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Appointment</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Time</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Mode</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Contact</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Doctor</th>
+              <th className="text-left px-3 py-3.5 whitespace-nowrap">Tests</th>
+              <th className="text-left px-4 py-3.5 whitespace-nowrap">Recs</th>
+            </tr>
+          </thead>
+          <tbody className="text-slate-800">
+            {rows.map((a, i) => {
+              const mode = modeOf(a);
+              const modeBg = mode === 'Online' ? 'bg-cyan-50 text-cyan-700' : 'bg-slate-100 text-slate-600';
+              const contact = a.mobile || a.patient_mobile || '—';
+              const email = a.email || a.patient_email || '—';
+              const doctor = a.doctor_name || a.assigned_to_name || a.audiologist_name || '—';
+              const chips = (a.recommended_tests || []).slice(0, 4).map(testChip);
+              const extraTests = Math.max(0, (a.recommended_tests || []).length - 4);
+              const recs = a.recommendation || a.follow_up || a.notes || a.complaint || '';
+              return (
+                <tr
+                  key={a.appointment_id}
+                  data-testid={`appts-list-row-${a.appointment_id}`}
+                  className={`border-t border-slate-100 hover:bg-cyan-50/40 transition-colors ${
+                    i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                  }`}
+                >
+                  {/* Name + avatar */}
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => onView(a.patient_id)}
+                      className="flex items-center gap-2.5 text-left group"
+                    >
+                      <span className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 text-white flex items-center justify-center font-extrabold text-[11px] flex-shrink-0 shadow-sm">
+                        {initials(a.patient_name)}
+                      </span>
+                      <span className="font-bold text-slate-900 group-hover:text-cyan-700 whitespace-nowrap">
+                        {a.patient_name || '—'}
+                      </span>
                     </button>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5 text-slate-600">{a.mobile || a.patient_mobile || '—'}</td>
-                <td className="px-4 py-2.5 text-slate-700 tabular-nums">{fmtTime(a.start_at)}<span className="block text-[10.5px] text-slate-500">{fmtDate(a.start_at)}</span></td>
-                <td className="px-4 py-2.5 text-slate-700 max-w-md truncate">{a.complaint || a.notes || a.service || '—'}</td>
-                <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${s.bg} ${s.text}`}>{s.label}</span></td>
-                <td className="px-4 py-2.5 text-right">
-                  <button onClick={() => onView(a.patient_id)} className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold">View →</button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  </td>
+                  {/* Email */}
+                  <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{email}</td>
+                  {/* Appointment date */}
+                  <td className="px-3 py-3 text-slate-700 whitespace-nowrap tabular-nums">{fmtDate(a.start_at)}</td>
+                  {/* Time */}
+                  <td className="px-3 py-3 text-slate-700 whitespace-nowrap tabular-nums font-semibold">{fmtTime(a.start_at)}</td>
+                  {/* Mode */}
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${modeBg}`}>
+                      {mode}
+                    </span>
+                  </td>
+                  {/* Contact */}
+                  <td className="px-3 py-3 text-slate-700 tabular-nums whitespace-nowrap">{contact}</td>
+                  {/* Doctor */}
+                  <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{doctor}</td>
+                  {/* Tests — chip badges with abbreviations */}
+                  <td className="px-3 py-3">
+                    {chips.length === 0 ? (
+                      <span className="text-slate-300 text-[11px]">—</span>
+                    ) : (
+                      <div className="flex items-center gap-1 flex-wrap min-w-[110px]">
+                        {chips.map((c, idx) => (
+                          <span
+                            key={idx}
+                            className="text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide whitespace-nowrap"
+                            style={{ background: c.bg, color: c.color }}
+                          >
+                            {c.label}
+                          </span>
+                        ))}
+                        {extraTests > 0 && (
+                          <span className="text-[10px] font-bold text-slate-400">+{extraTests}</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  {/* Recs — clinician notes + quick action buttons */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {recs && (
+                        <span
+                          className="text-[11.5px] text-slate-600 font-medium max-w-[160px] truncate"
+                          title={recs}
+                        >
+                          {recs}
+                        </span>
+                      )}
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <button
+                          onClick={() => onView(a.patient_id)}
+                          data-testid={`appts-list-approve-${a.appointment_id}`}
+                          className="w-7 h-7 rounded-md bg-cyan-50 hover:bg-cyan-100 text-cyan-700 flex items-center justify-center border border-cyan-200"
+                          title="Open patient"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                        </button>
+                        <button
+                          onClick={(e) => e.preventDefault()}
+                          data-testid={`appts-list-cancel-${a.appointment_id}`}
+                          className="w-7 h-7 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center border border-rose-200"
+                          title="Cancel appointment"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -313,7 +423,7 @@ function ApptCard({ a, onView }) {
       data-testid={`appt-card-${a.appointment_id}`}>
       {/* Header */}
       <div className="flex items-center gap-2.5">
-        <span className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[12px] flex-shrink-0">
+        <span className="w-9 h-9 rounded-full bg-cyan-100 text-cyan-700 flex items-center justify-center font-bold text-[12px] flex-shrink-0">
           {initials(a.patient_name)}
         </span>
         <div className="flex-1 min-w-0">
@@ -340,7 +450,7 @@ function ApptCard({ a, onView }) {
         <button
           onClick={() => setMenuOpen((o) => !o)}
           data-testid={`appt-menu-${a.appointment_id}`}
-          className="w-7 h-7 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center">
+          className="w-7 h-7 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white flex items-center justify-center">
           <MoreVertical size={13} />
         </button>
         {menuOpen && (
