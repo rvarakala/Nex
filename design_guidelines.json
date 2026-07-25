@@ -1,115 +1,139 @@
 {
-  "project_context": {
-    "role": "clinic_owner",
-    "page": "Overview Dashboard",
-    "core_goal": "Fast morning-scan surface (3 seconds), scannable, dense, clinical, and premium",
-    "current_issues": [
-      "Duplicated search bars",
-      "Clashing rainbow gradients on KPIs",
-      "Oversized zero-state alerts for Needs Attention",
-      "Confused typographical hierarchy in headers",
-      "Low data density below the fold"
-    ]
-  },
+  "concept_statement": "A warm, high-trust 'Modern Clinical OS' aesthetic. Moving away from generic dark SaaS themes, this design uses a 'Clinical Bone & Indian Saffron' palette to blend clinical precision with approachability. It relies on tight-tracking Grotesk typography for authority, bento grids for dense data visualization, and an outcome-first layout that clearly demonstrates how AUDINEXA replaces messy spreadsheets for Indian audiology clinics. No 'waitlist' vibes—just pure, confident B2B software ready to run a clinic.",
   "typography": {
-    "font_family_headers": "Plus Jakarta Sans",
-    "font_family_body": "Inter",
-    "strategy": "The Anti-Default Rule. We avoid standard 'Bold' everywhere. H1s will pair font-light with font-semibold. KPI numbers will be font-black (900) with tracking-tighter. Overlines will be uppercase, tracking-[0.2em], text-xs.",
-    "hierarchy": {
-      "h1_greeting": "text-3xl sm:text-4xl font-light tracking-tight",
-      "h2_section": "text-lg font-semibold tracking-tight uppercase text-navy/70",
-      "kpi_value": "text-4xl sm:text-5xl font-black tracking-tighter",
-      "kpi_label": "text-sm font-medium tracking-wide text-navy/60"
+    "headings": {
+      "font_family": "Cabinet Grotesk",
+      "rationale": "Provides authority, precision, and modern corporate weight without looking generic. Use with tight tracking (tracking-tight) to feel like a high-end editorial tech brand.",
+      "weights": "Light (300) for subheaders, Bold (700) or ExtraBold (800) for H1/H2."
+    },
+    "body": {
+      "font_family": "IBM Plex Sans",
+      "rationale": "Sterile, highly legible, data-heavy clinical font. Perfect for medical dashboards, dense pricing tables, and FAQ.",
+      "weights": "Regular (400) and Medium (500)."
+    },
+    "labels": {
+      "font_family": "IBM Plex Mono",
+      "rationale": "For technical micro-copy like 'GST-Ready', 'DPDPA', or live proof metrics.",
+      "styles": "Uppercase, tracking-widest, text-xs."
     }
   },
   "colors": {
-    "backgrounds": {
-      "page_base": "#EEF1FA",
-      "surface_primary": "#FFFFFF",
-      "surface_highlight": "#0F1D3A"
-    },
-    "text": {
-      "primary": "#0F1D3A",
-      "secondary": "rgba(15, 29, 58, 0.6)",
-      "accent": "#14B8A6"
-    },
-    "borders": {
-      "subtle": "rgba(15, 29, 58, 0.08)",
-      "focus": "#14B8A6"
-    },
-    "strategy": "Swiss & High-Contrast (Archetype 4 adapted to clinical). We kill the rainbow gradients. We rely on the structural grayscale/navy for hierarchy. Color (Teal) is function only—used strictly to guide action and indicate active states. Surfaces will be flat and crisp."
+    "base_background": "#FDFBF7",
+    "surface_cards": "#F3F1EC",
+    "ink_primary": "#1A1C23",
+    "ink_secondary": "#4A4D57",
+    "primary_accent": "#D95D39",
+    "primary_accent_hover": "#B84A2A",
+    "trust_emerald": "#059669",
+    "border_divider": "#E2DFD8",
+    "dark_mode_inverted": {
+      "base_background": "#0B0D17",
+      "surface_cards": "#151828",
+      "ink_primary": "#FDFBF7",
+      "ink_secondary": "#A1A4B0"
+    }
   },
   "visual_enhancers": {
-    "surfaces": "Grid Borders (The Technical Look). Cards will have flat backgrounds, 1px subtle borders (border-navy/10), and NO heavy drop shadows by default.",
-    "border_radius": "Subtle roundness, max 8px (rounded-lg) for a sharp, precise medical software feel.",
-    "zero_state": "Collapsed. Zero states shouldn't scream for attention. They should shrink to a minimal confirmation of health."
+    "surfaces": "Use 'Tactical Neumorphism' – solid flat backgrounds with a sharp 1px border (border-border/40) combined with a soft, diffuse ambient shadow (shadow-sm) for elevation. Avoid 'Apple Glassmorphism' to prevent clinical data from looking muddy or refracted.",
+    "textures": "Incorporate very subtle grain/noise on solid backgrounds to kill the 'digital flatness' and make it feel tactile and physical, like medical paper.",
+    "gradients": "BANNED globally, except for the 'Tracing Beam' active state on the primary pricing card."
   },
-  "layouts": {
-    "directions": [
-      {
-        "name": "Direction A: Command Deck (The Dense Grid)",
-        "narrative": "A hyper-dense, single-scan dashboard. Everything critical lives above the fold in a strict 12-column grid. The aesthetic is tactical and precise. The rainbow KPI cards are replaced by stark, white architectural cards with massive, high-contrast numbers.",
-        "ascii_wireframe": "+-------------------------------------------------------------+\n| Good Afternoon, Dr. Raina.                    [25 Jul 2026] |\n+-------------------------------------------------------------+\n| [✓] All clear today. No pending recalls or alerts.          |\n+-------------------------------------------------------------+\n| +-------------+ +-------------+ +-------------+ +---------+ |\n| | Appts   12  | | New Pts  3  | | Tests   8   | | Rev ₹4k | |\n| +-------------+ +-------------+ +-------------+ +---------+ |\n| +-----------------------------------+ +-------------------+ |\n| | Today's Timeline (In Test Now)    | | Quick Actions     | |\n| | 10:00 AM - Patient A (PTA)        | | [+] Appt  [+] Sale| |\n| | 10:30 AM - Patient B (Waiting)    | | [+] Reg   [+] OAE | |\n| +-----------------------------------+ +-------------------+ |",
-        "hierarchy": "Data dominates. The greeting is secondary to the KPI numbers. Quick actions sit tightly clustered on the right rail.",
-        "solutions": {
-          "duplicate_search": "Completely removed from the page layout. The global top-nav (⌘K) handles all queries. The space reclaimed is used for the Date Pill and greeting.",
-          "kpi_tiles": "No gradients. White background, 1px Navy border. The numbers are Plus Jakarta Sans, Black weight. A tiny Teal dot indicates a positive trend.",
-          "needs_attention_zero_state": "Collapses into a single, slim, green-tinted text chip ('✓ All clear'). Only expands into cards when items > 0.",
-          "data_density": "High. The fold accommodates KPIs, live timeline, and quick actions simultaneously."
-        }
+  "section_blueprints": {
+    "1_header": {
+      "layout": "Fixed top. Solid background (Clinical Bone). Left: AUDINEXA logo in Cabinet Grotesk. Center: Nav links (Features, Diagnostics, Pricing, FAQ). Right: Secondary CTA 'Sign in' (text link) + Primary CTA 'Start 30-day trial' (Solid Saffron pill button).",
+      "interaction": "Visible box-shadow on scroll."
+    },
+    "2_hero_variants": {
+      "variant_A_outcome_focus": {
+        "layout": "Left-aligned 60/40 split. Left: Massive H1 (text-5xl md:text-6xl+). 'The Audiology Clinic OS Built for India.' Subtext: 'Ditch spreadsheets and WhatsApp. Manage patients, diagnostic testing, hearing-aid sales, and GST billing in one DPDPA-compliant platform.' Primary CTA Saffron button. Right side: Asymmetric overlapping cards showing a GST invoice, an audiogram snapshot, and calendar sync.",
+        "best_for": "Fast comprehension and high B2B conversion."
       },
-      {
-        "name": "Direction B: Focus Feed (Task-First)",
-        "narrative": "Treats the day like a chronological feed. Instead of focusing on static numbers, it prioritizes the live pulse of the clinic. The center column is a running feed of what is happening right now, while KPIs are reduced to an executive sidebar.",
-        "ascii_wireframe": "+-------------------------------------------------------------+\n| Good Afternoon, Dr. Raina.                                  |\n+-------------------------------------------------------------+\n| +-------------+ +-----------------------+ +---------------+ |\n| | METRICS     | | TODAY'S FEED          | | ATTENTION   0 | |\n| | Appts:   12 | | [Testing] Patient A   | | - Recalls:  0 | |\n| | New:      3 | | [Waiting] Patient B   | | - Stock:    0 | |\n| | Tests:    8 | | [Next Up] Patient C   | | - Repairs:  0 | |\n| |             | |                       | |               | |\n| | ACTIONS     | | RECENT REGISTRATIONS  | | CELEBRATIONS  | |\n| | [+] Appt    | | > Mark Smith (Apprv)  | | > \uD83C\uDF82 J. Doe   | |\n| +-------------+ +-----------------------+ +---------------+ |",
-        "hierarchy": "The 'In Test Now' timeline dominates the visual center. Metrics are tertiary, living quietly on the left.",
-        "solutions": {
-          "duplicate_search": "Removed. Replaced by a clean typographic header.",
-          "kpi_tiles": "Stripped of cards entirely. KPIs are treated as a minimalist list (label: value) on the left rail, saving massive horizontal space.",
-          "needs_attention_zero_state": "Moved to the right rail as a discreet 'toolbar' list. Zero values are muted gray, non-intrusive.",
-          "data_density": "Deep vertical scroll. Highly task-oriented."
-        }
+      "variant_B_interactive_tech": {
+        "layout": "Center-aligned wide hero. H1: 'Run your audiology clinic like a modern hospital.' Massive center CTA. Below the fold: A massive 2.5D perspective mockup of the Diagnostics panel (Tympanogram / Audiogram illustration) hovering above a warm bone background.",
+        "best_for": "Showing off technical depth and UI beauty."
       },
-      {
-        "name": "Direction C: Editorial Overview (Asymmetric Artful)",
-        "narrative": "A bold, magazine-style layout that uses asymmetry to create visual interest. The left rail acts as a sticky command center with your greeting and actions, while the right side is a 'Bento Box' grid of live data and charts.",
-        "ascii_wireframe": "+-----------------------+ +-----------------------------------+\n| 25 JUL 2026           | |  +-------------+ +-------------+  |\n| GOOD AFTERNOON,       | |  | 12          | | 3           |  |\n| DR. RAINA             | |  | Appointments| | New Patient |  |\n|                       | |  +-------------+ +-------------+  |\n| Needs Attention [0]   | |  +-----------------------------+  |\n| All systems optimal.  | |  | Live: In Test Now           |  |\n|                       | |  | >> Patient A (SPEECH)       |  |\n| Quick Actions         | |  +-----------------------------+  |\n| [New Appointment]     | |  +-----------------------------+  |\n| [Register Patient]    | |  | Today's Test Mix (Donut)    |  |\n+-----------------------+ +-----------------------------------+",
-        "hierarchy": "The Typography of the greeting and Date dominates the left. The Bento grid of data dominates the right.",
-        "solutions": {
-          "duplicate_search": "Removed. The left rail anchors the entire dashboard without needing filler.",
-          "kpi_tiles": "Bento style. Some tiles span 2 columns, some 1. We use the Navy (#0F1D3A) background with White text for the most critical metric (e.g., Appointments) to create a focal point, leaving the rest White.",
-          "needs_attention_zero_state": "Sits inline as regular body text in the left rail. 'Needs Attention: 0. All systems optimal.'",
-          "data_density": "Highly scannable. Separates 'Navigation/Action' (Left) from 'Information' (Right)."
-        }
+      "variant_C_trust_proof": {
+        "layout": "50/50 split. Left: High-quality image of an Indian doctor looking confident (overlay with floating UI widgets like 'GST Billed: ₹45,000'). Right: Bold typography, clear value prop, and CTA.",
+        "best_for": "Humanizing the brand and instantly building trust."
       }
-    ]
+    },
+    "3_live_proof_banner": {
+      "layout": "Full-width slim ticker or centered badge block just below hero. Uses IBM Plex Mono. 'LIVE: 1,245 clinics ran 8,430 hearing tests today.'",
+      "style": "Subtle pulsing green dot (Trust Emerald) next to 'LIVE'."
+    },
+    "4_feature_story_bento": {
+      "layout": "Mode A: 'Tetris' Grid (grid-cols-1 md:grid-cols-12 gap-6).",
+      "items": [
+        "Col-span-8 Row-span-2: Patient Front-Desk & WhatsApp Sync (Large UI graphic).",
+        "Col-span-4 Row-span-1: GST-Ready Billing (Focus on the Indian context).",
+        "Col-span-4 Row-span-1: Hearing-Aid Sales Pipeline.",
+        "Col-span-full md:col-span-12 Row-span-1: 13-State Repair Workflow (Horizontal map/timeline tracker)."
+      ]
+    },
+    "5_diagnostics_deep_dive": {
+      "layout": "Dark inverted section (Dark Mode palette) to simulate a clinical dark-room. Left: Deep-dive text on PTA / Tympanometry / OAE / ABR. Right: Large visual container reusing existing `AudiogramIllustration` and `TympanogramIllustration` components, styled with glowing data lines against deep indigo.",
+      "notes": "Creates a pacing break in the page scrolling."
+    },
+    "6_comparison_spreadsheets": {
+      "layout": "Two-column brutalist comparison table. Left Column (Spreadsheets + WhatsApp): Messy, red cross marks, jagged borders. Right Column (AUDINEXA): Clean, aligned, emerald checkmarks, smooth UI.",
+      "concept": "Visualizing the exact pain point of Indian clinic owners."
+    },
+    "7_trust_founder_testimonials": {
+      "layout": "Carousel or Masonry grid of quotes from ENT-owned clinics. Accompanied by a 'Founder Letter' block: single photo of the medical founder, serif signature, explaining why this was built for India.",
+      "style": "Cards with soft warm backgrounds."
+    },
+    "8_pricing": {
+      "layout": "3-column grid (Basic / Standard / Premium).",
+      "key_feature": "A massive banner bridging the top of all cards: 'Everything is Premium for the first 30 days. No credit card required.'",
+      "style": "Premium card uses the 'Tracing Beam' edge effect. CTAs are 'Start free trial'."
+    },
+    "9_faq_and_footer": {
+      "layout": "FAQ: Accordion style (shadcn), left-aligned questions (Cabinet Grotesk) and answers (IBM Plex Sans). Footer: Massive 'Let's Talk' CTA at text-[8vw], standard multi-column links."
+    }
   },
-  "motion": {
-    "hover_states": "Cards subtly lift (-translate-y-1) and gain a shadow-md. Borders shift from border-navy/10 to border-teal/40.",
-    "entrance": "Staggered fade-in (framer-motion) for the KPI tiles to make the data feel 'live' upon mounting.",
-    "zero_state_transition": "If a zero-state alert suddenly becomes > 0 (via websocket/polling), it smoothly expands its height rather than snapping instantly."
+  "motion_notes": {
+    "page_load": "Hero text elements slide up with 0.1s stagger. Hero image/UI cards fade in with a slight scale-up (0.95 to 1.0).",
+    "scroll": "Bento grid items fade up on scroll (Framer Motion `whileInView`).",
+    "micro_interactions": "Buttons: scale down on click (scale: 0.98). Cards: subtle 1px border color shift on hover (border-border/40 to border-primary/50). Live proof ticker: gentle endless marquee or heartbeat pulse on the 'Live' indicator.",
+    "accessibility": "Wrap all animations in `prefers-reduced-motion` checks."
   },
-  "accessibility": {
-    "contrast": "All text strictly meets 4.5:1 WCAG AA minimums against #EEF1FA and #FFFFFF. Teal is used carefully to ensure contrast on white.",
-    "testing_ids": "MANDATORY: data-testid='overview-kpi-appointments', data-testid='overview-zero-state-alert', etc."
+  "media_asset_plan": {
+    "total_size_budget": "< 2.5MB",
+    "images": [
+      {
+        "role": "Hero / Trust Element",
+        "description": "Indian doctor in clinic setting, looking confident.",
+        "url": "https://images.pexels.com/photos/5888168/pexels-photo-5888168.jpeg"
+      },
+      {
+        "role": "Diagnostics Section Background",
+        "description": "Abstract audio/sound wave, colorful, dark background.",
+        "url": "https://images.pexels.com/photos/27141312/pexels-photo-27141312.jpeg"
+      }
+    ],
+    "optimization": "Use WebP format, lazy load all images below the fold."
   },
-  "instructions_to_main_agent": [
-    "Do NOT implement code yet. The user will review the `design_guidelines.json` mockups and select Direction A, B, or C.",
-    "When a direction is chosen, completely remove the secondary page-level search input.",
-    "Remove all rainbow gradients and replace with flat, 1px border cards.",
-    "Utilize Plus Jakarta Sans for the KPI numbers to give them a premium geometric feel.",
-    "Handle the 'Needs Attention' strip dynamically: if array length is 0, render the collapsed elegant state defined by the chosen direction.",
-    "Ensure the layout is built strictly with CSS Grid (`grid-cols-12` or asymmetric setups) rather than nested flexboxes where possible, for rigidity."
-  ],
+  "image_urls": {
+    "indian_doctor_clinic_1": "https://images.pexels.com/photos/5888168/pexels-photo-5888168.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "indian_doctor_clinic_2": "https://images.pexels.com/photos/14558557/pexels-photo-14558557.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "abstract_audio_wave": "https://images.pexels.com/photos/27141312/pexels-photo-27141312.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+  },
+  "instructions_to_main_agent": {
+    "1": "DO NOT use Inter, Roboto, or generic fonts for headings. Use Cabinet Grotesk for headings and IBM Plex Sans for body text.",
+    "2": "Follow the 'Clinical Bone & Indian Saffron' color palette strictly. Avoid generic SaaS blue or heavy gradients.",
+    "3": "Build the Bento grid using raw HTML/Tailwind classes (grid-cols-1 md:grid-cols-12) for layout, DO NOT force generic Shadcn cards into complex layouts.",
+    "4": "The hero CTA MUST be 'Start free 30-day trial' linking to '/signup'. Remove all 'waitlist' terminology.",
+    "5": "Incorporate the existing `AudiogramIllustration` and `TympanogramIllustration` components in the Diagnostics section.",
+    "6": "Add `data-testid` to all interactive elements, e.g., `data-testid='hero-start-trial-button'`."
+  },
   "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
-    "You tend to converge toward generic outputs. Avoid this.",
-    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
-    "Don't make generic centered layouts. Use glass-morphism effects carefully.",
-    "You MUST NOT apply universal transition (e.g. transition: all).",
-    "You MUST NOT center align the app container (.App { text-align: center; }).",
-    "Always use modern button styles.",
-    "NEVER use AI assistant Emoji characters (🤖🧠💭💡) for icons. Use standard lucide-react or phosphor icons.",
-    "Every interaction needs micro-animations - hover states, transitions.",
-    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap."
+    "Prioritize using pre-existing components from src/components/ui.",
+    "Create depth through layered design elements with z-index hierarchy (using solid colors + sharp borders).",
+    "Do not center align the app container (.App { text-align: center; } is banned).",
+    "Never use AI assistant emoji characters like 🤖🧠💭.",
+    "Every interaction needs micro-animations - hover states, focus states, scale on click.",
+    "Use Generous Spacing Philosophy: p-8, p-12, p-16 to avoid cramped UI.",
+    "Ensure hover state contrast is accessible and visible.",
+    "For .js files, use standard React JS syntax, not TypeScript/TSX."
   ]
 }
