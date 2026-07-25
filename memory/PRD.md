@@ -1,5 +1,71 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📋 PHASE 16.9 — Doctor Notifications + Multi-Range Comparison + Picker Everywhere (2026-07-25)
+
+Follow-up trio to Phase 16.8. Owner-selected all three items with the
+clarification that WhatsApp notifications must be **optional and opt-in
+per stream** (separate checkboxes for Diagnostics + HA sales).
+
+### Task 3 — Opt-in WhatsApp thank-you notifications
+- Extended `ReferringDoctor` + `ReferringDoctorCreate` with two booleans:
+  `notify_on_diag`, `notify_on_ha` — both default `False`.
+- NEW `/app/backend/services/ref_docs_notify.py` — fire-and-forget helper
+  `notify_referring_doctor(db, clinic_id, patient_id, stream)` +
+  `schedule_notify` wrapper. Every attempt (success, opt-out, no-phone,
+  MSG91-not-configured) is journalled to `referral_notifications` so
+  owners can audit what fired.
+- Hooked into two milestone endpoints:
+  - `POST /api/sessions/{id}/mark-printed` → `stream='diagnostics'`
+  - `POST /api/ha-sales/{sale_no}/mark-paid` → `stream='ha_sales'`
+- Uses existing MSG91 template infra. Templates:
+  `audinexa_refdoc_thanks_diagnostics`, `audinexa_refdoc_thanks_ha`
+  (namespace `audinexa_v1`, EN). One `{{1}}` substitution: patient first name.
+- Settings → Referral Doctors form gained a "WhatsApp thank-you (optional)"
+  section with two independent checkbox tiles. Each ticked → tile lights
+  emerald. Table has a compact 'Notify' column showing DIAG/HA badges.
+
+### Task 2 — Multi-Range Comparison in doctor drill-down
+- `DoctorDrillDownModal` now fetches the current window AND an
+  equal-length prior window in parallel.
+- New `drilldown-compare-ribbon` shows previous-window numbers.
+- Each `MiniKpi` shows a delta chip (▲ / ▼ / =) with the difference.
+- Zero backend changes — reuses `/api/referrals/doctors/{id}/detail`.
+
+### Task 1 — Picker in Book Appointment
+- `BookAppointmentModal` swaps the free-text "Referred by (ENT / GP name)"
+  input for `ReferringDoctorPicker` on referral visits.
+- `AppointmentCreate` extended with optional `referring_doctor_id`.
+- Backend auto-links `patient.referring_doctor_id` on booking (idempotent —
+  only when the patient doesn't already have a doctor set) so downstream
+  referral rollup + payout + notify all pick up the visit.
+- HA fitting form was reviewed — no doctor input needed there (doctor is
+  inherited from the patient), so no change.
+
+### Files
+- Backend: `models/_canonical.py`, `routers/report_handover.py`,
+  `routers/ha_sales.py`, `routers/appointments.py`, NEW `services/ref_docs_notify.py`.
+- Frontend: `settings/ReferralDoctorsTab.jsx`, `referrals/DoctorDrillDownModal.jsx`,
+  `appointments/components/BookAppointmentModal.js`.
+
+### Verified (iteration_42.json)
+- Backend 3/3 pytest passed: POST/PUT/GET/DELETE of the two notify booleans,
+  session mark-printed writes a `referral_notifications` row with
+  `stream='diagnostics'` (status may be `queued_no_provider` on preview
+  since MSG91 isn't configured — expected).
+- Frontend 3/3 flows passed: settings checkboxes work + Notify column
+  reflects state, drill-down compare ribbon renders with 4 delta chips,
+  Book Appointment picker replaces free-text input on referral visits and
+  submits `referring_doctor_id` in the payload.
+
+### Deferred to future phase
+- Weekly + end-of-month payout email (reuse Phase 16.6 scheduler).
+- Multi-range comparison for the main Referral Corner table (not just
+  the drill-down modal).
+- Owner-facing view of the `referral_notifications` audit log
+  (endpoint + service already ship; UI is a small future add).
+
+---
+
 ## 📋 PHASE 16.8 — Referral Doctors + Referral Corner UX overhaul (2026-07-25)
 
 Delivered Phase 1 (Settings CRUD + auto-add) and Phase 2 (Referral Corner
