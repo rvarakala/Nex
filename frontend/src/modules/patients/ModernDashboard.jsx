@@ -805,7 +805,7 @@ export default function ModernDashboard() {
                 hint={audiologists.length
                   ? `Includes ${audiologists.slice(0, 2).map((a) => a.name.split(' ')[0]).join(' · ')}${audiologists.length > 2 ? ` +${audiologists.length - 2}` : ''}`
                   : 'No audiologist marked on duty today'}
-                onClick={() => navigate('/patients/doctor-schedule')}
+                onClick={() => navigate('/settings/staff-schedule')}
                 testid="pulse-doctor-schedule"
               />
               <ClinicTile

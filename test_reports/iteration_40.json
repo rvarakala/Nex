@@ -1,0 +1,41 @@
+{
+  "summary": "Full dashboard link-audit verified on /patients (ModernDashboard) as clinic_owner (owner@thesoundclinic.in). Logged in successfully, then clicked each of the 13 dashboard interactive elements + the 4 patient sub-nav tabs. Verified URL + rendered content for every destination. ALL 17/17 navigations work correctly. THE FIX on line 808 of ModernDashboard.jsx (Doctor Schedule → /settings/staff-schedule) is confirmed working: URL becomes /settings/staff-schedule, page shows 'Staff Schedule' heading AND 'Inherit clinic hours' checkbox. No broken links found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ModernDashboard.jsx is 993 lines — consider splitting Row A/B/C/QuickActions into sub-components for maintainability.",
+    "qa-ha-sale intentionally strips ?quick=1 from URL after opening QuickHASaleModal (FittingLedgerPage.js:59-64) — behavior is by design and modal opens correctly; documenting in case a future test asserts on URL query."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only test)", "frontend": "100% (17/17 navigations pass)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic_owner) — works",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Dashboard link-audit complete. Correct sub-nav tab data-testids are pmod-tab-dashboard, pmod-tab-appointments, pmod-tab-list, pmod-tab-reports (note: 'list' not 'patients'). For qa-new-appt, the modal title is 'Book Appointment' (not 'New Appointment'); look for data-testid='quick-ha-sale-modal' for qa-ha-sale or [role~='dialog'] with 'Book Appointment' text for qa-new-appt. qa-ha-sale intentionally strips ?quick=1 from URL after opening the QuickHASaleModal.",
+  "detailed_results": {
+    "na-recalls": "PASS → /patients/list?filter=recall (body 5389)",
+    "na-low-stock": "PASS → /ha/inventory (body 4630)",
+    "na-repairs": "PASS → /repair/jobs (body 2615) [routes to /repair/jobs which is the default child of /repair]",
+    "dash-attention-review": "PASS → /care (body 818)",
+    "pulse-doctor-schedule": "PASS → /settings/staff-schedule (body 1725) — FIX VERIFIED: contains 'Staff Schedule' heading AND 'Inherit clinic hours' checkbox text",
+    "pulse-trial-devices": "PASS → /ha/fittings?filter=trial (body 1642)",
+    "pulse-warranty": "PASS → /ha/fittings?warranty=expiring (body 1642)",
+    "qa-new-appt": "PASS — URL unchanged (/patients), opens 'Book Appointment' modal (audiologist select, date/time, slots grid)",
+    "qa-new-reg": "PASS → /patients/new (body 1734)",
+    "qa-test": "PASS → /test (body 1288)",
+    "qa-ha-sale": "PASS → /ha/fittings + opens QuickHASaleModal (data-testid=quick-ha-sale-modal). ?quick=1 stripped by design after modal opens.",
+    "qa-recall": "PASS → /patients/list?filter=recall (body 5389)",
+    "qa-reports": "PASS → /reports (body 1550)",
+    "pmod-tab-dashboard": "PASS → /patients",
+    "pmod-tab-appointments": "PASS → /patients/appointments",
+    "pmod-tab-list (Patients)": "PASS → /patients/list",
+    "pmod-tab-reports": "PASS → /patients/reports (body 1590, 'Completed Reports' page)"
+  }
+}
