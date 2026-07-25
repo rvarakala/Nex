@@ -45,7 +45,7 @@ export default function SettingsModule() {
             <SideLink to="/settings/clinic" icon={<Building2 size={14} />} label="Clinic Details" testid="settings-nav-clinic" />
             <SideLink to="/settings/hours"  icon={<Clock size={14} />}     label="Clinic Hours"   testid="settings-nav-hours" />
             <SideLink to="/settings/staff"  icon={<Users size={14} />}     label="Staff Settings" testid="settings-nav-staff" />
-            <SideLink to="/settings/staff-schedule" icon={<CalendarClock size={14} />} label="Staff Schedule" testid="settings-nav-staff-schedule" />
+            <SideLink to="/settings/staff-schedule" icon={<CalendarClock size={14} />} label="Doctor Schedule" testid="settings-nav-staff-schedule" />
             <SideLink to="/settings/branches" icon={<MapPin size={14} />}  label="Branches"       testid="settings-nav-branches" />
             <SideLink to="/settings/security" icon={<ShieldCheck size={14} />} label="Security & Privacy" testid="settings-nav-security" />
             <SideLink to="/settings/connect"  icon={<MessageCircle size={14} />} label="Connect (WhatsApp)" testid="settings-nav-connect" />
@@ -54,7 +54,7 @@ export default function SettingsModule() {
           </>
         )}
         {canManageCatalog && (
-          <SideLink to="/settings/services" icon={<ListChecks size={14} />} label="Service Catalogue" testid="settings-nav-services" />
+          <SideLink to="/settings/services" icon={<ListChecks size={14} />} label="Services & Packages" testid="settings-nav-services" />
         )}
         {(isAdmin || canManageCatalog) && <div className="my-2 border-t border-slate-100" />}
         <SideLink to="/settings/profile"   icon={<User size={14} />} label="My Profile"   testid="settings-nav-profile" />

@@ -5,8 +5,8 @@ import {
   LayoutDashboard, Users, Receipt, Stethoscope, Headphones, Wrench,
   BarChart3, ChevronLeft, LogOut,
   Menu, Search as SearchIcon, Settings, Database, LifeBuoy,
-  Calendar, CalendarDays, BookOpen, RotateCcw, UserPlus, UserSquare2,
-  Package, Tag, IndianRupee, Bell, MessageSquare, HelpCircle, ChevronDown,
+  Calendar, CalendarDays, RotateCcw, UserPlus, UserSquare2,
+  Package, IndianRupee, Bell, MessageSquare, HelpCircle, ChevronDown,
   TrendingUp, ShieldCheck, Award,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
@@ -247,8 +247,6 @@ export default function AppShell({ children }) {
       items: [
         { to: '/patients/appointments', Icon: Calendar, label: 'Appointments', testid: 'nav-appointments' },
         { to: '/appointments',           Icon: CalendarDays, label: 'Calendar',     testid: 'nav-calendar' },
-        isOwnerOrAdmin &&
-          { to: '/settings/staff-schedule', Icon: BookOpen, label: 'Doctor Schedule', testid: 'nav-doctor-schedule' },
       ].filter(Boolean),
     },
     {
@@ -266,8 +264,6 @@ export default function AppShell({ children }) {
           { to: '/ha/trials',    Icon: Headphones, label: 'Hearing Aids', testid: 'nav-ha' },
         !isAudio && m('hearing-aids') &&
           { to: '/ha/inventory', Icon: Package,    label: 'Inventory',    testid: 'nav-inventory' },
-        isOwnerOrAdmin &&
-          { to: '/settings/services', Icon: Tag, label: 'Services & Packages', testid: 'nav-services' },
         !isAudio && m('repair') &&
           { to: '/repair', Icon: Wrench, label: 'Service & Repair', testid: 'nav-repair' },
       ].filter(Boolean),
