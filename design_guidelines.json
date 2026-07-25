@@ -1,83 +1,115 @@
 {
-  "project_name": "AUDINEXA Medical Dashboard Redesign",
-  "theme": "Light",
-  "archetype": "1_organic_earthy",
-  "domain": "Medical / Audiology SaaS Dashboard",
-  "core_philosophy": "Premium, modern, border-free design language. Therapeutic, professional, and calming. No hard borders, rely on subtle elegant drop shadows and generous whitespace.",
-  "colors": {
-    "background": "#F8F9FA",
-    "surface": "#FFFFFF",
-    "text_primary": "#0F172A",
-    "text_secondary": "#475569",
-    "text_tertiary": "#94A3B8",
-    "kpi_active_mint": {
-      "bg": "#ECFDF5",
-      "text": "#047857"
-    },
-    "kpi_active_blue": {
-      "bg": "#EFF6FF",
-      "text": "#1D4ED8"
-    },
-    "kpi_muted": {
-      "bg": "#F1F5F9",
-      "text": "#94A3B8"
-    },
-    "brand_accents": {
-      "indigo": "#4F46E5",
-      "emerald": "#059669",
-      "amber": "#D97706"
-    }
+  "project_context": {
+    "role": "clinic_owner",
+    "page": "Overview Dashboard",
+    "core_goal": "Fast morning-scan surface (3 seconds), scannable, dense, clinical, and premium",
+    "current_issues": [
+      "Duplicated search bars",
+      "Clashing rainbow gradients on KPIs",
+      "Oversized zero-state alerts for Needs Attention",
+      "Confused typographical hierarchy in headers",
+      "Low data density below the fold"
+    ]
   },
   "typography": {
-    "font_family": "Inter",
-    "rules": {
-      "h1_greeting": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
-      "h2_section": "text-lg font-semibold tracking-tight text-slate-800",
-      "kpi_numbers": "text-3xl sm:text-4xl font-bold tracking-tighter",
-      "body": "text-sm text-slate-600 leading-relaxed",
-      "table_text": "text-sm text-slate-700 font-medium",
-      "labels": "text-xs font-semibold tracking-wide uppercase text-slate-500"
+    "font_family_headers": "Plus Jakarta Sans",
+    "font_family_body": "Inter",
+    "strategy": "The Anti-Default Rule. We avoid standard 'Bold' everywhere. H1s will pair font-light with font-semibold. KPI numbers will be font-black (900) with tracking-tighter. Overlines will be uppercase, tracking-[0.2em], text-xs.",
+    "hierarchy": {
+      "h1_greeting": "text-3xl sm:text-4xl font-light tracking-tight",
+      "h2_section": "text-lg font-semibold tracking-tight uppercase text-navy/70",
+      "kpi_value": "text-4xl sm:text-5xl font-black tracking-tighter",
+      "kpi_label": "text-sm font-medium tracking-wide text-navy/60"
     }
   },
-  "styling_rules": {
-    "border_radius": "rounded-xl",
-    "borders": "NO hard borders. Remove 'border' and 'border-border' from standard components. Use shadow-sm or custom soft shadows.",
-    "shadows": "shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)] for cards, hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.08)] for interaction.",
-    "spacing": "Generous spacing. p-6 or p-8 for main cards. py-4 for list items.",
-    "icons": "Use lucide-react. Keep stroke-width to 1.5 or 2 for a refined look."
-  },
-  "components": {
-    "greeting_header": "Show 'Good Evening, Dr. <Name> 👋' and a subtitle (e.g., 'Here is what your day looks like.'). Include existing search bar and Quick Actions cluster.",
-    "alert_pills": "Small muted badges (e.g., rounded-full bg-slate-100 text-slate-600 px-3 py-1 text-xs font-medium flex items-center gap-2) for 'Low stock' and 'Ready for pickup'.",
-    "kpi_cards": "5 top-row cards. Active metrics use 'kpi_active_mint' or 'kpi_active_blue'. Zero-value metrics use 'kpi_muted'. Include small sparklines or trend indicators if applicable.",
-    "calendar_empty_state": "Left column block. Elegant, soft design. Use a large, soft-colored lucide-react icon (like CalendarHeart or Calendar) with a therapeutic message 'No appointments today'.",
-    "patient_list": "Right column. 'Recent Registrations' borderless list. Avatar + Name, Age + Gender, Tag (New/Returning), Phone, Date. Ample vertical line-height. CTA '+ New Registration' top right.",
-    "quick_actions": "3-4 buttons. Use soft background colors or ghost button styles to avoid cluttering the primary hierarchy."
-  },
-  "mockups_instructions": {
-    "deliverable": "Provide 3 distinct full-page mockups (implement as 3 separate layout components or a toggleable layout in the dashboard). All must apply the off-white bg, no hard borders, 12px radius, pastel fills, and Inter typography.",
-    "Mock_A": "Magazine Grid: 5 stacked KPI cards across the top in a single row. Below it, a strict 50/50 split with Calendar on the left and Patient List on the right.",
-    "Mock_B": "Hero + Sidebar: Asymmetric KPI strip (1 large primary KPI tile spanning 2 columns, 4 smaller tiles). Below it, a 2-column main body (Calendar/Patients) and a slim right-rail for 'Today's Schedule' timeline.",
-    "Mock_C": "Workspace Cards: 12-column grid layout. Every region (KPIs, Calendar, Patients, Quick Actions) is an elevated panel with clear visual hierarchy and breathing room, arranged in a masonry or bento-box style."
-  },
-  "image_urls": [
-    {
-      "url": "https://images.unsplash.com/photo-1622207691293-5cd80466dab3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxpbmRpYW4lMjB3b21hbiUyMHBvcnRyYWl0fGVufDB8fHx8MTc4Mjg0Mjk1MHww&ixlib=rb-4.1.0&q=85",
-      "category": "patient_avatar",
-      "description": "Aditi Sharma - Female 42y"
+  "colors": {
+    "backgrounds": {
+      "page_base": "#EEF1FA",
+      "surface_primary": "#FFFFFF",
+      "surface_highlight": "#0F1D3A"
     },
-    {
-      "url": "https://images.unsplash.com/photo-1663560454891-9bdbdaaed84d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwyfHxpbmRpYW4lMjBtYW4lMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODI4NDI5NTB8MA&ixlib=rb-4.1.0&q=85",
-      "category": "patient_avatar",
-      "description": "Vikram Mehta - Male 58y"
-    }
-  ],
+    "text": {
+      "primary": "#0F1D3A",
+      "secondary": "rgba(15, 29, 58, 0.6)",
+      "accent": "#14B8A6"
+    },
+    "borders": {
+      "subtle": "rgba(15, 29, 58, 0.08)",
+      "focus": "#14B8A6"
+    },
+    "strategy": "Swiss & High-Contrast (Archetype 4 adapted to clinical). We kill the rainbow gradients. We rely on the structural grayscale/navy for hierarchy. Color (Teal) is function only—used strictly to guide action and indicate active states. Surfaces will be flat and crisp."
+  },
+  "visual_enhancers": {
+    "surfaces": "Grid Borders (The Technical Look). Cards will have flat backgrounds, 1px subtle borders (border-navy/10), and NO heavy drop shadows by default.",
+    "border_radius": "Subtle roundness, max 8px (rounded-lg) for a sharp, precise medical software feel.",
+    "zero_state": "Collapsed. Zero states shouldn't scream for attention. They should shrink to a minimal confirmation of health."
+  },
+  "layouts": {
+    "directions": [
+      {
+        "name": "Direction A: Command Deck (The Dense Grid)",
+        "narrative": "A hyper-dense, single-scan dashboard. Everything critical lives above the fold in a strict 12-column grid. The aesthetic is tactical and precise. The rainbow KPI cards are replaced by stark, white architectural cards with massive, high-contrast numbers.",
+        "ascii_wireframe": "+-------------------------------------------------------------+\n| Good Afternoon, Dr. Raina.                    [25 Jul 2026] |\n+-------------------------------------------------------------+\n| [✓] All clear today. No pending recalls or alerts.          |\n+-------------------------------------------------------------+\n| +-------------+ +-------------+ +-------------+ +---------+ |\n| | Appts   12  | | New Pts  3  | | Tests   8   | | Rev ₹4k | |\n| +-------------+ +-------------+ +-------------+ +---------+ |\n| +-----------------------------------+ +-------------------+ |\n| | Today's Timeline (In Test Now)    | | Quick Actions     | |\n| | 10:00 AM - Patient A (PTA)        | | [+] Appt  [+] Sale| |\n| | 10:30 AM - Patient B (Waiting)    | | [+] Reg   [+] OAE | |\n| +-----------------------------------+ +-------------------+ |",
+        "hierarchy": "Data dominates. The greeting is secondary to the KPI numbers. Quick actions sit tightly clustered on the right rail.",
+        "solutions": {
+          "duplicate_search": "Completely removed from the page layout. The global top-nav (⌘K) handles all queries. The space reclaimed is used for the Date Pill and greeting.",
+          "kpi_tiles": "No gradients. White background, 1px Navy border. The numbers are Plus Jakarta Sans, Black weight. A tiny Teal dot indicates a positive trend.",
+          "needs_attention_zero_state": "Collapses into a single, slim, green-tinted text chip ('✓ All clear'). Only expands into cards when items > 0.",
+          "data_density": "High. The fold accommodates KPIs, live timeline, and quick actions simultaneously."
+        }
+      },
+      {
+        "name": "Direction B: Focus Feed (Task-First)",
+        "narrative": "Treats the day like a chronological feed. Instead of focusing on static numbers, it prioritizes the live pulse of the clinic. The center column is a running feed of what is happening right now, while KPIs are reduced to an executive sidebar.",
+        "ascii_wireframe": "+-------------------------------------------------------------+\n| Good Afternoon, Dr. Raina.                                  |\n+-------------------------------------------------------------+\n| +-------------+ +-----------------------+ +---------------+ |\n| | METRICS     | | TODAY'S FEED          | | ATTENTION   0 | |\n| | Appts:   12 | | [Testing] Patient A   | | - Recalls:  0 | |\n| | New:      3 | | [Waiting] Patient B   | | - Stock:    0 | |\n| | Tests:    8 | | [Next Up] Patient C   | | - Repairs:  0 | |\n| |             | |                       | |               | |\n| | ACTIONS     | | RECENT REGISTRATIONS  | | CELEBRATIONS  | |\n| | [+] Appt    | | > Mark Smith (Apprv)  | | > \uD83C\uDF82 J. Doe   | |\n| +-------------+ +-----------------------+ +---------------+ |",
+        "hierarchy": "The 'In Test Now' timeline dominates the visual center. Metrics are tertiary, living quietly on the left.",
+        "solutions": {
+          "duplicate_search": "Removed. Replaced by a clean typographic header.",
+          "kpi_tiles": "Stripped of cards entirely. KPIs are treated as a minimalist list (label: value) on the left rail, saving massive horizontal space.",
+          "needs_attention_zero_state": "Moved to the right rail as a discreet 'toolbar' list. Zero values are muted gray, non-intrusive.",
+          "data_density": "Deep vertical scroll. Highly task-oriented."
+        }
+      },
+      {
+        "name": "Direction C: Editorial Overview (Asymmetric Artful)",
+        "narrative": "A bold, magazine-style layout that uses asymmetry to create visual interest. The left rail acts as a sticky command center with your greeting and actions, while the right side is a 'Bento Box' grid of live data and charts.",
+        "ascii_wireframe": "+-----------------------+ +-----------------------------------+\n| 25 JUL 2026           | |  +-------------+ +-------------+  |\n| GOOD AFTERNOON,       | |  | 12          | | 3           |  |\n| DR. RAINA             | |  | Appointments| | New Patient |  |\n|                       | |  +-------------+ +-------------+  |\n| Needs Attention [0]   | |  +-----------------------------+  |\n| All systems optimal.  | |  | Live: In Test Now           |  |\n|                       | |  | >> Patient A (SPEECH)       |  |\n| Quick Actions         | |  +-----------------------------+  |\n| [New Appointment]     | |  +-----------------------------+  |\n| [Register Patient]    | |  | Today's Test Mix (Donut)    |  |\n+-----------------------+ +-----------------------------------+",
+        "hierarchy": "The Typography of the greeting and Date dominates the left. The Bento grid of data dominates the right.",
+        "solutions": {
+          "duplicate_search": "Removed. The left rail anchors the entire dashboard without needing filler.",
+          "kpi_tiles": "Bento style. Some tiles span 2 columns, some 1. We use the Navy (#0F1D3A) background with White text for the most critical metric (e.g., Appointments) to create a focal point, leaving the rest White.",
+          "needs_attention_zero_state": "Sits inline as regular body text in the left rail. 'Needs Attention: 0. All systems optimal.'",
+          "data_density": "Highly scannable. Separates 'Navigation/Action' (Left) from 'Information' (Right)."
+        }
+      }
+    ]
+  },
+  "motion": {
+    "hover_states": "Cards subtly lift (-translate-y-1) and gain a shadow-md. Borders shift from border-navy/10 to border-teal/40.",
+    "entrance": "Staggered fade-in (framer-motion) for the KPI tiles to make the data feel 'live' upon mounting.",
+    "zero_state_transition": "If a zero-state alert suddenly becomes > 0 (via websocket/polling), it smoothly expands its height rather than snapping instantly."
+  },
+  "accessibility": {
+    "contrast": "All text strictly meets 4.5:1 WCAG AA minimums against #EEF1FA and #FFFFFF. Teal is used carefully to ensure contrast on white.",
+    "testing_ids": "MANDATORY: data-testid='overview-kpi-appointments', data-testid='overview-zero-state-alert', etc."
+  },
   "instructions_to_main_agent": [
-    "You are editing /app/frontend/src/modules/patients/ModernDashboard.jsx (or creating new files alongside it for layout variations).",
-    "Replace existing hard borders with elegant drop shadows and border-radius 12px.",
-    "Apply background color #F8F9FA to the main content area.",
-    "Implement the 3 layouts (Mock A, B, C). You can create 3 separate components and render them stacked or with a toggle to present them to the user.",
-    "Preserve all existing data points and functionalities mentioned in the prompt (Search, Greeting, KPI counts, Lists).",
-    "Ensure all interactive elements have data-testid attributes."
+    "Do NOT implement code yet. The user will review the `design_guidelines.json` mockups and select Direction A, B, or C.",
+    "When a direction is chosen, completely remove the secondary page-level search input.",
+    "Remove all rainbow gradients and replace with flat, 1px border cards.",
+    "Utilize Plus Jakarta Sans for the KPI numbers to give them a premium geometric feel.",
+    "Handle the 'Needs Attention' strip dynamically: if array length is 0, render the collapsed elegant state defined by the chosen direction.",
+    "Ensure the layout is built strictly with CSS Grid (`grid-cols-12` or asymmetric setups) rather than nested flexboxes where possible, for rigidity."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "You tend to converge toward generic outputs. Avoid this.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts. Use glass-morphism effects carefully.",
+    "You MUST NOT apply universal transition (e.g. transition: all).",
+    "You MUST NOT center align the app container (.App { text-align: center; }).",
+    "Always use modern button styles.",
+    "NEVER use AI assistant Emoji characters (🤖🧠💭💡) for icons. Use standard lucide-react or phosphor icons.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap."
   ]
 }
