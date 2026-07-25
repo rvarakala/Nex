@@ -23,6 +23,22 @@ Can it hold 100 users?"* Consultative audit + one **silent P0 bug fix**.
 - **Tests**: 4 new regression tests
   (`/app/backend/tests/test_trial_expiry_string_dates.py`) — all pass.
 
+### 🩹 Founder Dashboard KPI fixes (2 small bugs also found + fixed)
+
+- **Churn was permanently 0**: `_compute_dashboard` filtered by
+  `tier_updated_at: {$gte: month_ago}` but nothing in the codebase ever
+  writes `tier_updated_at`. Repointed to `trial_expired_at` (which the
+  cron actually stamps). Founder now sees a real churn rate — currently
+  **97.5%** as a one-time artifact of today's migration flipping 119
+  clinics at once. Will normalize within 30 days.
+- **`trial_to_paid_pct` was mathematically broken**: dividing by
+  `active_trial_count` which shrinks to 0 as the cron does its job →
+  meaningless numbers like `200%`. Now divides by
+  `paid + churned + still-trialing` (best proxy for "trials that ever
+  started"). Result: 2 paid / 121 ever-trialed = **1.7% trial→paid**.
+- Also exposes `churned_30d` in the funnel payload so the founder can
+  see the rolling churn number without cross-referencing.
+
 ### Audit findings (see full report at /app/memory/LAUNCH_READINESS_AUDIT.md)
 
 - ✅ Self-signup (`POST /public/clinic-signup`) — clinic + owner + branch

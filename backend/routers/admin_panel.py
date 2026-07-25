@@ -149,10 +149,14 @@ async def _compute_dashboard(db) -> dict:
     # ---- New signups this month ----
     new_signups_30d = await db.clinics.count_documents({"created_at": {"$gte": month_ago}})
 
-    # ---- Churn proxy (clinics with tier_auto_downgraded_from_trial in last 30d) ----
+    # ---- Churn proxy (clinics auto-downgraded from trial in last 30d) ----
+    # NB: the trial-expiry cron stamps `trial_expired_at` (ISO string) — an
+    # earlier version of this code looked for a `tier_updated_at` field that
+    # nothing writes, so churn was permanently 0. Migrated to the real stamp
+    # during the 2026-07-25 launch-readiness audit.
     churned = await db.clinics.count_documents({
         "tier_auto_downgraded_from_trial": True,
-        "tier_updated_at": {"$gte": month_ago},
+        "trial_expired_at": {"$gte": month_ago},
     })
     churn_rate = round(100 * churned / max(active + trials, 1), 1)
 
@@ -226,9 +230,16 @@ async def _compute_dashboard(db) -> dict:
     ).sort("trial_ends_at", 1).limit(25).to_list(25)
 
     # ---- Conversion funnel (leads → trial → paid) ----
+    # `trials` = clinics with a currently ACTIVE trial (trial_ends_at still set
+    # after the nightly expiry cron `$unset`s expired ones). `paid` = anyone
+    # on STANDARD or PREMIUM. `all_ever_trialed` = paid + churned + still-trialing
+    # (best proxy we have for "trials that ever started" without a separate
+    # audit collection). This makes `trial_to_paid_pct` a meaningful ratio
+    # instead of divide-by-a-post-migration-zero.
     waitlist_count = await db.waitlist_signups.count_documents({})
     trial_count = await db.clinics.count_documents({"trial_ends_at": {"$exists": True}})
     paid_count = await db.clinics.count_documents({"subscription_tier": {"$in": ["STANDARD", "PREMIUM"]}})
+    ever_trialed = paid_count + churned + trial_count
 
     return {
         "kpis": {
@@ -251,7 +262,8 @@ async def _compute_dashboard(db) -> dict:
             "leads": waitlist_count,
             "trials": trial_count,
             "paid": paid_count,
-            "trial_to_paid_pct": round(100 * paid_count / max(trial_count, 1), 1),
+            "churned_30d": churned,
+            "trial_to_paid_pct": round(100 * paid_count / max(ever_trialed, 1), 1),
         },
         "recent_signups": recent_signups,
         "renewals_due": [deserialize_datetime(r) for r in renewals],

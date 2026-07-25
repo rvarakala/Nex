@@ -18,6 +18,7 @@
 | Infra capacity for 100 users | ✅ Comfortable | 200 concurrent local reqs = 0.22s; async FastAPI + Motor |
 | Rate-limiting | ✅ 600 req/min per tenant | `slowapi` global limiter |
 | Auth security | ✅ Cookie-JWT + CSRF | MFA disabled; strong internal-team passwords in place |
+| Founder Dashboard | ✅ Working (2 KPI bugs fixed) | 8 KPIs + MRR growth + plan donut + conversion funnel |
 | Deployment stability | ⚠️ Watch | Platform-level `ensure-environment` timed out last deploy |
 
 ---
@@ -114,8 +115,23 @@ The "ensure-environment: context deadline exceeded" alert is a **platform-level*
 
 ## Files changed this session
 - `/app/backend/trial_expiry.py` — dual-type $or query on `trial_ends_at`, wrote `trial_expired_at` as string (schema-consistent)
+- `/app/backend/routers/admin_panel.py` — churn now queries the real `trial_expired_at` stamp (was reading `tier_updated_at` which nothing writes); conversion funnel now divides by `paid + churned + still-trialing` instead of shrinking-to-zero active-trial count
 - `/app/backend/tests/test_trial_expiry_string_dates.py` — 4 new regression tests (all pass)
 - Live migration: 118 stuck legacy tenants downgraded to BASIC via one-off `run_trial_expiry_scan(db)` invocation
 
+## Founder Dashboard health-check (live-verified this session)
+
+Screenshot at `/admin/dashboard` after `founder@audinexa.com` / `founder123` login shows:
+- ✅ 8 KPI tiles rendering with live data: Active 122 · Trial 0 · MRR ₹41,989.83 · ARR ₹5.03L · New 30d 0 · **Churn 97.5%** · Payment Fails 0 · Avg ₹344.18
+- ✅ MRR Growth chart (12-month cumulative)
+- ✅ Plan Distribution donut (120 BASIC / 2 PAID)
+- ✅ Conversion Funnel: Leads 49 · Trial 0 · Paid 2 (1.7% trial→paid)
+- ✅ Left-nav renders all 17 items (Dashboard, Tenants, Plans & Pricing, Revenue, Leads/Trials, Live Activity, Marketing CRM, Feature Flags, Support Desk, Usage Analytics, System Health, Errors, Notifications, Audit Logs, Switch Audit, Users & Roles, Clinic Assignments)
+
+> **Note on the 97.5% churn number**: This is a one-time artifact from today's
+> trial-expiry migration flipping 119 stuck legacy tenants at once. It will
+> normalize as soon as 30 days pass OR real signups arrive to dilute the ratio.
+> Not a bug; expected data behaviour.
+
 ## Files audited (read-only)
-- `routers/subscription.py`, `utils/tiers.py`, `routers/razorpay_payments.py`, `routers/admin_panel.py` (issue_tenant_invoice + mark_paid), `frontend/src/modules/landing/SignupPage.js`, `frontend/src/modules/billing/MySubscriptionPage.jsx`, `frontend/src/SubscriptionContext.jsx`, `frontend/src/App.js` (ModuleGate wiring), `backend/.env`
+- `routers/subscription.py`, `utils/tiers.py`, `routers/razorpay_payments.py`, `routers/admin_panel.py` (issue_tenant_invoice + mark_paid), `frontend/src/modules/landing/SignupPage.js`, `frontend/src/modules/billing/MySubscriptionPage.jsx`, `frontend/src/SubscriptionContext.jsx`, `frontend/src/App.js` (ModuleGate wiring), `frontend/src/modules/admin/panel/TenantsPage.jsx`, `backend/.env`
