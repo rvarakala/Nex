@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
+import { ReferringDoctorPicker } from '../../components/patient/ReferringDoctorPicker';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -49,7 +50,7 @@ const INITIAL = {
   address: '', city: '', state: '', pincode: '',
   aadhaar_last4: '',
   chief_complaint: '', complaint_duration: '', ear_side: '',
-  referring_physician: '', referral_source: 'Walk-in',
+  referring_physician: '', referring_doctor_id: null, referral_source: 'Walk-in',
   insurance_scheme: 'Cash', insurance_card_number: '', insurance_validity: '', insurance_beneficiary: '',
   notes: '',
 };
@@ -340,8 +341,18 @@ export default function NewPatientPage() {
             </Field>
 
             <SectionHeader>Referral</SectionHeader>
-            <Field label="Referred By Doctor" testid="f-refdoc">
-              <Input value={form.referring_physician} onChange={(e) => set({ referring_physician: e.target.value })} placeholder="Dr. name / clinic" data-testid="in-refdoc" />
+            <Field label="Referred By Doctor" testid="f-refdoc" full>
+              <ReferringDoctorPicker
+                value={form.referring_doctor_id}
+                onChange={(id, doc) => set({
+                  referring_doctor_id: id,
+                  // Keep the legacy free-text field in sync so old reports still work
+                  referring_physician: doc ? `${doc.name}${doc.clinic ? ` (${doc.clinic})` : ''}` : '',
+                  // Auto-toggle referral_source to Doctor when a doctor is selected
+                  referral_source: id ? 'Doctor Referral' : form.referral_source,
+                })}
+                testid="in-refdoc"
+              />
             </Field>
             <Field label="Referral Source" testid="f-refsrc">
               <Select value={form.referral_source} onChange={(e) => set({ referral_source: e.target.value })} options={REFERRAL_SOURCES} data-testid="in-refsrc" />

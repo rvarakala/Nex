@@ -634,6 +634,13 @@ class ReferringDoctorCreate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
+    # ── Optional payout config at create/update time ───────────────
+    # If omitted, defaults to no-payout (mode=None, value=0). Owners
+    # typically set these on the Settings → Referral Doctors form.
+    diag_cut_mode: Optional[Literal["percent", "flat"]] = None
+    diag_cut_value: Optional[float] = 0.0
+    ha_cut_mode: Optional[Literal["percent", "flat"]] = None
+    ha_cut_value: Optional[float] = 0.0
 
 
 # ==================== PATIENT JOURNAL / CHART NOTES ====================

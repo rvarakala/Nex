@@ -1,0 +1,26 @@
+{
+  "summary": "Phase 1 (Settings Referral Doctors CRUD + auto-add scaffolding) and Phase 2 (Referral Corner pathway chips + presets + drill-down) tested end-to-end against the preview deployment. Backend: 5/5 pytest cases passed (POST/PUT/DELETE /api/referring-doctors with cut config incl. percent-clamp guardrail; GET /api/referrals/pathways schema; GET /api/referrals/doctors/{id}/detail schema + 404). Frontend: /settings/referral-doctors renders, sidebar entry present, full CRUD flow works — created 'Dr. QA One' with diag=12% + HA=₹1500 flat, verified row (12% and 1,500 shown), edited to 8%, verified, and deleted (row removed). /referrals page renders with all 5 preset chips (Today/Last3/Last7/Week/Month), preset-today correctly sets both start+end date pickers to today (2026-07-25). Pathway chip row shows ref-pathway-all + ref-pathway-Doctor and Doctor toggle turns indigo-active. Drill-down modal opens from ref-doc-drilldown-* button, shows all 4 KPI tiles (patients/diag/ha/payout), and all 4 sections (Payout breakdown, Tests conducted, Hearing-aid fittings, Referred patients). Close button dismisses modal. /patients/new uses the ReferringDoctorPicker (in-refdoc-input inside [data-testid=f-refdoc]) — no plain 'Dr. name' free-text input remains. Regression: /settings/services (body 5602) + /settings/staff-schedule (body 6169) still load. No console errors observed on any tested page.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_referral_phase2.py",
+    "/app/test_reports/pytest/referral_phase2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ReferralCornerPage.jsx: Kpi component builds Tailwind class names by string interpolation like `border-${accent}-100` and `text-${accent}-700`. Tailwind's JIT only picks up classes that appear literally in source — these dynamic classes are not safelisted, so KPI accent colors may render as an unstyled fallback in the production build. Consider a lookup map (as already done in DoctorDrillDownModal.jsx MiniKpi via `map[accent]`) or add safelist entries in tailwind.config.js.",
+    "referrals.py _dashboard_rows(): HA blacklist step re-walks invoices twice (once for revenue, once for subtraction) — could be folded into a single pass if HA sale statuses were pre-loaded. Not urgent (rare in practice per comment) but worth noting for scale.",
+    "ref_docs.py POST accepts cut fields but performs no percentage 400-error (unlike the /cut-config PATCH which raises 400 for >100%) — it silently clamps to 100. This is documented behavior but the discrepancy in error signaling between the two endpoints may surprise API consumers.",
+    "Referral Corner and Settings pages both render `ref-doc-row-{id}` — documented as expected by main agent, but consider disambiguating one of them (e.g. `settings-ref-doc-row-{id}`) to reduce cross-page selector collision risk in tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_referral_phase2.py (new)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (all critical flows pass)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic_owner) — works",
+  "seed_data_creation": "Test doctor 'Dr. QA One' was created via UI and cleaned up (deleted) in the same run. Backend test cleans up its own DR-API-* rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login flow: use nth(0)/nth(1) on `page.locator('input')` (email + password inputs have no type=email/password nor data-testids). Use wait_for_load_state('domcontentloaded') NOT 'networkidle' — the app keeps some background traffic alive and networkidle times out. Referral Corner drill-down data-testids: ref-doc-drilldown-{doctor_id}, doctor-drilldown-modal, doctor-drilldown-close, drilldown-kpi-{patients|diag|ha|payout}. Preset chip data-testids: ref-corner-preset-{today|last3|last7|week|month}. Pathway chip data-testids: ref-pathway-{all|Doctor|Walk-in|Self|...}. Settings tab data-testid: settings-referral-doctors + settings-nav-referral-doctors. Auto-add-doctor flow inside picker was NOT exercised as a full E2E (patient save omitted for time) but picker component + POST /referring-doctors endpoint are both individually verified. The Walk-in pathway chip only renders when there are Walk-in patients in the window; in this month's window there were none — this is expected.",
+  "rca of the issue": "N/A — no defects found."
+}

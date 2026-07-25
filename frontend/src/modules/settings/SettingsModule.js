@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom';
-import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload, User, Printer, Stamp } from 'lucide-react';
+import { Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck, MessageCircle, Clock, CalendarClock, Upload, User, Printer, Stamp, Stethoscope } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
@@ -26,6 +26,7 @@ import DataImportTab from './DataImportTab';
 import PrintTemplatesTab from './PrintTemplatesTab';
 import BlankAudiogramTemplate from './templates/BlankAudiogramTemplate';
 import ServiceCatalogPage from '../billing/ServiceCatalogPage';
+import ReferralDoctorsTab from './ReferralDoctorsTab';
 import { useAuth } from '../../AuthContext';
 
 export default function SettingsModule() {
@@ -46,6 +47,7 @@ export default function SettingsModule() {
             <SideLink to="/settings/hours"  icon={<Clock size={14} />}     label="Clinic Hours"   testid="settings-nav-hours" />
             <SideLink to="/settings/staff"  icon={<Users size={14} />}     label="Staff Settings" testid="settings-nav-staff" />
             <SideLink to="/settings/staff-schedule" icon={<CalendarClock size={14} />} label="Doctor Schedule" testid="settings-nav-staff-schedule" />
+            <SideLink to="/settings/referral-doctors" icon={<Stethoscope size={14} />} label="Referral Doctors" testid="settings-nav-referral-doctors" />
             <SideLink to="/settings/branches" icon={<MapPin size={14} />}  label="Branches"       testid="settings-nav-branches" />
             <SideLink to="/settings/security" icon={<ShieldCheck size={14} />} label="Security & Privacy" testid="settings-nav-security" />
             <SideLink to="/settings/connect"  icon={<MessageCircle size={14} />} label="Connect (WhatsApp)" testid="settings-nav-connect" />
@@ -68,6 +70,7 @@ export default function SettingsModule() {
           {isAdmin && <Route path="hours"    element={<ClinicHoursTab />} />}
           {isAdmin && <Route path="staff"    element={<StaffSettingsTab />} />}
           {isAdmin && <Route path="staff-schedule" element={<StaffScheduleTab />} />}
+          {isAdmin && <Route path="referral-doctors" element={<ReferralDoctorsTab />} />}
           {isAdmin && <Route path="branches" element={<BranchesTab />} />}
           {isAdmin && <Route path="security" element={<SecurityPrivacyTab />} />}
           {isAdmin && <Route path="connect"  element={<ConnectWhatsAppTab />} />}

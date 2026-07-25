@@ -37,6 +37,14 @@ async def create_referring_doctor(doc: ReferringDoctorCreate,
                                   user=Depends(get_current_user), db=Depends(get_db)):
     obj_data = doc.model_dump()
     obj_data["clinic_id"] = user["clinic_id"]
+    # Guardrails: value must be non-negative. Percent capped at 100.
+    for pfx in ("diag", "ha"):
+        v = float(obj_data.get(f"{pfx}_cut_value") or 0.0)
+        if v < 0:
+            v = 0.0
+        if obj_data.get(f"{pfx}_cut_mode") == "percent" and v > 100:
+            v = 100.0
+        obj_data[f"{pfx}_cut_value"] = v
     obj = ReferringDoctor(**obj_data)
     await db.referring_doctors.insert_one(serialize_datetime(obj.model_dump()))
     return obj
@@ -49,6 +57,14 @@ async def update_referring_doctor(doctor_id: str, payload: ReferringDoctorCreate
     if not existing:
         raise HTTPException(status_code=404, detail="Referring doctor not found")
     data = payload.model_dump()
+    # Same guardrails as create
+    for pfx in ("diag", "ha"):
+        v = float(data.get(f"{pfx}_cut_value") or 0.0)
+        if v < 0:
+            v = 0.0
+        if data.get(f"{pfx}_cut_mode") == "percent" and v > 100:
+            v = 100.0
+        data[f"{pfx}_cut_value"] = v
     data["updated_at"] = datetime.utcnow()
     await db.referring_doctors.update_one(
         {"doctor_id": doctor_id, "clinic_id": user["clinic_id"]},

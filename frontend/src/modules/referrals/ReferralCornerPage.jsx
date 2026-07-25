@@ -18,11 +18,34 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
   Users, IndianRupee, Stethoscope, ShoppingBag, Download, Save,
-  AlertCircle, Loader2, ChevronDown, Lock, Settings,
+  AlertCircle, Loader2, ChevronDown, Lock, Settings, Route as RouteIcon,
 } from 'lucide-react';
+import DoctorDrillDownModal from './DoctorDrillDownModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+// ─── Date range preset helpers ───────────────────────────────────────
+// Each preset returns { start, end } as YYYY-MM-DD strings, inclusive.
+// Presets appear as chips right of the date pickers so owners can jump
+// between "Today / 3d / 7d / This week / This month" in one click.
+const isoDate = (d) => d.toISOString().slice(0, 10);
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
+
+const PRESETS = [
+  { id: 'today',      label: 'Today',    range: () => { const t = new Date(); return { start: isoDate(t), end: isoDate(t) }; } },
+  { id: 'last3',      label: 'Last 3d',  range: () => ({ start: isoDate(daysAgo(2)),  end: isoDate(new Date()) }) },
+  { id: 'last7',      label: 'Last 7d',  range: () => ({ start: isoDate(daysAgo(6)),  end: isoDate(new Date()) }) },
+  { id: 'week',       label: 'This week', range: () => {
+      const t = new Date(); const dow = (t.getDay() + 6) % 7; // Mon=0
+      const start = new Date(t); start.setDate(t.getDate() - dow);
+      return { start: isoDate(start), end: isoDate(t) };
+    } },
+  { id: 'month',      label: 'This month', range: () => {
+      const t = new Date();
+      return { start: isoDate(new Date(t.getFullYear(), t.getMonth(), 1)), end: isoDate(t) };
+    } },
+];
 
 // Default to the current calendar month. The owner can override with the
 // date pickers at the top, but month-to-date is the most common framing
@@ -40,6 +63,11 @@ export default function ReferralCornerPage() {
   const [err, setErr] = useState('');
   const [range, setRange] = useState(defaultMonth);
   const [editing, setEditing] = useState(null); // doctor_id being edited
+  // Pathway breakdown (Doctor · Walk-in · Self · ...) and active filter
+  const [pathways, setPathways] = useState([]);
+  const [activePathway, setActivePathway] = useState('all');
+  // Drill-down modal
+  const [drillDoctorId, setDrillDoctorId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -55,14 +83,32 @@ export default function ReferralCornerPage() {
   const load = async () => {
     setLoading(true); setErr('');
     try {
-      const r = await axios.get(`${API}/referrals/dashboard`, { params: range });
-      setData(r.data);
+      const [dashR, pathR] = await Promise.all([
+        axios.get(`${API}/referrals/dashboard`, { params: range }),
+        axios.get(`${API}/referrals/pathways`, { params: range }).catch(() => ({ data: { pathways: [] } })),
+      ]);
+      setData(dashR.data);
+      setPathways(pathR.data.pathways || []);
     } catch (e) {
       setErr(e?.response?.data?.detail || e.message || 'Could not load referrals dashboard');
     } finally { setLoading(false); }
   };
 
   useEffect(() => { if (access?.has_access) load(); }, [access, range]);
+
+  // When "Doctor" pathway is active, rows are already all doctors so no
+  // client-side filter needed. Non-Doctor pathways collapse the doctor
+  // rollup table (there are no doctors for Walk-in / Self / etc.).
+  const visibleRows = useMemo(() => {
+    if (!data) return [];
+    if (activePathway === 'all' || activePathway === 'Doctor') return data.rows;
+    return []; // pathway isn't Doctor → hide doctor list
+  }, [data, activePathway]);
+
+  const activePathwayRow = useMemo(
+    () => pathways.find((p) => p.pathway === activePathway),
+    [pathways, activePathway],
+  );
 
   const downloadCsv = async (kind) => {
     try {
@@ -151,6 +197,94 @@ export default function ReferralCornerPage() {
         </div>
       </div>
 
+      {/* Date range preset chips */}
+      <div className="flex items-center gap-1.5 flex-wrap" data-testid="ref-corner-presets">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">Quick range</span>
+        {PRESETS.map((p) => {
+          const preset = p.range();
+          const active = preset.start === range.start && preset.end === range.end;
+          return (
+            <button
+              key={p.id}
+              onClick={() => setRange(preset)}
+              data-testid={`ref-corner-preset-${p.id}`}
+              className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full border transition ${
+                active
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Pathway chip row — Doctor / Walk-in / Self / Camp / etc. */}
+      {pathways.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap" data-testid="ref-corner-pathways">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">
+            <RouteIcon size={11} /> Pathway
+          </div>
+          <button
+            onClick={() => setActivePathway('all')}
+            data-testid="ref-pathway-all"
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${
+              activePathway === 'all'
+                ? 'bg-slate-900 border-slate-900 text-white'
+                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+            }`}
+          >
+            All <span className="tabular-nums text-[10px] font-bold ml-1 opacity-70">
+              {pathways.reduce((a, b) => a + b.patient_count, 0)}
+            </span>
+          </button>
+          {pathways.filter((p) => p.patient_count > 0 || p.pathway === 'Doctor').map((p) => {
+            const active = activePathway === p.pathway;
+            const isDoctor = p.pathway === 'Doctor';
+            return (
+              <button
+                key={p.pathway}
+                onClick={() => setActivePathway(active ? 'all' : p.pathway)}
+                data-testid={`ref-pathway-${p.pathway}`}
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition inline-flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    : isDoctor
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:border-indigo-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+                title={`${p.patient_count} patients · ${fmtINR(p.total_revenue)} revenue`}
+              >
+                {p.pathway}
+                <span className={`tabular-nums text-[10px] font-black rounded-full px-1.5 ${
+                  active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                }`}>{p.patient_count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Active pathway summary — shown when a non-Doctor pathway is selected */}
+      {activePathwayRow && activePathway !== 'all' && activePathway !== 'Doctor' && (
+        <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-4" data-testid="ref-pathway-summary">
+          <div className="text-[10px] font-bold tracking-[0.15em] uppercase text-indigo-800 mb-2">
+            {activePathway} pathway — {range.start} to {range.end}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <MiniStat label="Patients" value={activePathwayRow.patient_count} />
+            <MiniStat label="Diagnostics" value={fmtINR(activePathwayRow.diagnostics_revenue)} />
+            <MiniStat label="HA sales" value={fmtINR(activePathwayRow.ha_sales_revenue)} />
+            <MiniStat label="Total revenue" value={fmtINR(activePathwayRow.total_revenue)} highlight />
+          </div>
+          <p className="mt-2 text-[10.5px] text-indigo-700 italic">
+            This pathway has no named referring doctor, so payout tracking + drill-down don&apos;t apply.
+            Switch to <b>Doctor</b> to see individual referrers.
+          </p>
+        </div>
+      )}
+
       {err && (
         <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded flex items-center gap-1.5">
           <AlertCircle size={12} /> {err}
@@ -233,10 +367,13 @@ export default function ReferralCornerPage() {
           <div className="p-8 text-center text-[12px] text-slate-500 flex items-center justify-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Loading referrals…
           </div>
-        ) : data && data.rows.length === 0 ? (
+        ) : data && visibleRows.length === 0 ? (
           <div className="p-8 text-center text-[12px] text-slate-500 italic">
-            No referring doctors set up yet. Add one from{' '}
-            <a href="/settings" className="text-indigo-600 hover:underline">Settings → Doctors</a> to start tracking.
+            {activePathway !== 'all' && activePathway !== 'Doctor'
+              ? <>Non-doctor pathway selected. Only Doctor referrals have per-doctor tracking. Click <b>All</b> or <b>Doctor</b> to see the doctor list.</>
+              : <>No referring doctors set up yet. Add one from{' '}
+                  <a href="/settings/referral-doctors" className="text-indigo-600 hover:underline">Settings → Referral Doctors</a> to start tracking.
+                </>}
           </div>
         ) : data ? (
           <table className="w-full text-xs" data-testid="ref-doctors-table">
@@ -253,7 +390,7 @@ export default function ReferralCornerPage() {
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((r) => (
+              {visibleRows.map((r) => (
                 <DoctorRow
                   key={r.doctor_id}
                   row={r}
@@ -262,17 +399,33 @@ export default function ReferralCornerPage() {
                   onEdit={() => setEditing(r.doctor_id)}
                   onClose={() => setEditing(null)}
                   onSaved={load}
+                  onDrilldown={() => setDrillDoctorId(r.doctor_id)}
                 />
               ))}
             </tbody>
           </table>
         ) : null}
       </div>
+
+      {/* Doctor drill-down modal — mounted lazily */}
+      {drillDoctorId && (
+        <DoctorDrillDownModal
+          doctorId={drillDoctorId}
+          range={range}
+          onClose={() => setDrillDoctorId(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────
+const MiniStat = ({ label, value, highlight }) => (
+  <div className={`bg-white rounded p-2 ${highlight ? 'ring-1 ring-indigo-300' : ''}`}>
+    <div className="text-[9px] font-bold tracking-wider uppercase text-slate-500">{label}</div>
+    <div className="text-sm font-extrabold text-slate-800 tabular-nums">{value}</div>
+  </div>
+);
 const Kpi = ({ label, value, icon: Icon, accent = 'indigo', highlight, testid }) => (
   <div
     data-testid={testid}
@@ -288,16 +441,24 @@ const Kpi = ({ label, value, icon: Icon, accent = 'indigo', highlight, testid })
   </div>
 );
 
-function DoctorRow({ row, canEdit, isEditing, onEdit, onClose, onSaved }) {
+function DoctorRow({ row, canEdit, isEditing, onEdit, onClose, onSaved, onDrilldown }) {
   const zero = (row.total_revenue || 0) === 0;
   return (
     <>
       <tr className={`border-b border-slate-100 hover:bg-slate-50 ${zero ? 'opacity-60' : ''}`} data-testid={`ref-doc-row-${row.doctor_id}`}>
         <td className="px-3 py-2">
-          <div className="font-semibold text-slate-800">{row.name}</div>
-          <div className="text-[10px] text-slate-500">
-            {[row.specialty, row.clinic].filter(Boolean).join(' · ') || '—'}
-          </div>
+          <button
+            type="button"
+            onClick={onDrilldown}
+            data-testid={`ref-doc-drilldown-${row.doctor_id}`}
+            className="text-left hover:underline decoration-indigo-400 underline-offset-2"
+            title="Click to see referred patients, tests, HA fittings, and payout details"
+          >
+            <div className="font-semibold text-slate-800">{row.name}</div>
+            <div className="text-[10px] text-slate-500">
+              {[row.specialty, row.clinic].filter(Boolean).join(' · ') || '—'}
+            </div>
+          </button>
         </td>
         <td className="px-3 py-2 text-right tabular-nums">{row.patient_count}</td>
         <td className="px-3 py-2 text-right tabular-nums font-mono">{fmtINR(row.diagnostics_revenue)}</td>

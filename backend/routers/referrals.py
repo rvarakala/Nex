@@ -429,3 +429,248 @@ async def payout_report_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Pathway breakdown + per-doctor drill-down (Phase 2)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Canonical set of referral pathways. Any patient.referral_source outside
+# this set is bucketed into "Other" so the UI never gets a long tail.
+KNOWN_PATHWAYS = ["Doctor", "Walk-in", "Self", "Camp", "Online", "Family", "Partner", "Other"]
+
+
+def _normalize_pathway(raw: Optional[str], has_doctor: bool) -> str:
+    """Fold the free-form `referral_source` column into a canonical bucket.
+
+    A patient with a `referring_doctor_id` set always counts as `Doctor`
+    even if `referral_source` is empty (very common — front desk fills the
+    dropdown but skips the "source" pill)."""
+    if has_doctor:
+        return "Doctor"
+    s = (raw or "").strip().lower()
+    mapping = {
+        "walk-in": "Walk-in", "walkin": "Walk-in", "walk_in": "Walk-in",
+        "self": "Self", "self-referred": "Self", "self_referred": "Self",
+        "camp": "Camp", "screening": "Camp",
+        "online": "Online", "internet": "Online", "web": "Online",
+        "family": "Family", "friend": "Family", "family/friend": "Family",
+        "partner": "Partner", "corporate": "Partner",
+        "doctor": "Doctor", "physician": "Doctor", "ent": "Doctor",
+    }
+    return mapping.get(s, "Other" if s else "Walk-in")
+
+
+@router.get("/pathways")
+async def pathway_breakdown(
+    start: Optional[str] = Query(None, description="ISO date YYYY-MM-DD inclusive"),
+    end: Optional[str] = Query(None, description="ISO date YYYY-MM-DD inclusive"),
+    user=Depends(_require_referral_access),
+    db=Depends(get_db),
+):
+    """Return counts + revenue per referral pathway for the given window.
+
+    Pathways: Doctor · Walk-in · Self · Camp · Online · Family · Partner · Other.
+    Revenue is invoice-based (paid invoices in window), grouped by the
+    patient's pathway. Also emits per-pathway `patient_count` (unique
+    patients seen from that source) so the UI can show "Doctors sent 24 patients"
+    style copy.
+    """
+    start_dt, end_dt = _parse_window(start, end)
+    start_iso, end_iso = start_dt.isoformat(), end_dt.isoformat()
+    clinic_id = user["clinic_id"]
+
+    # 1. Bucket every patient in the clinic by pathway.
+    pathway_of: dict[str, str] = {}
+    async for p in db.patients.find(
+        {"clinic_id": clinic_id},
+        {"_id": 0, "patient_id": 1, "referral_source": 1, "referring_doctor_id": 1, "created_at": 1},
+    ):
+        pid = p.get("patient_id")
+        if not pid:
+            continue
+        pathway_of[pid] = _normalize_pathway(
+            p.get("referral_source"),
+            bool(p.get("referring_doctor_id")),
+        )
+
+    # 2. Init buckets.
+    buckets: dict[str, dict] = {k: {"pathway": k, "patient_count": 0,
+                                    "diagnostics_revenue": 0.0, "ha_sales_revenue": 0.0}
+                                for k in KNOWN_PATHWAYS}
+    seen_by_pathway: dict[str, set] = {k: set() for k in KNOWN_PATHWAYS}
+
+    # 3. Walk paid invoices in window, attribute revenue.
+    async for inv in db.invoices.find(
+        {"clinic_id": clinic_id, "status": "paid",
+         "invoice_date": {"$gte": start_iso, "$lte": end_iso}},
+        {"_id": 0, "patient_id": 1, "lines": 1, "grand_total": 1, "ticket_no": 1},
+    ):
+        pid = inv.get("patient_id")
+        pw = pathway_of.get(pid, "Walk-in")
+        diag_rev = 0.0
+        ha_rev = 0.0
+        for ln in (inv.get("lines") or []):
+            if not isinstance(ln, dict):
+                continue
+            amt = float(ln.get("line_total") or 0.0)
+            if ln.get("product_type") == "Hearing Aid":
+                ha_rev += amt
+            else:
+                diag_rev += amt
+        if not (diag_rev or ha_rev):
+            gt = float(inv.get("grand_total") or 0.0)
+            if inv.get("ticket_no"):
+                ha_rev += gt
+            else:
+                diag_rev += gt
+        buckets[pw]["diagnostics_revenue"] += diag_rev
+        buckets[pw]["ha_sales_revenue"] += ha_rev
+        seen_by_pathway[pw].add(pid)
+
+    # 4. Finalise counts + rounding.
+    rows = []
+    for pw, b in buckets.items():
+        b["patient_count"] = len(seen_by_pathway[pw])
+        b["diagnostics_revenue"] = round(b["diagnostics_revenue"], 2)
+        b["ha_sales_revenue"] = round(b["ha_sales_revenue"], 2)
+        b["total_revenue"] = round(b["diagnostics_revenue"] + b["ha_sales_revenue"], 2)
+        rows.append(b)
+
+    # Sort by total revenue desc; keep the canonical order among ties by
+    # relying on Python's stable sort.
+    rows.sort(key=lambda r: -r["total_revenue"])
+    return {
+        "window": {"start": start_dt.date().isoformat(), "end": end_dt.date().isoformat()},
+        "pathways": rows,
+    }
+
+
+@router.get("/doctors/{doctor_id}/detail")
+async def doctor_drill_down(
+    doctor_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+    user=Depends(_require_referral_access),
+    db=Depends(get_db),
+):
+    """Per-doctor drill-down for the "click a doctor" flow:
+
+    Returns:
+      • doctor:           name/specialty/contact + configured cut
+      • patients:         list of referred patients with first-visit date
+      • test_breakdown:   {PTA: n, Tympanometry: n, …} across all visits
+      • revenue:          {diagnostics, ha_sales, total}
+      • ha_fittings:      list of closed HA sales linked to referred patients
+      • payout:           {diagnostics, ha, total} for the window
+    """
+    start_dt, end_dt = _parse_window(start, end)
+    start_iso, end_iso = start_dt.isoformat(), end_dt.isoformat()
+    clinic_id = user["clinic_id"]
+
+    doctor = await db.referring_doctors.find_one(
+        {"doctor_id": doctor_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Referring doctor not found")
+
+    # 1. Patients referred by this doctor (all-time — the doctor's book
+    #    is cumulative, but revenue is windowed below).
+    patients = []
+    patient_ids: list[str] = []
+    async for p in db.patients.find(
+        {"clinic_id": clinic_id, "referring_doctor_id": doctor_id},
+        {"_id": 0, "patient_id": 1, "name": 1, "mrd": 1, "created_at": 1,
+         "age": 1, "gender": 1, "mobile": 1},
+    ):
+        patient_ids.append(p["patient_id"])
+        patients.append({
+            "patient_id": p["patient_id"],
+            "name": p.get("name") or "",
+            "mrd": p.get("mrd") or "",
+            "age": p.get("age"),
+            "gender": p.get("gender"),
+            "mobile": p.get("mobile") or "",
+            "first_visit": str(p.get("created_at") or "")[:10],
+        })
+
+    # 2. Test breakdown — count sessions per test type across all their
+    #    visits in the window. Sessions can have multiple `recommended_tests`
+    #    or `tests_performed`; we credit ALL performed tests.
+    test_counts: dict[str, int] = {}
+    session_ids: list[str] = []
+    if patient_ids:
+        async for s in db.test_sessions.find(
+            {"clinic_id": clinic_id, "patient_id": {"$in": patient_ids},
+             "test_date": {"$gte": start_dt.date().isoformat(), "$lte": end_dt.date().isoformat()}},
+            {"_id": 0, "session_id": 1, "recommended_tests": 1, "tests_performed": 1},
+        ):
+            session_ids.append(s.get("session_id"))
+            for t in (s.get("tests_performed") or s.get("recommended_tests") or []):
+                if not t:
+                    continue
+                key = str(t).strip()
+                test_counts[key] = test_counts.get(key, 0) + 1
+
+    # 3. Revenue + payout (reuse the existing rollup logic for consistency).
+    dashboard_rows = await _dashboard_rows(db, clinic_id, start_dt, end_dt)
+    row = next((r for r in dashboard_rows if r["doctor_id"] == doctor_id), None)
+    if row is None:
+        row = {
+            "patient_count": 0, "diagnostics_revenue": 0.0, "ha_sales_revenue": 0.0,
+            "diagnostics_payout": 0.0, "ha_payout": 0.0, "total_payout": 0.0,
+        }
+
+    # 4. HA fittings — closed sales in window from this doctor's referrals.
+    ha_fittings = []
+    if patient_ids:
+        async for sale in db.ha_sales.find(
+            {"clinic_id": clinic_id, "patient_id": {"$in": patient_ids},
+             "status": {"$nin": ["trial", "cancelled", "returned"]}},
+            {"_id": 0, "sale_id": 1, "fitting_id": 1, "patient_id": 1,
+             "product_name": 1, "brand": 1, "model": 1, "amount": 1,
+             "total_amount": 1, "grand_total": 1, "status": 1, "delivered_at": 1,
+             "created_at": 1},
+        ):
+            amt = sale.get("grand_total") or sale.get("total_amount") or sale.get("amount") or 0
+            ha_fittings.append({
+                "sale_id":    sale.get("sale_id") or sale.get("fitting_id"),
+                "patient_id": sale.get("patient_id"),
+                "product":    (sale.get("product_name")
+                               or f"{sale.get('brand', '') or ''} {sale.get('model', '') or ''}".strip()
+                               or "—"),
+                "amount":     float(amt or 0),
+                "status":     sale.get("status") or "—",
+                "date":       str(sale.get("delivered_at") or sale.get("created_at") or "")[:10],
+            })
+
+    return {
+        "window": {"start": start_dt.date().isoformat(), "end": end_dt.date().isoformat()},
+        "doctor": {
+            "doctor_id":     doctor["doctor_id"],
+            "name":          doctor.get("name"),
+            "specialty":     doctor.get("specialty"),
+            "clinic":        doctor.get("clinic"),
+            "phone":         doctor.get("phone"),
+            "email":         doctor.get("email"),
+            "diag_cut_mode": doctor.get("diag_cut_mode"),
+            "diag_cut_value": float(doctor.get("diag_cut_value") or 0),
+            "ha_cut_mode":   doctor.get("ha_cut_mode"),
+            "ha_cut_value":  float(doctor.get("ha_cut_value") or 0),
+        },
+        "patients":       patients,
+        "patient_total":  len(patients),
+        "test_breakdown": [{"test": k, "count": v} for k, v
+                           in sorted(test_counts.items(), key=lambda kv: -kv[1])],
+        "revenue": {
+            "diagnostics": row["diagnostics_revenue"],
+            "ha_sales":    row["ha_sales_revenue"],
+            "total":       round(row["diagnostics_revenue"] + row["ha_sales_revenue"], 2),
+        },
+        "ha_fittings":    ha_fittings,
+        "payout": {
+            "diagnostics": row["diagnostics_payout"],
+            "ha":          row["ha_payout"],
+            "total":       row["total_payout"],
+        },
+    }
