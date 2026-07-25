@@ -1,4 +1,54 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🎛️ Prod Env Polish + Founder Live Feed (2026-07-25)
+
+Two launch-prep tasks shipped together. Options CORS + PUBLIC_APP_URL
+completed; MFA re-enablement intentionally deferred until the founder
+enrolls TOTP (grace period already expired).
+
+### 🔒 Prod env changes
+- `CORS_ORIGINS` — was `"*"` (auto-ignored with a loud log). Now an
+  explicit allowlist: `https://audinexa.com,https://www.audinexa.com,https://careful-feedback.preview.emergentagent.com`.
+  Verified: `audinexa.com` + `www.audinexa.com` return 200 with explicit
+  `Access-Control-Allow-Origin` echo; `evil.com` returns **400 Bad Request**.
+- `PUBLIC_APP_URL` — was preview subdomain. Now `https://audinexa.com`.
+  Share-links + Zepto email footer URLs will point at production.
+- `MFA_ENFORCEMENT_DISABLED` — left at `1` per user's option C. The
+  founder's grace period (started 2026-06-02) has expired; flipping this
+  to `0` would immediately 403 every non-MFA endpoint. Documented as a
+  pre-live-traffic task: enrol TOTP via Settings → Security first.
+
+### 📡 Founder Live Feed
+- **New backend endpoint**: `GET /api/admin/v2/signups/recent?since=<iso>&limit=<n>`
+  — returns clinics whose `created_at` (ISO string) > `since`. Uncached
+  (would defeat the purpose) but ultra-cheap: uses new `created_at`
+  descending index on `clinics`. Returns `{count, server_now, rows}` —
+  clients use `server_now` as the next watermark to avoid clock-drift
+  double-counting.
+- **New index**: `db.clinics.create_index([("created_at", -1)])` for O(log n)
+  polling at scale.
+- **New frontend widget**: `LiveSignupPulse.jsx` mounted in the founder
+  dashboard header. Polls every **20s**. Shows:
+  - Green pulsing "🟢 LIVE" dot (turns amber on connection loss)
+  - "N signups today" counter with green flash + scale bounce on increment
+  - Last-checked timestamp
+  - On new signup(s): fires up to 5 rich toasts ("🎉 New signup —
+    Clinic Name · City · Tier"), then an overflow "+X more signups
+    arrived" info toast for bursts.
+- **Verified live in browser**: seeded 1 new signup via `/public/clinic-signup`,
+  waited one 20s cycle → counter incremented from 2 → 3, toast appeared
+  with the new clinic's name/tier, LIVE dot pulsed green.
+
+### Files touched
+- Modified: `/app/backend/.env` (CORS_ORIGINS, PUBLIC_APP_URL)
+- Modified: `/app/backend/routers/admin_panel.py` (added `/signups/recent`)
+- Modified: `/app/backend/server.py` (added `clinics.created_at` index)
+- Modified: `/app/frontend/src/modules/admin/panel/DashboardPage.jsx`
+  (wired `LiveSignupPulse` into header row)
+- New: `/app/frontend/src/modules/admin/panel/LiveSignupPulse.jsx`
+
+---
+
+
 ## 🚀 LAUNCH READINESS AUDIT + Trial Expiry BSON bug fix (2026-07-25)
 
 User asked: *"If I launch today, can new users onboard? Tier subscriptions?

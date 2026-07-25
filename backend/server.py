@@ -62,6 +62,10 @@ async def lifespan(_app: FastAPI):
         await db.users.create_index("email", unique=True)
         await db.users.create_index([("clinic_id", 1), ("role", 1)])
         await db.clinics.create_index("clinic_id", unique=True)
+        # Powers `GET /admin/v2/signups/recent` — 20s polling from the
+        # founder-dashboard live feed. Descending order matches the query
+        # sort, string values compare correctly for ISO timestamps.
+        await db.clinics.create_index([("created_at", -1)])
         await db.tokens.create_index([("clinic_id", 1), ("issued_at", -1)])
         await db.tokens.create_index("token_id", unique=True)
         await db.patients.create_index([("clinic_id", 1), ("updated_at", -1)])

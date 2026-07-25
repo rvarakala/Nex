@@ -281,6 +281,57 @@ class TenantUpdate(BaseModel):
     subscription_tier: Optional[str] = None
 
 
+# ==================== 1b. LIVE SIGNUP FEED ====================
+#
+# Founder dashboard polls this every ~20s for a real-time "launch pulse"
+# toast whenever a fresh clinic signs up via /api/public/clinic-signup.
+# Uncached (would defeat the purpose) but ultra-cheap: single indexed
+# query on `clinics.created_at`, projected to 5 fields, capped at 20
+# rows. `since` is an ISO string (matches how we store `created_at`)
+# to avoid the exact string-vs-date BSON bug we just fixed elsewhere.
+
+@router.get("/signups/recent")
+async def recent_signups(
+    since: Optional[str] = Query(None, description="ISO timestamp — only return signups after this"),
+    limit: int = Query(20, ge=1, le=50),
+    user=Depends(require_permission("dashboard:read")),
+    db=Depends(get_db),
+):
+    """Return clinics created after `since` (ISO string). If `since` is
+    omitted, returns the most recent `limit` signups. Powers the founder
+    dashboard live-feed toast.
+    """
+    query: dict = {}
+    if since:
+        query["created_at"] = {"$gt": since}
+    cursor = (
+        db.clinics.find(
+            query,
+            {
+                "_id": 0,
+                "clinic_id": 1,
+                "name": 1,
+                "city": 1,
+                "country": 1,
+                "subscription_tier": 1,
+                "created_at": 1,
+                "trial_ends_at": 1,
+            },
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+    )
+    rows = [c async for c in cursor]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        "count": len(rows),
+        "server_now": now_iso,
+        "rows": rows,
+    }
+
+
+
+
 @router.get("/tenants")
 async def list_tenants(
     status: Optional[str] = None,
