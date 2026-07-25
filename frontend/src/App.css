@@ -65,6 +65,31 @@
         box-shadow: none !important;
         margin: 0 !important;
     }
+    /* When viewing a saved past-report snapshot, ONLY print that modal's
+       report — NOT the live editor sitting behind it in the DOM. */
+    body.printing-past-report #report-preview,
+    body.printing-past-report #report-preview * {
+        visibility: hidden !important;
+    }
+    body.printing-past-report #report-preview-past,
+    body.printing-past-report #report-preview-past * {
+        visibility: visible !important;
+    }
+    body.printing-past-report #report-preview-past {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 210mm;
+        min-height: 297mm;
+        box-shadow: none !important;
+        margin: 0 !important;
+    }
+    /* Hide the viewer modal toolbar + dark backdrop while printing */
+    body.printing-past-report .past-report-viewer-toolbar,
+    body.printing-past-report .past-report-viewer-toolbar * {
+        visibility: hidden !important;
+        display: none !important;
+    }
     .print-area {
         background: white !important;
         padding: 0 !important;

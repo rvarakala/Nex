@@ -1,5 +1,90 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📋 PHASE 16.7 — Split Save/Print + JSON-snapshot Hearing Report Versions (2026-07-25)
+
+Split the single "Save & Print Report" button on the Hearing Tests tab
+into **three distinct actions** — Save, Print, History — and layered in a
+lightweight versioning system so an audiologist can retrieve the exact
+report they saved on any past visit.
+
+### 1. UI split
+- **💾 SAVE** (green): persists a JSON snapshot of the report, marks the
+  session `completed`, and auto-opens History so the audiologist sees the
+  new version + all older versions.
+- **🖨 Print** (dark): captures the current preview → uploads PDF to
+  GridFS (existing flow) → opens PDF in a new tab for the printer. Does
+  NOT create a saved version.
+- **📁 History** (subtle): opens the past-versions list for the current
+  patient without saving anything.
+
+### 2. Data model — `hearing_report_versions`
+```
+{ version_id, clinic_id, patient_id, patient_name, patient_mrd,
+  session_id, visit_date, label, saved_by_user_id, saved_by_name,
+  saved_at, snapshot: { ...pure JSON blob... }, deleted }
+```
+Snapshot contains: patient + clinic-branding snapshot, all test data
+(right/left audiogram, pre_test, impedance, speech, special, oae,
+soundfield, abr, pediatric, tinnitus), and the report-builder state
+(clinical_impression, findings_by_section, recommendations[],
+provisional_diagnosis, referred_by, further_advice).
+
+**Storage math**: ~15–40 KB per snapshot vs 500 KB–2 MB for the PDF
+equivalent → ~30–50× space saving with the JSON approach.
+
+### 3. Backend — new router `/api/hearing-reports`
+- `POST   /save`               — from a session_id + optional label
+- `GET    /patient/{id}`       — list versions for a patient (no snapshot)
+- `GET    /session/{id}`       — list versions for a session
+- `GET    /{version_id}`       — fetch full snapshot for re-render
+- `DELETE /{version_id}`       — soft delete (owner / super_admin / founder)
+
+Multi-tenancy enforced on every read/write via `clinic_id` scope. Label
+auto-generated as `Visit N · YYYY-MM-DD` if not provided.
+
+### 4. Retrieval — read-only "Original Report" viewer
+Two new components:
+- `HearingReportHistoryModal` — lists versions, chronological, with a
+  green "THIS VISIT" chip on rows saved from the currently-active session.
+- `HearingReportViewerModal` — mounts `<ReportsPanel>` with new props
+  (`hideBuilder`, `initialBuilder`, `previewId="report-preview-past"`) so
+  the archived report re-renders EXACTLY as saved. Auto-save is disabled
+  in this mode; editors are hidden.
+
+### 5. Print scoping
+Added CSS rule so when the past-report viewer is open (`body.printing-past-report`),
+only `#report-preview-past` prints — the live editor behind the modal is
+hidden. `@media print` block updated in `/app/frontend/src/App.css`.
+
+### Files touched
+- Backend: `routers/hearing_report_versions.py` (NEW), `server.py` (mount).
+- Frontend:
+  - `modules/test/TestProceduresModule.js` — split button; `handleSaveSnapshot`
+    + `handlePrint` + `handleHistory`; wires HearingReportHistoryModal.
+  - `components/ReportsPanel.js` — added `hideBuilder`, `initialBuilder`,
+    `previewId` props; skips auto-save + hides BuilderSidebar in view mode.
+  - `components/HearingReportHistoryModal.jsx` (NEW)
+  - `components/HearingReportViewerModal.jsx` (NEW)
+  - `App.css` — print-scoping rules for `#report-preview-past`.
+
+### Verified
+- `POST /save` twice → two versions listed for the same patient.
+- `GET /patient/{id}` returns them most-recent first.
+- `GET /{version_id}` returns the full snapshot with 16 nested keys
+  including patient, clinic, session, audiogram data, and builder state.
+- Frontend split buttons render with data-testids `test-save-report-btn`,
+  `test-print-report-btn`, `test-history-report-btn`.
+- Clicking SAVE creates a new version + auto-opens History modal
+  (3 versions visible after 3 saves).
+- Clicking a history row opens the read-only viewer with `report-preview-past`
+  mounted, "VIEW-ONLY" pill and Print button visible; original report
+  patient name / audiologist / audiogram + clinic branding all restored.
+- `#report-preview` and `#report-preview-past` coexist in DOM without
+  hydration errors; print-scoping CSS hides the live editor when the
+  viewer modal is printing.
+
+---
+
 ## 📋 PHASE 16.6 — Slots 500 fix + Hydration warning fix + Test-type filter + Weekly CSV email (2026-07-01, night++++)
 
 Cleared the 4× 500 backend errors, killed the pre-existing hydration warning

@@ -910,6 +910,7 @@ from routers import legal as legal_router                         # noqa: E402
 from routers import password_reset as password_reset_router       # noqa: E402
 from routers import ha_quick_sale as ha_quick_sale_router         # noqa: E402
 from routers import csv_email_exports as csv_email_exports_router # noqa: E402
+from routers import hearing_report_versions as hearing_report_versions_router  # noqa: E402
 
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
@@ -952,6 +953,7 @@ app.include_router(admin_activity_router.router)
 app.include_router(schedules_router.router)
 app.include_router(export_data_router.router)
 app.include_router(csv_email_exports_router.router)
+app.include_router(hearing_report_versions_router.router)
 app.include_router(report_handover_router.router)
 app.include_router(settings_router.router)
 app.include_router(stock_transfers_router.router)

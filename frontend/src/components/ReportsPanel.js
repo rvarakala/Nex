@@ -36,13 +36,19 @@ const ReportsPanel = ({
   abrData,
   pediatricData,
   tinnitusData,
-  sessionId, // eslint-disable-line no-unused-vars
+  sessionId,
   audiologistName,
   audiologistUserId,
   clinicalImpression,
   recommendations,
   audiogramMode = 'combined',
   onPersist, // (partial) => save to backend
+  // Read-only past-report viewer props: when set, the panel hydrates its
+  // internal state from a saved snapshot, hides BuilderSidebar, and skips
+  // debounced auto-save so the archived report is truly immutable.
+  initialBuilder = null,
+  hideBuilder = false,
+  previewId = 'report-preview',
 }) => {
   // ========== Section config ==========
   const [sections, setSections] = useState(
@@ -50,19 +56,27 @@ const ReportsPanel = ({
   );
 
   // ========== Editable fields ==========
-  const [resultsText, setResultsText] = useState(clinicalImpression || '');
-  const [recText, setRecText] = useState((recommendations || []).join('\n'));
-  const [furtherAdvice, setFurtherAdvice] = useState('');
-  const [license, setLicense] = useState('');
+  const [resultsText, setResultsText] = useState(
+    initialBuilder?.clinical_impression ?? clinicalImpression ?? ''
+  );
+  const [recText, setRecText] = useState(
+    initialBuilder?.recommendations
+      ? (initialBuilder.recommendations || []).join('\n')
+      : (recommendations || []).join('\n')
+  );
+  const [furtherAdvice, setFurtherAdvice] = useState(initialBuilder?.further_advice ?? '');
+  const [license, setLicense] = useState(initialBuilder?.license ?? '');
   // Per-section findings narrative — keyed by section id (see FINDINGS_TITLES).
   // Each enabled section that has an entry in FINDINGS_TITLES contributes a
   // findings cell to the Results grid; the audiologist edits the text in the
   // matching textarea in BuilderSidebar.
-  const [findings, setFindings] = useState({});
+  const [findings, setFindings] = useState(initialBuilder?.findings_by_section ?? {});
   const setFinding = (id, val) =>
     setFindings((prev) => ({ ...prev, [id]: val }));
-  const [provisionalDiagnosis, setProvisionalDiagnosis] = useState('');
-  const [referredBy, setReferredBy] = useState('');
+  const [provisionalDiagnosis, setProvisionalDiagnosis] = useState(
+    initialBuilder?.provisional_diagnosis ?? ''
+  );
+  const [referredBy, setReferredBy] = useState(initialBuilder?.referred_by ?? '');
   const [mrdEdit, setMrdEdit] = useState(patient?.patient_id || '');
 
   // ========== Layout preferences ==========
@@ -93,7 +107,8 @@ const ReportsPanel = ({
   // ========== Debounced auto-save ==========
   const saveTimer = useRef(null);
   useEffect(() => {
-    if (!onPersist) return;
+    // When viewing a saved snapshot, the panel is read-only — no writes.
+    if (!onPersist || hideBuilder) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       onPersist({
@@ -168,12 +183,12 @@ const ReportsPanel = ({
     // 2. Upload that PDF blob to the backend so the Reports archive stores
     //    the *exact* file the audiologist just printed (not a server-side
     //    placeholder template). Runs in the background — never blocks print.
-    const el = document.getElementById('report-preview');
-    if (el && sessionId) {
+    const el = document.getElementById(previewId);
+    if (el && sessionId && !hideBuilder) {
       captureAndUploadPdf(el, sessionId).catch((e) => {
         console.warn('Report PDF upload failed — falling back to template PDF for this session:', e?.message);
       });
-    } else if (sessionId) {
+    } else if (sessionId && !hideBuilder) {
       // Fallback: the DOM isn't mounted (unlikely) — just flip status.
       axios.post(`${API}/sessions/${sessionId}/mark-printed`).catch(() => { });
     }
@@ -217,7 +232,7 @@ const ReportsPanel = ({
   // 400ms is enough to avoid thrash without feeling laggy.
   const [layoutStatus, setLayoutStatus] = useState({ pageCount: 0, warnLevel: 'ok' });
   useEffect(() => {
-    const el = document.getElementById('report-preview');
+    const el = document.getElementById(previewId);
     if (!el) return undefined;
     let timer = null;
     const severityOf = (warnings) =>
@@ -248,45 +263,47 @@ const ReportsPanel = ({
 
   return (
     <div className="flex-1 flex min-h-0 bg-gray-100 overflow-hidden">
-      <BuilderSidebar
-        sections={sections}
-        onToggleSection={toggleSection}
-        onMoveSection={moveSection}
-        clinic={clinic}
-        setClinic={setClinic}
-        showABC={showABC}
-        setShowABC={setShowABC}
-        showBing={showBing}
-        setShowBing={setShowBing}
-        tympPlacement={tympPlacement}
-        setTympPlacement={setTympPlacement}
-        useSeparatePage={useSeparatePage}
-        autoSeparatePage={autoSeparatePage}
-        audiogramSize={audiogramSize}
-        setAudiogramSize={setAudiogramSize}
-        ptFindings={findings.pure_tone || ''} setPtFindings={(v) => setFinding('pure_tone', v)}
-        immFindings={findings.tympanometry || ''} setImmFindings={(v) => setFinding('tympanometry', v)}
-        speechFindings={findings.speech || ''} setSpeechFindings={(v) => setFinding('speech', v)}
-        findings={findings}
-        setFinding={setFinding}
-        provisionalDiagnosis={provisionalDiagnosis}
-        setProvisionalDiagnosis={setProvisionalDiagnosis}
-        referredBy={referredBy} setReferredBy={setReferredBy}
-        mrdEdit={mrdEdit} setMrdEdit={setMrdEdit}
-        recText={recText} setRecText={setRecText}
-        furtherAdvice={furtherAdvice} setFurtherAdvice={setFurtherAdvice}
-        license={license} setLicense={setLicense}
-        patient={patient}
-        rightEarData={rightEarData}
-        leftEarData={leftEarData}
-        onPrint={openPreflight}
-        layoutStatus={layoutStatus}
-      />
+      {!hideBuilder && (
+        <BuilderSidebar
+          sections={sections}
+          onToggleSection={toggleSection}
+          onMoveSection={moveSection}
+          clinic={clinic}
+          setClinic={setClinic}
+          showABC={showABC}
+          setShowABC={setShowABC}
+          showBing={showBing}
+          setShowBing={setShowBing}
+          tympPlacement={tympPlacement}
+          setTympPlacement={setTympPlacement}
+          useSeparatePage={useSeparatePage}
+          autoSeparatePage={autoSeparatePage}
+          audiogramSize={audiogramSize}
+          setAudiogramSize={setAudiogramSize}
+          ptFindings={findings.pure_tone || ''} setPtFindings={(v) => setFinding('pure_tone', v)}
+          immFindings={findings.tympanometry || ''} setImmFindings={(v) => setFinding('tympanometry', v)}
+          speechFindings={findings.speech || ''} setSpeechFindings={(v) => setFinding('speech', v)}
+          findings={findings}
+          setFinding={setFinding}
+          provisionalDiagnosis={provisionalDiagnosis}
+          setProvisionalDiagnosis={setProvisionalDiagnosis}
+          referredBy={referredBy} setReferredBy={setReferredBy}
+          mrdEdit={mrdEdit} setMrdEdit={setMrdEdit}
+          recText={recText} setRecText={setRecText}
+          furtherAdvice={furtherAdvice} setFurtherAdvice={setFurtherAdvice}
+          license={license} setLicense={setLicense}
+          patient={patient}
+          rightEarData={rightEarData}
+          leftEarData={leftEarData}
+          onPrint={openPreflight}
+          layoutStatus={layoutStatus}
+        />
+      )}
 
       {/* ========== LIVE PREVIEW ========== */}
       <div className="flex-1 overflow-auto bg-gray-300 p-4 print-area">
         <div
-          id="report-preview"
+          id={previewId}
           className="mx-auto bg-white shadow-lg report-page"
           style={{ width: '210mm', minHeight: '297mm', padding: '10mm 12mm', fontFamily: 'Arial, sans-serif', color: '#1f2937' }}
         >
@@ -344,6 +361,7 @@ const ReportsPanel = ({
         onConfirm={confirmPrint}
         onCancel={closePreflight}
         onApplyFix={applyPreflightFix}
+        rootElementId={previewId}
       />
     </div>
   );

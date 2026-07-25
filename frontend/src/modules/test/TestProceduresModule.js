@@ -18,6 +18,7 @@ import ABRPanel from '../../components/ABRPanel';
 import PediatricPanel from '../../components/PediatricPanel';
 import TinnitusPanel from '../../components/TinnitusPanel';
 import { captureAndUploadPdf } from '../../components/reports/captureAndUpload';
+import HearingReportHistoryModal from '../../components/HearingReportHistoryModal';
 import DiagnosticsQueueBoard from './DiagnosticsQueueBoard';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -93,8 +94,13 @@ export default function TestProceduresModule() {
     recommended_tests: [],
     referred_by: null,
   });
-  const [completingTest, setCompletingTest] = useState(false);
-  const [completedToast, setCompletedToast] = useState(false);
+  const [completingTest] = useState(false);
+  const [completedToast] = useState(false);
+  // Save + History (split button state)
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [savedToast, setSavedToast] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const [preTestData, setPreTestData] = useState(DEFAULT_PRE_TEST);
   const [impedanceData, setImpedanceData] = useState(DEFAULT_IMPEDANCE);
@@ -220,46 +226,90 @@ export default function TestProceduresModule() {
     if (ear === 'right') setRightEarData(data); else setLeftEarData(data);
   };
 
-  // ==================== GENERATE & PRINT REPORT ====================
-  const handleGenerateReport = useCallback(async () => {
+  // ==================== SAVE + PRINT (split) ====================
+  //
+  // Save = persist a lightweight JSON snapshot of the current session
+  //        (audiogram + form data + report-builder state) into the
+  //        `hearing_report_versions` collection so the audiologist can
+  //        retrieve THIS visit later even after data has been edited.
+  //        Also flips the session to `completed` + closes the queue
+  //        token (same UX as the old "Save & Print" button).
+  //
+  // Print = capture the current preview DOM, upload the PDF to GridFS,
+  //         then open it in a new tab for the physical printer.
+  //
+  // Both share a common `flushSession()` that autosaves the latest
+  // React state before doing anything else.
+
+  const flushSession = useCallback(async () => {
     if (!activeTest?.sessionId) return;
-    setCompletingTest(true);
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    await axios.put(`${API}/sessions/${activeTest.sessionId}`, {
+      pre_test_data: preTestData, impedance_data: impedanceData, speech_data: speechData,
+      special_tests_data: specialTestsData, oae_data: oaeData, soundfield_data: soundfieldData,
+      abr_data: abrData, pediatric_data: pediatricData, tinnitus_data: tinnitusData,
+      right_ear_audiogram: rightEarData, left_ear_audiogram: leftEarData,
+    });
+  }, [activeTest?.sessionId, preTestData, impedanceData, speechData, specialTestsData,
+      oaeData, soundfieldData, abrData, pediatricData, tinnitusData,
+      rightEarData, leftEarData]);
+
+  const handleSaveSnapshot = useCallback(async () => {
+    if (!activeTest?.sessionId) return;
+    setSavingSnapshot(true);
     try {
-      // 1. Autosave everything first — no data loss if the PDF capture fails.
-      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-      await axios.put(`${API}/sessions/${activeTest.sessionId}`, {
-        pre_test_data: preTestData, impedance_data: impedanceData, speech_data: speechData,
-        special_tests_data: specialTestsData, oae_data: oaeData, soundfield_data: soundfieldData,
-        abr_data: abrData, pediatric_data: pediatricData, tinnitus_data: tinnitusData,
-        right_ear_audiogram: rightEarData, left_ear_audiogram: leftEarData,
+      // 1. Autosave the latest form state so the snapshot reflects reality.
+      await flushSession();
+
+      // 2. Persist the JSON snapshot (backend reads the session doc it just
+      //    saw and copies everything into `hearing_report_versions`).
+      const r = await axios.post(`${API}/hearing-reports/save`, {
+        session_id: activeTest.sessionId,
       });
 
-      // 2. Make sure the Reports preview is mounted — switch tabs + give the
-      //    DOM time to finish rendering the audiogram plots.
+      // 3. Match the old "Save & Print" UX for session lifecycle: mark the
+      //    session `completed` + close the queue token so the FD dashboard
+      //    updates in real time. Fire-and-forget — never blocks the save.
+      axios.post(`${API}/sessions/${activeTest.sessionId}/mark-printed`).catch(() => { });
+      axios.post(`${API}/diagnostics/queue/complete`, { session_id: activeTest.sessionId }).catch(() => { });
+      setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
+
+      setSavedToast(`Report saved — ${r?.data?.label || 'new version'}`);
+      setTimeout(() => setSavedToast(''), 3000);
+      // Open the history panel so the audiologist sees ALL versions
+      // (including the one just saved). Slight delay so the toast is visible.
+      setTimeout(() => setHistoryOpen(true), 400);
+    } catch (err) {
+      console.error('Save snapshot failed', err);
+      alert(err?.response?.data?.detail || 'Could not save the report. Please try again.');
+    } finally {
+      setSavingSnapshot(false);
+    }
+  }, [activeTest?.sessionId, flushSession]);
+
+  const handlePrint = useCallback(async () => {
+    if (!activeTest?.sessionId) return;
+    setPrinting(true);
+    try {
+      // 1. Autosave first so the printed PDF reflects the latest edits.
+      await flushSession();
+
+      // 2. Switch to the Reports tab and give the DOM a beat to render.
       setActiveTab('reports');
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 500)));
 
-      // 3. Capture the exact preview DOM → upload to backend (GridFS).
-      //    This endpoint also flips the session to `completed`.
+      // 3. Capture the exact preview DOM → upload PDF to GridFS.
       const el = document.getElementById('report-preview');
       if (el) {
         try {
           await captureAndUploadPdf(el, activeTest.sessionId);
-          setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
         } catch (uploadErr) {
           console.warn('PDF capture/upload failed, falling back to server template:', uploadErr);
           await axios.post(`${API}/sessions/${activeTest.sessionId}/mark-printed`).catch(() => { });
-          setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
         }
       } else {
         await axios.post(`${API}/sessions/${activeTest.sessionId}/generate-report`);
-        setSessionMeta((m) => ({ ...m, report_status: 'completed' }));
       }
-
-      // Flip linked queue token + appointment to `completed` so the FD
-      // dashboard + diagnostics board update in real time. Fire-and-forget
-      // — never blocks the print path.
-      axios.post(`${API}/diagnostics/queue/complete`, { session_id: activeTest.sessionId }).catch(() => {});
 
       // 4. Fetch the now-stored PDF and open it in a new tab for printing.
       try {
@@ -274,19 +324,15 @@ export default function TestProceduresModule() {
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       } catch (pdfErr) {
         console.error('PDF fetch failed', pdfErr);
-        alert('Report saved but the PDF could not be opened. You can still print it from the Reports section.');
+        alert('Print PDF could not be opened. Try again in a moment.');
       }
-      setCompletedToast(true);
-      setTimeout(() => setCompletedToast(false), 3500);
     } catch (err) {
-      console.error('Generate report failed', err);
-      alert(err?.response?.data?.detail || 'Could not generate the report. Please try again.');
+      console.error('Print failed', err);
+      alert(err?.response?.data?.detail || 'Could not print the report. Please try again.');
     } finally {
-      setCompletingTest(false);
+      setPrinting(false);
     }
-  }, [activeTest?.sessionId, preTestData, impedanceData, speechData, specialTestsData,
-      oaeData, soundfieldData, abrData, pediatricData, tinnitusData,
-      rightEarData, leftEarData]);
+  }, [activeTest?.sessionId, flushSession]);
 
   // ==================== EMPTY STATE: no active test ====================
   // Shows today's diagnostics queue instead of a blank placeholder so the
@@ -324,20 +370,41 @@ export default function TestProceduresModule() {
           >
             Start Fitting →
           </button>
+
+          {/* ─── Save / Print / History (split from the old single button) ─── */}
           <button
-            onClick={handleGenerateReport}
-            disabled={completingTest}
-            data-testid="test-generate-report-btn"
-            title={sessionMeta.report_status === 'completed'
-              ? 'Re-capture the current preview and re-open the saved PDF'
-              : 'Save the session, store the printed PDF, and open it for printing'}
-            className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow-sm"
+            onClick={handleSaveSnapshot}
+            disabled={savingSnapshot || printing}
+            data-testid="test-save-report-btn"
+            title="Save a JSON snapshot of this visit's report. You can view + reprint any saved version from History."
+            className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded shadow-sm inline-flex items-center gap-1"
           >
-            {completingTest
-              ? 'Saving…'
-              : sessionMeta.report_status === 'completed'
-              ? '↻ Re-print Report'
-              : '🖨 Save & Print Report'}
+            {savingSnapshot ? 'Saving…' : (
+              <>
+                <span>💾</span> SAVE
+              </>
+            )}
+          </button>
+          <button
+            onClick={handlePrint}
+            disabled={savingSnapshot || printing}
+            data-testid="test-print-report-btn"
+            title="Print the current report as a PDF (does not create a new saved version)"
+            className="px-2.5 py-0.5 text-[10px] font-bold bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded shadow-sm inline-flex items-center gap-1"
+          >
+            {printing ? 'Printing…' : (
+              <>
+                <span>🖨</span> Print
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => setHistoryOpen(true)}
+            data-testid="test-history-report-btn"
+            title="View reports saved for this patient (all visits)"
+            className="px-2 py-0.5 text-[10px] font-bold bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded shadow-sm inline-flex items-center gap-1"
+          >
+            <span>📁</span> History
           </button>
         </div>
       </div>
@@ -401,6 +468,21 @@ export default function TestProceduresModule() {
           ✓ Report generated — opened in new tab. Session moved to Reports.
         </div>
       )}
+
+      {savedToast && (
+        <div data-testid="save-toast"
+             className="absolute top-4 right-4 z-50 bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-lg">
+          💾 {savedToast}
+        </div>
+      )}
+
+      <HearingReportHistoryModal
+        open={historyOpen}
+        patientId={activeTest.patient?.patient_id}
+        patientName={activeTest.patient?.name}
+        sessionId={activeTest.sessionId}
+        onClose={() => setHistoryOpen(false)}
+      />
 
       <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
