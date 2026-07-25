@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import ErrorToast, { describeError } from '../../../components/ErrorToast';
+import { ReferringDoctorPicker } from '../../../components/patient/ReferringDoctorPicker';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -90,6 +91,11 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     Array.isArray(existing?.recommended_tests) ? existing.recommended_tests : [],
   );
   const [referredBy, setReferredBy] = useState(existing?.referred_by || '');
+  // Doctor picker — feeds the same `referredBy` free-text field so the
+  // downstream appointment payload doesn't change shape. Also passes
+  // `referring_doctor_id` when a doctor is picked so the referral
+  // rollup + payout tracking works out of the box.
+  const [referringDoctorId, setReferringDoctorId] = useState(existing?.referring_doctor_id || null);
   const toggleRecTest = (k) => setRecommendedTests((prev) =>
     prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
 
@@ -383,6 +389,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
           visit_type: visitType,
           recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
           referred_by: visitType === 'referral' ? (referredBy || null) : null,
+          referring_doctor_id: visitType === 'referral' ? (referringDoctorId || null) : null,
         });
       } else {
         // Atomic create — appointment + (optionally) a pre-filled draft invoice.
@@ -395,6 +402,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
           visit_type: visitType,
           recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
           referred_by: visitType === 'referral' ? (referredBy || null) : null,
+          referring_doctor_id: visitType === 'referral' ? (referringDoctorId || null) : null,
           raise_invoice: raiseInvoice && invoiceLines.length > 0,
           invoice_lines: invoiceLines.map((l) => ({
             service_id: l.service_id,
@@ -664,14 +672,20 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
               ))}
             </div>
 
-            {/* Referred-by line — only for referral */}
+            {/* Referred-by line — only for referral. Uses ReferringDoctorPicker
+                so any newly typed doctor name gets auto-added to the master
+                list under Settings → Referral Doctors. */}
             {visitType === 'referral' && (
-              <input
-                type="text" value={referredBy} onChange={(e) => setReferredBy(e.target.value)}
-                placeholder="Referred by (ENT / GP name)"
-                data-testid="bk-referred-by"
-                className="w-full mb-2 px-2 py-1.5 text-xs border border-slate-300 rounded"
-              />
+              <div className="mb-2" data-testid="bk-referred-by">
+                <ReferringDoctorPicker
+                  value={referringDoctorId}
+                  onChange={(id, doc) => {
+                    setReferringDoctorId(id);
+                    setReferredBy(doc ? `${doc.name}${doc.clinic ? ` (${doc.clinic})` : ''}` : '');
+                  }}
+                  testid="bk-referred-by-picker"
+                />
+              </div>
             )}
 
             {/* Test chip-picker — hidden for consultation (audiologist decides).

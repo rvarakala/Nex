@@ -630,6 +630,16 @@ async def mark_sale_paid_internal(
         upd["invoice_no"] = invoice_no
     await db.ha_sales.update_one({"sale_no": sale_no}, {"$set": upd})
 
+    # Fire the referring-doctor thank-you WhatsApp iff the doctor opted in
+    # for the HA-sales stream. Fire-and-forget — never blocks mark-paid.
+    try:
+        from services.ref_docs_notify import schedule_notify
+        pid = sale.get("patient_id")
+        if pid:
+            schedule_notify(db, clinic_id, pid, "ha_sales")
+    except Exception:  # noqa: BLE001
+        pass
+
     # ---- Finalise linked trade-in: old serial RETURNED → RETIRED + status=applied
     if sale.get("trade_in_id"):
         ti = await db.ha_trade_ins.find_one(

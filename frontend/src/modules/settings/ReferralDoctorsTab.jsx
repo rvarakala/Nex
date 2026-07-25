@@ -32,6 +32,8 @@ const EMPTY_FORM = {
   diag_cut_value: 0,
   ha_cut_mode: 'none',
   ha_cut_value: 0,
+  notify_on_diag: false,
+  notify_on_ha: false,
 };
 
 // Convert `mode='none'` (UI convenience) to `null` for the backend.
@@ -79,6 +81,8 @@ export default function ReferralDoctorsTab() {
       diag_cut_value: d.diag_cut_value || 0,
       ha_cut_mode: modeForUi(d.ha_cut_mode),
       ha_cut_value: d.ha_cut_value || 0,
+      notify_on_diag: !!d.notify_on_diag,
+      notify_on_ha:   !!d.notify_on_ha,
     });
     setEditingId(d.doctor_id);
     setShowForm(true);
@@ -97,6 +101,8 @@ export default function ReferralDoctorsTab() {
         diag_cut_value: Number(form.diag_cut_value) || 0,
         ha_cut_mode: modeForApi(form.ha_cut_mode),
         ha_cut_value: Number(form.ha_cut_value) || 0,
+        notify_on_diag: !!form.notify_on_diag,
+        notify_on_ha:   !!form.notify_on_ha,
       };
       if (editingId) {
         await axios.put(`${API}/referring-doctors/${editingId}`, payload);
@@ -178,6 +184,7 @@ export default function ReferralDoctorsTab() {
                 <th className="text-left px-3 py-2">Contact</th>
                 <th className="text-left px-3 py-2">Diagnostics cut</th>
                 <th className="text-left px-3 py-2">HA sales cut</th>
+                <th className="text-center px-3 py-2">Notify</th>
                 <th className="text-right px-3 py-2">Actions</th>
               </tr>
             </thead>
@@ -202,6 +209,20 @@ export default function ReferralDoctorsTab() {
                   </td>
                   <td className="px-3 py-2.5">{cutSummary(d.diag_cut_mode, d.diag_cut_value)}</td>
                   <td className="px-3 py-2.5">{cutSummary(d.ha_cut_mode, d.ha_cut_value)}</td>
+                  <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                    {(d.notify_on_diag || d.notify_on_ha) ? (
+                      <div className="inline-flex items-center gap-1 flex-wrap">
+                        {d.notify_on_diag && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 uppercase tracking-wider">Diag</span>
+                        )}
+                        {d.notify_on_ha && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 uppercase tracking-wider">HA</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-300 text-[10px]">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-right">
                     <button
                       onClick={() => openEdit(d)}
@@ -330,6 +351,36 @@ function ReferralDoctorFormModal({ form, set, editing, saving, onCancel, onSave 
               </span>
             </div>
           </div>
+
+          {/* WhatsApp thank-you toggle section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-bold tracking-[0.15em] uppercase text-slate-500">WhatsApp thank-you (optional)</div>
+              <div className="text-[10px] text-slate-400 italic">Fires only when ticked</div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <NotifyCheckbox
+                label="Diagnostics"
+                helper="Send when a hearing test completes"
+                checked={form.notify_on_diag}
+                onChange={(v) => set({ notify_on_diag: v })}
+                testid="ref-doc-notify-diag"
+              />
+              <NotifyCheckbox
+                label="Hearing Aid sales"
+                helper="Send when a HA sale is closed"
+                checked={form.notify_on_ha}
+                onChange={(v) => set({ notify_on_ha: v })}
+                testid="ref-doc-notify-ha"
+              />
+            </div>
+            <div className="mt-2 text-[10.5px] text-slate-500 flex items-start gap-1.5">
+              <Info size={11} className="mt-0.5 shrink-0" />
+              <span>
+                Uses your clinic&#39;s connected WhatsApp (MSG91). Doctor must have a valid phone. Each stream ticks independently — enable just diagnostics, just HA, both, or neither.
+              </span>
+            </div>
+          </div>
         </div>
 
         <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200">
@@ -415,5 +466,29 @@ function CutFieldset({ title, mode, value, onMode, onValue, testidBase }) {
         />
       </div>
     </div>
+  );
+}
+
+/** NotifyCheckbox — opt-in tick for a specific WhatsApp thank-you stream. */
+function NotifyCheckbox({ label, helper, checked, onChange, testid }) {
+  return (
+    <label
+      className={`flex items-start gap-2 p-2.5 border rounded-lg cursor-pointer transition ${
+        checked ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white hover:border-slate-300'
+      }`}
+      data-testid={`${testid}-label`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        data-testid={testid}
+        className="mt-0.5 w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+      />
+      <div className="min-w-0">
+        <div className="text-[12px] font-bold text-slate-800">{label}</div>
+        <div className="text-[10.5px] text-slate-500 leading-snug">{helper}</div>
+      </div>
+    </label>
   );
 }

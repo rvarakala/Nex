@@ -93,6 +93,16 @@ async def _flip_to_completed(db, session_id: str, user: Dict[str, Any]) -> Dict[
     await db.test_sessions.update_one(
         {"session_id": session_id}, {"$set": serialize_datetime(update)}
     )
+    # Fire the referring-doctor thank-you WhatsApp iff the doctor opted in
+    # for the diagnostics stream. Fire-and-forget — never blocks the
+    # session completion response.
+    try:
+        from services.ref_docs_notify import schedule_notify
+        patient_id = s.get("patient_id")
+        if patient_id:
+            schedule_notify(db, user["clinic_id"], patient_id, "diagnostics")
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": True, "session_id": session_id, "report_status": "completed"}
 
 

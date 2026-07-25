@@ -17,17 +17,23 @@ const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFrac
 
 export default function DoctorDrillDownModal({ doctorId, range, onClose }) {
   const [data, setData] = useState(null);
+  const [prevData, setPrevData] = useState(null);
   const [err, setErr] = useState('');
   useEffect(() => {
     if (!doctorId) return;
     let alive = true;
     (async () => {
       try {
-        const r = await axios.get(
-          `${API}/referrals/doctors/${doctorId}/detail`,
-          { params: range },
-        );
-        if (alive) setData(r.data);
+        // Fetch the current window + the immediately-preceding equivalent
+        // window in parallel so we can show a comparison delta.
+        const prev = _priorWindow(range);
+        const [curR, prevR] = await Promise.all([
+          axios.get(`${API}/referrals/doctors/${doctorId}/detail`, { params: range }),
+          axios.get(`${API}/referrals/doctors/${doctorId}/detail`, { params: prev }),
+        ]);
+        if (!alive) return;
+        setData(curR.data);
+        setPrevData(prevR.data);
       } catch (e) {
         if (alive) setErr(e?.response?.data?.detail || 'Could not load drill-down');
       }
@@ -91,11 +97,23 @@ export default function DoctorDrillDownModal({ doctorId, range, onClose }) {
             <div className="space-y-6">
               {/* KPI row */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="drilldown-kpis">
-                <MiniKpi label="Referred patients" value={data.patient_total} icon={User} accent="indigo" testid="drilldown-kpi-patients" />
-                <MiniKpi label="Diagnostics revenue" value={fmtINR(data.revenue.diagnostics)} icon={Stethoscope} accent="emerald" testid="drilldown-kpi-diag" />
-                <MiniKpi label="HA sales revenue" value={fmtINR(data.revenue.ha_sales)} icon={Package} accent="violet" testid="drilldown-kpi-ha" />
-                <MiniKpi label="Total payout owed" value={fmtINR(data.payout.total)} icon={IndianRupee} accent="amber" highlight testid="drilldown-kpi-payout" />
+                <MiniKpi label="Referred patients" value={data.patient_total} prev={prevData?.patient_total} icon={User} accent="indigo" testid="drilldown-kpi-patients" />
+                <MiniKpi label="Diagnostics revenue" value={fmtINR(data.revenue.diagnostics)} rawValue={data.revenue.diagnostics} prev={prevData?.revenue?.diagnostics} formatter={fmtINR} icon={Stethoscope} accent="emerald" testid="drilldown-kpi-diag" />
+                <MiniKpi label="HA sales revenue" value={fmtINR(data.revenue.ha_sales)} rawValue={data.revenue.ha_sales} prev={prevData?.revenue?.ha_sales} formatter={fmtINR} icon={Package} accent="violet" testid="drilldown-kpi-ha" />
+                <MiniKpi label="Total payout owed" value={fmtINR(data.payout.total)} rawValue={data.payout.total} prev={prevData?.payout?.total} formatter={fmtINR} icon={IndianRupee} accent="amber" highlight testid="drilldown-kpi-payout" />
               </div>
+
+              {/* Comparison ribbon */}
+              {prevData && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[11px] text-slate-600 flex items-baseline gap-3 flex-wrap" data-testid="drilldown-compare-ribbon">
+                  <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">vs previous window</span>
+                  <span>Prev: <b className="text-slate-800">{prevData.window.start}</b> → <b className="text-slate-800">{prevData.window.end}</b></span>
+                  <span>Patients <b className="text-slate-800">{prevData.patient_total}</b></span>
+                  <span>Diag <b className="text-slate-800">{fmtINR(prevData.revenue.diagnostics)}</b></span>
+                  <span>HA <b className="text-slate-800">{fmtINR(prevData.revenue.ha_sales)}</b></span>
+                  <span>Payout <b className="text-slate-800">{fmtINR(prevData.payout.total)}</b></span>
+                </div>
+              )}
 
               {/* Payout breakdown */}
               <section>
@@ -247,7 +265,7 @@ function SectionHeading({ icon: Icon, title, hint }) {
   );
 }
 
-function MiniKpi({ label, value, icon: Icon, accent = 'indigo', highlight, testid }) {
+function MiniKpi({ label, value, rawValue, prev, formatter, icon: Icon, accent = 'indigo', highlight, testid }) {
   const map = {
     indigo:  { border: 'border-indigo-100',  text: 'text-indigo-700',  icon: 'text-indigo-500' },
     emerald: { border: 'border-emerald-100', text: 'text-emerald-700', icon: 'text-emerald-500' },
@@ -255,6 +273,19 @@ function MiniKpi({ label, value, icon: Icon, accent = 'indigo', highlight, testi
     amber:   { border: 'border-amber-200',   text: 'text-amber-800',   icon: 'text-amber-500' },
   };
   const c = map[accent] || map.indigo;
+  // Delta is only shown when we have both a raw numeric current AND a
+  // numeric previous. `prev` may be undefined while the prior window
+  // request is still in-flight.
+  const curNum  = typeof rawValue === 'number' ? rawValue : (typeof value === 'number' ? value : null);
+  const prevNum = typeof prev === 'number' ? prev : null;
+  const hasDelta = curNum !== null && prevNum !== null;
+  const delta = hasDelta ? curNum - prevNum : 0;
+  const up = hasDelta && delta > 0;
+  const down = hasDelta && delta < 0;
+  const flat = hasDelta && delta === 0;
+  const deltaLabel = hasDelta
+    ? (formatter ? formatter(Math.abs(delta)) : Math.abs(delta))
+    : null;
   return (
     <div
       data-testid={testid}
@@ -265,6 +296,36 @@ function MiniKpi({ label, value, icon: Icon, accent = 'indigo', highlight, testi
         <Icon size={12} className={c.icon} />
       </div>
       <div className={`text-xl font-extrabold ${c.text} tabular-nums`}>{value ?? '—'}</div>
+      {hasDelta && (
+        <div
+          className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold tabular-nums ${
+            up ? 'text-emerald-700' : down ? 'text-rose-700' : 'text-slate-500'
+          }`}
+          data-testid={`${testid}-delta`}
+          title={`Previous window: ${formatter ? formatter(prevNum) : prevNum}`}
+        >
+          {up ? '▲' : down ? '▼' : '='} {flat ? 'no change' : deltaLabel}
+          <span className="font-normal text-slate-400">vs prev</span>
+        </div>
+      )}
     </div>
   );
+}
+
+/**
+ * Compute the immediately-preceding window of the SAME length as the
+ * current one. Example: current `2026-07-01 → 2026-07-31` (31d) →
+ * previous `2026-05-31 → 2026-06-30`. Dates are treated as inclusive.
+ */
+function _priorWindow(range) {
+  if (!range?.start || !range?.end) return range;
+  const start = new Date(range.start);
+  const end = new Date(range.end);
+  const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  const prevEnd = new Date(start);
+  prevEnd.setDate(prevEnd.getDate() - 1);
+  const prevStart = new Date(prevEnd);
+  prevStart.setDate(prevStart.getDate() - days + 1);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return { start: iso(prevStart), end: iso(prevEnd) };
 }

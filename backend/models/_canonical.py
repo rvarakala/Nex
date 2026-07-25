@@ -222,6 +222,11 @@ class AppointmentCreate(BaseModel):
     visit_type: Literal["referral", "walkin", "consultation"] = "walkin"
     recommended_tests: List[str] = Field(default_factory=list)
     referred_by: Optional[str] = None
+    # When a referral appointment is booked via ReferringDoctorPicker,
+    # the picker also emits the doctor_id — the appointments router uses
+    # it to auto-link the patient to that referring doctor so the
+    # Referral Corner + payout rollup pick the visit up automatically.
+    referring_doctor_id: Optional[str] = None
 
 
 class WaitlistEntry(BaseModel):
@@ -623,6 +628,18 @@ class ReferringDoctor(BaseModel):
     ha_cut_mode: Optional[Literal["percent", "flat"]] = None
     ha_cut_value: float = 0.0
 
+    # ── WhatsApp thank-you notifications ──────────────────────────────
+    # Optional, opt-in per stream. When enabled and the doctor has a
+    # `phone` set, an auto-thank-you WhatsApp is fired to the doctor:
+    #   • notify_on_diag=True → sent when a referred patient's hearing
+    #     test session flips to `completed` / report is printed.
+    #   • notify_on_ha=True   → sent when a HA sale for a referred patient
+    #     is marked delivered / closed.
+    # Both default to False so nothing is sent unless the owner
+    # explicitly enables it on the Settings → Referral Doctors form.
+    notify_on_diag: bool = False
+    notify_on_ha: bool = False
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -641,6 +658,9 @@ class ReferringDoctorCreate(BaseModel):
     diag_cut_value: Optional[float] = 0.0
     ha_cut_mode: Optional[Literal["percent", "flat"]] = None
     ha_cut_value: Optional[float] = 0.0
+    # Opt-in per-stream WhatsApp thank-you (see model doc above).
+    notify_on_diag: Optional[bool] = False
+    notify_on_ha: Optional[bool] = False
 
 
 # ==================== PATIENT JOURNAL / CHART NOTES ====================

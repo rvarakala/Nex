@@ -379,6 +379,25 @@ async def create_appointment(payload: AppointmentCreate,
         created_by_user_id=user["user_id"],
     )
     await db.appointments.insert_one(serialize_datetime(obj.model_dump()))
+
+    # Auto-link the patient to the referring doctor when the picker was used
+    # for a `referral` visit type. Idempotent — only writes if the patient's
+    # current doctor_id doesn't already match, so we never overwrite a manual
+    # correction the front desk made earlier.
+    if payload.visit_type == "referral" and payload.referring_doctor_id and payload.counterparty_type == "patient" and payload.counterparty_id:
+        try:
+            await db.patients.update_one(
+                {"clinic_id": user["clinic_id"],
+                 "patient_id": payload.counterparty_id,
+                 "$or": [{"referring_doctor_id": None},
+                         {"referring_doctor_id": {"$exists": False}},
+                         {"referring_doctor_id": ""}]},
+                {"$set": {"referring_doctor_id": payload.referring_doctor_id,
+                          "referral_source": "Doctor"}},
+            )
+        except Exception:  # noqa: BLE001 — never let a link-up crash booking
+            pass
+
     return obj
 
 
