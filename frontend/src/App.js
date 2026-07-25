@@ -24,7 +24,6 @@ import ClinicalAnalyticsPage from './modules/admin/ClinicalAnalyticsPage';
 import ReferralPartnersPage from './modules/admin/ReferralPartnersPage';
 import ReferralCornerPage from './modules/referrals/ReferralCornerPage';
 import PartnerPortalPage from './modules/partner/PartnerPortalPage';
-import DashboardCompactPreview from './modules/patients/DashboardMockups';
 import PatientPortal from './modules/patient/PatientPortal';
 import DataExportPage from './modules/data/DataExportPage';
 import ReportsModule from './modules/reports/ReportsModule';
@@ -192,8 +191,6 @@ function AppRoutes() {
 
               {/* SUPER-ADMIN PANEL (founder / super_admin only — own shell) */}
               <Route path="/admin/*" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
-              {/* Temporary dashboard compact preview — deleted after approval */}
-              <Route path="/mockups/dashboard-compact" element={<ProtectedRoute><DashboardCompactPreview /></ProtectedRoute>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

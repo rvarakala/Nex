@@ -20,7 +20,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
-  Calendar, UserPlus, Ear, ShoppingBag, IndianRupee, Bell, Search,
+  Calendar, UserPlus, Ear, ShoppingBag, IndianRupee,
   ArrowRight, Plus, Headphones, FileSpreadsheet,
   AlertTriangle, Wrench, MessageSquare, ChevronRight, Clock, Box, Zap,
   Users, AlertCircle, Coins,
@@ -197,80 +197,63 @@ const CardHeader = ({ title, action }) => (
   </div>
 );
 
-/** Large Needs-Attention hero card — 3 of these render as the top row.
- *  Big count + colored left-border + pulsing dot when count > 0. */
-function NAHero({ borderColor, iconBg, iconColor, icon, title, sub, count, unit, live, onClick, testid }) {
+/** NeedsAttentionRow — single-line replacement for the old NeedsAttentionHero.
+ *  Renders: [icon + label] · [3 pill chips] · [REVIEW ALL →]  all on one row.
+ *  Each chip retains its brand left-border colour, brand icon, and count.
+ *  When count > 0 the number badge lights up (bg + pulsing dot). */
+function NeedsAttentionRow({ recalls, lowStock, repairsPending, onRecalls, onLowStock, onRepairs, onReviewAll }) {
+  const chips = [
+    {
+      title: 'Recall Reminders', count: recalls, onClick: onRecalls, testid: 'na-recalls',
+      border: '#F97316', iconBg: '#FFEDD5', iconColor: '#EA580C', icon: <Clock size={13} strokeWidth={2.4} />,
+    },
+    {
+      title: 'Low Stock Alert', count: lowStock, onClick: onLowStock, testid: 'na-low-stock',
+      border: '#EF4444', iconBg: '#FEE2E2', iconColor: '#DC2626', icon: <Box size={13} strokeWidth={2.4} />,
+    },
+    {
+      title: 'Device Pending', count: repairsPending, onClick: onRepairs, testid: 'na-repairs',
+      border: '#0EA5E9', iconBg: '#DBEAFE', iconColor: '#2563EB', icon: <Wrench size={13} strokeWidth={2.4} />,
+    },
+  ];
   return (
-    <button
-      onClick={onClick}
-      data-testid={testid}
-      className="relative w-full text-left bg-white rounded-2xl p-5 flex items-center gap-4 border border-slate-100 shadow-[0_3px_14px_-4px_rgba(15,23,42,0.08)] hover:shadow-[0_12px_28px_-8px_rgba(15,29,58,0.18)] hover:-translate-y-0.5 transition-all"
-      style={{ borderLeft: `5px solid ${borderColor}` }}
-    >
-      {live && count > 0 && (
-        <span
-          className="absolute top-3 right-3 w-2 h-2 rounded-full animate-pulse"
-          style={{ background: borderColor, boxShadow: `0 0 0 3px ${borderColor}33` }}
-        />
-      )}
-      <span
-        className="w-[52px] h-[52px] rounded-full flex items-center justify-center shrink-0"
-        style={{ background: iconBg, color: iconColor }}
-      >
-        {icon}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-[15.5px] sm:text-[16.5px] font-extrabold text-slate-900 leading-tight tracking-tight">{title}</span>
-        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-[0.06em] mt-1">{sub}</span>
-        <span className="block text-[28px] sm:text-[32px] font-black text-slate-900 leading-none mt-1.5 tracking-tight">
-          {count}
-          <span className="text-[13px] font-semibold text-slate-500 tracking-normal ml-1.5">{unit}</span>
-        </span>
-      </span>
-      <ChevronRight size={18} className="text-slate-300 shrink-0" />
-    </button>
-  );
-}
+    <div className="flex items-center gap-3 flex-wrap" data-testid="dash-needs-attention">
+      <div className="flex items-center gap-2 shrink-0">
+        <AlertTriangle size={16} className="text-amber-600" strokeWidth={2.5} />
+        <h3 className="text-[11px] font-extrabold tracking-[0.14em] text-amber-800 uppercase whitespace-nowrap">
+          Needs Attention
+        </h3>
+      </div>
 
-function NeedsAttentionHero({ recalls, lowStock, repairsPending, onRecalls, onLowStock, onRepairs, onReviewAll }) {
-  return (
-    <div data-testid="dash-needs-attention">
-      <div className="flex items-center justify-between mb-3 px-1">
-        <div className="flex items-center gap-2.5">
-          <AlertTriangle size={18} className="text-amber-600" strokeWidth={2.5} />
-          <h3 className="text-[11px] font-extrabold tracking-[0.14em] text-amber-800 uppercase">Needs Attention</h3>
-        </div>
-        <button
-          onClick={onReviewAll}
-          data-testid="dash-attention-review"
-          className="text-[12px] font-extrabold text-amber-800 hover:text-amber-900 flex items-center gap-0.5"
-        >
-          REVIEW ALL <ChevronRight size={14} strokeWidth={2.6} />
-        </button>
+      <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+        {chips.map((c) => (
+          <button
+            key={c.testid}
+            onClick={c.onClick}
+            data-testid={c.testid}
+            className="group inline-flex items-center gap-2.5 bg-white rounded-full pl-1.5 pr-3 py-1.5 border border-slate-100 shadow-[0_1px_6px_-2px_rgba(15,23,42,0.08)] hover:shadow-[0_6px_16px_-6px_rgba(15,29,58,0.18)] hover:-translate-y-px transition-all whitespace-nowrap"
+            style={{ borderLeft: `3px solid ${c.border}` }}
+          >
+            <span className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 relative" style={{ background: c.iconBg, color: c.iconColor }}>
+              {c.icon}
+              {c.count > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+            </span>
+            <span className="text-[12.5px] font-bold text-slate-800">{c.title}</span>
+            <span className={`text-[11px] font-black tabular-nums rounded-full px-1.5 ${c.count > 0 ? 'text-white' : 'text-slate-900 bg-slate-100'}`}
+                  style={c.count > 0 ? { background: c.border } : undefined}>
+              {c.count}
+            </span>
+          </button>
+        ))}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4">
-        <NAHero
-          borderColor="#F97316" iconBg="#FFEDD5" iconColor="#EA580C"
-          icon={<Clock size={22} strokeWidth={2.2} />}
-          title="Recall Reminders" sub="Follow-ups due"
-          count={recalls} unit={recalls === 1 ? 'patient' : 'patients'}
-          live onClick={onRecalls} testid="na-recalls"
-        />
-        <NAHero
-          borderColor="#EF4444" iconBg="#FEE2E2" iconColor="#DC2626"
-          icon={<Box size={22} strokeWidth={2.2} />}
-          title="Low Stock Alert" sub="HA models running low"
-          count={lowStock} unit={lowStock === 1 ? 'SKU' : 'SKUs'}
-          live onClick={onLowStock} testid="na-low-stock"
-        />
-        <NAHero
-          borderColor="#0EA5E9" iconBg="#DBEAFE" iconColor="#2563EB"
-          icon={<Wrench size={22} strokeWidth={2.2} />}
-          title="Device Pending" sub="Repairs ready to deliver"
-          count={repairsPending} unit={repairsPending === 1 ? 'device' : 'devices'}
-          live onClick={onRepairs} testid="na-repairs"
-        />
-      </div>
+
+      <button
+        onClick={onReviewAll}
+        data-testid="dash-attention-review"
+        className="text-[11.5px] font-extrabold text-amber-800 hover:text-amber-900 flex items-center gap-0.5 shrink-0 ml-auto"
+      >
+        REVIEW ALL <ChevronRight size={13} strokeWidth={2.6} />
+      </button>
     </div>
   );
 }
@@ -502,27 +485,6 @@ export default function ModernDashboard() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-[1500px] mx-auto" data-testid="modern-dashboard" style={{ background: '#EEF1FA' }}>
 
-      {/* Desktop-only top bar (mobile has AppShell's built-in top bar) */}
-      <div className="hidden lg:flex items-center justify-between">
-        <h1 className="text-[26px] font-extrabold tracking-tight text-slate-900">Overview</h1>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search Appointment, Patient or etc…"
-              data-testid="dash-search"
-              onKeyDown={(e) => { if (e.key === 'Enter' && e.currentTarget.value) navigate(`/patients?q=${encodeURIComponent(e.currentTarget.value)}`); }}
-              className="pl-10 pr-4 py-2.5 text-[13px] bg-white rounded-full shadow-sm border border-transparent focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 w-[340px]"
-            />
-          </div>
-          <button className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center hover:shadow relative" data-testid="dash-notif-bell">
-            <Bell size={18} className="text-slate-700" />
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-          </button>
-        </div>
-      </div>
-
       {/* Welcome hero + date */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
@@ -544,12 +506,13 @@ export default function ModernDashboard() {
           unsupported browsers. */}
       <PwaInstallPrompt />
 
-      {/* ================ NEEDS ATTENTION — 3 large hero cards ================
-          Moved from bottom-strip to top-of-page per user feedback: 3 primary
-          alerts (Recall / Low Stock / Device Pending) rendered as prominent
-          hero cards with big count, colored left-border, and a pulsing dot
-          when the metric is > 0. Replaces the previous thin amber strip. */}
-      <NeedsAttentionHero
+      {/* ================ NEEDS ATTENTION — single-line chip row =================
+          Approved 2026-07-25: collapsed the 2-row (label + 3 hero cards)
+          version into ONE horizontal line so the KPIs sit higher above
+          the fold. Same colours, icons, counts, and click targets — just
+          compacted into pill-style chips.
+          Preview: /mockups/dashboard-compact                              */}
+      <NeedsAttentionRow
         recalls={alerts.recalls}
         lowStock={alerts.low_stock}
         repairsPending={alerts.repairs_pending}
