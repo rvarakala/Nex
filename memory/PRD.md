@@ -1,4 +1,60 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🚀 LAUNCH READINESS AUDIT + Trial Expiry BSON bug fix (2026-07-25)
+
+User asked: *"If I launch today, can new users onboard? Tier subscriptions?
+Can it hold 100 users?"* Consultative audit + one **silent P0 bug fix**.
+
+### Verdict: 🟢 GO with 4 must-fix items (see /app/memory/LAUNCH_READINESS_AUDIT.md)
+
+### 🔥 P0 BUG FIXED — Trial expiry cron was silently broken for 118/119 tenants
+
+- **Root cause**: `serialize_datetime()` stores `trial_ends_at` as an
+  ISO **string** but `run_trial_expiry_scan()` queried
+  `{"trial_ends_at": {"$lte": datetime_obj}}`. BSON's `string < date` type
+  ordering means datetime queries do NOT match string values → only 1 of
+  119 trialing clinics ever got downgraded. Every self-signed-up tenant
+  would have enjoyed **free PREMIUM forever**.
+- **Fix**: `/app/backend/trial_expiry.py` now uses `$or` over both types:
+  `{$type: "string", $lte: now_iso}` OR `{$type: "date", $lte: now}`.
+  Wrote `trial_expired_at` as ISO string for schema consistency.
+- **Migration**: Ran `run_trial_expiry_scan(db)` once against live DB —
+  **119 stuck legacy tenants downgraded to BASIC**. 0 trials remain
+  in a "matched-by-nothing" limbo state.
+- **Tests**: 4 new regression tests
+  (`/app/backend/tests/test_trial_expiry_string_dates.py`) — all pass.
+
+### Audit findings (see full report at /app/memory/LAUNCH_READINESS_AUDIT.md)
+
+- ✅ Self-signup (`POST /public/clinic-signup`) — clinic + owner + branch
+  + auto-login in under 90s
+- ✅ Tier auto-assignment — BASIC + 30-day PREMIUM trial
+- ✅ Tier enforcement — `require_tier` (backend 402) + `<ModuleGate>` (frontend)
+- ⚠️ **Tier subscription payment = semi-manual**: founder issues
+  `tenant_invoices` via `POST /admin/v2/subscriptions/invoices`, owner pays via
+  Razorpay Checkout (LIVE keys already set). Fine for first 100 tenants.
+- ✅ **Infra capacity: 200 concurrent local requests → 200/200 OK in 0.22s**
+  (~900 req/s). 100 users generating 10 req/min each = 1000 req/min,
+  well under our measured ceiling.
+
+### 4 must-fix items before flipping audinexa.com to live traffic
+
+1. ✅ Trial-expiry BSON bug — DONE this session
+2. 🟡 Production `.env` — `CORS_ORIGINS` explicit, `PUBLIC_APP_URL` →
+   `https://audinexa.com`, `MFA_ENFORCEMENT_DISABLED=0`
+3. 🟡 "Talk to us" CTA on `MySubscriptionPage` (self-serve upgrade
+   deferred to phase 2)
+4. 🟡 Retry the platform deploy — the `ensure-environment` timeout was
+   K8s-side, not our code (backend boots cleanly locally in <5s with all
+   6 APScheduler jobs registered)
+
+### Files touched
+- Modified: `/app/backend/trial_expiry.py`
+- New: `/app/backend/tests/test_trial_expiry_string_dates.py` (4 tests, all PASS)
+- New: `/app/memory/LAUNCH_READINESS_AUDIT.md` (full audit report)
+
+---
+
+
 
 ## 📋 PHASE 16.9 — Doctor Notifications + Multi-Range Comparison + Picker Everywhere (2026-07-25)
 

@@ -16,17 +16,29 @@ log = logging.getLogger("trial_expiry")
 
 
 async def run_trial_expiry_scan(db, post_trial_tier: str = "BASIC") -> int:
-    """Returns count of clinics flipped. Idempotent — safe to run any time."""
+    """Returns count of clinics flipped. Idempotent — safe to run any time.
+
+    `trial_ends_at` may be stored as EITHER a BSON date (legacy admin seed
+    path) OR an ISO string (`serialize_datetime()` path used by
+    `/public/clinic-signup` and every subsequent write). We match both by
+    OR-ing a datetime `$lte` and a string `$lte` on `now.isoformat()`.
+    Without this, self-signed-up tenants would silently never downgrade —
+    they'd enjoy free PREMIUM forever.
+    """
     now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
     flipped = 0
     async for c in db.clinics.find(
-        {"trial_ends_at": {"$lte": now}},
+        {"$or": [
+            {"trial_ends_at": {"$type": "string", "$lte": now_iso}},
+            {"trial_ends_at": {"$type": "date", "$lte": now}},
+        ]},
         {"_id": 0, "clinic_id": 1, "trial_ends_at": 1, "subscription_tier": 1},
     ):
         await db.clinics.update_one(
             {"clinic_id": c["clinic_id"]},
             {"$set": {"subscription_tier": post_trial_tier,
-                      "trial_expired_at": now,
+                      "trial_expired_at": now_iso,
                       "tier_auto_downgraded_from_trial": True},
              "$unset": {"trial_ends_at": ""}},
         )
