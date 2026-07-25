@@ -1,5 +1,63 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📋 PHASE 16.8 — Referral Doctors + Referral Corner UX overhaul (2026-07-25)
+
+Delivered Phase 1 (Settings CRUD + auto-add) and Phase 2 (Referral Corner
+pathway chips + doctor drill-down + preset date ranges) together. Currency
+scope: INR only, as user chose (1a + 2c).
+
+### Backend
+- Extended `ReferringDoctorCreate` with 4 optional payout fields
+  (`diag_cut_mode`, `diag_cut_value`, `ha_cut_mode`, `ha_cut_value`) with
+  `percent` cap 100 + non-negative guardrails; wired into both
+  `POST /api/referring-doctors` and `PUT /api/referring-doctors/{id}`.
+- NEW `GET /api/referrals/pathways?start=&end=` — buckets every patient
+  into `Doctor · Walk-in · Self · Camp · Online · Family · Partner · Other`
+  based on `referral_source` + `referring_doctor_id`; returns per-pathway
+  patient count, diagnostics revenue, HA revenue, total revenue.
+- NEW `GET /api/referrals/doctors/{doctor_id}/detail?start=&end=` — deep
+  drill-down: doctor profile + payout config, referred patients list,
+  test breakdown (PTA/Tympanometry/etc. counts), revenue split,
+  closed HA fittings, and payout owed. Reuses existing rollup logic for
+  consistency with the main dashboard.
+
+### Frontend
+- **NEW `/settings/referral-doctors`** — full CRUD with a table view +
+  add/edit modal. Per-doctor: name, specialty, clinic, phone, email,
+  notes + independent Diagnostics/HA payout config with None/%/₹ toggle.
+- **NEW `<DoctorDrillDownModal>`** — deep-dive on doctor click; 4
+  mini-KPIs + payout breakdown table + test chips + HA-fittings table +
+  patient list.
+- Referral Corner enhanced with:
+  - **Preset date-range chips**: Today / Last 3d / Last 7d / This week / This month
+  - **Pathway chip row**: All + per-pathway chips with live counts
+  - **Doctor name is now a button** — click any doctor → drill-down modal
+  - Fixed empty-state link (`/settings` → `/settings/referral-doctors`)
+- **Auto-add wired into New Patient Registration** — swapped the free-text
+  "Referred By Doctor" input for `ReferringDoctorPicker` (which already
+  has an inline "add new doctor" flow). Any name typed during registration
+  automatically appears in the Settings referral-doctors list.
+
+### Files
+- Backend: `models/_canonical.py`, `routers/ref_docs.py`, `routers/referrals.py`.
+- Frontend: NEW `settings/ReferralDoctorsTab.jsx`, NEW `referrals/DoctorDrillDownModal.jsx`,
+  updated `settings/SettingsModule.js`, updated `referrals/ReferralCornerPage.jsx`,
+  updated `patients/NewPatientPage.js`.
+
+### Verified (iteration_41.json)
+- Backend 5/5 tests passed: POST/PUT/DELETE with cut config (incl. percent-clamp
+  guardrail), pathway schema, drill-down schema + 404.
+- Frontend end-to-end: Settings CRUD created "Dr. QA One" @ diag 12% + HA ₹1500 flat,
+  edited to 8%, verified, deleted. Referral Corner shows 5 preset chips + pathway
+  chips + drill-down modal with all 4 KPIs and 4 sections. New Patient Registration
+  uses the picker (no plain free-text input). No console errors.
+
+### Deferred to Phase 3 (backlog)
+- Weekly + end-of-month automated payout email — will reuse the CSV email
+  scheduler from Phase 16.6 by adding a `payout_report` kind.
+
+---
+
 ## 📋 PHASE 16.7 — Split Save/Print + JSON-snapshot Hearing Report Versions (2026-07-25)
 
 Split the single "Save & Print Report" button on the Hearing Tests tab
