@@ -59,6 +59,15 @@ def _zepto_creds() -> Optional[dict]:
             "from_addr": frm, "from_name": name}
 
 
+def _resend_creds() -> Optional[dict]:
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    frm     = os.environ.get("RESEND_FROM_ADDRESS", "").strip()
+    name    = os.environ.get("RESEND_FROM_NAME", "AUDINEXA").strip()
+    if not (api_key and frm):
+        return None
+    return {"api_key": api_key, "from_addr": frm, "from_name": name}
+
+
 # ---------- public API ------------------------------------------------------
 
 def send_email(
@@ -98,12 +107,53 @@ def send_email(
     prov = _provider()
 
     # ---- Mock provider — dev / CI. Log and return as if successful. -------
-    if prov != "zepto":
+    if prov not in ("zepto", "resend"):
         log.info("email.mock to=%s subject=%r purpose=%s", recipients, subject[:80], purpose)
         return {"status": "mocked", "provider": "mock", "to": recipients,
                 "message_id": make_msgid(domain="audinexa.local")}
 
-    # ---- ZeptoMail SMTP provider ------------------------------------------
+    # ---- Resend HTTPS provider (primary) ----------------------------------
+    if prov == "resend":
+        creds = _resend_creds()
+        if not creds:
+            log.error("email.resend_creds_missing purpose=%s", purpose)
+            return {"status": "error", "provider": "resend", "to": recipients,
+                    "error": "Resend credentials not configured"}
+        try:
+            import resend as _resend
+            _resend.api_key = creds["api_key"]
+            from_field = formataddr((from_name or creds["from_name"], creds["from_addr"]))
+            params: dict = {
+                "from": from_field,
+                "to": recipients,
+                "subject": subject,
+                "html": html_body or "",
+                "text": text_body or _html_to_text(html_body or ""),
+            }
+            if reply_to:
+                params["reply_to"] = reply_to
+            if attachments:
+                import base64 as _b64
+                params["attachments"] = [
+                    {"filename": a["filename"],
+                     "content": _b64.b64encode(a["content"]).decode("ascii"),
+                     "content_type": a.get("mime", "application/octet-stream")}
+                    for a in attachments if a.get("content")
+                ]
+            result = _resend.Emails.send(params)
+            msg_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+            log.info("email.resend_sent to=%s subject=%r purpose=%s message_id=%s",
+                     recipients, subject[:80], purpose, msg_id)
+            return {"status": "sent", "provider": "resend", "to": recipients,
+                    "message_id": msg_id}
+        except Exception as exc:
+            # Resend surfaces domain-not-verified, invalid-key etc. as ValueError/dict
+            log.error("email.resend_error err=%s to=%s subject=%r purpose=%s",
+                      exc, recipients, subject[:80], purpose)
+            return {"status": "error", "provider": "resend", "to": recipients,
+                    "error": str(exc)}
+
+    # ---- ZeptoMail SMTP provider (legacy) ---------------------------------
     creds = _zepto_creds()
     if not creds:
         log.error("email.zepto_creds_missing purpose=%s", purpose)

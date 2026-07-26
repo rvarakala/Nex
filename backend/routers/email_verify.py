@@ -158,10 +158,13 @@ async def issue_verification_code(db, user: dict, purpose: str = "signup") -> st
         text_body=text_body,
         purpose=f"verify_email_{purpose}",
     )
-    if email_result.get("status") != "ok":
+    if email_result.get("status") not in ("sent", "mocked"):
         # Log loudly but don't break the signup — user can hit "resend"
         log.warning("Failed to send verification email to %s: %s",
-                    user["email"], email_result.get("message"))
+                    user["email"], email_result.get("error") or email_result.get("message"))
+    else:
+        log.info("Verification email dispatched to %s via %s (msg_id=%s)",
+                 user["email"], email_result.get("provider"), email_result.get("message_id"))
     return code
 
 
