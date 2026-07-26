@@ -1,4 +1,52 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 📱 Mobile Bottom Nav Fix (2026-07-26)
+
+**Incident**: User opened `audinexa.com` on iPhone Safari. The primary
+navigation rendered as a **vertical stacked list** (Home / Schedule /
+Patients / Billing / Reports each on its own row) taking up half the
+screen — instead of the intended compact **horizontal 5-tab bottom
+bar**. Launched app, launch-day critical UX.
+
+### Root cause
+`/app/frontend/src/index.css` line 307-314 has a global
+`@media (max-width: 640px)` rule that forces **all** `.grid.grid-cols-N`
+grids (2 through 6) to single column on phones — a global mobile
+readability helper for card grids. The mobile bottom nav in
+`AppShell.js` was using `grid grid-cols-5`, so it got flattened to a
+single column too. The dashboard KPI grid had already escaped this
+same override with a bespoke `.dash-kpi-grid` class (line 65).
+
+### Fix
+- `/app/frontend/src/index.css` — new `.bottomnav-grid` class that
+  hardcodes `grid-template-columns: repeat(5, minmax(0, 1fr))` —
+  bypasses the global mobile override (same pattern as
+  `.dash-kpi-grid`).
+- `/app/frontend/src/shell/AppShell.js` — mobile bottom nav switched
+  from `grid grid-cols-5 gap-1 px-2 pt-1.5` to `bottomnav-grid`.
+
+### Verified by testing_agent (iteration_43.json) — PASS 100%
+- Mobile 390×844: bottom nav is a horizontal bar, all 5 tabs at
+  `y=785.5`, x-coords increasing `(8, 83.6, 159.2, 234.8, 310.4)`,
+  each ~71.6px wide with icon+label stacked vertically per tab.
+- Desktop sidebar (`data-testid=app-nav`) hidden on mobile
+  (`display: none`).
+- Mobile drawer (`data-testid=app-nav-mobile`) NOT in DOM initially;
+  hamburger tap renders it; backdrop tap closes it.
+- Desktop 1440×900: `app-nav` display:flex, `mobile-bottom-nav` +
+  `mobile-nav-toggle` display:none.
+- Bottom-nav navigation to /billing and /reports works with active-tab
+  highlight (`text-cyan-600`).
+- Founder login still works, no regressions.
+
+### Follow-up (P3)
+- Recharts warnings on dashboard: *"width(-1) height(-1) should be
+  greater than 0"* — a `ResponsiveContainer` parent has 0 dimensions
+  on first render. Cosmetic, non-blocking. Fix by giving the parent
+  `min-height` or delaying render until measured.
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 🚨 Cross-Tab Session Confusion Fix + Founder-Email Collision Guard (2026-07-26)
 
 Incident report from the user: Dr. Vikram (a newly-signed-up clinic
