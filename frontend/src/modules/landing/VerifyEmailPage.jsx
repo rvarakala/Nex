@@ -120,6 +120,7 @@ export default function VerifyEmailPage() {
   const [okMsg, setOkMsg] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resending, setResending] = useState(false);
+  const [showSpamNudge, setShowSpamNudge] = useState(false);
   const isFresh = params.get('fresh') === '1';
 
   const handleVerify = useCallback(async (codeArg) => {
@@ -165,6 +166,15 @@ export default function VerifyEmailPage() {
     const t = setInterval(() => setResendCooldown((s) => s - 1), 1000);
     return () => clearInterval(t);
   }, [resendCooldown]);
+
+  // Spam-check nudge — surfaces after 15s if the user is still on this page.
+  // Prevents abandonment when the email lands in Promotions/Spam or Resend
+  // is a beat slow.
+  useEffect(() => {
+    if (status === 'ok') return () => {};
+    const t = setTimeout(() => setShowSpamNudge(true), 15_000);
+    return () => clearTimeout(t);
+  }, [status]);
 
   const handleResend = async () => {
     if (!email || resendCooldown > 0 || resending) return;
@@ -241,6 +251,20 @@ export default function VerifyEmailPage() {
               {okMsg && status !== 'ok' && (
                 <div className="mt-4 rounded-lg px-3 py-2.5 text-sm" style={{ background: '#DCFCE7', color: C.emerald, fontFamily: F.body }} data-testid="verify-info">
                   {okMsg}
+                </div>
+              )}
+
+              {showSpamNudge && status === 'idle' && !errMsg && (
+                <div
+                  data-testid="verify-spam-nudge"
+                  className="mt-4 rounded-lg px-3 py-2.5 text-[13px] flex items-start gap-2"
+                  style={{ background: '#FEF3E4', color: '#8B4513', fontFamily: F.body }}
+                >
+                  <span className="text-lg leading-none mt-[-1px]">📬</span>
+                  <span>
+                    Still nothing? Emails can land in <strong>Spam</strong> or the <strong>Promotions</strong> tab.
+                    If you don't see it in 60 seconds, tap <strong>Resend code</strong> below — a fresh code beats the last one.
+                  </span>
                 </div>
               )}
 

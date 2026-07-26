@@ -136,6 +136,72 @@ async def resend_verification_email(
             "message": "A fresh 6-digit code was sent via the current email provider."}
 
 
+@router.get("/email-health")
+async def email_health(user=Depends(get_current_user), db=Depends(get_db)):
+    """Powers the Founder Dashboard email-health banner + detail page.
+
+    Rolls up the `email_events` collection (populated by `utils/email.py`
+    on every send) over 1h + 24h windows and returns a compact health
+    envelope: current provider, deliverability rate, recent errors,
+    and a traffic-light status.
+    """
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Founder / super_admin only")
+    import os
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    since_1h  = now - timedelta(hours=1)
+    since_24h = now - timedelta(hours=24)
+
+    async def _bucket(since):
+        total = await db.email_events.count_documents({"timestamp": {"$gte": since}})
+        sent  = await db.email_events.count_documents({"timestamp": {"$gte": since},
+                                                       "status": {"$in": ["sent", "mocked"]}})
+        errors = await db.email_events.count_documents({"timestamp": {"$gte": since},
+                                                         "status": "error"})
+        fallback_used = await db.email_events.count_documents({"timestamp": {"$gte": since},
+                                                                "used_fallback": True})
+        rate = round(100.0 * errors / total, 1) if total else 0.0
+        return {"total": total, "sent": sent, "errors": errors,
+                "used_fallback": fallback_used, "error_rate_pct": rate}
+
+    h1  = await _bucket(since_1h)
+    h24 = await _bucket(since_24h)
+
+    # Recent errors — last 5
+    cursor = db.email_events.find(
+        {"status": "error"},
+        {"_id": 0, "timestamp": 1, "provider": 1, "to": 1, "purpose": 1,
+         "error": 1, "fallback_provider": 1, "fallback_error": 1},
+    ).sort("timestamp", -1).limit(5)
+    recent_errors = [serialize_datetime(d) async for d in cursor]
+
+    # Traffic-light status
+    # - critical: any error in the last 5 min OR >25% error rate in 24h with any activity
+    # - degraded: any error in last hour OR 5-25% error rate in 24h
+    # - healthy:  otherwise
+    since_5m = now - timedelta(minutes=5)
+    err_5m = await db.email_events.count_documents({"timestamp": {"$gte": since_5m},
+                                                     "status": "error"})
+    if err_5m > 0 or (h24["total"] > 0 and h24["error_rate_pct"] > 25):
+        status_light = "critical"
+    elif h1["errors"] > 0 or (h24["total"] > 0 and h24["error_rate_pct"] > 5):
+        status_light = "degraded"
+    else:
+        status_light = "healthy"
+
+    return {
+        "status":               status_light,
+        "provider":             os.environ.get("EMAIL_PROVIDER", "mock"),
+        "fallback_provider":    os.environ.get("EMAIL_FALLBACK_PROVIDER") or None,
+        "last_1h":              h1,
+        "last_24h":             h24,
+        "errors_last_5m":       err_5m,
+        "recent_errors":        recent_errors,
+        "checked_at":           now.isoformat(),
+    }
+
+
 # ==================== 7. SUPPORT DESK (Phase 14B) ====================
 
 TICKET_CATEGORIES = ["Billing", "Bug", "Feature Request", "Training", "Data Import", "Urgent Outage"]

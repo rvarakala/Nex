@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import { PageHeader, Card, KPITile, Pill, tierTone, fmtINR, fmtInt, fmtDate, Empty } from './shared';
 import LiveSignupPulse from './LiveSignupPulse';
+import EmailHealthBanner from './EmailHealthBanner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PIE_COLORS = ['#94a3b8', '#6366f1', '#d946ef'];
@@ -29,6 +30,8 @@ export default function DashboardPage() {
         <PageHeader title="Executive Dashboard" subtitle="Platform-wide health, revenue & growth" />
         <LiveSignupPulse />
       </div>
+
+      <EmailHealthBanner />
 
       {/* KPI row — 8 tiles only at 2xl (1536px+) so currency values don't ellipsis-truncate on 1280-1440 desktops */}
       <div className="grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-8 gap-3">

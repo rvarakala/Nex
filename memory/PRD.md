@@ -1,4 +1,87 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🛡️ Email Health, Stuck-User Recovery UI, Zepto Fallback (2026-07-26)
+
+Following the Zepto→Resend migration + founder-lockout incidents, wired
+in four resilience features so the same class of silent-drop can never
+happen unnoticed again.
+
+### 1. Email Health Alarm
+- `utils/email.py` now writes every send attempt (sent/error/mocked) to
+  the `email_events` collection with provider, purpose, recipient, error
+  string, and `used_fallback` flag. Sync PyMongo client keeps the call
+  cheap and non-blocking; write failures are swallowed so email sending
+  never fails just because logging did.
+- TTL index on `email_events.timestamp` (30 days) added in
+  `server.py::ensure_indexes()`.
+- New founder-only endpoint `GET /api/admin/v2/email-health` returns
+  `status = healthy | degraded | critical`, primary + fallback provider,
+  1h + 24h rollups (total, sent, errors, error_rate_pct, used_fallback),
+  and the last 5 error events. Traffic-light logic:
+  - `critical` — any error in the last 5 min OR >25% 24h error rate
+  - `degraded` — errors in the last hour OR 5-25% 24h rate
+  - `healthy` — otherwise (silent, no banner rendered)
+- New `EmailHealthBanner.jsx` polls every 60s and lights up (amber/rose)
+  on the Founder Executive Dashboard when degraded/critical. Silent
+  otherwise.
+- New `EmailHealthPage.jsx` at `/admin/email-health` — full read-only
+  observability view with rollup tiles + recent errors + a "View stuck
+  users →" link into the recovery surface. Sidebar nav item added in the
+  Ops group.
+
+### 2. Stuck Users Screen
+- New `StuckUsersPage.jsx` at `/admin/stuck-users` — table of every user
+  who never completed the 6-digit OTP. Per-row actions:
+  - **Resend OTP** — fires the founder-only
+    `POST /api/admin/v2/users/resend-verification` (built earlier)
+  - **Force verify** — opens a confirmation modal, then calls
+    `POST /api/admin/v2/users/force-verify`. Every override is
+    audit-logged as `founder_override:<founder_email>`.
+- Row disappears from the list on success; toast confirms. No curl
+  needed for founder fire drills.
+- Sidebar nav item added below Email Health.
+
+### 3. Verify-Screen Nudge
+- `VerifyEmailPage.jsx` — after 15s on the "Check your email" screen,
+  a subtle amber tip surfaces: *"📬 Still nothing? Emails can land in
+  Spam or the Promotions tab. If you don't see it in 60 seconds, tap
+  Resend code below — a fresh code beats the last one."* Auto-hides on
+  successful verify. Prevents abandonment when the mail runs late.
+
+### 4. Zepto Fallback (feature-flagged auto-failover)
+- `utils/email.py` — send_email() now cascades. If the primary provider
+  returns `status="error"` AND `EMAIL_FALLBACK_PROVIDER` env is set +
+  differs from primary, retries once with the fallback. On fallback
+  success, `used_fallback=True` is stamped on the event so the health
+  banner surfaces "Fallback used N×" as a warning signal (something's
+  wrong with the primary, act before it fully fails).
+- Per-provider senders extracted into `_send_via_resend()` and
+  `_send_via_zepto()` — clean isolation, no recursion.
+- **Not enabled by default** — production continues on Resend-only.
+  Flip on the day Zepto's validation clears + credits are on the
+  account by setting `EMAIL_FALLBACK_PROVIDER=zepto` in prod `.env`.
+
+### Verification (preview, end-to-end)
+- Force-verify button flow: 8 → 7 rows in the table, success toast
+  fires, DB shows `email_verified: True, email_verified_via:
+  'founder_override:founder@audinexa.com'`.
+- Resend-OTP button flow: Resend `msg_id` returned, `email_events`
+  document created with `status=sent, purpose=verify_email_admin_resend`.
+- `/api/admin/v2/email-health` returns `status=healthy` with 1 sent,
+  0 errors, 0% error rate.
+- Health banner correctly hidden on dashboard when status=healthy;
+  Email Health page renders provider="resend", "No fallback configured"
+  hint (correct — flag not set yet), "🎉 No delivery errors" tile.
+- Verify-screen nudge appears at t=15s, correct copy, doesn't block
+  the OTP input.
+
+### New env vars (all optional)
+- `EMAIL_FALLBACK_PROVIDER` — "resend" | "zepto" (default: empty)
+- `EMAIL_EVENT_LOG_DISABLED=1` — kill switch if the event log ever
+  proves too chatty (default: off, logging enabled)
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 🔓 Founder Lockout Fix + Stuck-User Recovery Tools (2026-07-26)
 
 **Incident**: On production, `founder@audinexa.com` was silently seeded

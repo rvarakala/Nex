@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Flame, ToggleLeft,
   LogOut, Search, ShieldCheck, Headphones, BarChart3, HeartPulse,
   Megaphone, Bell, FileClock, Settings, Users, Activity, Link2, Shuffle,
-  AlertOctagon,
+  AlertOctagon, MailWarning, UserCheck,
 } from 'lucide-react';
 
 // Lazy-load route components → each becomes its own JS chunk, fetched only
@@ -33,6 +33,8 @@ const ActivityPage       = lazy(() => import('./ActivityPage'));
 const ClinicAssignmentsPage = lazy(() => import('./ClinicAssignmentsPage'));
 const ClinicSwitchAuditPage = lazy(() => import('./ClinicSwitchAuditPage'));
 const ErrorsPage         = lazy(() => import('./ErrorsPage'));
+const EmailHealthPage    = lazy(() => import('./EmailHealthPage'));
+const StuckUsersPage     = lazy(() => import('./StuckUsersPage'));
 
 import AdminGlobalSearch from './AdminGlobalSearch';
 import MfaEnforcementBanner from '../../../shell/MfaEnforcementBanner';
@@ -62,6 +64,8 @@ const NAV_GROUPS = [
       { to: '/admin/support', label: 'Support Desk', icon: Headphones, testid: 'nav-admin-support' },
       { to: '/admin/usage', label: 'Usage Analytics', icon: BarChart3, testid: 'nav-admin-usage' },
       { to: '/admin/system', label: 'System Health', icon: HeartPulse, testid: 'nav-admin-system' },
+      { to: '/admin/email-health', label: 'Email Health', icon: MailWarning, testid: 'nav-admin-email-health' },
+      { to: '/admin/stuck-users', label: 'Stuck Users', icon: UserCheck, testid: 'nav-admin-stuck-users' },
       { to: '/admin/errors', label: 'Errors', icon: AlertOctagon, testid: 'nav-admin-errors' },
     ],
   },
@@ -222,6 +226,8 @@ export default function AdminPanel() {
               <Route path="support" element={<SupportDeskPage />} />
               <Route path="usage" element={<UsageAnalyticsPage />} />
               <Route path="system" element={<SystemHealthPage />} />
+              <Route path="email-health" element={<EmailHealthPage />} />
+              <Route path="stuck-users" element={<StuckUsersPage />} />
               <Route path="errors" element={<ErrorsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="audit" element={<AuditLogPage />} />

@@ -52,6 +52,10 @@ async def lifespan(_app: FastAPI):
             "expires_at", expireAfterSeconds=86_400,  # 24h grace after expiry, then auto-purge
         )
         await db.auth_events.create_index([("user_id", 1), ("at", -1)])
+        # email_events (Email Health banner) — auto-purge after 30 days
+        await db.email_events.create_index([("timestamp", -1)])
+        await db.email_events.create_index([("status", 1), ("timestamp", -1)])
+        await db.email_events.create_index("timestamp", expireAfterSeconds=30 * 86_400)
         await db.referring_doctors.create_index("doctor_id", unique=True)
         await db.referring_doctors.create_index("name")
         await db.patient_notes.create_index("patient_id")
