@@ -20,7 +20,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Play, Pause, Home, Users, Stethoscope, Wrench,
   Headphones, LineChart, BarChart3, Handshake, Settings, ShieldCheck,
-  LifeBuoy, Maximize2, Minimize2, Camera,
+  LifeBuoy, Maximize2, Minimize2, Camera, BookOpen,
 } from 'lucide-react';
 import { SECTIONS, SLIDES } from './slides';
 
@@ -141,6 +141,9 @@ function SectionRail({ current, onJump }) {
         })}
       </nav>
       <div className="p-4 border-t text-[10px] uppercase tracking-widest" style={{ borderColor: C.border, fontFamily: F.mono, color: C.ink2 }}>
+        <Link to="/demo" className="flex items-center gap-1.5 mb-2 hover:underline normal-case tracking-normal text-xs" data-testid="switch-to-stories" style={{ fontFamily: F.body }}>
+          <BookOpen className="w-3.5 h-3.5" /> Switch to Story mode →
+        </Link>
         Keyboard: ← → space
       </div>
     </aside>

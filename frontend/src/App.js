@@ -12,6 +12,7 @@ import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
 import LandingPage from './modules/landing/LandingPageV3';
 import DemoPage from './modules/demo/DemoPage';
+import StoriesDemo from './modules/demo/StoriesDemo';
 import SignupPage from './modules/landing/SignupPage';
 import BillingModule from './modules/billing/BillingModule';
 import AccountsRevenuePage from './modules/accounts/AccountsRevenuePage';
@@ -108,7 +109,8 @@ function AppRoutes() {
       <Routes>
               {/* PUBLIC */}
               <Route path="/" element={<LandingPage />} />
-              <Route path="/demo" element={<DemoPage />} />
+              <Route path="/demo" element={<StoriesDemo />} />
+              <Route path="/demo/features" element={<DemoPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />

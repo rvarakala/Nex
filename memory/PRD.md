@@ -1,4 +1,59 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🎭 Case-Driven Demo Stories at /demo (2026-07-26)
+
+Replaced the feature-grid demo with a **case-driven storyboard** at
+`/demo`. Feature-grid preserved at `/demo/features` (linked from both
+sides). This is the "come sit in my clinic for a day" narrative a
+clinician requested — feature callouts light up organically as the
+software solves each case.
+
+### 6 stories · 21 scenes
+- **S1 · Rohan Menon (42M)** — Diagnostic-only journey, Bilateral Mild
+  Conductive HL. 8 scenes: walk-in → auto WhatsApp thank-you to Dr. AK
+  → appointment → PTA/Tympano → AB-gap flagged → diagnosis pinged back
+  to Dr. AK → GST invoice raised → report on WhatsApp.
+- **S2 · Priya Nair (34F)** — Full diagnostic → HA journey, Bilateral
+  Moderate Sloping SNHL. 3 scenes then branches.
+- **S2.a · Sneha Bhat (55F)** — In-clinic HA trial. 2 scenes.
+- **S2.b · Karthik Iyer (62M)** — 7-day home trial with ₹15k caution
+  deposit + automated WhatsApp check-ins. 2 scenes.
+- **S2.c · Meera Rao (48F)** — Buy from stock. ₹1,30,000 Phonak Lumity
+  30 pair, serials PHO-L30-2026001/002, GST invoice, warranty ledger,
+  Dr. AK gets 5% (₹6,500) commission. 3 scenes.
+- **S2.c.1 · Ravi Kumar (58M)** — Same want, but OOS. Advance ₹10,000
+  + Balance ₹1,20,000 split invoice, PO to Phonak, order tracked. 3
+  scenes.
+
+All 6 patients referred by **Dr. Anand Kumar (ENT, MBBS DLO)** with
+flat ₹500 diagnostic cut + 5% HA sale cut, opted in to both
+diagnostic + HA-sale WhatsApp thank-yous.
+
+### New files
+- `/app/backend/scripts/seed_story_demo.py` — idempotent seeder for
+  Dr. AK + 6 patients + 6 appointments + 6 signed reports + 4
+  invoices + 2 trials + 2 sales + 1 PO + 9 referral notifications.
+- `/app/frontend/src/modules/demo/stories.js` — 6 stories × 21 scenes
+  data structure with actor + time + narrative + feature-callout +
+  outcome-ribbon fields.
+- `/app/frontend/src/modules/demo/StoriesDemo.jsx` — the storyboard UI.
+- `/app/frontend/public/demo/stories/*.png` — 21 real production
+  screenshots captured with the seeded data.
+
+### Route wiring
+- `/demo` → **StoriesDemo** (default, case-driven)
+- `/demo/features` → **DemoPage** (46-slide feature grid, preserved)
+- Cross-links in both rails so demo-watchers can switch modes.
+
+### Verified in browser
+- 6 stories in the left rail with S1..S2C1 tags
+- Story lede band appears on scene 1 of each story
+- Time chip + Actor chip (Front Desk / Audiologist / System) render
+- Feature callout box (accent-tinted) + dark outcome ribbon render
+- Scene mini-TOC expands when a story is active
+- Jumping via `story-s2c1-out-of-stock` testid works instantly
+- Progress bar colour matches per-story accent
+- Feature-grid mode still reachable at /demo/features
+
 ## 🎬 Interactive Demo Deck at `/demo` (2026-07-25)
 
 Interactive click-through demo of AUDINEXA's 10 core features.
