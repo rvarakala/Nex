@@ -1,4 +1,47 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 📧 Email Provider Migration: Zepto → Resend (2026-07-26)
+
+**P0 incident**: All signup verification emails were silently dropping.
+Zepto's free-tier credits (10,000 lifetime) had exhausted — Zepto's REST
+API returned `TM_5001 / LE_102: Credit exhausted`, while its SMTP layer
+misleadingly returned `535 Authentication Failed`. Signup itself kept
+succeeding (send errors are non-fatal), so the funnel looked healthy
+but no user ever received their OTP. Affected preview AND production.
+
+Zepto quoted a 3-day validation to unlock more credits — unusable for
+a launched product. Migrated to Resend instead.
+
+### Changes
+- Added `resend==2.34.0` to `requirements.txt`.
+- `/app/backend/utils/email.py`
+  - New `_resend_creds()` helper reading
+    `RESEND_API_KEY`, `RESEND_FROM_ADDRESS`, `RESEND_FROM_NAME`.
+  - New Resend HTTPS branch in `send_email()` (base64 attachments,
+    reply_to, from-name formatting, structured error surfacing).
+  - Zepto branch preserved for later re-enable if desired.
+- `/app/backend/routers/email_verify.py`
+  - Fixed latent status-check bug (was comparing to `"ok"` — never
+    matched, always logged a false warning). Now checks `not in
+    ("sent","mocked")` and logs success at `INFO` level with
+    provider + message_id.
+- `/app/backend/.env`
+  - `EMAIL_PROVIDER=resend` (was `zepto`)
+  - Added `RESEND_API_KEY`, `RESEND_FROM_ADDRESS=noreply@audinexa.com`,
+    `RESEND_FROM_NAME=AUDINEXA`
+  - Zepto creds retained (unused) for one-flip rollback if ever needed.
+
+### Verification
+Fired a live signup to `ravihls@gmail.com` from preview →
+Resend dashboard shows **status: Delivered** and Gmail inbox
+received the OTP email.
+
+### Production
+Preview `.env` is fixed. Production picks this up on next deploy —
+user needs to redeploy audinexa.com so the same env vars land there.
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 💰 Pricing — Monthly-First Model (2026-07-26)
 
 Founder request: shift the landing-page pricing from annual-first
