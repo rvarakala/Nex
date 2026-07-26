@@ -24,6 +24,7 @@ import LegacyLandingPage from './modules/landing/v2/LandingPage';
 import DemoPage from './modules/demo/DemoPage';
 import StoriesDemo from './modules/demo/StoriesDemo';
 import SignupPage from './modules/landing/SignupPage';
+import VerifyEmailPage from './modules/landing/VerifyEmailPage';
 import BillingModule from './modules/billing/BillingModule';
 import AccountsRevenuePage from './modules/accounts/AccountsRevenuePage';
 import CompliancePolicyPack from './modules/compliance/CompliancePolicyPack';
@@ -123,6 +124,7 @@ function AppRoutes() {
               <Route path="/demo" element={<StoriesDemo />} />
               <Route path="/demo/features" element={<DemoPage />} />
               <Route path="/signup" element={<SignupPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password/:token" element={<ResetPasswordPage />} />

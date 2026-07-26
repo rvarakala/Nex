@@ -1,4 +1,72 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 📧 Email Verification — Hard-Block Signup Gate (2026-07-26)
+
+Real gap in prod: signup returned an access_token instantly with zero
+verification. Fixed with a hard-block 6-digit OTP flow, Zepto-delivered.
+
+### Backend
+- **New router**: `/app/backend/routers/email_verify.py`
+  - `POST /api/auth/verify-email` (`{email, code}` → verifies + logs in)
+  - `POST /api/auth/resend-verification` (`{email}` → 202 always; 60s
+    cooldown + 5/min slowapi)
+  - `issue_verification_code(db, user)` helper reused by signup + resend
+- **Modified**: `/app/backend/routers/subscription.py` (clinic-signup) —
+  returns `{verification_required: true, email}` (NO access_token) and
+  fires the OTP email inline
+- **Modified**: `/app/backend/server.py` (login) — checks `email_verified`;
+  returns `403 {code: "EMAIL_NOT_VERIFIED", email, message}` when false
+- **User doc fields added**: `email_verified`, `email_verified_at`,
+  `email_verified_via`, `email_verification_code`,
+  `email_verification_expires`, `email_verification_attempts`,
+  `email_verification_last_sent`
+- **Grandfather migration**: `db.users.update_many({}, {$set: {...}})`
+  ran once — all 151 existing users are `email_verified=true`
+
+### Security
+- 6-digit numeric, cryptographically secure (`secrets.randbelow`)
+- 15-minute TTL
+- 5 wrong attempts → code invalidated, force-resend
+- `secrets.compare_digest` constant-time
+- 60-second per-email resend cooldown + 5/min slowapi (belt+braces)
+- Resend endpoint always returns 202 (no email enumeration)
+- 20/min slowapi on /verify-email (brute-force brakes)
+- Magic-link URL param (`?email=&code=`) auto-verifies on load
+
+### Frontend
+- **New page**: `/app/frontend/src/modules/landing/VerifyEmailPage.jsx`
+  (Modern Clinical OS palette — bone bg, saffron accents, Cabinet
+  Grotesk headline)
+  - 6-digit split OTP input (auto-advance, paste-friendly,
+    mobile-numeric)
+  - Resend button with live 60s countdown
+  - Magic-link auto-verify on URL params
+  - Success state → auto-navigate to /patients
+- **Modified**: SignupPage — on 201 with `verification_required`,
+  redirect to `/verify-email?email=...&fresh=1` (no more auto-login)
+- **Modified**: AuthContext.login — catches 403 EMAIL_NOT_VERIFIED,
+  throws a marked error with `.emailNotVerified=true`
+- **Modified**: LoginPage — on `emailNotVerified` error, redirects to
+  `/verify-email?email=...`
+- **Route wired**: `/verify-email` in App.js
+
+### Verified end-to-end
+- Backend curl matrix (all 8 tests): signup returns no token → login
+  403 → verify with correct code returns token → login succeeds →
+  grandfathered login unaffected → brute-force lockout kicks in at
+  attempt 6 → enumeration guard returns 202 for nonexistent emails
+- Frontend browser: signup → auto-redirect to /verify-email → OTP
+  boxes render → filled digits → submit → auto-login → landed on
+  /patients dashboard with "Welcome, Dr. UI Tester Person"
+
+### Files touched
+- New: `/app/backend/routers/email_verify.py` (~285 LOC)
+- New: `/app/frontend/src/modules/landing/VerifyEmailPage.jsx` (~230 LOC)
+- Modified: `subscription.py`, `server.py`, `SignupPage.js`,
+  `AuthContext.js`, `pages/LoginPage.js`, `App.js`
+
+---
+
+
 ## 🎭 Case-Driven Demo Stories at /demo (2026-07-26)
 
 Replaced the feature-grid demo with a **case-driven storyboard** at

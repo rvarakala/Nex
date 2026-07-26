@@ -556,6 +556,22 @@ async def login(req: LoginRequest, request: Request, response: Response):
     if not user or not user.get("active", True) or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    # ── Email verification gate ── Grandfathered users (2026-07-26 migration)
+    # already have email_verified=true; every fresh signup after that date
+    # starts as false and must complete OTP verification before login. The
+    # 403 body carries `verification_required` + `email` so the frontend
+    # can auto-redirect to /verify-email with the field prefilled.
+    if not user.get("email_verified", False):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "EMAIL_NOT_VERIFIED",
+                "verification_required": True,
+                "email": user["email"],
+                "message": "Please verify your email to activate your account. Check your inbox for a 6-digit code.",
+            },
+        )
+
     # ── 2FA gate ── If the user has MFA enabled, hand back a short-lived
     # `mfa_token` instead of an access token. The client then POSTs the
     # 6-digit TOTP (or a recovery code) to /api/auth/mfa/verify-login to
@@ -859,6 +875,9 @@ app.include_router(user_sessions_router)
 
 from routers.status_page import router as status_page_router  # noqa: E402
 app.include_router(status_page_router)
+
+from routers.email_verify import router as email_verify_router  # noqa: E402
+app.include_router(email_verify_router)
 
 from routers.admin_backfill import router as admin_backfill_router  # noqa: E402
 app.include_router(admin_backfill_router)

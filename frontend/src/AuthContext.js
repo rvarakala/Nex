@@ -109,7 +109,22 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => { checkSession(); }, [checkSession]);
 
   const login = async (email, password) => {
-    const r = await axios.post(`${API}/auth/login`, { email, password });
+    let r;
+    try {
+      r = await axios.post(`${API}/auth/login`, { email, password });
+    } catch (e) {
+      // Email verification gate — hard-block via 403 EMAIL_NOT_VERIFIED.
+      // We rethrow a special error the LoginPage recognises and uses to
+      // redirect the user to /verify-email with the field prefilled.
+      const d = e?.response?.data?.detail;
+      if (e?.response?.status === 403 && d && typeof d === 'object' && d.code === 'EMAIL_NOT_VERIFIED') {
+        const err = new Error(d.message || 'Please verify your email first.');
+        err.emailNotVerified = true;
+        err.email = d.email || email;
+        throw err;
+      }
+      throw e;
+    }
     // Two-step MFA flow: server returns a short-lived challenge instead of
     // the access token. Caller (LoginPage) detects `mfa_token` and prompts
     // the user for the 6-digit code, then calls `loginVerifyMfa()`.

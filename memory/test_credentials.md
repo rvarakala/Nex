@@ -1,5 +1,14 @@
 # ACS Audiology Clinic — Test Credentials
 
+> **📧 Email verification (2026-07-26)**: All 151 existing users have been
+> **grandfathered as `email_verified=true`** — they log in normally.
+> Every NEW signup after 2026-07-26 must complete a 6-digit OTP via
+> `/verify-email` before login (hard-block via 403 `EMAIL_NOT_VERIFIED`).
+> Zepto delivers the code. Pull the code for automated tests from
+> `db.users.email_verification_code`.
+
+
+
 ## ⚠️ Production Mode (`DISABLE_DEMO_SEED=1`)
 When this env var is set on the backend (recommended in production):
 - The 4 ACS demo users (`admin@acs.in`, etc.), the second Delhi test clinic, the 4 admin-panel demo tenants, and the sample leads are **NOT** seeded.

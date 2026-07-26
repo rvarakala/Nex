@@ -42,14 +42,19 @@ export default function SignupPage() {
         owner_name: ownerName, owner_email: ownerEmail,
         owner_password: ownerPassword, company_url: companyUrl,
       });
-      // Auto-login by seeding the token + user into AuthContext
-      if (loginWithToken) {
-        await loginWithToken(r.data.access_token);
-      } else {
-        // Fallback: persist and hard-reload
-        localStorage.setItem('acs_token', r.data.access_token);
+      // Email verification is now REQUIRED before login. Backend returns
+      // `verification_required: true` with NO access_token. Redirect the
+      // user to the /verify-email page with the email pre-filled.
+      if (r.data?.verification_required) {
+        navigate(`/verify-email?email=${encodeURIComponent(ownerEmail)}&fresh=1`, { replace: true });
+        return;
       }
-      navigate('/patients', { replace: true });
+      // Legacy fallback — if a future backend change re-enables auto-login
+      if (r.data?.access_token) {
+        if (loginWithToken) await loginWithToken(r.data.access_token);
+        else localStorage.setItem('acs_token', r.data.access_token);
+        navigate('/patients', { replace: true });
+      }
     } catch (e) {
       const d = e?.response?.data?.detail;
       setErr(typeof d === 'string' ? d : (Array.isArray(d) ? d[0]?.msg : null) || 'Signup failed');

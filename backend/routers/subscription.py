@@ -323,6 +323,11 @@ async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
         "active": True,
         "password_hash": hash_password(payload.owner_password),
         "branch_ids": [branch_id],
+        # Email verification gate — hard-block login until user confirms via
+        # 6-digit OTP fired by /api/auth/verify-email. Grandfathered users
+        # (migrated in the 2026-07-26 launch-verification patch) already
+        # have email_verified=true.
+        "email_verified": False,
         "created_at": now,
     }))
 
@@ -337,21 +342,29 @@ async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
         "created_at": now,
     }))
 
-    # ----- Issue access token so the user is auto-logged-in -----
-    token = create_access_token(user_id, email, "clinic_owner", clinic_id)
+    # ----- Fire the verification email (6-digit OTP + magic link) -----
+    # Payload does NOT include an access_token — the frontend redirects to
+    # /verify-email until the OTP is entered successfully.
+    fresh_user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    from routers.email_verify import issue_verification_code
+    await issue_verification_code(db, fresh_user, purpose="signup")
 
     return {
         "ok": True,
         "clinic_id": clinic_id,
         "user_id": user_id,
         "branch_id": branch_id,
-        "access_token": token,
-        "token_type": "bearer",
+        "verification_required": True,
+        "email": email,
         "trial_ends_at": trial_end.isoformat(),
         "trial_days": 30,
-        "effective_tier": "PREMIUM",   # during trial
+        "effective_tier": "PREMIUM",   # during trial (once verified)
         "stored_tier": "BASIC",
-        "message": f"Welcome, {payload.owner_name.split()[0]}! Your 30-day Premium trial is active.",
+        "message": (
+            f"Welcome, {payload.owner_name.split()[0]}! "
+            f"We just sent a 6-digit code to {email} — enter it to activate "
+            f"your 30-day Premium trial."
+        ),
     }
 
 

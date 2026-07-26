@@ -41,6 +41,11 @@ const roleHome = (role) => {
       }
       navigate(roleHome(u.role), { replace: true });
     } catch (ex) {
+      // Email verification gate — hard-block redirect to /verify-email
+      if (ex?.emailNotVerified) {
+        navigate(`/verify-email?email=${encodeURIComponent(ex.email || email)}`, { replace: true });
+        return;
+      }
       const d = ex?.response?.data?.detail;
       setErr(typeof d === 'string' ? d : (ex?.message || 'Login failed'));
     } finally {
