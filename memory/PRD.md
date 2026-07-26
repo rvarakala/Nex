@@ -1,4 +1,53 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🔓 Founder Lockout Fix + Stuck-User Recovery Tools (2026-07-26)
+
+**Incident**: On production, `founder@audinexa.com` was silently seeded
+with `email_verified` missing → login returned 403 `EMAIL_NOT_VERIFIED`
+(the hard-block added earlier that day). The founder + all internal
+Audinexa team accounts were locked out of their own platform. Plus,
+14 real signups from before Resend was wired had also stuck at
+"Check your email" with no working recovery path.
+
+### Changes
+- **`/app/backend/admin_seed.py`**
+  - Founder + internal team users are now inserted with
+    `email_verified=True, email_verified_via="founder_seed"|"internal_seed"`.
+  - Added an idempotent `update_many` self-heal that runs every boot —
+    forces `email_verified=True` on the founder, all 5 internal team
+    users, and all seeded demo-tenant owners.
+  - Effect: redeploying production immediately unblocks the founder
+    account. No manual DB work required.
+- **`/app/backend/routers/admin_panel_b.py`** — 3 new endpoints (founder / super_admin only):
+  - `GET  /api/admin/v2/users/stuck-verification` — lists every user
+    whose signup never completed OTP. Sorted newest first, capped at 500.
+  - `POST /api/admin/v2/users/force-verify` — mark a user as verified
+    without an OTP (audit-logged as
+    `founder_override:<founder_email>`). Use when the user is stuck.
+  - `POST /api/admin/v2/users/resend-verification` — regenerate a
+    fresh 6-digit code and re-send via the current email provider
+    (Resend). Reuses `issue_verification_code()` from `email_verify.py`.
+
+### Verification (preview, end-to-end)
+- Confirmed self-heal runs on boot: founder shows
+  `email_verified: true, email_verified_via: 'grandfathered'`.
+- Founder login → 200 OK → JWT issued.
+- List stuck users → 10 users returned.
+- Force-verify `brute1785050369@example.com` → 200 OK, DB now shows
+  `email_verified: True, email_verified_via: 'founder_override:founder@audinexa.com'`.
+- Founder-triggered resend for a fresh stuck signup →
+  Resend `message_id=b8ef88af-cf69-4966-87ff-977089cbbfca`,
+  log confirms *"Verification email dispatched via resend"*.
+
+### Production unblock path (for user)
+1. Redeploy audinexa.com (Deploy button in Emergent).
+2. Founder self-heal + Resend env vars land on prod → founder can log in.
+3. Optional: from an authenticated founder session, hit the 3 new
+   endpoints to clear the 14 stuck users (either force-verify them or
+   re-send the OTP through Resend now that credits work).
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 📧 Email Provider Migration: Zepto → Resend (2026-07-26)
 
 **P0 incident**: All signup verification emails were silently dropping.

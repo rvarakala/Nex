@@ -53,6 +53,89 @@ async def get_rbac_matrix(user=Depends(get_current_user)):
     }
 
 
+# ==================== EMAIL VERIFICATION RECOVERY (2026-07-26) ====================
+# Any founder can unblock users stuck at the verification gate — either by
+# force-verifying them (skip OTP entirely) or by resending a fresh OTP through
+# the current email provider. Introduced after a Zepto → Resend migration left
+# ~production users trapped at "Check your email".
+
+@router.get("/users/stuck-verification")
+async def list_unverified_users(user=Depends(get_current_user), db=Depends(get_db)):
+    """List every user whose signup never completed the email-OTP step."""
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Founder / super_admin only")
+    cursor = db.users.find(
+        {"$or": [{"email_verified": False}, {"email_verified": {"$exists": False}}]},
+        {"_id": 0, "user_id": 1, "email": 1, "name": 1, "clinic_id": 1,
+         "role": 1, "created_at": 1, "email_verified_via": 1},
+    ).sort("created_at", -1).limit(500)
+    rows = [serialize_datetime(u) async for u in cursor]
+    return {"count": len(rows), "users": rows}
+
+
+class VerifyOverrideRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    email: EmailStr
+
+
+@router.post("/users/force-verify")
+async def force_verify_user(
+    body: VerifyOverrideRequest,
+    request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Founder override — mark a user as email-verified without an OTP.
+
+    Use when the user is stuck (email provider down, mail lost, etc.).
+    Audit-logged.
+    """
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Founder / super_admin only")
+    target = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, detail=f"No user with email {body.email}")
+    if target.get("email_verified"):
+        return {"ok": True, "already_verified": True, "email": target["email"]}
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"email": target["email"]},
+        {"$set": {"email_verified": True,
+                  "email_verified_at": now_iso,
+                  "email_verified_via": f"founder_override:{user['email']}"},
+         "$unset": {"email_verification_code": "",
+                    "email_verification_expires": "",
+                    "email_verification_attempts": ""}},
+    )
+    await _log_audit(db, user, "user.email.force_verify", target["email"],
+                     after={"verified_at": now_iso}, request=request)
+    return {"ok": True, "email": target["email"], "verified_at": now_iso}
+
+
+@router.post("/users/resend-verification")
+async def resend_verification_email(
+    body: VerifyOverrideRequest,
+    request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Regenerate the 6-digit OTP and re-send via the current email provider."""
+    if user["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Founder / super_admin only")
+    target = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, detail=f"No user with email {body.email}")
+    if target.get("email_verified"):
+        return {"ok": True, "already_verified": True, "email": target["email"]}
+    # Reuse the same signup path — persists a fresh code + sends the mail.
+    from routers.email_verify import issue_verification_code
+    await issue_verification_code(db, target, purpose="admin_resend")
+    await _log_audit(db, user, "user.email.resend_otp", target["email"], request=request)
+    return {"ok": True, "email": target["email"],
+            "message": "A fresh 6-digit code was sent via the current email provider."}
+
+
 # ==================== 7. SUPPORT DESK (Phase 14B) ====================
 
 TICKET_CATEGORIES = ["Billing", "Bug", "Feature Request", "Training", "Data Import", "Urgent Outage"]

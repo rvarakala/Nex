@@ -172,6 +172,9 @@ async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
             "active": True,
             "password_hash": hash_password(founder_pw),
             "branch_ids": [],
+            "email_verified": True,
+            "email_verified_at": now.isoformat(),
+            "email_verified_via": "founder_seed",
             "created_at": now,
         }))
         logger.info(f"Seeded founder user: {founder_email}")
@@ -184,6 +187,17 @@ async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
                           "clinic_id": PLATFORM_CLINIC_ID}},
             )
             logger.info(f"Founder password synced from env: {founder_email}")
+
+    # Self-heal: founder is internal — must never be trapped behind the
+    # email-verification gate. Runs on every boot; no-op if already verified.
+    # This is what unblocks a founder whose account was seeded BEFORE the
+    # email-verification hard-block was added (2026-07-26).
+    await db.users.update_one(
+        {"email": founder_email, "email_verified": {"$ne": True}},
+        {"$set": {"email_verified": True,
+                  "email_verified_at": now.isoformat(),
+                  "email_verified_via": "founder_seed"}},
+    )
 
 
 async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
@@ -307,9 +321,33 @@ async def seed_admin_panel_demo(db: AsyncIOMotorDatabase) -> None:
             "two_fa_enabled": False,
             "password_hash": hash_password(pw),
             "branch_ids": [],
+            "email_verified": True,
+            "email_verified_at": now.isoformat(),
+            "email_verified_via": "internal_seed",
             "created_at": now,
         }))
         logger.info(f"Seeded internal user: {email} ({role})")
+
+    # Self-heal internal team accounts (same logic as the founder — internal
+    # accounts must never be trapped behind the email-verification gate).
+    internal_emails = [e for e, _, _ in _INTERNAL_USER_ROLES]
+    await db.users.update_many(
+        {"email": {"$in": internal_emails}, "email_verified": {"$ne": True}},
+        {"$set": {"email_verified": True,
+                  "email_verified_at": now.isoformat(),
+                  "email_verified_via": "internal_seed"}},
+    )
+
+    # Self-heal seeded demo tenant owners too — they're internal test accounts
+    # and shouldn't be gated (grandfathered by design).
+    demo_owner_emails = [t.get("email") for t in _DEMO_TENANTS if t.get("email")]
+    if demo_owner_emails:
+        await db.users.update_many(
+            {"email": {"$in": demo_owner_emails}, "email_verified": {"$ne": True}},
+            {"$set": {"email_verified": True,
+                      "email_verified_at": now.isoformat(),
+                      "email_verified_via": "demo_seed"}},
+        )
 
     # ---- 6. Sample marketing campaigns ----
     for c in _SAMPLE_CAMPAIGNS:
