@@ -582,7 +582,7 @@ export default function AppShell({ children }) {
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_-4px_rgba(15,29,58,0.08)] audinexa-bottomnav"
         data-testid="mobile-bottom-nav"
       >
-        <div className="grid grid-cols-5 gap-1 px-2 pt-1.5">
+        <div className="bottomnav-grid">
           {[
             { to: '/patients',              Icon: LayoutDashboard, label: 'Home',     testid: 'bnav-home',    exact: true },
             { to: '/patients/appointments', Icon: Calendar,        label: 'Schedule', testid: 'bnav-sched' },

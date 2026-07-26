@@ -59,6 +59,18 @@
   padding-bottom: max(6px, env(safe-area-inset-bottom));
 }
 
+/* Mobile bottom-nav 5-tab grid — MUST stay 5 columns on phones. Uses a
+   non-Tailwind class so the global `.grid.grid-cols-N → 1fr` mobile
+   override below doesn't collapse it into a vertical stack (bug reported
+   2026-07-26: sidebar items rendered stacked instead of a horizontal bar
+   on iPhone Safari). */
+.bottomnav-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem 0 0.5rem;
+}
+
 /* Modern Dashboard KPI row — must stay 2-col on mobile, 4-col on xl.
    Uses a non-Tailwind class so the global `.grid.grid-cols-N → 1fr`
    mobile override in this file doesn't collapse it to 1 column. */
