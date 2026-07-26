@@ -10,8 +10,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
-import LandingPage from './modules/landing/v2/LandingPage';
-import LandingPreviewPage from './modules/landing/LandingPreviewPage';
+import LandingPage from './modules/landing/LandingPageV3';
 import SignupPage from './modules/landing/SignupPage';
 import BillingModule from './modules/billing/BillingModule';
 import AccountsRevenuePage from './modules/accounts/AccountsRevenuePage';
@@ -108,7 +107,6 @@ function AppRoutes() {
       <Routes>
               {/* PUBLIC */}
               <Route path="/" element={<LandingPage />} />
-              <Route path="/landing-preview" element={<LandingPreviewPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />

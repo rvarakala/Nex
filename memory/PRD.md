@@ -1,4 +1,76 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🎨 Landing Redesign v3 — Modern Clinical OS (2026-07-25)
+
+Full landing-page rewrite per design_agent blueprint. User picked:
+Variant A layout (bold split + asymmetric proof cards) with copy
+merged intelligently from Variant B (module-list + one-system) and
+Variant C ("six tabs of Excel · three WhatsApp groups · one PDF binder").
+
+### New palette + typography
+- **Palette**: Clinical Bone (`#FDFBF7`) + Indian Saffron (`#D95D39`)
+  + Emerald trust (`#059669`) + Navy for dark diagnostics break.
+- **Fonts**: Cabinet Grotesk (headings, Fontshare CDN) + IBM Plex
+  Sans (body, Google Fonts) + IBM Plex Mono (micro-labels/tickers).
+- **Textures**: subtle SVG-turbulence grain overlay on light sections
+  for tactile "medical paper" feel. Gradients banned except on the
+  Premium pricing card shadow-glow.
+
+### 10 sections shipped end-to-end
+1. **Sticky header** — bone bg, saffron pill CTA, scroll shadow.
+2. **Hero A** — big Cabinet Grotesk headline "The Audiology Clinic OS
+   built for **India**" + merged sub-copy + saffron/ghost dual CTA +
+   asymmetric card cluster (signed audiogram, GST invoice, live
+   counter).
+3. **Live proof band** — `● LIVE · 120+ clinics · 1,240 tests today · 58 aids sold`
+   with DPDPA · GST · AUDIT-LOGGED chip cluster.
+4. **Feature bento** — 12-col Tetris grid: giant Front-Desk/WhatsApp
+   card + GST + HA-sales + full-width 13-state repair pipeline
+   timeline + 4 supporting modules (Analytics, AMC, Portal, Referrals)
+   + "on the roadmap" strip.
+5. **Diagnostics deep-dive** — dark inverted section with radial saffron
+   glow, panel grid (Pure Tone / Impedance / Speech / OAE / ABR /
+   Pediatric), and glowing audiogram + tympanogram illustrations.
+6. **Spreadsheets-vs-AUDINEXA comparison table** — 7-row brutalist
+   contrast (red X's vs emerald ticks).
+7. **Testimonials + Founder letter** — 3 Indian audiologist quotes
+   with saffron-tint avatars + a sticky founder-letter card.
+8. **Pricing** — 3-col Basic/Standard/Premium from
+   `/api/subscription/tiers` (₹400/₹600/₹1200 monthly, live), yearly
+   savings badge, tier-specific feature lists, MOST POPULAR ribbon on
+   Premium, "everything is Premium for 30 days" footer note.
+9. **FAQ** — 6 accordion items (trial, DPDPA, GST, migration, multi-
+   branch, cancellation).
+10. **Footer** — 8vw "Let's take your clinic **digital.**" callout in
+    Cabinet Grotesk, saffron CTA, 4-column Product/Company/Legal links,
+    monospace copyright line.
+
+### Bug caught + fixed during smoke
+- Initial crash: `Cannot read properties of undefined (reading 'toLowerCase')`
+  because `/api/subscription/tiers` returns `code` not `tier`, and
+  `prices.quarterly` not `price_monthly_inr`. Rewrote pricing block
+  to derive monthly from `Math.round(quarterly / 3)`, compute yearly
+  savings %, and provide tier-code-specific feature copy.
+
+### Files touched
+- New: `/app/frontend/src/modules/landing/LandingPageV3.jsx` (~660 lines)
+- Modified: `/app/frontend/src/App.js` (swap import; removed
+  `/landing-preview` route)
+- Deleted: `/app/frontend/src/modules/landing/LandingPreviewPage.jsx`
+- Old `/app/frontend/src/modules/landing/v2/` tree left untouched
+  (unused; kept for rollback safety — safe to delete in a later pass).
+
+### Verified in browser
+- Hero renders with merged copy + asymmetric cards
+- Live proof band renders with real API stats
+- Bento grid renders 6 modules + roadmap strip
+- Diagnostics dark section renders both illustrations
+- Comparison table renders 7 rows red vs emerald
+- Pricing pulls real ₹ amounts from `/api/subscription/tiers`
+- Footer massive "digital." callout renders in Cabinet Grotesk
+
+---
+
+
 ## 🎛️ Prod Env Polish + Founder Live Feed (2026-07-25)
 
 Two launch-prep tasks shipped together. Options CORS + PUBLIC_APP_URL
