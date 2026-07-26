@@ -1,4 +1,55 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 💰 Pricing — Monthly-First Model (2026-07-26)
+
+Founder request: shift the landing-page pricing from annual-first
+(₹3,999 / ₹5,999 / ₹11,999 per year) to a cleaner monthly-first model
+that reads instantly for the audiologist-owner.
+
+### New pricing
+| Tier     | Monthly | Annual  | Save vs monthly | Bundled modules |
+|----------|---------|---------|-----------------|------------------|
+| BASIC    | ₹499    | ₹4,990  | ₹998 (2 mo free)| Front-desk + Diagnostics |
+| STANDARD | ₹999    | ₹9,990  | ₹1,998          | + Hearing-aids, AMC, Patient Portal |
+| PREMIUM  | ₹1,499  | ₹14,990 | ₹2,998          | + Repair, Analytics, Referral Partners |
+
+Annual = monthly × 10 → the industry-standard "pay yearly, get 2 months
+free" nudge (~17% saving). Quarterly = monthly × 3 and half-yearly =
+monthly × 6 have no discount so annual is the clear winner.
+
+### Backend
+- `/app/backend/utils/tiers.py`
+  - Replaced `_ANNUAL_PRICE` + multiplier logic with `_MONTHLY_PRICE`
+    as the single source of truth
+  - `get_tier_prices()` now returns
+    `{monthly, quarterly, half_yearly, annual, annual_savings_vs_monthly,
+    annual_savings_vs_quarterly}`. `annual_savings_vs_quarterly` kept
+    for backward-compat with admin panel.
+- Admin panel MRR math (`admin_panel.py`) unaffected — still uses
+  `annual / 12`, which now cleanly resolves to `monthly × 10 / 12`.
+
+### Frontend
+- `/app/frontend/src/modules/landing/LandingPageV3.jsx` — reads
+  `t.prices?.monthly` directly (removed the fragile
+  `Math.round(quarterly/3)` derivation which produced ugly rounding).
+- `/app/frontend/src/modules/landing/v2/components/Pricing.jsx` —
+  legacy landing pricing rewritten to Basic/Standard/Premium at
+  ₹499/₹999/₹1,499/month. Note: this component is currently NOT
+  mounted on `/legacy-landing` (removed 2026-06-03 when the beta
+  cohort was declared full); the update keeps the component in sync
+  in case it's re-enabled.
+
+### Test coverage
+- `GET /api/subscription/tiers` verified via curl — returns correct
+  monthly/annual/quarterly/half-yearly for all three tiers.
+- Landing page pricing section verified visually at
+  `/#pricing` (all three cards show correct ₹/mo + save 17%/yr line).
+- `pytest tests/test_phase12_subscription.py` — 14/14 pass.
+- `pytest tests/test_phase14_admin_panel.py` — 21/21 pass (MRR math
+  still valid with new annuals).
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 📧 Email Verification — Hard-Block Signup Gate (2026-07-26)
 
 Real gap in prod: signup returned an access_token instantly with zero

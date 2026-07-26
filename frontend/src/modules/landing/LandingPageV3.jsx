@@ -709,7 +709,7 @@ function Pricing({ tiers }) {
           {(sorted.length ? sorted : order.map((code) => ({ code, prices: {} }))).map((t) => {
             const code = t.code || t.tier || 'BASIC';
             const isPremium = code === 'PREMIUM';
-            const monthly = t.prices?.quarterly ? Math.round(t.prices.quarterly / 3) : 0;
+            const monthly = t.prices?.monthly || 0;
             const annual = t.prices?.annual;
             return (
               <div

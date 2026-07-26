@@ -2,7 +2,7 @@
 
 Single source of truth for:
   * Tier → modules map (what each tier unlocks)
-  * Annual base prices (derived prices in get_tier_prices)
+  * Monthly base prices (derived prices in get_tier_prices)
   * `require_tier` dependency for protecting premium endpoints
 
 Tiers:
@@ -33,31 +33,36 @@ TIER_MODULES: dict[str, list[str]] = {
 }
 
 
-# Annual base prices (INR). Quarterly/half-yearly are derived.
-_ANNUAL_PRICE: dict[str, int] = {
-    "BASIC": 3999,
-    "STANDARD": 5999,
-    "PREMIUM": 11999,
+# Monthly base prices (INR) — source of truth. Displayed on the landing page.
+_MONTHLY_PRICE: dict[str, int] = {
+    "BASIC": 499,
+    "STANDARD": 999,
+    "PREMIUM": 1499,
 }
-
-# Multipliers rounded to ₹100 (Option C math: quarterly = 0.30× annual,
-# half-yearly = 0.55× annual). Quarterly is intentionally the *worst* deal
-# so annual is the clear winner.
-_DURATION_MULT = {"quarterly": 0.30, "half_yearly": 0.55, "annual": 1.00}
 
 
 def get_tier_prices() -> dict:
-    """Returns the full price matrix used by the landing page + pricing UI."""
+    """Returns the full price matrix used by the landing page + pricing UI.
+
+    Monthly is the source of truth. Annual = 10 × monthly (industry-standard
+    "pay yearly, get 2 months free" nudge). Quarterly and half-yearly are
+    simple multiples of monthly (no discount) so annual remains the clear
+    winner.
+    """
     out = {}
-    for tier, annual in _ANNUAL_PRICE.items():
+    for tier, monthly in _MONTHLY_PRICE.items():
+        annual = monthly * 10        # 2 months free vs. monthly
+        quarterly = monthly * 3
+        half_yearly = monthly * 6
         out[tier] = {
+            "monthly":     monthly,
+            "quarterly":   quarterly,
+            "half_yearly": half_yearly,
             "annual":      annual,
-            "half_yearly": int(round(annual * _DURATION_MULT["half_yearly"] / 100) * 100),
-            "quarterly":   int(round(annual * _DURATION_MULT["quarterly"] / 100) * 100),
             # Savings figure shown on UI to nudge annual purchase
-            "annual_savings_vs_quarterly": int(
-                round(annual * _DURATION_MULT["quarterly"] / 100) * 100 * 4 - annual
-            ),
+            "annual_savings_vs_monthly":   monthly * 12 - annual,
+            # Legacy key kept for backward-compat with admin panel + old clients
+            "annual_savings_vs_quarterly": monthly * 12 - annual,
         }
     return out
 
