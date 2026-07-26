@@ -5,6 +5,7 @@ import { ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, P
 import { PageHeader, Card, KPITile, Pill, tierTone, fmtINR, fmtInt, fmtDate, Empty } from './shared';
 import LiveSignupPulse from './LiveSignupPulse';
 import EmailHealthBanner from './EmailHealthBanner';
+import SignupFunnel from './SignupFunnel';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PIE_COLORS = ['#94a3b8', '#6366f1', '#d946ef'];
@@ -22,7 +23,7 @@ export default function DashboardPage() {
   if (err) return <div className="p-6"><div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded p-3">{err}</div></div>;
   if (!d) return <div className="p-6 text-slate-500">Loading command center…</div>;
 
-  const { kpis, plan_distribution, revenue_by_tier, mrr_chart, signups_trend, funnel, recent_signups, renewals_due } = d;
+  const { kpis, plan_distribution, revenue_by_tier, mrr_chart, signups_trend, funnel, signup_funnel_30d, recent_signups, renewals_due } = d;
 
   return (
     <div className="p-6 space-y-6" data-testid="admin-dashboard-page">
@@ -44,6 +45,8 @@ export default function DashboardPage() {
         <KPITile label="Payment Fails" value={fmtInt(kpis.payment_failures)} tone="amber" testid="kpi-pay-fail" />
         <KPITile label="Avg ₹ / Tenant" value={fmtINR(kpis.avg_revenue_per_tenant)} tone="slate" testid="kpi-arpt" />
       </div>
+
+      <SignupFunnel data={signup_funnel_30d} />
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

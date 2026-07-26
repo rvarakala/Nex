@@ -1,4 +1,45 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 📊 Signup Funnel Card — Onboarding Conversion Watch (2026-07-26)
+
+Complements the lifetime Leads → Trials → Paid funnel with a **30-day
+onboarding funnel**: Signups → Verified → Activated. Designed as the
+founder's early-warning radar — a low verify rate visually points at
+silent email failures (Zepto/Resend down); a low activation rate points
+at heavy onboarding copy.
+
+### Backend
+- `admin_panel.py` `/api/admin/v2/dashboard` now returns a
+  `signup_funnel_30d` block:
+  - `signups`   — clinics with `created_at ≥ 30 days ago`
+  - `verified`  — of those, owners whose `users.email_verified = True`
+  - `activated` — of those, clinic_ids with ≥1 patient (via
+    `db.patients.distinct("clinic_id")`)
+  - Derived: `verify_rate_pct`, `activation_rate_pct`,
+    `verified_to_activated_pct`, plus explicit drop counts.
+- Chose "≥1 patient" as the activation signal — cleaner than "logged in
+  once" (existing `auth_events` lookup would be N+1) and captures real
+  product usage. Founder can revisit the threshold anytime.
+
+### Frontend
+- New `SignupFunnel.jsx` component embedded on the Founder Executive
+  Dashboard right after the KPI row. Layout: 3 tiles + 2 drop-off
+  arrows + a founder-insight banner.
+- Thresholds: verify rate < 80% or activation rate < 40% (of verified)
+  triggers a rose / amber insight tile with a nudge to the right tab.
+- Card carries a `data-status="healthy | degraded | critical"`
+  attribute for smoke tests and telemetry.
+
+### Verified in preview
+- Backend: `signup_funnel_30d = {signups: 14, verified: 7, activated: 0,
+  verify_rate_pct: 50.0, activation_rate_pct: 0.0, ...}` — real data.
+- UI: card renders `status=critical`; insight banner reads
+  *"Only 50% of new signups verified their email — check the Email
+  Health tab first."* — exactly the copy that catches an incident like
+  the Zepto silent-drop before a founder learns about it from a user DM.
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 🛡️ Email Health, Stuck-User Recovery UI, Zepto Fallback (2026-07-26)
 
 Following the Zepto→Resend migration + founder-lockout incidents, wired

@@ -241,6 +241,44 @@ async def _compute_dashboard(db) -> dict:
     paid_count = await db.clinics.count_documents({"subscription_tier": {"$in": ["STANDARD", "PREMIUM"]}})
     ever_trialed = paid_count + churned + trial_count
 
+    # ---- 30-day signup funnel (signups → verified → activated) ----
+    # Different from `funnel` above: that's a lifetime lead-to-paid conversion.
+    # This one is the last-30-days ONBOARDING funnel — the fastest way to
+    # spot silent-drop incidents (email verify blocked) or activation drops
+    # (users signed up + verified but never actually used the product).
+    #
+    # Definitions:
+    #   signups   = clinic docs created in the last 30 days
+    #   verified  = of those, the ones whose owner user has email_verified=True
+    #   activated = of those, the ones with ≥1 patient in the DB
+    signup_ids = [
+        c["clinic_id"]
+        async for c in db.clinics.find(
+            {"created_at": {"$gte": month_ago}},
+            {"_id": 0, "clinic_id": 1},
+        )
+    ]
+    signups_30 = len(signup_ids)
+    if signup_ids:
+        verified_30 = await db.users.count_documents({
+            "clinic_id":       {"$in": signup_ids},
+            "role":            {"$in": ["clinic_owner", "founder"]},
+            "email_verified":  True,
+        })
+        # `distinct` returns the unique clinic_ids that have at least one
+        # patient — cheap and correct at any scale.
+        activated_ids = await db.patients.distinct(
+            "clinic_id", {"clinic_id": {"$in": signup_ids}}
+        )
+        activated_30 = len(activated_ids)
+    else:
+        verified_30 = 0
+        activated_30 = 0
+
+    verify_rate = round(100 * verified_30 / max(signups_30, 1), 1)
+    activation_rate = round(100 * activated_30 / max(signups_30, 1), 1)
+    verified_to_activated = round(100 * activated_30 / max(verified_30, 1), 1)
+
     return {
         "kpis": {
             "active_clinics": active,
@@ -264,6 +302,16 @@ async def _compute_dashboard(db) -> dict:
             "paid": paid_count,
             "churned_30d": churned,
             "trial_to_paid_pct": round(100 * paid_count / max(ever_trialed, 1), 1),
+        },
+        "signup_funnel_30d": {
+            "signups":               signups_30,
+            "verified":              verified_30,
+            "activated":             activated_30,
+            "verify_rate_pct":       verify_rate,
+            "activation_rate_pct":   activation_rate,
+            "verified_to_activated_pct": verified_to_activated,
+            "signup_to_verify_drop": max(signups_30 - verified_30, 0),
+            "verify_to_activate_drop": max(verified_30 - activated_30, 0),
         },
         "recent_signups": recent_signups,
         "renewals_due": [deserialize_datetime(r) for r in renewals],
