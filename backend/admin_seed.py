@@ -178,11 +178,24 @@ async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
             "created_at": now,
         }))
         logger.info(f"Seeded founder user: {founder_email}")
+    elif found.get("role") != "founder":
+        # ⚠️ COLLISION GUARD (2026-07-26 incident): a real clinic-owner
+        # signed up with the founder's email on production; the previous
+        # seed logic silently overwrote their role + clinic + password on
+        # the next deploy. Refuse to hijack — log loudly so ops can
+        # decide (either rename the founder email or the offending user).
+        logger.error(
+            "🚨 FOUNDER-EMAIL COLLISION — user %r has role=%r, NOT founder. "
+            "Refusing to overwrite their record. Rename FOUNDER_EMAIL or "
+            "reach out to the affected user to migrate their account.",
+            founder_email, found.get("role"),
+        )
     else:
-        # Keep password in sync if env changed
+        # Keep password in sync if env changed — but only when the existing
+        # row is genuinely the founder (guarded above).
         if not verify_password(founder_pw, found.get("password_hash", "")):
             await db.users.update_one(
-                {"email": founder_email},
+                {"email": founder_email, "role": "founder"},
                 {"$set": {"password_hash": hash_password(founder_pw), "role": "founder",
                           "clinic_id": PLATFORM_CLINIC_ID}},
             )
@@ -192,8 +205,9 @@ async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
     # email-verification gate. Runs on every boot; no-op if already verified.
     # This is what unblocks a founder whose account was seeded BEFORE the
     # email-verification hard-block was added (2026-07-26).
+    # Scoped to role=founder to avoid touching a colliding user row.
     await db.users.update_one(
-        {"email": founder_email, "email_verified": {"$ne": True}},
+        {"email": founder_email, "role": "founder", "email_verified": {"$ne": True}},
         {"$set": {"email_verified": True,
                   "email_verified_at": now.isoformat(),
                   "email_verified_via": "founder_seed"}},

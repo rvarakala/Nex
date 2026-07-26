@@ -108,6 +108,57 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { checkSession(); }, [checkSession]);
 
+  // Auto re-hydrate when the tab regains focus.
+  //
+  // Defends against the "same browser, different user" scenario:
+  // if you sign in as user A in tab-1, then sign in as user B in tab-2,
+  // tab-1's cookie was silently swapped to user B — but React state still
+  // shows A. Any API call from tab-1 now returns B's data → sidebar and
+  // profile drift apart (the exact incident from 2026-07-26).
+  //
+  // Refresh happens on:
+  //   • `visibilitychange` — tab foregrounded
+  //   • `focus` — window gains focus (covers window-switching)
+  //   • `storage` event on our legacy-token key — another tab logged
+  //      in/out with a bearer token
+  //   • BroadcastChannel messages — other tabs post `auth:changed` on
+  //      login / logout
+  useEffect(() => {
+    const revalidate = () => { checkSession(); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') revalidate(); };
+    const onStorage = (e) => { if (e.key === LEGACY_TOKEN_KEY) revalidate(); };
+    window.addEventListener('focus', revalidate);
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    let bc = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('audinexa_auth');
+        bc.onmessage = (ev) => { if (ev.data === 'auth:changed') revalidate(); };
+      }
+    } catch { /* ignore */ }
+
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (bc) bc.close();
+    };
+  }, [checkSession]);
+
+  // Post a cross-tab notification so peer tabs re-hydrate immediately
+  // instead of waiting for their next window focus.
+  const broadcastAuthChange = useCallback(() => {
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('audinexa_auth');
+        bc.postMessage('auth:changed');
+        bc.close();
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const login = async (email, password) => {
     let r;
     try {
@@ -144,6 +195,7 @@ export const AuthProvider = ({ children }) => {
       setUser(me.data.user);
       setClinic(me.data.clinic);
     } catch { /* keep the post-login user */ }
+    broadcastAuthChange();
     return r.data.user;
   };
 
@@ -204,6 +256,7 @@ export const AuthProvider = ({ children }) => {
     try { window.dispatchEvent(new Event('audinexa:wipe-vault')); } catch { /* noop */ }
     setUser(null);
     setClinic(null);
+    broadcastAuthChange();
   };
 
   // Multi-clinic switcher — requests a new JWT bound to a sibling clinic
@@ -233,7 +286,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, clinic, loading, login, loginVerifyMfa, loginWithToken, logout, switchClinic, hasRole }}>
+    <AuthContext.Provider value={{ user, clinic, loading, login, loginVerifyMfa, loginWithToken, logout, switchClinic, hasRole, refreshUser: checkSession }}>
       {children}
     </AuthContext.Provider>
   );

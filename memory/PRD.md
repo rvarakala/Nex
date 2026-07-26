@@ -1,4 +1,66 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🚨 Cross-Tab Session Confusion Fix + Founder-Email Collision Guard (2026-07-26)
+
+Incident report from the user: Dr. Vikram (a newly-signed-up clinic
+owner) opened `audinexa.com/settings/profile` and saw the **founder's**
+profile data (Audinexa Founder, USR-5DA8B3E8, audinexa-platform) while
+the sidebar correctly showed Dr. Vikram / The Hearing clinic. Two data
+sources drifting apart in the same viewport = trust-breaking bug on
+launch day.
+
+### Root cause
+Same browser was signed in as both `founder@audinexa.com` (founder for
+platform admin) and Dr. Vikram (real clinic owner) at different times.
+Cookies are shared across tabs → the last login wins on cookies →
+BUT React's `AuthContext` state was hydrated during Dr. Vikram's login
+and never re-checked. When Vikram opened My Profile:
+   - Sidebar rendered from cached React state → "Dr Vikram"
+   - `/api/settings/me/profile` used the *current* cookie → founder data
+   - Two identities visible on the same page
+
+### Fix (3 patches)
+
+**1. `AuthContext.js` — auto re-hydrate**
+- On every `visibilitychange` (tab foregrounded), `focus` (window
+  gains focus), or `storage` (legacy bearer token change), re-run
+  `checkSession()`.
+- New `BroadcastChannel('audinexa_auth')` — `login()` and `logout()`
+  post `auth:changed` so peer tabs re-hydrate immediately instead of
+  waiting for a focus event.
+- Exposed `refreshUser` (`checkSession`) on the context so any
+  component can force a re-fetch.
+
+**2. `MyProfileTab.jsx` — session-mismatch guard**
+- On load, if the profile's `user_id` !== the AuthContext's `user_id`,
+  toast the user, call `logout()`, and redirect to `/login`. Nobody
+  sees another user's data even for a millisecond.
+- Also calls `refreshUser()` on mount so any stale AuthContext is
+  corrected before the user starts editing.
+
+**3. `admin_seed.py` — founder-email collision guard**
+- Previously: if `founder@audinexa.com` existed but had role !=
+  `founder` (i.e. a real user signed up with that email), the sync
+  block would silently overwrite their `role`, `clinic_id`, and
+  `password_hash`. This was a **critical account-hijack bug**.
+- Now: if the existing row's role !== "founder", log CRITICAL
+  (`🚨 FOUNDER-EMAIL COLLISION`) and REFUSE to touch the row.
+  The password-sync + self-heal both scope their `$match` to
+  `role: "founder"` for defence-in-depth.
+
+### Verified in preview
+- Founder login → sidebar and profile both show `Audinexa Founder` ✅
+- Session code path traceable in bundle; toast + logout+redirect wired
+- `admin_seed.py` still seeds & syncs the real founder correctly
+
+### Production action needed
+- Redeploy audinexa.com so the 3 patches land
+- Once redeployed, Dr. Vikram just needs to **log out and log back in
+  with his own email** — the AuthContext will now stay in sync with
+  the cookie, and the mismatch guard will catch any future confusion
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 🎁 Trial Tier Badge Widget (2026-07-26)
 
 Since the 30-day trial unlocks **all features** (Basic + Standard + Premium),

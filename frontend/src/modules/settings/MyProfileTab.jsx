@@ -21,13 +21,15 @@ import {
   Building2, Shield, Eye, EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const COMMON_LANGUAGES = ['English', 'Hindi', 'Kannada', 'Tamil', 'Telugu', 'Malayalam', 'Marathi', 'Bengali', 'Gujarati', 'Punjabi'];
 
 export default function MyProfileTab() {
-  const { user: authUser, refreshUser } = useAuth();
+  const { user: authUser, refreshUser, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -42,6 +44,16 @@ export default function MyProfileTab() {
     setLoading(true);
     try {
       const r = await axios.get(`${API}/settings/me/profile`);
+      // Session-mismatch guard: if the profile returned belongs to a
+      // different user than the one AuthContext thinks is logged in, the
+      // cookie was swapped by a peer tab (or a stale bearer). Force a
+      // full re-auth so nobody sees another user's data.
+      if (authUser?.user_id && r.data.user?.user_id && r.data.user.user_id !== authUser.user_id) {
+        toast.error('Your session changed in another tab. Please sign in again.');
+        try { await logout(); } catch { /* fall through */ }
+        navigate('/login', { replace: true });
+        return;
+      }
       setProfile(r.data.user);
       setClinic(r.data.clinic);
       setForm({
@@ -60,7 +72,10 @@ export default function MyProfileTab() {
       toast.error(err?.response?.data?.detail || 'Could not load profile');
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // Also force a fresh /auth/me hydration when the profile page mounts —
+  // any stale AuthContext (e.g. after a peer-tab login) is corrected before
+  // the user tries to edit their own record.
+  useEffect(() => { refreshUser?.(); load(); }, []);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const toggleLang = (lang) =>
