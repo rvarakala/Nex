@@ -44,6 +44,7 @@ import AppointmentsCalendarPage from './modules/appointments/AppointmentsCalenda
 import { usePageViewTracker } from './hooks/usePageViewTracker';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import TopProgressBar from './components/TopProgressBar';
+import TierBadgeWidget from './components/TierBadgeWidget';
 import { ConnectivityProvider } from './connectivity/ConnectivityContext';
 import { VaultProvider } from './crypto/VaultContext';
 import VaultDemoPage from './modules/settings/VaultDemoPage';
@@ -211,6 +212,7 @@ function AppRoutes() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+      <TierBadgeWidget />
     </>
   );
 }

@@ -1,4 +1,66 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🎁 Trial Tier Badge Widget (2026-07-26)
+
+Since the 30-day trial unlocks **all features** (Basic + Standard + Premium),
+the founder needed a way to teach trial users *which* tier each feature
+sits on — so when their trial ends, they know exactly what they'd lose
+if they downgrade. A floating badge in the bottom-right of every module
+page does this without being pushy.
+
+### Rules (from founder's spec)
+- **Only shown to clinics on the 30-day trial.** Paid clinics and
+  super-admin see nothing.
+- **Floating widget** (bottom-right, fixed). Dismissable — the × collapses
+  it for the day (24h persistence via localStorage
+  `audinexa.tier_badge_dismissed_until`).
+- **Two states**:
+  - Collapsed → colour-coded pill: *"Basic feature · 22 days left"*
+  - Expanded (on click) → 320px popover with the module name, tier
+    explainer, three-row price table (only the tier that includes the
+    current feature is highlighted), and a countdown line.
+- **Upgrade CTA is soft until the last 7 days** of trial. From
+  `trialDaysLeft ≤ 7` a violet "Upgrade now to keep this →" button
+  appears; before that, the popover is informational only.
+- **Hidden on plumbing routes**: settings, admin, account, auth
+  (login/signup/verify-email/reset), marketing (/, /demo, /terms,
+  /privacy), status, patient portal shell.
+
+### Route → Tier mapping (mirrors `backend/utils/tiers.py::TIER_MODULES`)
+| Route prefix | Tier | Module label |
+|---|---|---|
+| `/patients`, `/appointments`, `/closeout`, `/billing`, `/accounts`, `/test`, `/reports`, `/token` | 🟢 Basic | Patient Records / Appointments / Diagnostics / etc |
+| `/ha`, `/care`, `/patient-portal` | 🔵 Standard | Hearing-Aid Sales, Aftercare & AMC, Patient Portal |
+| `/repair`, `/analytics`, `/partners`, `/partner`, `/referrals` | 🟣 Premium | Repair Workflow, Owner Analytics, Referral Partners |
+| `/admin/*`, `/settings/*`, `/login`, `/signup`, `/verify-email`, `/`, `/demo`, `/terms`, `/privacy`, `/refund`, `/contact`, `/status`, `/queue`, `/vault`, `/app` | — | Hidden (no badge) |
+
+### Files
+- **NEW** `/app/frontend/src/utils/tierMap.js` — prefix table +
+  `matchRouteTier()` helper + `TIER_META` (colour + price for each tier).
+- **NEW** `/app/frontend/src/components/TierBadgeWidget.jsx` — the
+  floating widget. Reads `SubscriptionContext` (`trialActive`,
+  `trialDaysLeft`, `superAdminBypass`) to decide render/hide.
+- `/app/frontend/src/App.js` — mounted `<TierBadgeWidget />` once at the
+  routes-root so it sits above every route without touching layouts.
+
+### Verified end-to-end in preview
+- Trial clinic on `/patients` → 🟢 Basic pill  ✅
+- Trial clinic on `/ha`       → 🔵 Standard pill ✅
+- Trial clinic on `/repair`   → 🟣 Premium pill ✅
+- Trial clinic on `/settings` → **no widget rendered** (correct) ✅
+- Trial ≤ 7 days → violet **"Upgrade now to keep this →"** CTA appears
+  in the popover, countdown reads "Free for the next 4 days of your trial"
+- Paid clinic (or super-admin) → widget doesn't mount
+- Dismiss (× or "Hide for the day") → widget disappears for 24h
+
+### Copy tone
+Founder-approved: friendly, non-pushy. First 23 days: pure information
+(*"This is a Premium-tier feature — free during your trial. To keep
+using it after day 30, you'll need the Premium plan."*). Last 7 days:
+gentle urgency ramp with the Upgrade CTA.
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 📊 Signup Funnel Card — Onboarding Conversion Watch (2026-07-26)
 
 Complements the lifetime Leads → Trials → Paid funnel with a **30-day
