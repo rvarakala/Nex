@@ -1,4 +1,58 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🎬 Interactive Demo Deck at `/demo` (2026-07-25)
+
+Interactive click-through demo of AUDINEXA's 10 core features.
+46 slides, all populated with **real production screenshots** from the
+seeded demo tenant (`The Sound Clinic — Bangaluru`, PREMIUM tier).
+
+### What ships
+- `/app/frontend/src/modules/demo/slides.js` — slide data source of
+  truth: 10 sections × 3-6 slides = **46 slides**, each with
+  Purpose + Objective + accent colour + screenshot path + route hint.
+- `/app/frontend/src/modules/demo/DemoPage.jsx` — the slideshow UI.
+  Keyboard nav (← → space F Home End), left rail section jump,
+  auto-play (7.5s), fullscreen, section-accent progress bar.
+- `/app/frontend/public/demo/*.png` — 46 captured screenshots
+  (3.3 MB total).
+- Route: `/demo` (registered in App.js).
+
+### 10 sections × slide count
+1. Patient Journey (6): list → book → kanban → report → quote → invoice
+2. Audiology Suite (5): PTA · Tympano · Speech · History · Delivery
+3. Repair Workflow (6): kanban · intake · vendor RMA · loaner · WhatsApp
+   approvals · delivered
+4. HA & Inventory (4): pipeline · serialised · trials · AMC
+5. Revenue Dashboard (4): front-desk · analytics · owner · payments
+6. Reports & Analytics (4): library · funnel · devices · scheduled
+7. Referral Corner (5): directory · pathway · drilldown · compare ·
+   WhatsApp notifications
+8. Settings (5): profile · staff · services · billing · integrations
+9. Security & Compliance (4): DPDPA policy pack · audit · export · MFA
+10. Support (3): support desk · onboarding · founder access
+
+### Data seed
+- Ran `python3 scripts/seed_demo_premium.py` once to top up:
+  25 patients, 58 appointments, 8 service tickets, 12 HA sales, 40
+  serialised inventory items, 5 AMC contracts, 4 referral partners
+  with 11 payouts, 6 patient-feedback entries, 8 tokens.
+- Demo tenant creds unchanged: `owner@thesoundclinic.in` / `demo123`.
+
+### Screenshot capture
+- One-off Playwright script (executed via `mcp_screenshot_tool`) logs
+  in as the owner and captures 46 shots in two batches (Sections 1-5
+  and 6-10). Files landed as `.png.jpeg` in the automation output
+  directory, then `cp`'d into `/app/frontend/public/demo/*.png`.
+
+### Verified in browser
+- `/demo` renders with all sections in the left rail
+- Slide 1 (Patient Master File) shows real dashboard screenshot
+- Slide 12 (Repair Kanban) shows the 8 seeded tickets
+- Section 7 jump navigates directly to Referral Corner slide
+- Progress bar colour changes per section
+
+---
+
+
 ## 🎨 Landing Redesign v3 — Modern Clinical OS (2026-07-25)
 
 Full landing-page rewrite per design_agent blueprint. User picked:
