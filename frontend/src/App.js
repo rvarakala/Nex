@@ -10,7 +10,17 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import TokenPrintView from './pages/TokenPrintView';
 import QueueTVPage from './pages/QueueTVPage';
+// ────────────────────────────────────────────────────────────────
+// LANDING PAGE — ROLLBACK NOTE (2026-07-26)
+// Active landing is `LandingPageV3` ("Modern Clinical OS" — bone + saffron).
+// Previous v2 landing is preserved at `./modules/landing/v2/LandingPage`
+// and reachable at `/legacy-landing` for side-by-side compare.
+// To roll back in one line: change the import below to
+//   `import LandingPage from './modules/landing/v2/LandingPage';`
+// (No other change needed. The v2 tree is untouched.)
+// ────────────────────────────────────────────────────────────────
 import LandingPage from './modules/landing/LandingPageV3';
+import LegacyLandingPage from './modules/landing/v2/LandingPage';
 import DemoPage from './modules/demo/DemoPage';
 import StoriesDemo from './modules/demo/StoriesDemo';
 import SignupPage from './modules/landing/SignupPage';
@@ -109,6 +119,7 @@ function AppRoutes() {
       <Routes>
               {/* PUBLIC */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/legacy-landing" element={<LegacyLandingPage />} />
               <Route path="/demo" element={<StoriesDemo />} />
               <Route path="/demo/features" element={<DemoPage />} />
               <Route path="/signup" element={<SignupPage />} />
