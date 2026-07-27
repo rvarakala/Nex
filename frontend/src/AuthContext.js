@@ -100,8 +100,14 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       return;
     }
+    // Hard safety timeout — if /auth/me never resolves (network hang,
+    // interceptor deadlock, browser IDB stuck) we MUST still flip
+    // `loading` to false so the app doesn't sit on "Loading session…"
+    // forever. Prod incident 2026-07-27: users were stuck for minutes
+    // because a wedged offlineCache interceptor blocked the response.
+    const timeout = setTimeout(() => setLoading(false), 8000);
     try {
-      const r = await axios.get(`${API}/auth/me`);
+      const r = await axios.get(`${API}/auth/me`, { timeout: 10000 });
       setUser(r.data.user);
       setClinic(r.data.clinic);
     } catch {
@@ -110,6 +116,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setClinic(null);
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, []);

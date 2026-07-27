@@ -54,13 +54,22 @@ function openDb() {
   if (_dbPromise && _dbOwner === owner) return _dbPromise;
   _dbOwner = owner;
   _dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(dbName(), DB_VERSION);
+    let req;
+    try { req = indexedDB.open(dbName(), DB_VERSION); }
+    catch (e) { reject(e); return; }
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    // `blocked` fires when another tab is holding the DB open at an older
+    // version. If that never resolves the whole cache layer hangs. Bail
+    // out fast so the response chain isn't blocked.
+    req.onblocked = () => reject(new Error('IndexedDB open blocked by another tab'));
+    // Hard safety timeout — indexedDB.open in some browsers (Safari private
+    // mode, Chrome incognito with quota=0) neither fires success nor error.
+    setTimeout(() => reject(new Error('IndexedDB open timed out')), 4000);
   });
   return _dbPromise;
 }
@@ -179,21 +188,30 @@ export function installOfflineCache(axios) {
   if (_installed) return;
   _installed = true;
 
-  // Persist successful responses (encrypted with per-session AES-GCM key)
+  // Persist successful responses (encrypted with per-session AES-GCM key).
+  //
+  // CRITICAL: the write is fire-and-forget. Awaiting it here would block the
+  // response chain when IndexedDB is stuck (corrupted DB, cross-tab version
+  // hold, quota exceeded) — which manifests as pages hanging on
+  // "Loading session…" because /auth/me never resolves.
   axios.interceptors.response.use(
-    async (response) => {
+    (response) => {
       const config = response.config;
       if (config && isCacheable(config) && response.status >= 200 && response.status < 300) {
-        const key = buildKey(config);
-        const envelope = await encryptValue({
-          data: response.data,
-          status: response.status,
-          headers: response.headers,
-          cachedAt: Date.now(),
-        });
-        // We always wrap the envelope with a top-level cachedAt for TTL
-        // checks without having to decrypt every entry just to expire it.
-        await idbPut(key, { ...envelope, cachedAt: Date.now() });
+        // Kick the cache write off without awaiting it. Any error is
+        // swallowed inside idbPut / encryptValue — the app never sees it.
+        (async () => {
+          try {
+            const key = buildKey(config);
+            const envelope = await encryptValue({
+              data: response.data,
+              status: response.status,
+              headers: response.headers,
+              cachedAt: Date.now(),
+            });
+            await idbPut(key, { ...envelope, cachedAt: Date.now() });
+          } catch { /* cache failures must never break the app */ }
+        })();
       }
       return response;
     },
