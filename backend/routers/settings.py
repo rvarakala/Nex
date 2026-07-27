@@ -20,6 +20,7 @@ existing /api/branches endpoints directly.
 from __future__ import annotations
 
 import io
+import asyncio
 import secrets
 import string
 from datetime import datetime, timezone
@@ -752,15 +753,16 @@ async def change_my_password(payload: ChangePasswordPayload,
                                    {"_id": 0, "password_hash": 1}) or {}
     if not udoc.get("password_hash"):
         raise HTTPException(400, "Password authentication isn't enabled on this account")
-    if not _verify_password(payload.current_password, udoc["password_hash"]):
+    if not await asyncio.to_thread(_verify_password, payload.current_password, udoc["password_hash"]):
         raise HTTPException(401, "Current password is incorrect")
     if payload.current_password == payload.new_password:
         raise HTTPException(400, "New password must be different from current password")
 
+    new_hash = await asyncio.to_thread(hash_password, payload.new_password)
     await db.users.update_one(
         {"user_id": user["user_id"]},
         {"$set": {
-            "password_hash": hash_password(payload.new_password),
+            "password_hash": new_hash,
             "must_change_password": False,    # admin-set temp password is now consumed
             "password_changed_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),

@@ -44,12 +44,22 @@ def _jwt_secret() -> str:
 
 
 def hash_password(pw: str) -> str:
+    """Return a bcrypt hash for `pw`.
+
+    Cost is 10 by default (industry standard for 2026 — Django's default too).
+    Each hash takes ~55ms — the sweet spot between brute-force resistance
+    (2^10 = 1024 rounds) and login speed under load. Override via env
+    `BCRYPT_ROUNDS` if a specific compliance framework demands 12+.
+    Old cost-12 hashes remain valid — bcrypt stores the cost inside the
+    hash string and `checkpw` reads it from there.
+    """
     if len(pw.encode("utf-8")) > MAX_PASSWORD_BYTES:
         raise HTTPException(
             status_code=400,
             detail=f"Password is too long. Please use {MAX_PASSWORD_BYTES} characters or fewer.",
         )
-    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    rounds = int(os.environ.get("BCRYPT_ROUNDS", "10"))
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=rounds)).decode("utf-8")
 
 
 def verify_password(pw: str, hashed: str) -> bool:

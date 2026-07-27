@@ -17,7 +17,18 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 # but `database.py` may be imported from routers that run first).
 load_dotenv(Path(__file__).parent / '.env')
 
-client: AsyncIOMotorClient = AsyncIOMotorClient(os.environ['MONGO_URL'])
+# Connection pool tuning for a 100+ concurrent-user launch — Motor's
+# default `maxPoolSize=100` is fine but `minPoolSize=0` means every idle
+# reconnect pays a 3-way TCP + auth handshake (~50-100ms) on the next
+# request. Warm-priming with `minPoolSize=10` keeps a stable pool under
+# load and shaves the "cold" tail off the p95.
+client: AsyncIOMotorClient = AsyncIOMotorClient(
+    os.environ['MONGO_URL'],
+    maxPoolSize=100,
+    minPoolSize=10,
+    serverSelectionTimeoutMS=5000,
+    waitQueueTimeoutMS=5000,
+)
 db: AsyncIOMotorDatabase = client[os.environ['DB_NAME']]
 
 

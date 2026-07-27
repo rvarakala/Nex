@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import io
+import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -314,6 +315,7 @@ async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
     }))
 
     # ----- Create owner user -----
+    owner_pw_hash = await asyncio.to_thread(hash_password, payload.owner_password)
     await db.users.insert_one(serialize_datetime({
         "user_id": user_id,
         "clinic_id": clinic_id,
@@ -321,7 +323,7 @@ async def clinic_self_signup(payload: ClinicSignup, db=Depends(get_db)):
         "name": payload.owner_name.strip(),
         "role": "clinic_owner",
         "active": True,
-        "password_hash": hash_password(payload.owner_password),
+        "password_hash": owner_pw_hash,
         "branch_ids": [branch_id],
         # Email verification gate — hard-block login until user confirms via
         # 6-digit OTP fired by /api/auth/verify-email. Grandfathered users
