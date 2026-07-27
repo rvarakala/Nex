@@ -56,7 +56,7 @@ export const KPITile = ({ label, value, delta, tone = 'slate', testid }) => {
   );
 };
 
-export const Pill = ({ tone, children }) => {
+export const Pill = ({ tone, children, testid }) => {
   const tones = {
     emerald: 'bg-emerald-100 text-emerald-700',
     amber: 'bg-amber-100 text-amber-700',
@@ -65,7 +65,7 @@ export const Pill = ({ tone, children }) => {
     slate: 'bg-slate-200 text-slate-700',
     fuchsia: 'bg-fuchsia-100 text-fuchsia-700',
   };
-  return <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${tones[tone] || tones.slate}`}>{children}</span>;
+  return <span data-testid={testid} className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${tones[tone] || tones.slate}`}>{children}</span>;
 };
 
 export const tierTone = (t) => (t === 'PREMIUM' ? 'fuchsia' : t === 'STANDARD' ? 'indigo' : 'slate');

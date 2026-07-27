@@ -89,9 +89,17 @@ export const AuthProvider = ({ children }) => {
 
   const checkSession = useCallback(async () => {
     // Either: cookie session exists, OR legacy localStorage token exists.
-    // If neither, skip the /auth/me call.
+    // If neither, skip the /auth/me call — but STILL clear any stale
+    // in-memory user/clinic state so peer tabs that just received an
+    // `auth:changed` broadcast (from a logout in another tab) don't
+    // keep rendering the previous user's dashboard.
     const hasLegacy = !!localStorage.getItem(LEGACY_TOKEN_KEY);
-    if (!hasCookieSession() && !hasLegacy) { setLoading(false); return; }
+    if (!hasCookieSession() && !hasLegacy) {
+      setUser(null);
+      setClinic(null);
+      setLoading(false);
+      return;
+    }
     try {
       const r = await axios.get(`${API}/auth/me`);
       setUser(r.data.user);

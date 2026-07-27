@@ -670,7 +670,8 @@ async def data_health(
     for label, coll, Model in PROBES:
         total   = await db[coll].count_documents({})
         sampled = 0
-        failed: list[dict] = []
+        failed_count = 0                # true count for scoring
+        failed_samples: list[dict] = [] # capped at 10 for drill-down display
         # Sample up to 500 docs per collection — fast (<50ms) and statistically
         # sufficient for a regression signal. Sorted newest-first because drift
         # usually starts from a model change that hits fresh writes first.
@@ -680,25 +681,27 @@ async def data_health(
             try:
                 Model(**doc)
             except ValidationError as exc:
-                # Keep first 3 failing doc-ids per collection for drill-down.
-                if len(failed) < 10:
+                failed_count += 1
+                # Keep first 10 failing doc-ids per collection for drill-down.
+                if len(failed_samples) < 10:
                     pk = doc.get("patient_id") or doc.get("invoice_id") or doc.get("sale_no") or doc.get("id") or "?"
-                    failed.append({
+                    failed_samples.append({
                         "id": pk,
                         "errors": [{"loc": ".".join(str(x) for x in e["loc"]), "msg": e["msg"]}
                                    for e in exc.errors()[:3]],
                     })
             except Exception as exc:  # noqa: BLE001 — catch deserialization glitches
-                if len(failed) < 10:
-                    failed.append({"id": "?", "errors": [{"loc": "", "msg": str(exc)}]})
+                failed_count += 1
+                if len(failed_samples) < 10:
+                    failed_samples.append({"id": "?", "errors": [{"loc": "", "msg": str(exc)}]})
 
         results.append({
             "collection": label,
             "total_docs": total,
             "sampled":    sampled,
-            "failed":     len(failed),
-            "health_pct": 100 if sampled == 0 else round((sampled - len(failed)) / sampled * 100, 1),
-            "failures":   failed,
+            "failed":     failed_count,
+            "health_pct": 100 if sampled == 0 else round((sampled - failed_count) / sampled * 100, 1),
+            "failures":   failed_samples,
         })
 
     overall = "healthy"
@@ -789,9 +792,14 @@ async def bulk_resolve_incidents(
     prefix = (payload or {}).get("title_prefix", "").strip()
     if not prefix or len(prefix) < 3:
         raise HTTPException(400, detail="title_prefix (>=3 chars) required")
+    # Escape regex metacharacters so user input can't over-match (e.g. `.*`
+    # in a prefix would resolve every open incident). Only the literal
+    # `^prefix` prefix-match semantic is preserved.
+    import re as _re
+    safe_prefix = _re.escape(prefix)
     now = datetime.now(timezone.utc).isoformat()
     r = await db.platform_incidents.update_many(
-        {"title": {"$regex": f"^{prefix}"}, "resolved_at": None},
+        {"title": {"$regex": f"^{safe_prefix}"}, "resolved_at": None},
         {"$set": {"resolved_at": now, "resolved_by": user["user_id"], "resolution_note": "bulk-resolved via admin panel"}},
     )
     await _log_audit(db, user, "incident.bulk_resolve", prefix,

@@ -1,5 +1,42 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔎 Code Review Follow-ups (2026-07-27)
+
+Fixed 4 defects flagged in the iteration-46 code review:
+
+1. **Data-health scoring uncapped** (`admin_panel_b.py`): The failing-doc list
+   was capped at 10, but `health_pct` was computed from that capped length,
+   so 500/500 corrupt docs still reported 98% healthy and `major` (never
+   `critical`). Fixed by tracking a separate uncapped `failed_count` for the
+   scoring/severity path; the 10-item drill-down list is preserved for UI
+   display. Verified: 50/100 → 50% critical, 500/500 → 0% critical.
+
+2. **Cross-tab logout stale state** (`AuthContext.js`): `checkSession()`
+   early-returned without resetting `user`/`clinic` when no cookie existed,
+   so peer tabs kept rendering the previous user's dashboard after the
+   `auth:changed` broadcast. Now clears in-memory state before returning.
+
+3. **`Pill` data-testid never rendered** (`shared.jsx`): The component
+   didn't spread the prop. Added an explicit `testid` prop and used it in
+   `LatencySpeedometer`.
+
+4. **`bulk_resolve_incidents` regex over-match** (`admin_panel_b.py`): Raw
+   user input flowed into `{"$regex": f"^{prefix}"}`. A prefix of `.*BBB`
+   would resolve unintended incidents. Now `re.escape`d before use.
+
+Skipped (false positive): The reviewer flagged a datetime-vs-ISO-string
+mismatch in the WhatsApp 7-day count query, but `whatsapp_message_logs.
+created_at` is consistently written as an ISO string
+(`utils/msg91.py:341`), so the comparison is correct.
+
+Regression: 60/61 admin-panel + data-health pytest tests pass. The single
+unrelated failure (`test_demo_tenants_seeded — beta-06 missing`) is
+test-order dependency on a delete test — pre-existing, not from this
+change.
+
+---
+
+
 ## ⚡ Live API Latency Speedometer (2026-07-27)
 
 **Trigger**: Follow-up to the load-test optimisations — the founder needs a

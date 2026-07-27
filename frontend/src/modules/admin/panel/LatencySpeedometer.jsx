@@ -76,7 +76,7 @@ export default function LatencySpeedometer() {
       title="API Latency · Live"
       subtitle="p95 over the last minute — auto-refresh every 5s"
       testid="latency-card"
-      actions={<Pill tone={tone.pill} data-testid="latency-health-pill">{tone.label}</Pill>}
+      actions={<Pill tone={tone.pill} testid="latency-health-pill">{tone.label}</Pill>}
     >
       <div className="p-5 grid grid-cols-1 lg:grid-cols-3 gap-5" data-testid="latency-widget">
         {/* Gauge */}
