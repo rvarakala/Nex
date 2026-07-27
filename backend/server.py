@@ -502,6 +502,12 @@ from routers.error_telemetry import (  # noqa: E402
 # so it sees exceptions raised by every other middleware/route.
 app.add_middleware(ErrorLoggerMiddleware)
 
+# ==================== API Latency Recorder ====================
+# Feeds the founder-dashboard live latency speedometer. Zero-config, in-process
+# ring buffer — see utils/latency_recorder.py for the full rationale.
+from utils.latency_recorder import LatencyRecorderMiddleware  # noqa: E402
+app.add_middleware(LatencyRecorderMiddleware)
+
 
 # ==================== CSRF guard (cookie-auth only) ====================
 # When a request authenticates via the `access_token` httpOnly cookie AND

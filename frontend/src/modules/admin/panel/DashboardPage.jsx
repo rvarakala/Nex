@@ -6,6 +6,7 @@ import { PageHeader, Card, KPITile, Pill, tierTone, fmtINR, fmtInt, fmtDate, Emp
 import LiveSignupPulse from './LiveSignupPulse';
 import EmailHealthBanner from './EmailHealthBanner';
 import SignupFunnel from './SignupFunnel';
+import LatencySpeedometer from './LatencySpeedometer';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PIE_COLORS = ['#94a3b8', '#6366f1', '#d946ef'];
@@ -47,6 +48,8 @@ export default function DashboardPage() {
       </div>
 
       <SignupFunnel data={signup_funnel_30d} />
+
+      <LatencySpeedometer />
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

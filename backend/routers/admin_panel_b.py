@@ -744,6 +744,38 @@ async def data_health(
             "at": now_iso}
 
 
+# ==================== API LATENCY SPEEDOMETER (Phase 15) ====================
+# Live in-process latency stats fed by utils/latency_recorder.py middleware.
+# Founder dashboard polls this every 5s to render the speedometer + p50/p95/p99
+# tiles. Zero external deps, per-worker sampling, bounded memory.
+
+@router.get("/system/latency")
+async def api_latency(
+    user=Depends(require_permission("system:read")),
+):
+    from utils.latency_recorder import (
+        stats_for_window,
+        slowest_routes,
+        status_distribution,
+        health_level,
+        _APP_START_TS,
+    )
+    s60 = stats_for_window(60)
+    s300 = stats_for_window(300)
+    slowest = slowest_routes(300, limit=10)
+    statuses = status_distribution(300)
+    uptime_s = int(time.time() - _APP_START_TS)
+    return {
+        "at": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": uptime_s,
+        "window_60s": s60,
+        "window_5m": s300,
+        "health": health_level(s60["p95"]),
+        "slowest_routes": slowest,
+        "status_distribution": statuses,
+    }
+
+
 # ---------- Bulk-resolve synthetic / named-prefix incidents -------------------
 
 @router.post("/system/incidents/bulk-resolve")
