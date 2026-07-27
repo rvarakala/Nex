@@ -1,4 +1,65 @@
 # ACS Audiology Clinic — Product Requirements Document
+## 🔐 Founder Account Security Page (2026-07-27)
+
+**Incident**: User (founder) suspected the founder account was compromised
+and needed to change the password + kill any other logged-in sessions —
+but the admin panel had NO way to do either. The only path was to type
+`/settings/profile` manually (visible only if you know it exists) which
+sits in the clinic-owner shell, not the founder command center.
+
+### Solution
+New `/admin/account` page in the founder shell that consolidates every
+compromise-recovery action in one screen:
+
+1. **Compromise-recovery banner** — rose-tinted panel with a 3-step
+   playbook: *(1) Sign out other sessions → (2) Change password →
+   (3) If locked out, ask a super-admin to reset.*
+2. **Change password card** — Current + New + Confirm inputs; POSTs to
+   `/api/settings/me/change-password` which bumps `token_version` →
+   invalidates every existing token for this user, everywhere.
+3. **Active sessions card** — lists every row from
+   `GET /api/auth/sessions` with device/IP/last-seen. Per-row
+   **Revoke** button + bulk **Sign out other sessions** (POST
+   `/api/auth/sessions/revoke-others` — keeps this tab alive).
+
+### Sidebar entry point
+Added an **Account** button in the admin sidebar bottom, right next
+to Sign Out (`data-testid=admin-account-btn`). Two-buttons-side-by-side
+layout keeps the layout compact.
+
+### Files
+- **NEW**  `/app/frontend/src/modules/admin/panel/AccountSecurityPage.jsx`
+- **EDIT** `/app/frontend/src/modules/admin/panel/AdminPanel.jsx` —
+  lazy-loaded route + sidebar-bottom button + `KeyRound` icon import
+- Backend endpoints reused as-is (no changes needed):
+  - `POST /api/settings/me/change-password` (existing)
+  - `GET  /api/auth/sessions`
+  - `POST /api/auth/sessions/{sid}/revoke`
+  - `POST /api/auth/sessions/revoke-others`
+
+### Verified by testing_agent (iteration_44.json) — PASS 100%
+- Founder login → Account button visible → /admin/account renders all
+  3 sections
+- Change-password wrong-current path returns HTTP 401 + toast
+  "Current password is incorrect"
+- Per-session Revoke removes that row from the table
+- Bulk "Sign out other sessions" reduced the list from 48 → 1 (only
+  current device left) and kept THIS session alive — perfect compromise-
+  recovery UX
+- Regression: /admin (dashboard), /admin/tenants, /admin/stuck-users
+  all load correctly — no route/import breakage
+
+### Production action
+Redeploy audinexa.com so the founder can immediately use the new page.
+Recommended launch-day founder ritual right after redeploy:
+1. `/admin/account` → **Sign out other sessions** (nukes all stale
+   test/dev sessions)
+2. Change password to something strong that only you know
+3. Confirm you can still access the founder command center
+
+---
+
+# ACS Audiology Clinic — Product Requirements Document
 ## 📱 Mobile Bottom Nav Fix (2026-07-26)
 
 **Incident**: User opened `audinexa.com` on iPhone Safari. The primary
