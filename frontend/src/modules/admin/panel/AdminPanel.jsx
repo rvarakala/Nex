@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Flame, ToggleLeft,
   LogOut, Search, ShieldCheck, Headphones, BarChart3, HeartPulse,
   Megaphone, Bell, FileClock, Settings, Users, Activity, Link2, Shuffle,
-  AlertOctagon, MailWarning, UserCheck,
+  AlertOctagon, MailWarning, UserCheck, KeyRound,
 } from 'lucide-react';
 
 // Lazy-load route components → each becomes its own JS chunk, fetched only
@@ -35,6 +35,7 @@ const ClinicSwitchAuditPage = lazy(() => import('./ClinicSwitchAuditPage'));
 const ErrorsPage         = lazy(() => import('./ErrorsPage'));
 const EmailHealthPage    = lazy(() => import('./EmailHealthPage'));
 const StuckUsersPage     = lazy(() => import('./StuckUsersPage'));
+const AccountSecurityPage = lazy(() => import('./AccountSecurityPage'));
 
 import AdminGlobalSearch from './AdminGlobalSearch';
 import MfaEnforcementBanner from '../../../shell/MfaEnforcementBanner';
@@ -145,14 +146,25 @@ export default function AdminPanel() {
             <div className="text-[9px] uppercase tracking-wider text-indigo-300">{user.role.replace('_', ' ')}</div>
           </div>
         </div>
-        <button
-          onClick={() => { closeMobileNav(); logout(); navigate('/login'); }}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-slate-900 rounded-md transition-colors"
-          data-testid="admin-logout-btn"
-        >
-          <LogOut size={13} />
-          Sign out
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => { closeMobileNav(); navigate('/admin/account'); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold text-slate-300 hover:text-white hover:bg-slate-900 rounded-md transition-colors border border-slate-700"
+            data-testid="admin-account-btn"
+            title="Change password · manage sessions"
+          >
+            <KeyRound size={12} />
+            Account
+          </button>
+          <button
+            onClick={() => { closeMobileNav(); logout(); navigate('/login'); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-slate-900 rounded-md transition-colors"
+            data-testid="admin-logout-btn"
+          >
+            <LogOut size={13} />
+            Sign out
+          </button>
+        </div>
       </div>
     </>
   );
@@ -228,6 +240,7 @@ export default function AdminPanel() {
               <Route path="system" element={<SystemHealthPage />} />
               <Route path="email-health" element={<EmailHealthPage />} />
               <Route path="stuck-users" element={<StuckUsersPage />} />
+              <Route path="account" element={<AccountSecurityPage />} />
               <Route path="errors" element={<ErrorsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="audit" element={<AuditLogPage />} />
