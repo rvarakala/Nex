@@ -1310,6 +1310,132 @@ async def create_tenant_user(
     return {**doc, "clinic_name": clinic.get("name")}
 
 
+# ==================== USER LIFECYCLE (deactivate / reactivate / hard-delete) ====
+# Unified endpoints that work on ANY user (internal team or tenant clinic staff).
+# Founder + Super Admin can deactivate/reactivate; hard-delete is FOUNDER-ONLY.
+
+async def _revoke_all_sessions(db, user_id: str) -> int:
+    """Mark every open session for the user as revoked. Returns count revoked."""
+    now = datetime.now(timezone.utc).isoformat()
+    r = await db.user_sessions.update_many(
+        {"user_id": user_id, "revoked_at": None},
+        {"$set": {"revoked_at": now, "revoke_reason": "admin_deactivate"}},
+    )
+    return r.modified_count or 0
+
+
+async def _bump_token_version(db, user_id: str) -> None:
+    """Invalidate every outstanding JWT for this user without touching sessions."""
+    await db.users.update_one({"user_id": user_id}, {"$inc": {"token_version": 1}})
+
+
+@router.patch("/users/{user_id}/deactivate")
+async def deactivate_user(
+    user_id: str, request: Request,
+    caller=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Soft-delete: sets active=false, revokes every session, bumps token_version
+    so any cached JWT stops working. Reversible via /reactivate."""
+    if caller["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    if user_id == caller["user_id"]:
+        raise HTTPException(400, detail="Cannot deactivate your own account")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(404, detail="User not found")
+    if target.get("role") == "founder":
+        raise HTTPException(403, detail="Cannot deactivate a founder account")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"active": False}})
+    sessions_revoked = await _revoke_all_sessions(db, user_id)
+    await _bump_token_version(db, user_id)
+    await _log_audit(
+        db, caller, "user.deactivate", user_id,
+        after={"email": target.get("email"), "sessions_revoked": sessions_revoked},
+        request=request,
+    )
+    return {"ok": True, "user_id": user_id, "sessions_revoked": sessions_revoked}
+
+
+@router.patch("/users/{user_id}/reactivate")
+async def reactivate_user(
+    user_id: str, request: Request,
+    caller=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Undoes deactivate. User must log in again — sessions stay revoked."""
+    if caller["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(404, detail="User not found")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"active": True}})
+    await _log_audit(
+        db, caller, "user.reactivate", user_id,
+        after={"email": target.get("email")},
+        request=request,
+    )
+    return {"ok": True, "user_id": user_id}
+
+
+@router.delete("/users/{user_id}")
+async def hard_delete_user(
+    user_id: str, request: Request,
+    caller=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """FOUNDER-ONLY. Hard-deletes the user row + sessions. Audit rows referencing
+    this user_id are preserved (compliance trail). Blocks deletion when:
+      - target is the caller themselves
+      - target is a founder
+      - target is the SOLE clinic_owner of an active clinic (would orphan it —
+        deactivate first, transfer ownership, then delete).
+    """
+    if caller["role"] != "founder":
+        raise HTTPException(403, detail="Only the founder can hard-delete a user")
+    if user_id == caller["user_id"]:
+        raise HTTPException(400, detail="Cannot delete your own account")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(404, detail="User not found")
+    if target.get("role") == "founder":
+        raise HTTPException(403, detail="Cannot delete a founder account")
+    # Sole clinic_owner guard — only for non-platform clinics.
+    if target.get("role") == "clinic_owner" and target.get("clinic_id") != "audinexa-platform":
+        other_owners = await db.users.count_documents({
+            "clinic_id": target["clinic_id"],
+            "role": "clinic_owner",
+            "user_id": {"$ne": user_id},
+            "active": True,
+        })
+        if other_owners == 0:
+            raise HTTPException(
+                409,
+                detail=(
+                    "This user is the only active owner of the clinic. "
+                    "Add another clinic_owner (or delete the whole tenant) before removing them."
+                ),
+            )
+    # Best-effort cascade — sessions + pending invitations. Historical rows
+    # (invoices, appointments, audit_log) preserve the user_id as data-only,
+    # not FK, so no cascade is needed for the compliance trail.
+    sessions_revoked = await _revoke_all_sessions(db, user_id)
+    try:
+        await db.invitations.delete_many({"invited_by": user_id, "status": "pending"})
+    except Exception:
+        pass
+    del_result = await db.users.delete_one({"user_id": user_id})
+    if del_result.deleted_count == 0:
+        raise HTTPException(404, detail="User already removed")
+    await _log_audit(
+        db, caller, "user.hard_delete", user_id,
+        before={"email": target.get("email"), "role": target.get("role"), "clinic_id": target.get("clinic_id")},
+        after={"sessions_revoked": sessions_revoked},
+        request=request,
+    )
+    return {"ok": True, "user_id": user_id, "sessions_revoked": sessions_revoked}
+
+
 # ==================== TEST SMS (Twilio smoke test) ==========================
 # One-shot endpoint for the founder to fire a real SMS and confirm end-to-end
 # delivery. Mirrors the `send_sms()` helper contract so the UI just needs to

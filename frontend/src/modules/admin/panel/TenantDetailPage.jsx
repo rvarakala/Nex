@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PageHeader, Card, Pill, tierTone, fmtINR, fmtInt, fmtDate, fmtDateTime, Empty } from './shared';
-import { ArrowLeft, UserCog, PauseCircle, PlayCircle, Download, UserPlus, RefreshCw, Eye, EyeOff, Copy, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, UserCog, PauseCircle, PlayCircle, Download, UserPlus, RefreshCw, Eye, EyeOff, Copy, CheckCircle2, Trash2 } from 'lucide-react';
 import { useAuth } from '../../../AuthContext';
 import { RazorpayPayTenantInvoiceButton, RazorpayRefundTenantInvoiceButton, RazorpayReconcileButton } from './RazorpayTenantInvoiceActions';
 
@@ -36,6 +36,30 @@ export default function TenantDetailPage() {
     const verb = d.tenant.status === 'suspended' ? 'activate' : 'suspend';
     await axios.post(`${API}/admin/v2/tenants/${clinicId}/${verb}`);
     load();
+  };
+
+  const toggleUserActive = async (u) => {
+    const action = u.active ? 'deactivate' : 'reactivate';
+    if (!window.confirm(`${action[0].toUpperCase()}${action.slice(1)} ${u.email}?`)) return;
+    try {
+      await axios.patch(`${API}/admin/v2/users/${u.user_id}/${action}`);
+      load();
+    } catch (e) {
+      window.alert(e?.response?.data?.detail || `Failed to ${action}`);
+    }
+  };
+
+  const hardDeleteUser = async (u) => {
+    const c1 = window.confirm(`Hard-delete ${u.email}? This is IRREVERSIBLE.`);
+    if (!c1) return;
+    const c2 = window.prompt(`Type DELETE to confirm removal of ${u.email}:`);
+    if (c2 !== 'DELETE') { window.alert('Cancelled.'); return; }
+    try {
+      await axios.delete(`${API}/admin/v2/users/${u.user_id}`);
+      load();
+    } catch (e) {
+      window.alert(e?.response?.data?.detail || 'Failed to delete');
+    }
   };
 
   const [exporting, setExporting] = useState(false);
@@ -168,6 +192,7 @@ export default function TenantDetailPage() {
                 <th className="px-4 py-2 text-center">Active</th>
                 <th className="px-4 py-2 text-left">Branches</th>
                 <th className="px-4 py-2 text-left">Created</th>
+                <th className="px-4 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -176,12 +201,33 @@ export default function TenantDetailPage() {
                   <td className="px-4 py-2 font-semibold">{u.name || u.user_id}</td>
                   <td className="px-4 py-2 text-xs">{u.email}</td>
                   <td className="px-4 py-2 text-xs"><Pill tone="indigo">{u.role}</Pill></td>
-                  <td className="px-4 py-2 text-center">{u.active ? '✓' : '—'}</td>
+                  <td className="px-4 py-2 text-center">{u.active ? <Pill tone="emerald">Active</Pill> : <Pill tone="slate">Disabled</Pill>}</td>
                   <td className="px-4 py-2 text-xs">{(u.branch_ids || []).length}</td>
                   <td className="px-4 py-2 text-xs text-slate-500">{fmtDate(u.created_at)}</td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="inline-flex items-center gap-2">
+                      <button
+                        onClick={() => toggleUserActive(u)}
+                        className="text-xs text-indigo-700 hover:underline"
+                        data-testid={`tenant-user-toggle-${u.user_id}`}
+                      >
+                        {u.active ? 'Disable' : 'Enable'}
+                      </button>
+                      {u.role !== 'founder' && (
+                        <button
+                          onClick={() => hardDeleteUser(u)}
+                          className="p-1 text-rose-600 hover:text-rose-700"
+                          title="Hard delete (founder only, irreversible)"
+                          data-testid={`tenant-user-delete-${u.user_id}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {users.length === 0 && <tr><td colSpan={6}><Empty>No users.</Empty></td></tr>}
+              {users.length === 0 && <tr><td colSpan={7}><Empty>No users.</Empty></td></tr>}
             </tbody>
           </table>
         </Card>

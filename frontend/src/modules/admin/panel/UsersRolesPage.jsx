@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 import axios from 'axios';
 import { PageHeader, Card, Pill, fmtDate, Empty } from './shared';
-import { ShieldCheck, UserPlus } from 'lucide-react';
+import { ShieldCheck, UserPlus, Trash2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -31,8 +31,27 @@ export default function UsersRolesPage() {
   useEffect(() => { load(); }, []);
 
   const toggleActive = async (u) => {
-    await axios.patch(`${API}/admin/v2/internal-users/${u.user_id}?active=${!u.active}`);
-    load();
+    const action = u.active ? 'deactivate' : 'reactivate';
+    if (!window.confirm(`${action[0].toUpperCase()}${action.slice(1)} ${u.email}?`)) return;
+    try {
+      await axios.patch(`${API}/admin/v2/users/${u.user_id}/${action}`);
+      load();
+    } catch (e) {
+      window.alert(e?.response?.data?.detail || `Failed to ${action}`);
+    }
+  };
+
+  const hardDelete = async (u) => {
+    const c1 = window.confirm(`Hard-delete ${u.email}? This is IRREVERSIBLE.`);
+    if (!c1) return;
+    const c2 = window.prompt(`Type DELETE to confirm removal of ${u.email}:`);
+    if (c2 !== 'DELETE') { window.alert('Cancelled.'); return; }
+    try {
+      await axios.delete(`${API}/admin/v2/users/${u.user_id}`);
+      load();
+    } catch (e) {
+      window.alert(e?.response?.data?.detail || 'Failed to delete');
+    }
   };
 
   const internalRoles = Object.keys(rbac?.matrix || {}).filter((r) =>
@@ -70,7 +89,25 @@ export default function UsersRolesPage() {
                 <td className="px-4 py-2 text-center">{u.active ? <Pill tone="emerald">Active</Pill> : <Pill tone="slate">Disabled</Pill>}</td>
                 <td className="px-4 py-2 text-xs text-slate-500">{fmtDate(u.created_at)}</td>
                 <td className="px-4 py-2 text-right">
-                  <button onClick={() => toggleActive(u)} className="text-xs text-indigo-700 hover:underline">{u.active ? 'Disable' : 'Enable'}</button>
+                  <div className="inline-flex items-center gap-2">
+                    <button
+                      onClick={() => toggleActive(u)}
+                      className="text-xs text-indigo-700 hover:underline"
+                      data-testid={`user-toggle-active-${u.user_id}`}
+                    >
+                      {u.active ? 'Disable' : 'Enable'}
+                    </button>
+                    {u.role !== 'founder' && (
+                      <button
+                        onClick={() => hardDelete(u)}
+                        className="p-1 text-rose-600 hover:text-rose-700"
+                        title="Hard delete (founder only, irreversible)"
+                        data-testid={`user-delete-${u.user_id}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

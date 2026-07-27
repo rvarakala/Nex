@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 👤 User Lifecycle: Deactivate + Hard-Delete (2026-07-27)
+
+**Trigger**: Founder needs to remove users cleanly — both soft (reversible) and hard (nuclear).
+
+### Backend endpoints (`admin_panel_b.py`)
+- `PATCH /api/admin/v2/users/{user_id}/deactivate` — sets `active=false`, revokes every open session, bumps `token_version` so any cached JWT stops working. Founder + super_admin.
+- `PATCH /api/admin/v2/users/{user_id}/reactivate` — sets `active=true`. User must re-login; sessions stay revoked. Founder + super_admin.
+- `DELETE /api/admin/v2/users/{user_id}` — hard delete. **Founder-only**. Removes the row + revokes sessions + deletes pending invitations. Audit rows referencing the user_id are preserved for compliance.
+
+### Safety guards (all enforced server-side)
+- ❌ Cannot deactivate/delete yourself
+- ❌ Cannot delete a founder account
+- ❌ Cannot delete if target is the **sole active clinic_owner** of a non-platform clinic (would orphan the tenant). Fix: reassign ownership or deactivate first.
+- ✅ Every action written to `audit_log` with before/after snapshot
+
+### Frontend wiring
+- `UsersRolesPage` (internal team): Disable/Enable + red 🗑️ delete button per row. Hard-delete requires typing "DELETE" in a prompt.
+- `TenantDetailPage → Users tab`: Same buttons per tenant clinic staff row.
+- `data-testid` on every button: `user-toggle-active-{id}`, `user-delete-{id}`, `tenant-user-toggle-{id}`, `tenant-user-delete-{id}`.
+
+### Testing verified (curl smoke tests, this session)
+- ✅ Self-deactivate → 400
+- ✅ Self hard-delete → 400
+- ✅ Nonexistent user → 404
+- ✅ Create → deactivate → reactivate → hard-delete → second delete 404 (full lifecycle)
+- ✅ Sessions revoked on deactivate + delete
+
+---
+
+
 ## 🔎 Code Review Follow-ups (2026-07-27)
 
 Fixed 4 defects flagged in the iteration-46 code review:
