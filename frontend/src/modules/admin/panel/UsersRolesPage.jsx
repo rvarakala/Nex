@@ -17,6 +17,7 @@ export default function UsersRolesPage() {
   const [rbac, setRbac] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
   const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState(new Set());
   const pagedUsers = usePaginationSlice(users, page, DEFAULT_PAGE_SIZE);
   useEffect(() => { setPage(1); }, [users.length]);
 
@@ -54,6 +55,55 @@ export default function UsersRolesPage() {
     }
   };
 
+  // ---- Bulk selection & actions -------------------------------------------
+  const toggleOne = (uid) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid); else next.add(uid);
+      return next;
+    });
+  };
+  const toggleAllOnPage = () => {
+    const pageIds = pagedUsers.filter((u) => u.role !== 'founder').map((u) => u.user_id);
+    setSelected((prev) => {
+      const allSelected = pageIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      pageIds.forEach((id) => allSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  const bulkAction = async (action) => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    let confirmed;
+    if (action === 'delete') {
+      const c1 = window.confirm(`Hard-delete ${ids.length} user(s)? This is IRREVERSIBLE.`);
+      if (!c1) return;
+      const c2 = window.prompt(`Type DELETE ${ids.length} to confirm:`);
+      if (c2 !== `DELETE ${ids.length}`) { window.alert('Cancelled — text did not match.'); return; }
+      confirmed = true;
+    } else {
+      confirmed = window.confirm(`${action[0].toUpperCase()}${action.slice(1)} ${ids.length} user(s)?`);
+    }
+    if (!confirmed) return;
+    try {
+      const r = await axios.post(`${API}/admin/v2/users/bulk-${action}`, { user_ids: ids });
+      const { processed, skipped } = r.data.counts;
+      let msg = `${processed} user(s) ${action}d.`;
+      if (skipped > 0) {
+        const reasons = (r.data.skipped || []).map((s) => `${s.user_id}: ${s.reason}`).slice(0, 5).join('\n');
+        msg += `\n\n${skipped} skipped:\n${reasons}`;
+      }
+      window.alert(msg);
+      clearSelection();
+      load();
+    } catch (e) {
+      window.alert(e?.response?.data?.detail || `Failed to bulk-${action}`);
+    }
+  };
+
   const internalRoles = Object.keys(rbac?.matrix || {}).filter((r) =>
     !['clinic_owner', 'front_desk', 'audiologist', 'accounts', 'inventory_manager', 'technician', 'referral_partner'].includes(r)
   );
@@ -66,10 +116,57 @@ export default function UsersRolesPage() {
         </button>
       </PageHeader>
 
+      {selected.size > 0 && (
+        <div
+          data-testid="bulk-action-bar"
+          className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-indigo-600 text-white px-4 py-2.5 rounded-lg shadow-lg"
+        >
+          <div className="text-sm font-semibold flex items-center gap-3">
+            <span data-testid="bulk-selected-count">{selected.size} selected</span>
+            <button onClick={clearSelection} className="text-[11px] font-normal underline hover:no-underline opacity-90">
+              clear
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => bulkAction('deactivate')}
+              data-testid="bulk-deactivate-btn"
+              className="px-3 py-1.5 text-xs font-semibold bg-white text-indigo-700 hover:bg-indigo-50 rounded"
+            >
+              Deactivate
+            </button>
+            <button
+              onClick={() => bulkAction('reactivate')}
+              data-testid="bulk-reactivate-btn"
+              className="px-3 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 rounded"
+            >
+              Reactivate
+            </button>
+            <button
+              onClick={() => bulkAction('delete')}
+              data-testid="bulk-delete-btn"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-rose-500 hover:bg-rose-600 rounded"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        </div>
+      )}
+
       <Card title="Internal Team">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
+              <th className="px-3 py-2 w-10">
+                <input
+                  type="checkbox"
+                  data-testid="users-select-all"
+                  aria-label="Select all users on this page"
+                  checked={pagedUsers.filter((u) => u.role !== 'founder').length > 0 && pagedUsers.filter((u) => u.role !== 'founder').every((u) => selected.has(u.user_id))}
+                  onChange={toggleAllOnPage}
+                  className="rounded border-slate-300"
+                />
+              </th>
               <th className="px-4 py-2 text-left">Name</th>
               <th className="px-4 py-2 text-left">Email</th>
               <th className="px-4 py-2 text-center">Role</th>
@@ -81,7 +178,18 @@ export default function UsersRolesPage() {
           </thead>
           <tbody>
             {pagedUsers.map((u) => (
-              <tr key={u.user_id} className="border-t border-slate-100">
+              <tr key={u.user_id} className={`border-t border-slate-100 ${selected.has(u.user_id) ? 'bg-indigo-50/60' : ''}`}>
+                <td className="px-3 py-2">
+                  {u.role !== 'founder' && (
+                    <input
+                      type="checkbox"
+                      data-testid={`user-select-${u.user_id}`}
+                      checked={selected.has(u.user_id)}
+                      onChange={() => toggleOne(u.user_id)}
+                      className="rounded border-slate-300"
+                    />
+                  )}
+                </td>
                 <td className="px-4 py-2 font-semibold">{u.name}</td>
                 <td className="px-4 py-2 text-xs">{u.email}</td>
                 <td className="px-4 py-2 text-center"><Pill tone={ROLE_TONE[u.role] || 'slate'}>{u.role}</Pill></td>
@@ -111,7 +219,7 @@ export default function UsersRolesPage() {
                 </td>
               </tr>
             ))}
-            {users.length === 0 && <tr><td colSpan={7}><Empty>No internal users yet.</Empty></td></tr>}
+            {users.length === 0 && <tr><td colSpan={8}><Empty>No internal users yet.</Empty></td></tr>}
           </tbody>
         </table>
         <Pagination page={page} setPage={setPage} total={users.length} testidPrefix="users-pagination" />

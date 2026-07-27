@@ -1436,6 +1436,105 @@ async def hard_delete_user(
     return {"ok": True, "user_id": user_id, "sessions_revoked": sessions_revoked}
 
 
+# ---- Bulk operations --------------------------------------------------------
+# Same guards as the single-user endpoints, applied per-row. Skips (rather than
+# aborts) rows that fail a guard so a mixed batch still processes the safe rows.
+
+class BulkUserIds(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=200)
+
+
+async def _process_bulk(
+    db, caller, request, user_ids: list[str], action: str,
+) -> dict:
+    """action ∈ {'deactivate', 'reactivate', 'delete'}"""
+    deactivated: list[str] = []
+    skipped: list[dict] = []
+    for uid in user_ids:
+        try:
+            if uid == caller["user_id"]:
+                skipped.append({"user_id": uid, "reason": "self"})
+                continue
+            target = await db.users.find_one({"user_id": uid}, {"_id": 0, "password_hash": 0})
+            if not target:
+                skipped.append({"user_id": uid, "reason": "not_found"})
+                continue
+            if target.get("role") == "founder":
+                skipped.append({"user_id": uid, "reason": "founder_protected"})
+                continue
+            if action == "deactivate":
+                await db.users.update_one({"user_id": uid}, {"$set": {"active": False}})
+                await _revoke_all_sessions(db, uid)
+                await _bump_token_version(db, uid)
+            elif action == "reactivate":
+                await db.users.update_one({"user_id": uid}, {"$set": {"active": True}})
+            elif action == "delete":
+                if caller["role"] != "founder":
+                    skipped.append({"user_id": uid, "reason": "delete_founder_only"})
+                    continue
+                # Sole-owner guard
+                if target.get("role") == "clinic_owner" and target.get("clinic_id") != "audinexa-platform":
+                    others = await db.users.count_documents({
+                        "clinic_id": target["clinic_id"],
+                        "role": "clinic_owner",
+                        "user_id": {"$ne": uid},
+                        "active": True,
+                    })
+                    if others == 0:
+                        skipped.append({"user_id": uid, "reason": "sole_clinic_owner"})
+                        continue
+                await _revoke_all_sessions(db, uid)
+                try:
+                    await db.invitations.delete_many({"invited_by": uid, "status": "pending"})
+                except Exception:
+                    pass
+                await db.users.delete_one({"user_id": uid})
+            deactivated.append(uid)
+        except Exception as e:  # noqa: BLE001 — keep the batch going on unexpected failure
+            skipped.append({"user_id": uid, "reason": f"error: {str(e)[:80]}"})
+    await _log_audit(
+        db, caller, f"user.bulk_{action}", ",".join(user_ids[:5]),
+        after={"processed": len(deactivated), "skipped": len(skipped)},
+        request=request,
+    )
+    return {"ok": True, "processed": deactivated, "skipped": skipped, "counts": {
+        "processed": len(deactivated), "skipped": len(skipped),
+    }}
+
+
+@router.post("/users/bulk-deactivate")
+async def bulk_deactivate_users(
+    payload: BulkUserIds, request: Request,
+    caller=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    if caller["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    return await _process_bulk(db, caller, request, payload.user_ids, "deactivate")
+
+
+@router.post("/users/bulk-reactivate")
+async def bulk_reactivate_users(
+    payload: BulkUserIds, request: Request,
+    caller=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    if caller["role"] not in {"founder", "super_admin"}:
+        raise HTTPException(403, detail="Not permitted")
+    return await _process_bulk(db, caller, request, payload.user_ids, "reactivate")
+
+
+@router.post("/users/bulk-delete")
+async def bulk_delete_users(
+    payload: BulkUserIds, request: Request,
+    caller=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    if caller["role"] != "founder":
+        raise HTTPException(403, detail="Only the founder can bulk-delete users")
+    return await _process_bulk(db, caller, request, payload.user_ids, "delete")
+
+
 # ==================== TEST SMS (Twilio smoke test) ==========================
 # One-shot endpoint for the founder to fire a real SMS and confirm end-to-end
 # delivery. Mirrors the `send_sms()` helper contract so the UI just needs to

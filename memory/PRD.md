@@ -1,30 +1,38 @@
 # ACS Audiology Clinic — Product Requirements Document
 
-## 👤 User Lifecycle: Deactivate + Hard-Delete (2026-07-27)
+## 👤 User Lifecycle: Deactivate + Hard-Delete + Bulk (2026-07-27)
 
-**Trigger**: Founder needs to remove users cleanly — both soft (reversible) and hard (nuclear).
+**Trigger**: Founder needs to remove users cleanly — both soft (reversible) and hard (nuclear), plus batch operations for offboarding waves.
 
 ### Backend endpoints (`admin_panel_b.py`)
-- `PATCH /api/admin/v2/users/{user_id}/deactivate` — sets `active=false`, revokes every open session, bumps `token_version` so any cached JWT stops working. Founder + super_admin.
-- `PATCH /api/admin/v2/users/{user_id}/reactivate` — sets `active=true`. User must re-login; sessions stay revoked. Founder + super_admin.
-- `DELETE /api/admin/v2/users/{user_id}` — hard delete. **Founder-only**. Removes the row + revokes sessions + deletes pending invitations. Audit rows referencing the user_id are preserved for compliance.
+- `PATCH /api/admin/v2/users/{user_id}/deactivate` — flips active=false, revokes sessions, bumps token_version (founder + super_admin)
+- `PATCH /api/admin/v2/users/{user_id}/reactivate` — undoes deactivate
+- `DELETE /api/admin/v2/users/{user_id}` — hard delete, **founder-only**, preserves audit_log
+- `POST /api/admin/v2/users/bulk-deactivate` — batch (1-200 ids), returns `{processed, skipped: [{user_id, reason}], counts}`
+- `POST /api/admin/v2/users/bulk-reactivate`
+- `POST /api/admin/v2/users/bulk-delete` — **founder-only**
 
-### Safety guards (all enforced server-side)
-- ❌ Cannot deactivate/delete yourself
-- ❌ Cannot delete a founder account
-- ❌ Cannot delete if target is the **sole active clinic_owner** of a non-platform clinic (would orphan the tenant). Fix: reassign ownership or deactivate first.
-- ✅ Every action written to `audit_log` with before/after snapshot
+### Safety guards (all enforced server-side, both single and bulk)
+- ❌ Cannot deactivate/delete yourself → `self`
+- ❌ Cannot delete founder accounts → `founder_protected`
+- ❌ Cannot delete sole active clinic_owner → `sole_clinic_owner`
+- ✅ Every action written to `audit_log`
+- ✅ Bulk skips (rather than aborts) bad rows so a mixed batch still processes the safe ones
 
 ### Frontend wiring
-- `UsersRolesPage` (internal team): Disable/Enable + red 🗑️ delete button per row. Hard-delete requires typing "DELETE" in a prompt.
-- `TenantDetailPage → Users tab`: Same buttons per tenant clinic staff row.
-- `data-testid` on every button: `user-toggle-active-{id}`, `user-delete-{id}`, `tenant-user-toggle-{id}`, `tenant-user-delete-{id}`.
+- `UsersRolesPage`: Checkbox per row + "select all on page" header checkbox. When any user is selected, an indigo **floating action bar** appears at the top with **Deactivate**, **Reactivate**, and **Delete** buttons showing the selected count. Individual rows also keep their Disable/Enable link + red 🗑️.
+- `TenantDetailPage → Users tab`: Same single-row buttons per clinic staff member.
+- Bulk delete requires typing `DELETE {count}` in a prompt as second confirmation.
+- `data-testid` on every button: `user-select-{id}`, `users-select-all`, `bulk-action-bar`, `bulk-selected-count`, `bulk-deactivate-btn`, `bulk-reactivate-btn`, `bulk-delete-btn`, `user-toggle-active-{id}`, `user-delete-{id}`, `tenant-user-toggle-{id}`, `tenant-user-delete-{id}`.
 
 ### Testing verified (curl smoke tests, this session)
 - ✅ Self-deactivate → 400
 - ✅ Self hard-delete → 400
 - ✅ Nonexistent user → 404
 - ✅ Create → deactivate → reactivate → hard-delete → second delete 404 (full lifecycle)
+- ✅ Bulk deactivate → reactivate → delete on 3 users → all processed, skipped=[]
+- ✅ Second bulk delete on same ids → skipped=[not_found] for all 3
+- ✅ Bulk with self+nonexistent → skipped=[self, not_found], processed=[]
 - ✅ Sessions revoked on deactivate + delete
 
 ---
