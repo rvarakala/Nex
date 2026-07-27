@@ -1,4 +1,42 @@
 # ACS Audiology Clinic — Product Requirements Document
+
+## ⚡ Live API Latency Speedometer (2026-07-27)
+
+**Trigger**: Follow-up to the load-test optimisations — the founder needs a
+live, at-a-glance view of API health without SSHing into the pod.
+
+### What shipped
+- **New middleware** `utils/latency_recorder.py::LatencyRecorderMiddleware`
+  captures every `/api/*` request into a bounded in-process ring buffer
+  (`deque(maxlen=5000)`). Overhead = one `time.perf_counter` call + one
+  `deque.append` per request. Path segments that look like ids
+  (≥16 chars w/ digits, or ≥8 chars with prefix like `pat_…`, `INV-…`) are
+  collapsed to `:id` so the leaderboard aggregates correctly. Readable route
+  words like `subscriptions`, `notifications`, `data-health`, `clinic-
+  assignments` are preserved.
+- **New endpoint** `GET /api/admin/v2/system/latency` (guarded by
+  `system:read`) returns `{at, uptime_seconds, window_60s, window_5m, health,
+  slowest_routes, status_distribution}`. Percentiles use nearest-rank on
+  a sorted copy of the current window.
+- **New widget** `LatencySpeedometer.jsx` on the Founder Dashboard
+  (`/admin`). Renders a semicircle SVG gauge for p95 with green/amber/red
+  bands, 6 KPI tiles (p50/p95/p99/rps/count5m/uptime), status-code mini bar,
+  and a 5-minute slowest-routes table. Auto-polls every 5s.
+
+### Testing — iteration 46: 100% pass
+- Backend: 8/8 pytest tests (endpoint shape, capture, path normalisation,
+  RBAC 403, auth-required, regression on health/data-health/dashboard).
+- Frontend: all data-testids present, live data populated, gauge renders.
+
+### Trade-offs / future
+- **Per-worker** — when we scale to `--workers 4` each worker keeps its own
+  buffer. Future upgrade could aggregate via Redis.
+- **Ephemeral** — buffer clears on backend restart. That's fine for a live
+  monitor; historical p95 tracking would need a separate time-series store.
+
+---
+
+
 ## ⚡ 100-User Load Test + Performance Sweep (2026-07-27)
 
 **Trigger**: A clinic reported the app was slow. Founder asked "does it

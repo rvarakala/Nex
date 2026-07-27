@@ -146,15 +146,24 @@ def _normalise_path(raw: str) -> str:
     """Collapse the path so long UUID/id fragments don't fragment the aggregate.
 
     Example: `/api/patients/pat_abc123` → `/api/patients/:id`.
+
+    We only collapse segments that clearly look like ids:
+      - Length ≥ 16 (real UUIDs, hex ids, prefixed ids like `pat_abc123456789`)
+      - Contains at least one digit
+    Plain route words like `subscriptions`, `notifications`, `assignments` (all
+    13–14 chars, no digits) are preserved so the slowest-routes leaderboard
+    stays readable.
     """
     parts = []
     for seg in raw.split("/"):
         if not seg:
             parts.append(seg)
             continue
-        # Any segment > 12 chars OR containing a hyphen/underscore + digit is
-        # treated as an id — collapse it.
-        if len(seg) > 12 or (any(c.isdigit() for c in seg) and any(c in "-_" for c in seg)):
+        has_digit = any(c.isdigit() for c in seg)
+        if has_digit and len(seg) >= 16:
+            parts.append(":id")
+        elif has_digit and any(c in "-_" for c in seg) and len(seg) >= 8:
+            # Prefixed ids like `pat_abc123`, `INV-2026-0821`, `USR-5DA8B3E8`.
             parts.append(":id")
         else:
             parts.append(seg)
