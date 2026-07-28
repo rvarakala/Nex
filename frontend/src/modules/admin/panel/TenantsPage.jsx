@@ -19,6 +19,7 @@ export default function TenantsPage() {
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
+  const [selected, setSelected] = useState(new Set());
   const navigate = useNavigate();
   const { user, loginWithToken } = useAuth();
 
@@ -58,6 +59,61 @@ export default function TenantsPage() {
     } finally { setBusy(''); }
   };
 
+  // ---- Bulk selection & delete -------------------------------------------
+  // Only founders can bulk-delete; the checkbox column is hidden for other
+  // roles. The `clinic-acs-demo` and `audinexa-platform` clinics are always
+  // filtered out — the server rejects them anyway.
+  const PROTECTED_CLINIC_IDS = new Set(['clinic-acs-demo', 'audinexa-platform']);
+  const selectableOnPage = paged.filter((t) => !PROTECTED_CLINIC_IDS.has(t.clinic_id));
+
+  const toggleOne = (cid) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(cid)) next.delete(cid); else next.add(cid);
+      return next;
+    });
+  };
+  const toggleAllOnPage = () => {
+    const ids = selectableOnPage.map((t) => t.clinic_id);
+    setSelected((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      const next = new Set(prev);
+      ids.forEach((id) => allSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  const bulkDelete = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const c1 = window.confirm(
+      `Hard-delete ${ids.length} tenant(s)?\n\n` +
+      `This purges every patient, invoice, appointment, HA record, and user\n` +
+      `across ALL ${ids.length} clinic(s). Not reversible.`
+    );
+    if (!c1) return;
+    const c2 = window.prompt(`Type DELETE ${ids.length} to confirm:`);
+    if (c2 !== `DELETE ${ids.length}`) { window.alert('Cancelled — text did not match.'); return; }
+    setBusy('bulk');
+    try {
+      const r = await axios.post(`${API}/admin/v2/tenants/bulk-delete`, { clinic_ids: ids });
+      const { processed, skipped } = r.data.counts;
+      let msg = `${processed} tenant(s) deleted.`;
+      if (skipped > 0) {
+        const reasons = (r.data.skipped || []).map((s) => `${s.clinic_id}: ${s.reason}`).slice(0, 5).join('\n');
+        msg += `\n\n${skipped} skipped:\n${reasons}`;
+      }
+      window.alert(msg);
+      clearSelection();
+      await load();
+    } catch (e) {
+      window.alert(e?.response?.data?.detail || 'Bulk delete failed');
+    } finally { setBusy(''); }
+  };
+
+  const canBulk = user?.role === 'founder';
+
   return (
     <div className="p-6 space-y-5" data-testid="admin-tenants-page">
       <PageHeader title="Tenants / Clinics" subtitle={`${tenants.length} tenants across the platform`}>
@@ -87,11 +143,45 @@ export default function TenantsPage() {
         </button>
       </PageHeader>
 
+      {canBulk && selected.size > 0 && (
+        <div
+          data-testid="tenants-bulk-action-bar"
+          className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-rose-600 text-white px-4 py-2.5 rounded-lg shadow-lg"
+        >
+          <div className="text-sm font-semibold flex items-center gap-3">
+            <span data-testid="tenants-bulk-selected-count">{selected.size} tenant(s) selected</span>
+            <button onClick={clearSelection} className="text-[11px] font-normal underline hover:no-underline opacity-90">
+              clear
+            </button>
+          </div>
+          <button
+            onClick={bulkDelete}
+            disabled={busy === 'bulk'}
+            data-testid="tenants-bulk-delete-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white text-rose-700 hover:bg-rose-50 rounded disabled:opacity-60"
+          >
+            <Trash2 size={12} /> Delete {selected.size} tenant{selected.size > 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
+
       <Card testid="tenants-table-card">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
               <tr>
+                {canBulk && (
+                  <th className="px-3 py-2 w-10">
+                    <input
+                      type="checkbox"
+                      data-testid="tenants-select-all"
+                      aria-label="Select all tenants on this page"
+                      checked={selectableOnPage.length > 0 && selectableOnPage.every((t) => selected.has(t.clinic_id))}
+                      onChange={toggleAllOnPage}
+                      className="rounded border-slate-300"
+                    />
+                  </th>
+                )}
                 <th className="px-4 py-2 text-left">Tenant</th>
                 <th className="px-4 py-2 text-left">Owner</th>
                 <th className="px-4 py-2 text-left">City</th>
@@ -106,7 +196,20 @@ export default function TenantsPage() {
             </thead>
             <tbody>
               {paged.map((t) => (
-                <tr key={t.clinic_id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`tenant-row-${t.clinic_id}`}>
+                <tr key={t.clinic_id} className={`border-t border-slate-100 hover:bg-slate-50 ${selected.has(t.clinic_id) ? 'bg-rose-50/70' : ''}`} data-testid={`tenant-row-${t.clinic_id}`}>
+                  {canBulk && (
+                    <td className="px-3 py-2">
+                      {!PROTECTED_CLINIC_IDS.has(t.clinic_id) && (
+                        <input
+                          type="checkbox"
+                          data-testid={`tenant-select-${t.clinic_id}`}
+                          checked={selected.has(t.clinic_id)}
+                          onChange={() => toggleOne(t.clinic_id)}
+                          className="rounded border-slate-300"
+                        />
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-2">
                     <button onClick={() => navigate(`/admin/tenants/${t.clinic_id}`)} className="font-semibold text-indigo-700 hover:underline text-left">{t.name || t.clinic_id}</button>
                     <div className="text-[10px] text-slate-400 font-mono">{t.clinic_id}</div>
@@ -147,7 +250,7 @@ export default function TenantsPage() {
                   </td>
                 </tr>
               ))}
-              {tenants.length === 0 && <tr><td colSpan={10}><Empty>No tenants match your filters.</Empty></td></tr>}
+              {tenants.length === 0 && <tr><td colSpan={canBulk ? 11 : 10}><Empty>No tenants match your filters.</Empty></td></tr>}
             </tbody>
           </table>
         </div>

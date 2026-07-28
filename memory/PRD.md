@@ -1,5 +1,33 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🏢 Bulk Delete Tenants (2026-07-27)
+
+**Trigger**: Founder needs to clean up demo/tester clinics — batch operation instead of clicking 30 individual delete buttons.
+
+### Backend (`admin_panel.py`)
+- `POST /api/admin/v2/tenants/bulk-delete` — accepts `{clinic_ids: [1-50]}`, **founder-only**
+- Reuses the extracted `_purge_tenant()` helper (33 collections purged: clinics, users, branches, patients, invoices, ha_*, service_tickets, closeouts, etc.)
+- Skips (rather than aborts) protected/missing rows so a mixed batch still processes the safe ones
+- Skip reasons returned: `protected` (audinexa-platform, clinic-acs-demo), `not_found`, `error: …`
+- Every batch written to `audit_log` as `tenant.bulk_delete`
+
+### Frontend (`TenantsPage`)
+- Checkbox column visible **only to founders** (row-level RBAC — checkbox never renders for non-founders)
+- "Select all on this page" header checkbox skips the 2 protected clinics automatically
+- **Rose-red floating action bar** appears when any tenant is selected: shows count + "Delete N tenant(s)" button
+- Bulk delete requires TWO confirmations: standard `window.confirm` + typing `DELETE {count}` in a prompt
+- Row highlight in rose-50 when selected
+- `data-testid` on every control: `tenant-select-{id}`, `tenants-select-all`, `tenants-bulk-action-bar`, `tenants-bulk-selected-count`, `tenants-bulk-delete-btn`
+
+### Testing verified (curl smoke tests, this session)
+- ✅ Protected clinics (`clinic-acs-demo`, `audinexa-platform`) → skipped with `protected`
+- ✅ Non-existent clinic → skipped with `not_found`
+- ✅ Real bulk delete of 3 brute-test clinics → 3 clinics + 3 users + 3 branches purged, verified gone from `/tenants` list
+- ✅ super_admin blocked with 403
+
+---
+
+
 ## 👤 User Lifecycle: Deactivate + Hard-Delete + Bulk (2026-07-27)
 
 **Trigger**: Founder needs to remove users cleanly — both soft (reversible) and hard (nuclear), plus batch operations for offboarding waves.

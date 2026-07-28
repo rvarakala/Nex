@@ -598,25 +598,79 @@ async def delete_tenant(
         raise HTTPException(status_code=403, detail="Only the founder can delete a tenant")
     if clinic_id in {"clinic-acs-demo"}:
         raise HTTPException(status_code=400, detail="Cannot delete the primary demo clinic")
-    collections_to_purge = [
-        "clinics", "users", "branches", "patients", "test_sessions",
-        "invoices", "payments", "services", "tokens", "appointments",
-        "ha_products", "ha_sales", "ha_fittings", "ha_trials", "quotations",
-        "service_tickets", "ha_loaners", "ha_trade_ins", "ha_followups",
-        "ha_subscriptions", "ha_amc_plans", "ha_amc_contracts",
-        "referral_partners", "partner_payouts", "tenant_feature_flags",
-        "tenant_invoices", "closeouts", "waitlist_signups",
-        "patient_otps", "patient_appointment_requests", "patient_feedback",
-        "service_estimates", "service_couriers", "service_approvals",
-        "report_deliveries",
-    ]
-    deleted = {}
-    for coll in collections_to_purge:
-        r = await db[coll].delete_many({"clinic_id": clinic_id})
-        deleted[coll] = r.deleted_count
+    deleted = await _purge_tenant(db, clinic_id)
     await _log_audit(db, user, "tenant.delete", clinic_id, before={"deleted_counts": deleted}, request=request)
     _invalidate_dashboard_cache()
     return {"ok": True, "clinic_id": clinic_id, "deleted": deleted}
+
+
+_TENANT_PURGE_COLLECTIONS = [
+    "clinics", "users", "branches", "patients", "test_sessions",
+    "invoices", "payments", "services", "tokens", "appointments",
+    "ha_products", "ha_sales", "ha_fittings", "ha_trials", "quotations",
+    "service_tickets", "ha_loaners", "ha_trade_ins", "ha_followups",
+    "ha_subscriptions", "ha_amc_plans", "ha_amc_contracts",
+    "referral_partners", "partner_payouts", "tenant_feature_flags",
+    "tenant_invoices", "closeouts", "waitlist_signups",
+    "patient_otps", "patient_appointment_requests", "patient_feedback",
+    "service_estimates", "service_couriers", "service_approvals",
+    "report_deliveries",
+]
+
+
+async def _purge_tenant(db, clinic_id: str) -> dict:
+    """Hard-delete every document scoped to `clinic_id` across all tenant
+    collections. Returns per-collection deleted counts."""
+    deleted: dict = {}
+    for coll in _TENANT_PURGE_COLLECTIONS:
+        r = await db[coll].delete_many({"clinic_id": clinic_id})
+        deleted[coll] = r.deleted_count
+    return deleted
+
+
+class BulkTenantIds(BaseModel):
+    clinic_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.post("/tenants/bulk-delete")
+async def bulk_delete_tenants(
+    payload: BulkTenantIds, request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """FOUNDER-ONLY. Hard-deletes multiple tenants in one call. Skips (rather
+    than aborts) protected/missing clinics so a mixed batch still processes
+    the safe ones. Returns per-clinic status."""
+    if not _is_founder(user):
+        raise HTTPException(status_code=403, detail="Only the founder can delete tenants")
+    processed: list[dict] = []
+    skipped: list[dict] = []
+    for cid in payload.clinic_ids:
+        if cid in {"clinic-acs-demo", "audinexa-platform"}:
+            skipped.append({"clinic_id": cid, "reason": "protected"})
+            continue
+        exists = await db.clinics.find_one({"clinic_id": cid}, {"_id": 0, "clinic_id": 1})
+        if not exists:
+            skipped.append({"clinic_id": cid, "reason": "not_found"})
+            continue
+        try:
+            deleted = await _purge_tenant(db, cid)
+            processed.append({"clinic_id": cid, "deleted_counts": deleted})
+        except Exception as e:  # noqa: BLE001 — keep the batch going
+            skipped.append({"clinic_id": cid, "reason": f"error: {str(e)[:80]}"})
+    await _log_audit(
+        db, user, "tenant.bulk_delete",
+        ",".join(payload.clinic_ids[:5]),
+        after={"processed": len(processed), "skipped": len(skipped)},
+        request=request,
+    )
+    _invalidate_dashboard_cache()
+    return {
+        "ok": True,
+        "processed": processed,
+        "skipped": skipped,
+        "counts": {"processed": len(processed), "skipped": len(skipped)},
+    }
 
 
 # ==================== 3. SUBSCRIPTIONS — PLAN CRUD ====================
