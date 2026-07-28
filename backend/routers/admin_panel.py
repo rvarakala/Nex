@@ -728,7 +728,68 @@ async def founder_reset(
     }
 
     if payload.dry_run:
-        return {"ok": True, "dry_run": True, "would_delete": summary_before}
+        # Show the full preserved list with human-readable details, plus a
+        # sample of the delete list so the founder can eyeball for real
+        # customers that haven't been tagged with subscription_status yet.
+        preserved_detail = []
+        cur = db.clinics.find(
+            {"clinic_id": {"$in": list(preserve_ids)}},
+            {"_id": 0, "clinic_id": 1, "name": 1, "owner_email": 1,
+             "subscription_status": 1, "subscription_tier": 1, "created_at": 1},
+        )
+        async for c in cur:
+            preserved_detail.append({
+                "clinic_id": c.get("clinic_id"),
+                "name": c.get("name"),
+                "owner_email": c.get("owner_email"),
+                "subscription_status": c.get("subscription_status", "—"),
+                "subscription_tier": c.get("subscription_tier", "—"),
+                "reason": (
+                    "platform"       if c.get("clinic_id") == "audinexa-platform"
+                    else "demo"      if c.get("clinic_id") == "clinic-acs-demo"
+                    else "paying"    if c.get("subscription_status") == "active"
+                    else "unknown"
+                ),
+            })
+
+        sample_to_delete = []
+        cur = db.clinics.find(
+            {"clinic_id": {"$in": to_delete_ids[:30]}},
+            {"_id": 0, "clinic_id": 1, "name": 1, "owner_email": 1,
+             "subscription_status": 1, "subscription_tier": 1, "created_at": 1},
+        )
+        async for c in cur:
+            sample_to_delete.append({
+                "clinic_id": c.get("clinic_id"),
+                "name": c.get("name"),
+                "owner_email": c.get("owner_email"),
+                "subscription_status": c.get("subscription_status", "—"),
+                "subscription_tier": c.get("subscription_tier", "—"),
+            })
+
+        # Health check on the paying-customer tag — if this comes back 0 on
+        # a production DB with real customers, the founder must tag them
+        # BEFORE running the wipe.
+        subscription_status_stats = {
+            "active":   await db.clinics.count_documents({"subscription_status": "active"}),
+            "trial":    await db.clinics.count_documents({"subscription_status": "trial"}),
+            "cancelled":await db.clinics.count_documents({"subscription_status": "cancelled"}),
+            "missing":  await db.clinics.count_documents({"subscription_status": {"$exists": False}}),
+        }
+
+        return {
+            "ok": True,
+            "dry_run": True,
+            "would_delete": summary_before,
+            "preserved_clinics": preserved_detail,
+            "sample_clinics_to_delete": sample_to_delete,
+            "subscription_status_distribution": subscription_status_stats,
+            "hint": (
+                "Scan `sample_clinics_to_delete` for any real customer. "
+                "If you spot one, cancel the wipe and set that clinic's "
+                "`subscription_status` to 'active' first — then re-run dry_run."
+            ),
+        }
 
     # ---- Execute the wipe ---------------------------------------------------
     # 1. Leads (waitlist_signups) — full wipe
