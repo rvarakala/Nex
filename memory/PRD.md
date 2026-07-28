@@ -1,5 +1,56 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔥 Founder Reset — Fresh-Start Endpoint (2026-07-27)
+
+**Trigger**: Founder needed to wipe leads + test/tester clinics + revenue baseline in one shot so the platform can launch clean.
+
+### Backend endpoint (`admin_panel.py`)
+- `POST /api/admin/v2/founder/reset` — **founder-only**, requires exact confirm phrase, one-shot destructive
+- Body: `{"confirm": "WIPE-EVERYTHING-EXCEPT-PLATFORM", "dry_run": false}`
+- `dry_run: true` returns a preview count without deleting anything
+
+### What gets wiped
+1. **All rows** in `waitlist_signups` (the Leads / Trial CRM page)
+2. **All rows** in `tenant_invoices` (revenue chart resets to zero)
+3. **All clinics** except protected + paying customers (calls `_purge_tenant()` on each → 33-collection cascade)
+4. **Orphan users** — any user whose `clinic_id` no longer references an existing clinic
+
+### What is preserved
+- `audinexa-platform` — the platform tenant (founder + sales + support + finance + ops + analyst all live here)
+- `clinic-acs-demo` — primary demo clinic
+- Any clinic with `subscription_status="active"` (real paying Razorpay customers)
+- `audit_log` — the reset itself is written as a `founder.reset` entry
+
+### Preview snapshot (before → after) — verified this session
+| Collection | Before | After |
+|---|---|---|
+| `waitlist_signups` | 52 | 0 |
+| `tenant_invoices` | 19 | 0 |
+| `clinics` | 133 | 1 (platform only) |
+| Orphan users | 2 | 0 |
+
+Wipe completed in **1.74 seconds** end-to-end.
+
+### Guards verified
+- ✅ Wrong confirm phrase → 400 with the required phrase in the error
+- ✅ super_admin trying to call → 403
+- ✅ Dry run returns preserved list + delete count without deleting
+- ✅ Second call is idempotent (0 leads, 0 clinics, 0 orphans)
+
+### Production usage
+```bash
+# 1. Redeploy production to push this endpoint live
+# 2. Preview first (safe — deletes nothing):
+curl -X POST https://audinexa.com/api/admin/v2/founder/reset \
+  -H "Authorization: Bearer $FOUNDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"confirm":"WIPE-EVERYTHING-EXCEPT-PLATFORM","dry_run":true}'
+# 3. If counts look right, drop dry_run to execute
+```
+
+---
+
+
 ## 🏢 Bulk Delete Tenants (2026-07-27)
 
 **Trigger**: Founder needs to clean up demo/tester clinics — batch operation instead of clicking 30 individual delete buttons.

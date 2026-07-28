@@ -673,6 +673,107 @@ async def bulk_delete_tenants(
     }
 
 
+# ==================== FOUNDER RESET — wipe non-paying data ==================
+# One-shot endpoint used to fresh-start the platform: purges leads + all
+# non-paying tenants + tenant invoices. NEVER touches:
+#   • The `audinexa-platform` clinic (your platform tenant, holds founder+staff)
+#   • The `clinic-acs-demo` primary demo clinic
+#   • Any clinic where subscription_status == "active" (real paying customers)
+#   • The audit_log itself (the wipe operation is itself logged)
+# Requires the caller to type the exact confirmation phrase in the body so
+# nobody triggers it by mistake.
+
+CONFIRM_PHRASE_FOUNDER_RESET = "WIPE-EVERYTHING-EXCEPT-PLATFORM"
+
+
+class FounderResetPayload(BaseModel):
+    confirm: str = Field(description=f"Must equal: {CONFIRM_PHRASE_FOUNDER_RESET}")
+    dry_run: bool = Field(default=False, description="If true, count what WOULD be deleted without deleting.")
+
+
+@router.post("/founder/reset")
+async def founder_reset(
+    payload: FounderResetPayload, request: Request,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    if not _is_founder(user):
+        raise HTTPException(status_code=403, detail="Only the founder can trigger a platform reset")
+    if payload.confirm != CONFIRM_PHRASE_FOUNDER_RESET:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Confirmation phrase mismatch. Send confirm='{CONFIRM_PHRASE_FOUNDER_RESET}'.",
+        )
+
+    # ---- Build the "to delete" tenant list -----------------------------------
+    preserve_ids = {"audinexa-platform", "clinic-acs-demo"}
+    paying_cursor = db.clinics.find({"subscription_status": "active"}, {"_id": 0, "clinic_id": 1})
+    async for c in paying_cursor:
+        preserve_ids.add(c["clinic_id"])
+
+    all_ids = [c["clinic_id"] async for c in db.clinics.find({}, {"_id": 0, "clinic_id": 1})]
+    to_delete_ids = [cid for cid in all_ids if cid not in preserve_ids]
+
+    # ---- Count what WILL disappear ------------------------------------------
+    leads_count = await db.waitlist_signups.count_documents({})
+    invoices_count = await db.tenant_invoices.count_documents({})
+
+    summary_before = {
+        "leads": leads_count,
+        "tenant_invoices": invoices_count,
+        "clinics_total": len(all_ids),
+        "clinics_preserved": len(preserve_ids),
+        "clinics_to_delete": len(to_delete_ids),
+        "preserved_clinic_ids": sorted(preserve_ids),
+    }
+
+    if payload.dry_run:
+        return {"ok": True, "dry_run": True, "would_delete": summary_before}
+
+    # ---- Execute the wipe ---------------------------------------------------
+    # 1. Leads (waitlist_signups) — full wipe
+    leads_r = await db.waitlist_signups.delete_many({})
+    # 2. Tenant invoices — full wipe (revenue chart resets to zero)
+    invoices_r = await db.tenant_invoices.delete_many({})
+    # 3. Non-preserved clinics — purge each with the full 33-collection sweep
+    per_clinic = []
+    for cid in to_delete_ids:
+        try:
+            deleted = await _purge_tenant(db, cid)
+            per_clinic.append({"clinic_id": cid, "docs": sum(deleted.values())})
+        except Exception as e:  # noqa: BLE001 — keep going
+            per_clinic.append({"clinic_id": cid, "error": str(e)[:120]})
+    # 4. Orphan users — belong to a clinic that no longer exists (either
+    #    already purged or was never created). Safe to reap.
+    remaining_clinic_ids = [c["clinic_id"] async for c in db.clinics.find({}, {"_id": 0, "clinic_id": 1})]
+    orphans_r = await db.users.delete_many({
+        "clinic_id": {"$nin": remaining_clinic_ids},
+    })
+
+    result = {
+        "ok": True,
+        "wiped": {
+            "leads": leads_r.deleted_count,
+            "tenant_invoices": invoices_r.deleted_count,
+            "clinics_deleted": sum(1 for row in per_clinic if "error" not in row),
+            "clinics_failed": sum(1 for row in per_clinic if "error" in row),
+            "orphan_users_reaped": orphans_r.deleted_count,
+        },
+        "preserved_clinic_ids": sorted(preserve_ids),
+        "per_clinic": per_clinic,
+    }
+
+    await _log_audit(
+        db, user, "founder.reset", "*",
+        before=summary_before,
+        after=result["wiped"],
+        request=request,
+    )
+    _invalidate_dashboard_cache()
+    return result
+
+
+
 # ==================== 3. SUBSCRIPTIONS — PLAN CRUD ====================
 # We keep the original tier registry static (BASIC/STANDARD/PREMIUM); this section
 # exposes the plan catalogue + lets admins issue manual invoices for a tenant.
