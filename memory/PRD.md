@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎁 Comped Clinics Report (2026-07-28)
+
+**Trigger**: After adding the "Gift Free Trial" flow, founder needs a tab that lists every gifted clinic with its months, reason, expiry, and days-remaining — the early-adopter cohort tracker.
+
+### Backend (`routers/launch_banner.py`)
+- `GET /api/admin/v2/comped-clinics` — founder + super_admin
+- Returns `{summary: {total_comped, active, expired, total_months_gifted, top_reasons}, rows: [...], at}`
+- Each row: `{clinic_id, name, city, owner_email, subscription_tier, subscription_status, trial_ends_at, gift_trial_at, gift_trial_months, gift_trial_reason, gifted_by (resolved to email), days_remaining, status}`
+- `days_remaining` computed live (negative when expired)
+- `status` = "active" | "expired" based on `trial_ends_at` vs now
+- Sorted by `gift_trial_at DESC` — most recent gifts first
+- Efficient: single Mongo query with projection + one lookup for gifter emails
+
+### Frontend (`CompedClinicsPage.jsx`)
+- New route `/admin/comped-clinics` with nav link under "Growth" group (🎁 icon)
+- 4 KPI tiles: Total / Active / Expired / Total Months Gifted
+- **Top reasons chips** — click any chip to filter the table by that reason
+- Table: sortable (recent / expiring soon / most months), searchable, status filter, CSV export
+- Days-remaining colour: rose (expired) / amber (≤7d) / slate (normal)
+- Clinic name → deep-link to `/admin/tenants/:id`
+- Empty state prompts to go gift a clinic if none yet
+
+### Testing verified
+- ✅ Curl returns proper summary + row shape
+- ✅ Existing gift record (from earlier session) shows up with 3 months, 89 days remaining, status active
+- ✅ Backend lint clean, frontend lint clean
+
+---
+
+
 ## 📣 Launch Banner + Gift Free Trial (2026-07-28)
 
 **Trigger**: After the platform-reset, founder needs (a) a public announcement banner and (b) a way to hand-pick early-adopter clinics for 3 months free.

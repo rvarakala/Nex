@@ -157,3 +157,98 @@ async def gift_free_trial(
         "trial_ends_at": new_end_iso,
         "months": payload.months,
     }
+
+
+@router.get("/comped-clinics")
+async def list_comped_clinics(
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Returns every clinic that has received a gifted trial extension, along
+    with summary tiles (active vs expired counts, total months comped).
+    Founder + super_admin can read.
+    """
+    if user.get("role") not in {"founder", "super_admin"}:
+        raise HTTPException(status_code=403, detail="Founder / super admin only")
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    rows: list[dict] = []
+    cursor = db.clinics.find(
+        {"gift_trial_at": {"$exists": True}},
+        {"_id": 0,
+         "clinic_id": 1, "name": 1, "city": 1, "owner_email": 1,
+         "subscription_tier": 1, "trial_ends_at": 1,
+         "gift_trial_at": 1, "gift_trial_months": 1,
+         "gift_trial_reason": 1, "gift_trial_by": 1,
+         "subscription_status": 1},
+    ).sort("gift_trial_at", -1)
+
+    # Preload founder → email mapping so the "gifted by" column shows a name.
+    gifter_ids = set()
+    async for c in cursor:
+        if c.get("gift_trial_by"):
+            gifter_ids.add(c["gift_trial_by"])
+        rows.append(c)
+    gifter_map = {
+        u["user_id"]: {"email": u.get("email"), "name": u.get("name")}
+        async for u in db.users.find(
+            {"user_id": {"$in": list(gifter_ids)}},
+            {"_id": 0, "user_id": 1, "email": 1, "name": 1},
+        )
+    } if gifter_ids else {}
+
+    active = 0
+    expired = 0
+    total_months = 0
+    reason_counter: dict[str, int] = {}
+    enriched = []
+    for c in rows:
+        ends = c.get("trial_ends_at") or ""
+        is_active = ends >= now_iso
+        if is_active:
+            active += 1
+        else:
+            expired += 1
+        # Days remaining (negative if expired). Best-effort ISO parse.
+        days_remaining = None
+        try:
+            end_dt = datetime.fromisoformat(ends.replace("Z", "+00:00")) if ends else None
+            if end_dt:
+                days_remaining = (end_dt - now).days
+        except Exception:
+            pass
+        total_months += int(c.get("gift_trial_months") or 0)
+        reason = (c.get("gift_trial_reason") or "founder-comped").strip() or "founder-comped"
+        reason_counter[reason] = reason_counter.get(reason, 0) + 1
+        gifter = gifter_map.get(c.get("gift_trial_by") or "", {})
+        enriched.append({
+            "clinic_id": c.get("clinic_id"),
+            "name": c.get("name"),
+            "city": c.get("city"),
+            "owner_email": c.get("owner_email"),
+            "subscription_tier": c.get("subscription_tier"),
+            "subscription_status": c.get("subscription_status"),
+            "trial_ends_at": ends,
+            "gift_trial_at": c.get("gift_trial_at"),
+            "gift_trial_months": c.get("gift_trial_months"),
+            "gift_trial_reason": reason,
+            "gifted_by": gifter.get("email") or c.get("gift_trial_by"),
+            "days_remaining": days_remaining,
+            "status": "active" if is_active else "expired",
+        })
+
+    top_reasons = sorted(reason_counter.items(), key=lambda kv: -kv[1])[:5]
+
+    return {
+        "summary": {
+            "total_comped": len(enriched),
+            "active": active,
+            "expired": expired,
+            "total_months_gifted": total_months,
+            "top_reasons": [{"reason": r, "count": c} for r, c in top_reasons],
+        },
+        "rows": enriched,
+        "at": now_iso,
+    }

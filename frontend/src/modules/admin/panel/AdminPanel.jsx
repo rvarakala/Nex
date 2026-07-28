@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Flame, ToggleLeft,
   LogOut, Search, ShieldCheck, Headphones, BarChart3, HeartPulse,
   Megaphone, Bell, FileClock, Settings, Users, Activity, Link2, Shuffle,
-  AlertOctagon, MailWarning, UserCheck, KeyRound,
+  AlertOctagon, MailWarning, UserCheck, KeyRound, Gift,
 } from 'lucide-react';
 
 // Lazy-load route components → each becomes its own JS chunk, fetched only
@@ -36,6 +36,7 @@ const ErrorsPage         = lazy(() => import('./ErrorsPage'));
 const EmailHealthPage    = lazy(() => import('./EmailHealthPage'));
 const StuckUsersPage     = lazy(() => import('./StuckUsersPage'));
 const AccountSecurityPage = lazy(() => import('./AccountSecurityPage'));
+const CompedClinicsPage  = lazy(() => import('./CompedClinicsPage'));
 
 import AdminGlobalSearch from './AdminGlobalSearch';
 import MfaEnforcementBanner from '../../../shell/MfaEnforcementBanner';
@@ -54,6 +55,7 @@ const NAV_GROUPS = [
     label: 'Growth',
     items: [
       { to: '/admin/leads', label: 'Leads / Trials', icon: Flame, testid: 'nav-admin-leads' },
+      { to: '/admin/comped-clinics', label: 'Comped Clinics', icon: Gift, testid: 'nav-admin-comped' },
       { to: '/admin/activity', label: 'Live Activity', icon: Activity, testid: 'nav-admin-activity' },
       { to: '/admin/marketing', label: 'Marketing CRM', icon: Megaphone, testid: 'nav-admin-marketing' },
       { to: '/admin/features', label: 'Feature Flags', icon: ToggleLeft, testid: 'nav-admin-features' },
@@ -232,6 +234,7 @@ export default function AdminPanel() {
               <Route path="subscriptions" element={<SubscriptionsPage />} />
               <Route path="revenue" element={<RevenuePage />} />
               <Route path="leads" element={<LeadsPage />} />
+              <Route path="comped-clinics" element={<CompedClinicsPage />} />
               <Route path="activity" element={<ActivityPage />} />
               <Route path="marketing" element={<MarketingPage />} />
               <Route path="features" element={<FeatureFlagsPage />} />
