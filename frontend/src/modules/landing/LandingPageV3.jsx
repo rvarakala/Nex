@@ -31,6 +31,7 @@ import {
   X, Check, ChevronDown, Zap,
 } from 'lucide-react';
 import { AudiogramIllustration, TympanogramIllustration } from './DiagnosticIllustrations';
+import LaunchBanner from './LaunchBanner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -903,6 +904,7 @@ export default function LandingPage() {
 
   return (
     <div style={{ background: C.bone, color: C.ink, fontFamily: F.body }} data-testid="landing-page">
+      <LaunchBanner />
       <Header />
       <Hero />
       <LiveProofBand stats={stats} />

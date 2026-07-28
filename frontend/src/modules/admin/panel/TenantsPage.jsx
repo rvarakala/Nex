@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader, Card, Pill, tierTone, fmtDate, fmtInt, Empty } from './shared';
-import { MoreVertical, UserCog, PauseCircle, PlayCircle, Trash2, Eye, Plus } from 'lucide-react';
+import { MoreVertical, UserCog, PauseCircle, PlayCircle, Trash2, Eye, Plus, Gift } from 'lucide-react';
 import { useAuth } from '../../../AuthContext';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../../components/Pagination';
 import InviteSuccessModal from './InviteSuccessModal';
@@ -56,6 +56,26 @@ export default function TenantsPage() {
       await load();
     } catch (e) {
       alert(e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Action failed');
+    } finally { setBusy(''); }
+  };
+
+  const giftTrial = async (t) => {
+    const monthsStr = window.prompt(
+      `How many free months for "${t.name || t.clinic_id}"?\n` +
+      `Their trial will be extended from today.`,
+      '3',
+    );
+    if (!monthsStr) return;
+    const months = parseInt(monthsStr, 10);
+    if (!months || months < 1 || months > 24) { alert('Enter a number between 1 and 24.'); return; }
+    const reason = window.prompt('Optional note (e.g. "early adopter", "ENT-Delhi partner"):') || '';
+    setBusy(t.clinic_id);
+    try {
+      const r = await axios.post(`${API}/admin/v2/tenants/${t.clinic_id}/gift-trial`, { months, reason });
+      alert(`✅ Trial extended: ${months} month(s).\nNew end date: ${new Date(r.data.trial_ends_at).toDateString()}`);
+      await load();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Gift trial failed');
     } finally { setBusy(''); }
   };
 
@@ -238,6 +258,17 @@ export default function TenantsPage() {
                     <div className="inline-flex gap-1">
                       <button title="View" onClick={() => navigate(`/admin/tenants/${t.clinic_id}`)} className="p-1 text-slate-500 hover:text-indigo-600" data-testid={`tenant-view-${t.clinic_id}`}><Eye size={14} /></button>
                       <button title="Impersonate" disabled={busy === t.clinic_id} onClick={() => action(t.clinic_id, 'impersonate')} className="p-1 text-slate-500 hover:text-fuchsia-600" data-testid={`tenant-impersonate-${t.clinic_id}`}><UserCog size={14} /></button>
+                      {canBulk && !PROTECTED_CLINIC_IDS.has(t.clinic_id) && (
+                        <button
+                          title="Gift free trial months (founder only)"
+                          disabled={busy === t.clinic_id}
+                          onClick={() => giftTrial(t)}
+                          className="p-1 text-emerald-600 hover:text-emerald-700"
+                          data-testid={`tenant-gift-trial-${t.clinic_id}`}
+                        >
+                          <Gift size={14} />
+                        </button>
+                      )}
                       {t.status === 'suspended' ? (
                         <button title="Activate" disabled={busy === t.clinic_id} onClick={() => action(t.clinic_id, 'activate')} className="p-1 text-emerald-600 hover:text-emerald-700"><PlayCircle size={14} /></button>
                       ) : (

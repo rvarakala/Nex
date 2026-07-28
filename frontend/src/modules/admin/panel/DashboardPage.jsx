@@ -9,6 +9,7 @@ import EmailHealthBanner from './EmailHealthBanner';
 import SignupFunnel from './SignupFunnel';
 import LatencySpeedometer from './LatencySpeedometer';
 import FounderResetModal from './FounderResetModal';
+import LaunchBannerAdminCard from './LaunchBannerAdminCard';
 import { useAuth } from '../../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -75,6 +76,8 @@ export default function DashboardPage() {
       <SignupFunnel data={signup_funnel_30d} />
 
       <LatencySpeedometer />
+
+      {user?.role === 'founder' && <LaunchBannerAdminCard />}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

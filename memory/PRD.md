@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📣 Launch Banner + Gift Free Trial (2026-07-28)
+
+**Trigger**: After the platform-reset, founder needs (a) a public announcement banner and (b) a way to hand-pick early-adopter clinics for 3 months free.
+
+### Backend (`routers/launch_banner.py` — new file)
+- `GET /api/platform/launch-banner` — **public**, no auth. Landing + signup pages fetch this on load.
+- `GET /api/admin/v2/platform/launch-banner` — founder-only, returns full config incl. audit meta.
+- `PATCH /api/admin/v2/platform/launch-banner` — founder-only, updates fields (enabled, message, cta_text, cta_href, tone). Stored in `platform_settings` singleton doc, upsert.
+- `POST /api/admin/v2/tenants/{clinic_id}/gift-trial` — founder-only, extends `clinics.trial_ends_at` by N months (1-24). Stores comp metadata (`gift_trial_reason`, `gift_trial_months`, `gift_trial_by`). Blocks the `audinexa-platform` tenant. Every action written to `audit_log`.
+
+### Frontend
+- **`LaunchBanner.jsx`** (public) — dismissable ribbon on landing (`LandingPageV3.jsx` top) and signup page (`SignupPage.js` top). Uses localStorage keyed by the banner `version` string, so editing the banner re-shows to everyone who dismissed the previous copy. 4 tone options: indigo, emerald, rose, amber.
+- **`LaunchBannerAdminCard.jsx`** — founder-only card on Founder Dashboard. Live preview at top, then message textarea (280 chars), CTA text (40), CTA link (200), tone picker. Two buttons: "Turn ON/OFF banner" (toggle) + "Save changes" (persist copy).
+- **Tenants page** — new 🎁 **Gift** icon next to Impersonate (founder-only, hidden for protected clinics). Prompts for months + optional reason, calls the gift-trial endpoint, shows confirmation with the new trial end date.
+
+### Testing verified (curl smoke tests + screenshot)
+- ✅ Public GET returns defaults on fresh install
+- ✅ PATCH persists and public GET immediately reflects updates
+- ✅ Gift trial extends `trial_ends_at` correctly (3 months from now)
+- ✅ Gift to platform tenant → 400 "Cannot gift trial to the platform tenant"
+- ✅ Gift to ghost clinic → 404 "Clinic not found"
+- ✅ Landing page screenshot shows emerald banner with copy + CTA + dismiss
+
+### Data model additions
+- `platform_settings` — new collection, singleton doc `{_id: "launch_banner", enabled, message, cta_text, cta_href, tone, updated_at, updated_by}`
+- `clinics.gift_trial_*` fields — comp trail preserved with the clinic
+
+---
+
+
 ## 🔥 Founder Reset — Fresh-Start Endpoint (2026-07-27)
 
 **Trigger**: Founder needed to wipe leads + test/tester clinics + revenue baseline in one shot so the platform can launch clean.

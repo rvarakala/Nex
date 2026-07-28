@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
+import LaunchBanner from './LaunchBanner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -62,7 +63,9 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6" data-testid="signup-page">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col" data-testid="signup-page">
+      <LaunchBanner />
+      <div className="flex-1 flex items-center justify-center p-6">
       <div className="max-w-md w-full">
         <div className="mb-6">
           <a href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm">
@@ -178,6 +181,7 @@ export default function SignupPage() {
         <div className="text-center text-xs text-slate-500 mt-6">
           Already have a clinic? <a href="/login" className="text-orange-400 hover:underline">Sign in</a>
         </div>
+      </div>
       </div>
     </div>
   );
