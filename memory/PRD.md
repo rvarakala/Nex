@@ -38,6 +38,16 @@ Wipe completed in **1.74 seconds** end-to-end.
 - ✅ Second call is idempotent (0 leads, 0 clinics, 0 orphans)
 
 ### Production usage
+
+**Recommended UI path (no terminal needed):**
+1. Redeploy production via Emergent dashboard → "Replace existing deployment"
+2. Log in as founder → open `/admin` (Executive Dashboard)
+3. Click the red **"Reset Test Data"** button in the top-right
+4. Modal shows a full preview: counts + preserved list + first 30 clinics that will be deleted
+5. Type `WIPE-EVERYTHING-EXCEPT-PLATFORM` in the confirmation box
+6. Click **Wipe** → done in ~2 seconds
+
+**Alternative (curl for power users):**
 ```bash
 # 1. Redeploy production to push this endpoint live
 # 2. Preview first (safe — deletes nothing):

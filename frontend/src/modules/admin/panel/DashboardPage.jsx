@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { AlertTriangle } from 'lucide-react';
 import { PageHeader, Card, KPITile, Pill, tierTone, fmtINR, fmtInt, fmtDate, Empty } from './shared';
 import LiveSignupPulse from './LiveSignupPulse';
 import EmailHealthBanner from './EmailHealthBanner';
 import SignupFunnel from './SignupFunnel';
 import LatencySpeedometer from './LatencySpeedometer';
+import FounderResetModal from './FounderResetModal';
+import { useAuth } from '../../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PIE_COLORS = ['#94a3b8', '#6366f1', '#d946ef'];
@@ -14,12 +17,15 @@ const PIE_COLORS = ['#94a3b8', '#6366f1', '#d946ef'];
 export default function DashboardPage() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
+  const [showReset, setShowReset] = useState(false);
+  const { user } = useAuth();
 
-  useEffect(() => {
+  const load = () => {
     axios.get(`${API}/admin/v2/dashboard`)
       .then((r) => setD(r.data))
       .catch((e) => setErr(e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Failed to load dashboard'));
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   if (err) return <div className="p-6"><div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded p-3">{err}</div></div>;
   if (!d) return <div className="p-6 text-slate-500">Loading command center…</div>;
@@ -30,8 +36,27 @@ export default function DashboardPage() {
     <div className="p-6 space-y-6" data-testid="admin-dashboard-page">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <PageHeader title="Executive Dashboard" subtitle="Platform-wide health, revenue & growth" />
-        <LiveSignupPulse />
+        <div className="flex items-center gap-2">
+          {user?.role === 'founder' && (
+            <button
+              onClick={() => setShowReset(true)}
+              data-testid="founder-reset-btn"
+              title="Wipe leads + test clinics + revenue baseline (founder only)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded"
+            >
+              <AlertTriangle size={12} /> Reset Test Data
+            </button>
+          )}
+          <LiveSignupPulse />
+        </div>
       </div>
+
+      {showReset && (
+        <FounderResetModal
+          onClose={() => setShowReset(false)}
+          onDone={() => { load(); }}
+        />
+      )}
 
       <EmailHealthBanner />
 
