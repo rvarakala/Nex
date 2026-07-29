@@ -1,5 +1,53 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📱 Mobile Drawer Pattern Rollout + LandscapePrompt Reuse (2026-07-29 — follow-up)
+
+**Trigger**: Founder wanted the Settings-style mobile drawer pattern to be applied to every other page with a fixed sidebar, and to drop `<LandscapePrompt featureKey="..." />` on data-heavy screens (Billing, Reports).
+
+### What shipped
+
+**1. Compliance policy pack drawer (`modules/compliance/CompliancePolicyPack.jsx`)**
+- Desktop unchanged (300px sidebar).
+- Mobile (<md): sidebar hidden; new top pill `compliance-mobile-menu-toggle` shows the active policy title + `signed/total`. Tap → `compliance-mobile-drawer` slides in from the left with all 7 policies. Selecting a policy auto-closes the drawer so the reader takes full width. Backdrop tap and X (`compliance-mobile-drawer-close`) also close it.
+- Extracted `PolicyList` as a top-level component (no inline nested component — passes react/no-unstable-nested-components).
+- Reader container gets `min-w-0` so long PDF-preview lines don't force horizontal scroll.
+
+**2. Report Builder drawer (`components/reports/BuilderSidebar.js` + `components/ReportsPanel.js`)**
+- Desktop unchanged (280px fixed aside with sticky "Report Builder" header).
+- Mobile: sticky top pill `report-builder-mobile-menu-toggle` with the layout-status dot; opens `report-builder-mobile-drawer` containing the full builder (Print/WhatsApp, clinic branding, sections list, all narrative textareas, MRD/license inputs).
+- Parent `ReportsPanel` wrapper changed to `flex-col md:flex-row` so on mobile the pill stacks above the A4 preview instead of collapsing to zero width.
+- Introduces inline `MenuIcon`/`ChevronDownIcon`/`CloseIcon` next to the existing print/whatsapp SVGs (BuilderSidebar was already using inline SVGs — no lucide-react needed).
+
+**3. `<LandscapePrompt />` mounted on**
+| Page | featureKey | testid |
+| --- | --- | --- |
+| Billing → Invoices list | `billing_invoices` | `billing-invoices-landscape` |
+| Billing → Create Invoice | `billing_create_invoice` | `billing-create-landscape` |
+| Reports (completed archive) | `reports_list` | `reports-landscape` |
+| Owner Analytics | `analytics_dashboard` | `analytics-landscape` |
+| Report Builder A4 preview | `report_builder` | `report-builder-landscape` |
+
+CreateInvoicePage also had its `grid-cols-[1fr_320px]` upgraded to `grid-cols-1 lg:grid-cols-[1fr_320px]` so the summary column stacks under the form on tablets/phones instead of being squeezed.
+
+### Testing (iteration 47)
+- Frontend-only, mobile 390×844 + desktop 1440×900.
+- Compliance drawer: pill → drawer → policy select → auto-close + backdrop close + X close all PASS. Desktop hides pill + shows sidebar.
+- LandscapePrompt banners render mobile-only on Billing (list + create) and Reports (list). Dismiss persists across reloads via `audinexa_landscape_hint_<featureKey>`. Analytics + Report Builder are code-verified (founder role can't reach `/ha/analytics` route; report builder needs a completed session that's not in seed data).
+- Regression clean on Settings drawer + shell app-nav-mobile.
+- Success rate: 100% of testable flows.
+
+**Files touched**
+- `frontend/src/modules/compliance/CompliancePolicyPack.jsx` (drawer + hoisted PolicyList)
+- `frontend/src/components/reports/BuilderSidebar.js` (responsive shell + inline icons)
+- `frontend/src/components/ReportsPanel.js` (flex-col md:flex-row + LandscapePrompt above preview)
+- `frontend/src/modules/billing/InvoicesListPage.js`
+- `frontend/src/modules/billing/CreateInvoicePage.js`
+- `frontend/src/modules/reports/ReportsModule.js`
+- `frontend/src/modules/ha/OwnerAnalyticsPage.js`
+
+---
+
+
 ## 📱 Settings Mobile Layout + Landscape Prompt (2026-07-29)
 
 **Triggers**:
