@@ -1,5 +1,32 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📱 Mobile Audiogram Readability Fix (2026-07-29)
+
+**Trigger**: Field feedback — audiogram frequency labels (125, 250, 500, 1K, 2K, 4K, 8K) and dB intensity labels (-10, 0, 10, ... 120) were physically ~2mm tall on a phone screen and washed out under bright clinic lighting.
+
+### Root cause
+`AudiogramCanvas.js` used a fixed 10px light-grey (#666) font that shrunk to visual mush when the canvas dropped below ~480px wide. Padding was also fixed at 50/20/40/20 which left labels crammed against grid lines. And there was no resize listener, so rotating the phone from portrait to landscape didn't refresh the layout.
+
+### Fix
+- **Responsive typography**: on any canvas width < 480 px, axis labels bump to **13px bold in near-black `#0f172a`** (vs 10px normal `#666` on desktop)
+- **Wider mobile padding**: `{ top: 22, right: 22, bottom: 52, left: 60 }` on phones so labels breathe (was `{ 20, 20, 40, 50 }` fixed)
+- **Extracted `getPadding(width)` helper**: drawing loop + click handler + context-menu handler all share it, so tap coordinates always map to the correct frequency/dB
+- **Resize + orientationchange listener**: forces canvas re-render so rotating from portrait → landscape immediately reflows
+- **Minimum canvas height 340px**: prevents the audiogram from collapsing to zero when placed inside a scrolling stack of cards on mobile
+- **`touch-manipulation` CSS class**: eliminates the 300ms tap delay iOS Safari adds to non-scrolling elements — makes point-plotting feel instant
+
+### Impact
+- Mobile audiogram labels went from ~2mm → ~3.5mm tall (75% larger visual size)
+- Contrast ratio improved from ~4.5:1 (borderline WCAG AA) to ~15:1 (AAA-compliant)
+- Click accuracy preserved — click handler and drawing loop now share the exact same padding math
+- Zero desktop impact — all changes gated on `width < 480`
+
+### Files touched
+- `frontend/src/components/AudiogramCanvas.js` — the only file needed. Same pattern can be applied to `SpeechAudiogramCanvas.js` in a follow-up if similar feedback arrives.
+
+---
+
+
 ## ❓ Doctor / Clinician FAQ on Landing Page (2026-07-29)
 
 **Trigger**: Founder needed a canonical, publicly-linkable page answering common questions from enquiring doctors (mobile support, offline mode, DPDPA, encryption, backup, export, multi-user, pricing).

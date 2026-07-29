@@ -43,8 +43,31 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     right: { main: '#DC3545', light: '#FFE5E5' },
     left: { main: '#007BFF', light: '#E5F2FF' },
   };
-  
+
   const color = colors[ear];
+
+  // ---- Responsive padding helper (shared by draw + click handlers) --------
+  // On phones (< 480 px) we widen the padding so the bigger axis labels have
+  // room to breathe. Both the useEffect drawing loop and the click / context
+  // menu handlers must agree on this number, else taps land on the wrong
+  // frequency/dB.
+  const getPadding = (canvasWidth) => (
+    canvasWidth < 480
+      ? { top: 22, right: 22, bottom: 52, left: 60 }
+      : { top: 20, right: 20, bottom: 40, left: 50 }
+  );
+
+  // Force re-draw on window resize (rotation, split-screen, browser resize).
+  const [, setResizeTick] = useState(0);
+  useEffect(() => {
+    const onResize = () => setResizeTick((n) => n + 1);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -52,31 +75,42 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
 
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
-    
+
     // Set canvas resolution for high quality
     canvas.width = rect.width * window.devicePixelRatio;
     canvas.height = rect.height * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    
+
     const width = rect.width;
     const height = rect.height;
-    const padding = { top: 20, right: 20, bottom: 40, left: 50 };
-    
+
+    // ---- Responsive typography ---------------------------------------------
+    // On a phone (canvas < 480px wide) the 10px light-grey axis labels get
+    // physically ~2mm tall and disappear under bright lighting. Scale up the
+    // font size, darken the ink, add a subtle stroke halo so the numbers
+    // remain readable against the pale grid lines, and give the axis labels
+    // more breathing room in the padding zones.
+    const isCompact = width < 480;
+    const axisFontSize = isCompact ? 13 : 10;
+    const axisFontWeight = isCompact ? 'bold' : 'normal';
+    const axisColour = isCompact ? '#0f172a' : '#666';   // near-black on mobile
+    const padding = getPadding(width);
+
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
-    
+
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
-    
+
     // Draw grid
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 0.5;
-    
+
     // Horizontal lines (dB levels) - draw all for 5dB precision
     allDbLevels.forEach((db, i) => {
       const y = padding.top + (i / (allDbLevels.length - 1)) * chartHeight;
       const isMajor = majorDbLevels.includes(db);
-      
+
       // Draw grid line
       ctx.strokeStyle = isMajor ? '#d0d0d0' : '#f0f0f0'; // Darker for major, lighter for minor
       ctx.lineWidth = isMajor ? 0.8 : 0.3;
@@ -84,22 +118,22 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
       ctx.moveTo(padding.left, y);
       ctx.lineTo(padding.left + chartWidth, y);
       ctx.stroke();
-      
+
       // Y-axis labels - only for major intervals (10 dB)
       if (isMajor) {
-        ctx.fillStyle = '#666';
-        ctx.font = '10px Arial';
+        ctx.fillStyle = axisColour;
+        ctx.font = `${axisFontWeight} ${axisFontSize}px Arial`;
         ctx.textAlign = 'right';
-        ctx.fillText(db.toString(), padding.left - 10, y + 3);
+        ctx.fillText(db.toString(), padding.left - 10, y + 4);
       }
     });
-    
+
     // Vertical lines (frequencies) - logarithmic spacing
     frequencies.forEach((freq) => {
       const logPos = getLogPosition(freq);
       const x = padding.left + logPos * chartWidth;
       const isMajor = majorFrequencies.includes(freq);
-      
+
       // Set line style
       if (isMajor) {
         // Solid line for major frequencies
@@ -112,17 +146,17 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
         ctx.lineWidth = 0.5;
         ctx.setLineDash([2, 2]);
       }
-      
+
       ctx.beginPath();
       ctx.moveTo(x, padding.top);
       ctx.lineTo(x, padding.top + chartHeight);
       ctx.stroke();
       ctx.setLineDash([]); // Reset
-      
+
       // X-axis labels - ONLY for major frequencies
       if (isMajor) {
-        ctx.fillStyle = '#666';
-        ctx.font = '10px Arial';
+        ctx.fillStyle = axisColour;
+        ctx.font = `${axisFontWeight} ${axisFontSize}px Arial`;
         ctx.textAlign = 'center';
         let label;
         if (freq >= 1000) {
@@ -130,7 +164,7 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
         } else {
           label = freq.toString();
         }
-        ctx.fillText(label, x, height - 18);
+        ctx.fillText(label, x, height - (isCompact ? 22 : 18));
       }
     });
     
@@ -497,11 +531,11 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
-    const padding = { top: 20, right: 20, bottom: 40, left: 50 };
+
+    const padding = getPadding(rect.width);
     const chartWidth = rect.width - padding.left - padding.right;
     const chartHeight = rect.height - padding.top - padding.bottom;
-    
+
     if (x < padding.left || x > rect.width - padding.right || y < padding.top || y > rect.height - padding.bottom) {
       return;
     }
@@ -537,8 +571,8 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    // Keep consistent with drawing padding
-    const padding = { top: 20, right: 20, bottom: 40, left: 50 };
+    // Keep consistent with drawing padding (responsive on mobile)
+    const padding = getPadding(rect.width);
     
     // Must be inside chart area
     if (
@@ -612,8 +646,12 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
         ref={canvasRef}
         onClick={handleCanvasClick}
         onContextMenu={handleContextMenu}
-        className="w-full h-full border border-gray-400 bg-white cursor-crosshair"
-        style={{ width: '100%', height: '100%' }}
+        className="w-full border border-gray-400 bg-white cursor-crosshair touch-manipulation"
+        // On phones the parent AudiogramPanel is scrolled inside a stack of
+        // other cards, so h-full collapses to zero. Enforce a minimum of
+        // 340px (≈ 6× axis label height) so the audiogram never renders
+        // unreadably small.
+        style={{ width: '100%', height: '100%', minHeight: '340px' }}
       />
       
       {/* Context Menu */}
