@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { API, fmtINR, PAYMENT_METHODS } from './billingUtils';
 import AddServiceInlineModal from './AddServiceInlineModal';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
+import LandscapePrompt from '../../components/LandscapePrompt';
 
 // Compute totals client-side (mirrors backend logic) for live preview.
 function resolveDiscount(line, gross) {
@@ -297,7 +298,13 @@ export default function CreateInvoicePage() {
   };
 
   return (
-    <div className="p-4 grid grid-cols-[1fr_320px] gap-3" data-testid="create-invoice-page">
+    <div className="p-4 space-y-3" data-testid="create-invoice-page">
+      <LandscapePrompt
+        featureKey="billing_create_invoice"
+        message="Rotate to landscape for the full invoice editor and live summary."
+        testid="billing-create-landscape"
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">
       {/* LEFT: form */}
       <div className="space-y-3">
         {prefillBanner && (
@@ -582,6 +589,7 @@ export default function CreateInvoicePage() {
           className="w-full py-2 text-sm bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded shadow-sm">
           {saving ? 'Creating invoice…' : 'Create Invoice'}
         </button>
+      </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { DEFAULT_CLINIC, FINDINGS_TITLES, fileToResizedBase64 } from './constants';
 
 const PrintIcon = () => (
@@ -13,6 +13,24 @@ const PrintIcon = () => (
 const WhatsAppIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
     <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 2.1.66 4.05 1.79 5.67L2 22l4.56-1.86a9.96 9.96 0 0 0 5.48 1.62h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 18.15h-.01a8.23 8.23 0 0 1-4.2-1.15l-.3-.18-3.12 1.27 1.28-3.04-.2-.32a8.18 8.18 0 0 1-1.27-4.43c0-4.54 3.7-8.23 8.24-8.23 2.2 0 4.26.86 5.82 2.41a8.18 8.18 0 0 1 2.41 5.83c0 4.53-3.69 8.22-8.23 8.22Zm4.52-6.15c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.16.25-.64.81-.78.98-.15.16-.29.18-.54.06-.25-.12-1.05-.39-2-1.23a7.44 7.44 0 0 1-1.37-1.71c-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43l-.48-.01c-.16 0-.43.06-.65.31-.22.25-.85.83-.85 2.02 0 1.19.87 2.34 1 2.5.12.16 1.71 2.6 4.13 3.65.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.11-.23-.18-.48-.3Z"/>
+  </svg>
+);
+
+// Menu / hamburger icon (kept inline to avoid adding a lucide import to
+// this legacy file that already ships tiny inline SVGs).
+const MenuIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+);
+const ChevronDownIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 shrink-0">
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+);
+const CloseIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
   </svg>
 );
 
@@ -420,6 +438,8 @@ export const BuilderSidebar = ({
   // Live layout watchdog status — { pageCount, warnLevel: 'ok'|'info'|'warn'|'error' }
   layoutStatus,
 }) => {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const handleWhatsappShare = () => {
     const msg = buildWhatsappMessage({ patient, clinic, rightEarData, leftEarData, ptFindings, recText });
     const phone = normaliseMobile(patient?.mobile || patient?.phone);
@@ -429,12 +449,11 @@ export const BuilderSidebar = ({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  return (
-  <aside className="w-[280px] flex-shrink-0 bg-white border-r border-gray-300 overflow-auto no-print">
-    <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-2 py-1 border-b border-gray-300 sticky top-0 z-10">
-      <h3 className="text-xs font-bold text-gray-700">Report Builder</h3>
-    </div>
-
+  // All actual builder controls — rendered inside the desktop aside AND
+  // inside the mobile drawer. Kept as a nested render function so the
+  // parent state (findings, sections, callbacks) closes over identically
+  // in both places.
+  const sidebarInner = (
     <div className="p-2 space-y-2">
       <div className="grid grid-cols-2 gap-1.5">
         <button
@@ -447,9 +466,6 @@ export const BuilderSidebar = ({
         >
           <PrintIcon />
           Print / PDF
-          {/* Watchdog dot: lights up when analyzeReportLayout surfaces any
-              warning. Colour-coded by severity so the audiologist sees at
-              a glance whether something needs attention — no extra click. */}
           {layoutStatus?.warnLevel && layoutStatus.warnLevel !== 'ok' && (
             <span
               data-testid={`report-print-dot-${layoutStatus.warnLevel}`}
@@ -519,10 +535,6 @@ export const BuilderSidebar = ({
         onChange={setSpeechFindings}
         placeholder="SRT consistent with PTA; excellent word recognition in quiet; mild deterioration in noise…"
       />
-      {/* Per-section narrative for every other enabled diagnostic section.
-          Each gets its own textarea, ordered by the sidebar. Hidden when the
-          section is toggled off so we don't clutter the UI for tests the
-          audiologist isn't running for this patient. */}
       {sections
         .filter((s) => s.enabled
           && FINDINGS_TITLES[s.id]
@@ -581,6 +593,67 @@ export const BuilderSidebar = ({
         placeholder="Lic. No."
       />
     </div>
-  </aside>
+  );
+
+  return (
+    <>
+      {/* Mobile pill — visible on < md, hidden in print mode via no-print */}
+      <div className="md:hidden no-print sticky top-0 z-30 bg-gray-100 border-b border-gray-300 px-2 py-1.5">
+        <button
+          onClick={() => setDrawerOpen(true)}
+          data-testid="report-builder-mobile-menu-toggle"
+          className="w-full flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-xs font-semibold text-gray-700 hover:bg-gray-50 active:bg-gray-100 shadow-sm"
+        >
+          <MenuIcon />
+          <span className="flex-1 text-left">Report Builder</span>
+          {layoutStatus?.warnLevel && layoutStatus.warnLevel !== 'ok' && (
+            <span
+              aria-label={`Layout ${layoutStatus.warnLevel}`}
+              className={`w-2 h-2 rounded-full ${
+                layoutStatus.warnLevel === 'error' ? 'bg-rose-500'
+                : layoutStatus.warnLevel === 'warn' ? 'bg-amber-400'
+                : 'bg-sky-400'
+              } animate-pulse`}
+            />
+          )}
+          <ChevronDownIcon />
+        </button>
+      </div>
+
+      {/* Desktop sidebar — hidden on < md */}
+      <aside className="hidden md:block w-[280px] flex-shrink-0 bg-white border-r border-gray-300 overflow-auto no-print">
+        <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-2 py-1 border-b border-gray-300 sticky top-0 z-10">
+          <h3 className="text-xs font-bold text-gray-700">Report Builder</h3>
+        </div>
+        {sidebarInner}
+      </aside>
+
+      {/* Mobile drawer — full-height slide-in from the left */}
+      {drawerOpen && (
+        <div className="md:hidden no-print fixed inset-0 z-50 flex" data-testid="report-builder-mobile-drawer">
+          <button
+            aria-label="Close report builder"
+            onClick={() => setDrawerOpen(false)}
+            className="absolute inset-0 bg-slate-900/50"
+          />
+          <div className="relative w-[300px] max-w-[85vw] bg-white h-full shadow-xl flex flex-col animate-in slide-in-from-left duration-150">
+            <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-3 py-2 border-b border-gray-300 flex items-center justify-between shrink-0">
+              <h3 className="text-xs font-bold text-gray-700">Report Builder</h3>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                data-testid="report-builder-mobile-drawer-close"
+                className="p-1 hover:bg-white/60 rounded"
+                aria-label="Close"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {sidebarInner}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

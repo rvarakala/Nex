@@ -22,6 +22,7 @@ import { TympanometryFullPage } from './reports/TympanometrySections';
 
 // Builder sidebar (left aside)
 import { BuilderSidebar } from './reports/BuilderSidebar';
+import LandscapePrompt from './LandscapePrompt';
 
 const ReportsPanel = ({
   patient,
@@ -262,7 +263,7 @@ const ReportsPanel = ({
     .filter((s) => !(useSeparatePage && (s.id === 'results' || s.id === 'recommendations')));
 
   return (
-    <div className="flex-1 flex min-h-0 bg-gray-100 overflow-hidden">
+    <div className="flex-1 flex flex-col md:flex-row min-h-0 bg-gray-100 overflow-hidden">
       {!hideBuilder && (
         <BuilderSidebar
           sections={sections}
@@ -302,6 +303,13 @@ const ReportsPanel = ({
 
       {/* ========== LIVE PREVIEW ========== */}
       <div className="flex-1 overflow-auto bg-gray-300 p-4 print-area">
+        <div className="max-w-[210mm] mx-auto mb-2 no-print">
+          <LandscapePrompt
+            featureKey="report_builder"
+            message="Rotate to landscape (or use a tablet) — the A4 preview is 210 mm wide."
+            testid="report-builder-landscape"
+          />
+        </div>
         <div
           id={previewId}
           className="mx-auto bg-white shadow-lg report-page"

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import DiagnosticsAnalyticsTab from './DiagnosticsAnalyticsTab';
+import LandscapePrompt from '../../components/LandscapePrompt';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -101,6 +102,11 @@ export default function OwnerAnalyticsPage() {
 
   return (
     <div className="p-5 space-y-5" data-testid="ha-analytics-page">
+      <LandscapePrompt
+        featureKey="analytics_dashboard"
+        message="Rotate to landscape for wider charts and side-by-side KPI cards."
+        testid="analytics-landscape"
+      />
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Reports &amp; Analytics</h1>

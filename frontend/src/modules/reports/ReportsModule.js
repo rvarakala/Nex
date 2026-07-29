@@ -15,6 +15,7 @@ import {
   FileText, Printer, Search, UserRound, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import PatientDrawer from '../../components/PatientDrawer';
+import LandscapePrompt from '../../components/LandscapePrompt';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -111,6 +112,11 @@ export default function ReportsModule() {
 
       {/* Rows */}
       <div className="flex-1 overflow-auto p-4">
+        <LandscapePrompt
+          featureKey="reports_list"
+          message="Rotate to landscape to see every column of each report row."
+          testid="reports-landscape"
+        />
         {err && (
           <div className="mb-3 flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
             <AlertCircle size={13} /> {err}

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import EmailWeeklyCsvToggle from '../../components/EmailWeeklyCsvToggle';
+import LandscapePrompt from '../../components/LandscapePrompt';
 import { API, fmtINR, fmtDate, StatusPill } from './billingUtils';
 import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
 
@@ -57,6 +58,11 @@ export default function InvoicesListPage() {
 
   return (
     <div className="p-4 space-y-3" data-testid="invoices-list-page">
+      <LandscapePrompt
+        featureKey="billing_invoices"
+        message="Rotate to landscape for the full 7-column invoice table."
+        testid="billing-invoices-landscape"
+      />
       {/* Today's collections summary */}
       <div className="bg-gradient-to-r from-emerald-50 to-white border border-emerald-200 rounded-lg p-3">
         <div className="flex items-center justify-between">

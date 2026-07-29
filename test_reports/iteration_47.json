@@ -1,0 +1,58 @@
+{
+  "summary": "Frontend-only regression for Compliance mobile drawer, LandscapePrompt banners on Billing/Reports/Analytics/Report-builder, plus regression of the pre-existing Settings mobile drawer and app-nav-mobile shell drawer. Logged in as founder@audinexa.com at 390x844 (mobile) and 1440x900 (desktop). All new mobile drawer flows, backdrop/close/auto-close behaviours, LandscapePrompt visibility rules, dismiss persistence via localStorage, and desktop hiding rules PASS. BuilderSidebar responsive classes verified via source (md:hidden pill + hidden md:block aside + md:hidden drawer). No test IDs were broken; regression on Settings drawer and app-nav-mobile is clean.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CompliancePolicyPack.jsx: mobile drawer scopes policy buttons via [data-testid^=policy-] but PolicyStatusIcon also uses testids policy-status-signed / policy-status-unsigned / policy-status-superseded — technically prefixed the same way. Not breaking (list-item buttons remain uniquely policy-<id>) but consider a distinct prefix (e.g. policy-item-<id>) to avoid future selector ambiguity.",
+    "LandscapePrompt only re-evaluates on resize/orientationchange — SSR-safe but relies on window at first paint; fine for CRA. No action needed.",
+    "BuilderSidebar sidebarInner is a closure over many parent props; recreated every render — could be memoised, but not a correctness bug."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100% of testable flows"},
+  "test_credentials": "founder@audinexa.com / founder123 (only working login; founder role, so /ha/analytics returns role-guard denial rather than the OwnerAnalyticsPage — LandscapePrompt visibility at that route could not be UI-verified with this login. Code inspection confirms <LandscapePrompt testid=\"analytics-landscape\" /> is rendered inside OwnerAnalyticsPage at line 108.)",
+  "seed_data_creation": "None. Billing/Reports pages render empty state, which is fine — LandscapePrompt sits above and rendered correctly.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "detailed_results": {
+    "mobile_390x844": {
+      "compliance_pill_visible": true,
+      "compliance_desktop_list_hidden": true,
+      "drawer_opens_on_pill": true,
+      "policies_in_drawer": "7 policy buttons (plus status icon testids)",
+      "drawer_auto_close_on_select": true,
+      "drawer_close_via_close_btn": true,
+      "drawer_close_via_backdrop": true,
+      "billing_invoices_landscape_visible": true,
+      "billing_create_landscape_visible": true,
+      "reports_landscape_visible": true,
+      "analytics_landscape_visible": "BLOCKED_BY_ROLE — /ha/analytics guarded for clinic_owner/super_admin/accounts; founder gets denial page. Code confirms testid present.",
+      "landscape_dismiss_hides_banner": true,
+      "landscape_dismiss_writes_localstorage_key": "yes → audinexa_landscape_hint_billing_invoices",
+      "landscape_dismiss_persists_after_reload": true,
+      "settings_mobile_drawer_regression": "toggle + drawer + close all functional",
+      "app_nav_mobile_regression": "mobile-nav-toggle → app-nav-mobile drawer opens on /patients (app shell routes). Not rendered on admin/founder shell routes (expected — admin uses different shell)."
+    },
+    "desktop_1440x900": {
+      "compliance_pill_hidden": true,
+      "compliance_desktop_list_visible": true,
+      "billing_invoices_landscape_hidden": true,
+      "billing_create_landscape_hidden": true,
+      "reports_landscape_hidden": true,
+      "analytics_landscape_hidden": true
+    },
+    "report_builder_source_review": {
+      "pill_wrapper_class": "md:hidden no-print sticky top-0 z-30",
+      "desktop_aside_class": "hidden md:block w-[280px]",
+      "mobile_drawer_wrapper_class": "md:hidden no-print fixed inset-0 z-50 flex",
+      "testids_present": ["report-builder-mobile-menu-toggle", "report-builder-mobile-drawer", "report-builder-mobile-drawer-close"],
+      "verdict": "Responsive breakpoints and testids implemented correctly. Live route not reachable without a completed diagnostic session (no seed data)."
+    }
+  },
+  "context_for_next_testing_agent": "Compliance drawer, LandscapePrompt on Billing/Reports, Settings drawer regression, and app-nav-mobile shell drawer all verified. To validate analytics-landscape and report-builder-mobile-* live in the browser, seed a clinic_owner user + a completed diagnostic session. Otherwise the implementation is code-verified. LocalStorage keys used: audinexa_landscape_hint_<featureKey> (billing_invoices, billing_create_invoice, reports_list, analytics_dashboard, report_builder)."
+}
