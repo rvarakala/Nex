@@ -1,5 +1,44 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔍 Pinch-to-Zoom on Audiogram (2026-07-29)
+
+**Trigger**: Field feedback — even with the label-readability fix, precise point plotting (e.g., separating 3 kHz from 4 kHz on the log X-axis) was hard on a phone. Founder asked for pinch-zoom + pan so audiologists can drill into a region before tapping.
+
+### What shipped in `AudiogramCanvas.js`
+
+**Zoom + pan state**
+- `zoom` (clamped 1–4×), `pan` (clamped so canvas never slides off-screen)
+- `applyZoom(n)` / `resetZoom()` helpers with `clampPan()` to keep the chart in the viewport
+
+**Touch gestures**
+- **2-finger pinch** → zoom (in/out)
+- **1-finger drag** (only while zoomed) → pan
+- **Tap** → plot point (same as before — but only if no movement happened during the touch, so a pinch-release doesn't drop a stray point)
+- `touchAction: 'none'` on the canvas so the browser doesn't fight our gesture handlers
+
+**Desktop gestures**
+- **Ctrl / Cmd + wheel** → zoom (Figma-style)
+- **Right-click** context menu still works with correct coordinate mapping when zoomed
+
+**On-screen controls** (only visible when the audiogram is interactive)
+- `+` / `−` buttons for people who can't/won't pinch
+- `FIT` button — one-tap zoom back to 1× and pan back to origin
+- Zoom-level indicator (`2.4×` etc.) when above 1.05×
+- All buttons have `data-testid` for testing
+
+**Coordinate math**
+- All tap-to-plot / right-click handlers now derive `logical_x = (clientX - rect.left) × (canvas.offsetWidth / rect.width)`. This ratio automatically compensates for **any** CSS transform, so click accuracy is preserved at any zoom level.
+- The drawing `useEffect` now uses `canvas.offsetWidth / offsetHeight` (pre-transform layout size) instead of `getBoundingClientRect()`, so the internal buffer stays at logical resolution regardless of visual zoom — no memory blow-up.
+
+### Impact
+- Precise plotting at 3–4× zoom is now trivial: pinch, position, tap
+- Blur is invisible up to ~2× on DPR 2 devices (most iPhones) and ~3× on DPR 3 devices; at 4× a slight softness appears — acceptable for a live workflow tool
+- Zero desktop regression — controls only appear when audiogram is interactive (`onPlotPoint` present)
+- All existing keyboard / right-click / delete-point flows preserved
+
+---
+
+
 ## 📱 Mobile Audiogram Readability Fix (2026-07-29)
 
 **Trigger**: Field feedback — audiogram frequency labels (125, 250, 500, 1K, 2K, 4K, 8K) and dB intensity labels (-10, 0, 10, ... 120) were physically ~2mm tall on a phone screen and washed out under bright clinic lighting.

@@ -6,6 +6,46 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   const [contextMenu, setContextMenu] = useState(null);
   const [contextFrequency, setContextFrequency] = useState(null);
   const [contextDb, setContextDb] = useState(null);
+
+  // ---- Pinch-to-zoom & pan (mobile precision plotting) --------------------
+  // CSS transform keeps this simple: we scale/translate the canvas element,
+  // and translate incoming click coordinates back to the logical canvas
+  // coordinate space using the ratio canvas.offsetWidth / rect.width (which
+  // is transform-agnostic). Zoom is clamped [1, 4].
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const gestureRef = useRef({
+    // Set on 2-finger touchstart to remember initial pinch distance + zoom.
+    initialPinchDistance: 0,
+    initialZoom: 1,
+    // Set on 1-finger touchstart while zoomed to remember pan drag origin.
+    panStart: null,
+    // Set to true whenever any touch caused movement, so we suppress the
+    // synthetic `click` event that fires on touchend and would otherwise
+    // drop a stray audiogram point where the user was pinching.
+    movedDuringTouch: false,
+  });
+
+  const clampPan = (nextPan, nextZoom) => {
+    // Prevent the user from panning the canvas completely off-screen.
+    const canvas = canvasRef.current;
+    if (!canvas) return nextPan;
+    const w = canvas.offsetWidth || 1;
+    const h = canvas.offsetHeight || 1;
+    const maxX = Math.max(0, (nextZoom - 1) * w) / nextZoom;
+    const maxY = Math.max(0, (nextZoom - 1) * h) / nextZoom;
+    return {
+      x: Math.max(-maxX, Math.min(0, nextPan.x)),
+      y: Math.max(-maxY, Math.min(0, nextPan.y)),
+    };
+  };
+
+  const applyZoom = (nextZoom) => {
+    const clamped = Math.max(1, Math.min(4, nextZoom));
+    setZoom(clamped);
+    setPan((p) => clampPan(p, clamped));
+  };
+  const resetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
   
   // Standard octave frequencies (major - with labels)
   const standardMajorFreqs = [125, 250, 500, 1000, 2000, 4000, 8000];
@@ -74,15 +114,21 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
+    // IMPORTANT: use offsetWidth/Height (pre-CSS-transform layout size), not
+    // getBoundingClientRect (post-transform). Otherwise a pinch-zoom to 2×
+    // would balloon the internal buffer to 4× memory + trigger a re-draw
+    // loop that fights the CSS transform.
+    const layoutW = canvas.offsetWidth;
+    const layoutH = canvas.offsetHeight;
+    if (!layoutW || !layoutH) return;
 
     // Set canvas resolution for high quality
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
+    canvas.width = layoutW * window.devicePixelRatio;
+    canvas.height = layoutH * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
-    const width = rect.width;
-    const height = rect.height;
+    const width = layoutW;
+    const height = layoutH;
 
     // ---- Responsive typography ---------------------------------------------
     // On a phone (canvas < 480px wide) the 10px light-grey axis labels get
@@ -523,20 +569,32 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   
   const handleCanvasClick = (e) => {
     if (!onPlotPoint) return;
-    
+    // If the user was pinching / panning, ignore the synthetic click that
+    // fires when the last finger lifts — else a stray point lands on the
+    // audiogram at the release position.
+    if (gestureRef.current.movedDuringTouch) {
+      gestureRef.current.movedDuringTouch = false;
+      return;
+    }
+
     // Close context menu if open
     setContextMenu(null);
-    
+
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Convert screen click back to LOGICAL canvas coordinates. `rect` is
+    // post-CSS-transform; `canvas.offsetWidth/Height` is pre-transform.
+    // This ratio bakes in any pinch-zoom scale automatically.
+    const scaleX = canvas.offsetWidth / rect.width;
+    const scaleY = canvas.offsetHeight / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
 
-    const padding = getPadding(rect.width);
-    const chartWidth = rect.width - padding.left - padding.right;
-    const chartHeight = rect.height - padding.top - padding.bottom;
+    const padding = getPadding(canvas.offsetWidth);
+    const chartWidth = canvas.offsetWidth - padding.left - padding.right;
+    const chartHeight = canvas.offsetHeight - padding.top - padding.bottom;
 
-    if (x < padding.left || x > rect.width - padding.right || y < padding.top || y > rect.height - padding.bottom) {
+    if (x < padding.left || x > canvas.offsetWidth - padding.right || y < padding.top || y > canvas.offsetHeight - padding.bottom) {
       return;
     }
     
@@ -565,27 +623,31 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
   
   const handleContextMenu = (e) => {
     e.preventDefault();
-    
+
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
+    // Same transform-inverse math as handleCanvasClick so right-click on a
+    // zoomed audiogram still lands on the right point.
+    const scaleX = canvas.offsetWidth / rect.width;
+    const scaleY = canvas.offsetHeight / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
     // Keep consistent with drawing padding (responsive on mobile)
-    const padding = getPadding(rect.width);
-    
+    const padding = getPadding(canvas.offsetWidth);
+
     // Must be inside chart area
     if (
       x < padding.left ||
-      x > rect.width - padding.right ||
+      x > canvas.offsetWidth - padding.right ||
       y < padding.top ||
-      y > rect.height - padding.bottom
+      y > canvas.offsetHeight - padding.bottom
     ) {
       return;
     }
-    
-    const chartWidth = rect.width - padding.left - padding.right;
-    const chartHeight = rect.height - padding.top - padding.bottom;
+
+    const chartWidth = canvas.offsetWidth - padding.left - padding.right;
+    const chartHeight = canvas.offsetHeight - padding.top - padding.bottom;
     const freqRatio = (x - padding.left) / chartWidth;
     
     // Find closest frequency (log spacing)
@@ -640,19 +702,126 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
     }
   }, [contextMenu]);
 
+  // ---- Touch handlers for pinch-zoom + pan --------------------------------
+  const distance = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      // Two fingers: begin pinch
+      gestureRef.current.initialPinchDistance = distance(e.touches[0], e.touches[1]);
+      gestureRef.current.initialZoom = zoom;
+      gestureRef.current.panStart = null;
+      gestureRef.current.movedDuringTouch = false;
+    } else if (e.touches.length === 1 && zoom > 1) {
+      // One finger while zoomed: begin pan drag
+      gestureRef.current.panStart = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        pan: { ...pan },
+      };
+      gestureRef.current.movedDuringTouch = false;
+    } else {
+      gestureRef.current.movedDuringTouch = false;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && gestureRef.current.initialPinchDistance > 0) {
+      const d = distance(e.touches[0], e.touches[1]);
+      const nextZoom = gestureRef.current.initialZoom * (d / gestureRef.current.initialPinchDistance);
+      applyZoom(nextZoom);
+      gestureRef.current.movedDuringTouch = true;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && gestureRef.current.panStart && zoom > 1) {
+      const start = gestureRef.current.panStart;
+      const dx = e.touches[0].clientX - start.x;
+      const dy = e.touches[0].clientY - start.y;
+      // Divide by zoom so panning feels 1:1 with finger movement.
+      const next = { x: start.pan.x + dx / zoom, y: start.pan.y + dy / zoom };
+      setPan(clampPan(next, zoom));
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) gestureRef.current.movedDuringTouch = true;
+      e.preventDefault();
+    }
+  };
+
+  const handleTouchEnd = () => {
+    gestureRef.current.initialPinchDistance = 0;
+    gestureRef.current.panStart = null;
+    // movedDuringTouch is checked by handleCanvasClick then cleared there.
+  };
+
+  const handleWheel = (e) => {
+    // Ctrl/Cmd + wheel = zoom on desktop (matches Figma / VS Code convention).
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const delta = -e.deltaY * 0.005;
+    applyZoom(zoom * (1 + delta));
+  };
+
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full overflow-hidden" data-testid="audiogram-canvas-wrap">
       <canvas
         ref={canvasRef}
         onClick={handleCanvasClick}
         onContextMenu={handleContextMenu}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onWheel={handleWheel}
         className="w-full border border-gray-400 bg-white cursor-crosshair touch-manipulation"
         // On phones the parent AudiogramPanel is scrolled inside a stack of
         // other cards, so h-full collapses to zero. Enforce a minimum of
         // 340px (≈ 6× axis label height) so the audiogram never renders
         // unreadably small.
-        style={{ width: '100%', height: '100%', minHeight: '340px' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          minHeight: '340px',
+          transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
+          transformOrigin: '0 0',
+          transition: gestureRef.current.initialPinchDistance || gestureRef.current.panStart
+            ? 'none' : 'transform 120ms ease-out',
+          touchAction: 'none',   // let JS own pinch/pan
+        }}
       />
+
+      {/* Zoom controls — visible only when the audiogram is interactive */}
+      {onPlotPoint && (
+        <div
+          className="absolute top-2 right-2 flex flex-col gap-1 bg-white/95 border border-gray-300 rounded shadow-sm p-1 z-10"
+          data-testid="audiogram-zoom-controls"
+        >
+          <button
+            type="button"
+            onClick={() => applyZoom(zoom * 1.4)}
+            disabled={zoom >= 4}
+            className="w-8 h-8 text-lg font-semibold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
+            title="Zoom in (or pinch)"
+            data-testid="audiogram-zoom-in"
+          >+</button>
+          <button
+            type="button"
+            onClick={() => applyZoom(zoom / 1.4)}
+            disabled={zoom <= 1}
+            className="w-8 h-8 text-lg font-semibold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
+            title="Zoom out"
+            data-testid="audiogram-zoom-out"
+          >−</button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+            className="w-8 h-7 text-[10px] font-bold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
+            title="Fit"
+            data-testid="audiogram-zoom-fit"
+          >FIT</button>
+          {zoom > 1.05 && (
+            <div className="text-[10px] text-center text-slate-500 font-mono" data-testid="audiogram-zoom-level">
+              {zoom.toFixed(1)}×
+            </div>
+          )}
+        </div>
+      )}
       
       {/* Context Menu */}
       {contextMenu && (
