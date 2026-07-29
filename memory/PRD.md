@@ -1,5 +1,58 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔒 Per-User Device Restriction (2026-07-29)
+
+**User ask**: Netflix-style device limit — BASIC clinics get 2 concurrent devices per user, STANDARD 4. Founder/super_admin unlimited. On the (N+1)ᵗʰ login, prompt user to pick a device to sign out. 7-day warn-only rollout before hard enforcement.
+
+### What shipped
+
+**Backend** (`utils/device_limits.py` — new, 190 LOC)
+- `TIER_DEVICE_LIMIT = {BASIC: 2, STANDARD: 4, PREMIUM: 8}` + `UNLIMITED = 9999`
+- `STALE_AFTER_DAYS = 30` — sessions idle >30 days don't count against the cap
+- `enforce_or_warn(db, user, clinic, replace_session_id)` orchestrates the whole check:
+  - Count active sessions (not revoked, seen in last 30 days)
+  - If under cap → allow
+  - If at cap AND `replace_session_id` provided → atomically revoke + mint (returns `replaced=<sid>`)
+  - Else, based on env `DEVICE_LIMIT_ENFORCE` → return `action='block'` (with device list) or `action='warn'`
+- Kill-switch env: `DEVICE_LIMIT_ENFORCE=false` (default, warn-only rollout)
+- Wired into `POST /api/auth/login` (server.py) and `POST /api/auth/mfa/verify-login` (routers/mfa.py)
+- `LoginRequest` gains optional `replace_session_id: str`
+- New endpoint `GET /api/auth/sessions/device-limit` returns `{count, cap, unlimited, enforced, tier, at_limit}` — powers the Sessions & Devices chip
+
+**Response contract on 409**
+```json
+{"detail": {
+  "code": "DEVICE_LIMIT_EXCEEDED",
+  "cap": 2, "count": 2,
+  "devices": [{"session_id","device_label","ip","last_seen_at",...}],
+  "message": "You are signed in on 2 devices — your plan allows 2..."
+}}
+```
+
+**Frontend**
+- `components/DeviceLimitModal.jsx` — new. Slick device picker with icon-per-device-type + "Sign out" buttons per row. Testids: `device-limit-modal`, `device-limit-row-<sid>`, `device-limit-kick-<sid>`, `device-limit-cancel`.
+- `pages/LoginPage.js` — catches `deviceLimitExceeded` from both login + MFA-verify paths, pops the modal, retries with `replace_session_id`. Handles the MFA branch too.
+- `AuthContext.js` — `login()` and `loginVerifyMfa()` now accept `{replaceSessionId}` and decorate 409 exceptions with `ex.deviceLimitExceeded=true, ex.cap, ex.count, ex.devices`.
+- `modules/settings/SessionsList.jsx` — adds `sessions-device-cap-chip` chip ("3/4 · STANDARD") and, when at/over cap, a warning banner `sessions-device-limit-banner` with an "Upgrade" link (hidden for PREMIUM).
+
+**Founder / super_admin exemption**
+`cap_for_user(user, clinic)` short-circuits to `UNLIMITED` for `role in {"founder","super_admin"}` so platform ops can never be locked out.
+
+### Rollout plan (already scaffolded)
+- **Day 0 (now)** — preview env has `DEVICE_LIMIT_ENFORCE=false`. All logins succeed; users at cap see the amber banner on Sessions & Devices.
+- **Day 7** — flip `DEVICE_LIMIT_ENFORCE=true` in prod after the founder dashboard shows no critical clinics still permanently over cap.
+
+### Testing
+- Backend: `tests/test_device_limits.py` — 4 tests, all PASS (founder unlimited, /device-limit shape, warn-mode passthrough, replace_session_id atomic revoke).
+- E2E: `tests/test_device_limits_e2e.py` (added by testing agent) — 3 tests PASS against preview URL.
+- Frontend: testing agent (iteration_48) — 100 % PASS; modal, chip, banner, atomic-kick-then-login all verified live.
+- Regression: `test_user_sessions.py` + `test_auth_cookies_csrf.py` still 6/6 PASS.
+
+**Manual test account added**: `dltest@example.com` / `TestPass@123` — BASIC-tier clinic (`clinic-dl-test-clinic-851466`), email verified, used for ad-hoc UI checks.
+
+---
+
+
 ## 📱 Mobile Drawer Pattern Rollout + LandscapePrompt Reuse (2026-07-29 — follow-up)
 
 **Trigger**: Founder wanted the Settings-style mobile drawer pattern to be applied to every other page with a fixed sidebar, and to drop `<LandscapePrompt featureKey="..." />` on data-heavy screens (Billing, Reports).

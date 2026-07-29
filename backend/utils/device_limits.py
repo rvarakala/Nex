@@ -179,6 +179,21 @@ async def enforce_or_warn(
             new_count = await count_active_sessions(db, user["user_id"])
             if new_count < cap:
                 return {"action": "allow", "count": new_count, "cap": cap, "replaced": replace_session_id}
+            # Rare edge — after the warn-only rollout window a user can
+            # carry more active sessions than their cap allows. The revoke
+            # DID free a slot; surface `replaced` even if we still need to
+            # warn/block on the leftover excess so the UI can accurately
+            # report "we signed you out on device X".
+            if is_enforcement_enabled():
+                devices = await list_active_sessions(db, user["user_id"])
+                return {
+                    "action": "block",
+                    "count": new_count,
+                    "cap": cap,
+                    "devices": devices,
+                    "replaced": replace_session_id,
+                }
+            return {"action": "warn", "count": new_count, "cap": cap, "replaced": replace_session_id}
         # If the revoke didn't take (already gone or not the user's), we
         # fall through into the normal block flow so the client can
         # re-pick from a fresh device list.
