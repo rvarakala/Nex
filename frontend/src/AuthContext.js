@@ -174,10 +174,13 @@ export const AuthProvider = ({ children }) => {
     } catch { /* ignore */ }
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, { replaceSessionId = null } = {}) => {
     let r;
     try {
-      r = await axios.post(`${API}/auth/login`, { email, password });
+      r = await axios.post(`${API}/auth/login`, {
+        email, password,
+        ...(replaceSessionId ? { replace_session_id: replaceSessionId } : {}),
+      });
     } catch (e) {
       // Email verification gate — hard-block via 403 EMAIL_NOT_VERIFIED.
       // We rethrow a special error the LoginPage recognises and uses to
@@ -187,6 +190,17 @@ export const AuthProvider = ({ children }) => {
         const err = new Error(d.message || 'Please verify your email first.');
         err.emailNotVerified = true;
         err.email = d.email || email;
+        throw err;
+      }
+      // Device-limit gate — 409 DEVICE_LIMIT_EXCEEDED. Rethrow a decorated
+      // error so LoginPage can pop the DeviceLimitModal without decoding
+      // the raw axios envelope itself.
+      if (e?.response?.status === 409 && d && typeof d === 'object' && d.code === 'DEVICE_LIMIT_EXCEEDED') {
+        const err = new Error(d.message || 'Device limit reached');
+        err.deviceLimitExceeded = true;
+        err.cap = d.cap;
+        err.count = d.count;
+        err.devices = d.devices || [];
         throw err;
       }
       throw e;
@@ -214,10 +228,25 @@ export const AuthProvider = ({ children }) => {
     return r.data.user;
   };
 
-  const loginVerifyMfa = async (mfaToken, code, useRecoveryCode = false) => {
-    const r = await axios.post(`${API}/auth/mfa/verify-login`, {
-      mfa_token: mfaToken, code, use_recovery_code: useRecoveryCode,
-    });
+  const loginVerifyMfa = async (mfaToken, code, useRecoveryCode = false, { replaceSessionId = null } = {}) => {
+    let r;
+    try {
+      r = await axios.post(`${API}/auth/mfa/verify-login`, {
+        mfa_token: mfaToken, code, use_recovery_code: useRecoveryCode,
+        ...(replaceSessionId ? { replace_session_id: replaceSessionId } : {}),
+      });
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      if (e?.response?.status === 409 && d && typeof d === 'object' && d.code === 'DEVICE_LIMIT_EXCEEDED') {
+        const err = new Error(d.message || 'Device limit reached');
+        err.deviceLimitExceeded = true;
+        err.cap = d.cap;
+        err.count = d.count;
+        err.devices = d.devices || [];
+        throw err;
+      }
+      throw e;
+    }
     localStorage.removeItem(LEGACY_TOKEN_KEY);
     setUser(r.data.user);
     setClinic(r.data.clinic);

@@ -171,6 +171,10 @@ class MfaLoginVerifyIn(BaseModel):
     mfa_token: str
     code: str = Field(min_length=6, max_length=12)
     use_recovery_code: bool = False
+    # Mirrors LoginRequest — if the user was blocked by DEVICE_LIMIT_EXCEEDED
+    # on a previous login attempt and picked a device to kick, pass its
+    # session_id here so we revoke + mint in one shot.
+    replace_session_id: str | None = None
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────
@@ -306,6 +310,32 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
             raise HTTPException(status_code=401, detail="Invalid code")
 
     from routers.user_sessions import mint_session_row
+    # Device-limit gate — same policy as /auth/login. Runs *after* the TOTP/
+    # recovery code has been validated so we never leak a "wrong device"
+    # signal to attackers.
+    from utils.device_limits import enforce_or_warn
+    from utils.tiers import resolve_effective_tier
+    clinic_for_cap = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "subscription_tier": 1, "trial_ends_at": 1},
+    )
+    if clinic_for_cap:
+        clinic_for_cap["effective_tier"] = await resolve_effective_tier(clinic_for_cap)
+    dl_result = await enforce_or_warn(
+        db, user, clinic_for_cap,
+        replace_session_id=payload.replace_session_id,
+    )
+    if dl_result["action"] == "block":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DEVICE_LIMIT_EXCEEDED",
+                "cap": dl_result["cap"],
+                "count": dl_result["count"],
+                "devices": dl_result["devices"],
+                "message": f"You are signed in on {dl_result['count']} devices — your plan allows {dl_result['cap']}. Sign out on one device to continue.",
+            },
+        )
     sid = await mint_session_row(db, user, request, purpose="mfa")
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
@@ -326,7 +356,7 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
     from utils.auth_cookies import set_auth_cookies
     csrf = set_auth_cookies(response, token, request)
 
-    return {
+    resp_body = {
         "access_token": token,
         "token_type": "bearer",
         "csrf_token": csrf,
@@ -340,6 +370,14 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
         },
         "clinic": clinic,
     }
+    if dl_result and dl_result.get("action") in {"warn", "allow"}:
+        resp_body["device_limit"] = {
+            "action":   dl_result["action"],
+            "count":    dl_result.get("count", 0) + 1,
+            "cap":      dl_result["cap"],
+            "replaced": dl_result.get("replaced"),
+        }
+    return resp_body
 
 
 # ─── Helper exposed to server.login() ────────────────────────────────────

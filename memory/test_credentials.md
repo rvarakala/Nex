@@ -9,6 +9,17 @@
 
 
 
+> **🔒 Device limit (2026-07-29)**: Per-user concurrent-session cap enforced
+> based on clinic tier (BASIC=2, STANDARD=4, PREMIUM=8, founder/super_admin=∞).
+> Currently in **warn-only mode** — env `DEVICE_LIMIT_ENFORCE=false`. Flip to
+> `true` to enable hard blocking. For pytest, the AUDIO role (`pytest.audio@`)
+> on the BASIC-tier `clinic-pytest-suite` is the go-to non-exempt account to
+> hit the cap (super_admin/founder skip the check entirely).
+>
+> Extra manual test account (for the ad-hoc device-limit UI checks):
+> - `dltest@example.com` / `TestPass@123` — clinic_id `clinic-dl-test-clinic-851466` on BASIC tier, email verified.
+
+
 ## ⚠️ Production Mode (`DISABLE_DEMO_SEED=1`)
 When this env var is set on the backend (recommended in production):
 - The 4 ACS demo users (`admin@acs.in`, etc.), the second Delhi test clinic, the 4 admin-panel demo tenants, and the sample leads are **NOT** seeded.

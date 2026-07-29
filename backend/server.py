@@ -609,6 +609,35 @@ async def login(req: LoginRequest, request: Request, response: Response):
     if user.get("mfa_enabled"):
         return issue_mfa_challenge(user["user_id"])
 
+    # ── Device-limit gate ── Netflix-style per-user cap keyed to the
+    # clinic's effective tier. On the 3rd concurrent device for a BASIC
+    # user (or 5th for STANDARD, 9th for PREMIUM) we either:
+    #   - block with a 409 + device picker (DEVICE_LIMIT_ENFORCE=true), or
+    #   - warn silently (rollout mode) and let the login continue.
+    from utils.device_limits import enforce_or_warn
+    clinic_for_cap = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "subscription_tier": 1, "trial_ends_at": 1},
+    )
+    if clinic_for_cap:
+        from utils.tiers import resolve_effective_tier
+        clinic_for_cap["effective_tier"] = await resolve_effective_tier(clinic_for_cap)
+    dl_result = await enforce_or_warn(
+        db, user, clinic_for_cap,
+        replace_session_id=req.replace_session_id,
+    )
+    if dl_result["action"] == "block":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DEVICE_LIMIT_EXCEEDED",
+                "cap": dl_result["cap"],
+                "count": dl_result["count"],
+                "devices": dl_result["devices"],
+                "message": f"You are signed in on {dl_result['count']} devices — your plan allows {dl_result['cap']}. Sign out on one device to continue.",
+            },
+        )
+
     sid = await mint_session_row(db, user, request, purpose="login")
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
@@ -623,7 +652,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     # returns `access_token` for backward compat with existing localStorage
     # clients during the migration window.
     csrf = set_auth_cookies(response, token, request)
-    return {
+    resp_body = {
         "access_token": token,
         "token_type": "bearer",
         "csrf_token": csrf,
@@ -637,6 +666,17 @@ async def login(req: LoginRequest, request: Request, response: Response):
         },
         "clinic": clinic,
     }
+    # Surface the device-limit outcome so the frontend can render either
+    # a soft banner ("You are at 2/2 devices — upgrade to Standard for
+    # 2 more slots") in warn-mode or nothing when the cap isn't hit.
+    if dl_result and dl_result.get("action") in {"warn", "allow"}:
+        resp_body["device_limit"] = {
+            "action":  dl_result["action"],
+            "count":   dl_result.get("count", 0) + 1,   # include the session we just minted
+            "cap":     dl_result["cap"],
+            "replaced": dl_result.get("replaced"),
+        }
+    return resp_body
 
 
 @api_router.get("/auth/me")

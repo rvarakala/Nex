@@ -214,3 +214,32 @@ async def revoke_other_sessions(
         {"$set": {"revoked_at": datetime.now(timezone.utc)}},
     )
     return {"success": True, "revoked": res.modified_count}
+
+
+# ─── Device-limit summary ───────────────────────────────────────────────
+# Powers the "Devices: 3/4 · Standard plan" chip on the Sessions & Devices
+# page and the warning banner during the enforcement rollout window.
+
+
+@router.get("/device-limit")
+async def get_device_limit(user=Depends(get_current_user), db=Depends(get_db)):
+    from utils.device_limits import (
+        cap_for_user, count_active_sessions, is_enforcement_enabled, UNLIMITED,
+    )
+    from utils.tiers import resolve_effective_tier
+    clinic = await db.clinics.find_one(
+        {"clinic_id": user["clinic_id"]},
+        {"_id": 0, "subscription_tier": 1, "trial_ends_at": 1},
+    )
+    if clinic:
+        clinic["effective_tier"] = await resolve_effective_tier(clinic)
+    cap = cap_for_user(user, clinic)
+    count = await count_active_sessions(db, user["user_id"])
+    return {
+        "count": count,
+        "cap": cap,
+        "unlimited": cap >= UNLIMITED,
+        "enforced": is_enforcement_enabled(),
+        "tier": (clinic or {}).get("effective_tier") or "BASIC",
+        "at_limit": (cap < UNLIMITED and count >= cap),
+    }

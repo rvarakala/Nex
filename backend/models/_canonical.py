@@ -73,6 +73,10 @@ class User(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(..., max_length=320)        # RFC 5321 max email length
     password: str = Field(..., min_length=1, max_length=72)  # bcrypt's hard limit
+    # Optional device-limit escape hatch — the login-again call from the
+    # DEVICE_LIMIT_EXCEEDED picker includes the session_id the user chose
+    # to kick. Backend revokes it and mints the new session in one hop.
+    replace_session_id: str | None = Field(default=None, max_length=64)
 
 
 # ==================== TOKEN + QUEUE (UC-01 front-desk) ====================

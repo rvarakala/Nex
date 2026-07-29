@@ -1,0 +1,22 @@
+{
+  "summary": "Device-limit feature regression tested end-to-end. Backend: 4/4 test_device_limits.py PASS, 6/6 test_auth_cookies_csrf PASS, test_user_sessions SKIPPED (3, expected — DISABLE_DEMO_SEED). Added new /app/backend/tests/test_device_limits_e2e.py hitting the preview URL (3 tests) — all PASS. Warn-mode login includes device_limit={action,count,cap,replaced}, founder is unlimited, /api/auth/sessions/device-limit returns correct shape, replace_session_id atomically revokes+mints. Flipped DEVICE_LIMIT_ENFORCE=true temporarily and verified: 3rd login → 409 with detail.code='DEVICE_LIMIT_EXCEEDED', devices list, cap=2, count=2. Frontend: device-limit-modal appears on 409, lists rows/kick buttons via data-testid, clicking kick completes login → /patients. Sessions & Devices chip on /settings/security shows '3/2 · BASIC' for dltest, warning banner rendered; chip absent for founder (unlimited). DEVICE_LIMIT_ENFORCE flipped back to false at end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_device_limits.py",
+    "/app/backend/tests/test_device_limits_e2e.py",
+    "/app/test_reports/pytest/device_limits.xml",
+    "/app/test_reports/pytest/device_limits_e2e.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "utils/device_limits.py enforce_or_warn(): when count>=cap AND replace_session_id is provided, if revoke succeeds but new_count is still >= cap (user has many stale sessions from warn-mode rollout), the response falls through to action='warn' with replaced=None — silently swallowing the successful revoke. Consider always returning replaced=sid when revoke succeeded, independent of new_count vs cap. Not blocking; only shows up when a user already has more sessions than the cap allows."
+  ],
+  "updated_files": ["/app/backend/tests/test_device_limits_e2e.py (new)"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "dltest@example.com/TestPass@123 (BASIC), founder@audinexa.com/founder123 (unlimited)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "DEVICE_LIMIT_ENFORCE is back to false. dltest has multiple active sessions after this run; POST /api/auth/sessions/revoke-others to reset. E2E file: tests/test_device_limits_e2e.py."
+}

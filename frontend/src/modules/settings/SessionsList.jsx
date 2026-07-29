@@ -43,12 +43,17 @@ export default function SessionsList() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(null);   // session_id being revoked, or 'all'
   const [pulse, setPulse] = useState(0);    // bump to force a refetch
+  const [limit, setLimit] = useState(null); // {count, cap, tier, at_limit, enforced, unlimited}
 
   const refresh = useCallback(async () => {
     setErr('');
     try {
-      const r = await axios.get(API);
-      setRows(r.data || []);
+      const [rowsRes, limitRes] = await Promise.all([
+        axios.get(API),
+        axios.get(`${API}/device-limit`).catch(() => ({ data: null })),
+      ]);
+      setRows(rowsRes.data || []);
+      setLimit(limitRes.data || null);
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Failed to load sessions');
       setRows([]);
@@ -90,6 +95,21 @@ export default function SessionsList() {
             <ShieldCheck size={14} className="text-emerald-600" />
             <span className="font-bold text-slate-900 text-sm">Active sessions</span>
             <span className="text-[11px] text-slate-500">({rows.length})</span>
+            {limit && !limit.unlimited && (
+              <span
+                data-testid="sessions-device-cap-chip"
+                title={limit.enforced
+                  ? `Your ${limit.tier} plan allows ${limit.cap} concurrent devices. The next login on a new device will require signing out here first.`
+                  : `Your ${limit.tier} plan allows ${limit.cap} concurrent devices. We're currently in the 7-day warn-only rollout — no hard blocks yet.`}
+                className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${
+                  limit.at_limit
+                    ? 'bg-amber-50 border-amber-300 text-amber-800'
+                    : 'bg-slate-50 border-slate-300 text-slate-700'
+                }`}
+              >
+                {limit.count}/{limit.cap} · {limit.tier}
+              </span>
+            )}
           </div>
           <p className="text-[12px] text-slate-600 mt-0.5 max-w-md">
             Devices currently signed in to your account. Revoking a session signs
@@ -125,6 +145,26 @@ export default function SessionsList() {
       {err && (
         <div className="px-4 py-2 bg-rose-50 border-b border-rose-200 text-[12px] text-rose-700" data-testid="sessions-err">
           {err}
+        </div>
+      )}
+
+      {limit && !limit.unlimited && limit.at_limit && (
+        <div
+          data-testid="sessions-device-limit-banner"
+          className={`px-4 py-2 border-b text-[12px] ${
+            limit.enforced
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}
+        >
+          {limit.enforced ? (
+            <>You&apos;ve reached your device limit ({limit.count}/{limit.cap}). New sign-ins on other devices will be blocked until you sign out here.</>
+          ) : (
+            <>You&apos;re at your device limit ({limit.count}/{limit.cap}). Enforcement starts soon — sign out an old device to stay ahead of the change.</>
+          )}
+          {limit.tier !== 'PREMIUM' && (
+            <> · <a href="/settings/subscription" className="font-bold underline">Upgrade for more devices</a></>
+          )}
         </div>
       )}
 

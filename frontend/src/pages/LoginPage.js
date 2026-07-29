@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import OpenInAppLink from '../connectivity/OpenInAppLink';
+import DeviceLimitModal from '../components/DeviceLimitModal';
 
 export default function LoginPage() {
   const { user, login, loginVerifyMfa } = useAuth();
@@ -15,6 +16,13 @@ export default function LoginPage() {
   const [mfaToken, setMfaToken] = useState(null);   // when set, render the OTP form
   const [mfaCode, setMfaCode] = useState('');
   const [useRecovery, setUseRecovery] = useState(false);
+
+  // ── Device-limit modal state ──
+  // When the server returns 409 DEVICE_LIMIT_EXCEEDED, we surface a picker
+  // so the user chooses which of their existing devices to sign out. The
+  // retry then goes through the same code path with `replace_session_id`.
+  const [deviceLimit, setDeviceLimit] = useState(null); // {cap, count, devices, path: 'login'|'mfa'}
+  const [kickingSid, setKickingSid] = useState(null);
 
 const roleHome = (role) => {
   if (['founder', 'super_admin', 'sales_manager', 'support_agent', 'finance_manager', 'product_ops', 'read_only'].includes(role)) return '/admin/dashboard';
@@ -46,6 +54,13 @@ const roleHome = (role) => {
         navigate(`/verify-email?email=${encodeURIComponent(ex.email || email)}`, { replace: true });
         return;
       }
+      // Device-limit — show the picker modal.
+      if (ex?.deviceLimitExceeded) {
+        setDeviceLimit({
+          cap: ex.cap, count: ex.count, devices: ex.devices, path: 'login',
+        });
+        return;
+      }
       const d = ex?.response?.data?.detail;
       setErr(typeof d === 'string' ? d : (ex?.message || 'Login failed'));
     } finally {
@@ -60,10 +75,51 @@ const roleHome = (role) => {
       const u = await loginVerifyMfa(mfaToken, mfaCode.trim(), useRecovery);
       navigate(roleHome(u.role), { replace: true });
     } catch (ex) {
+      if (ex?.deviceLimitExceeded) {
+        setDeviceLimit({
+          cap: ex.cap, count: ex.count, devices: ex.devices, path: 'mfa',
+        });
+        return;
+      }
       const d = ex?.response?.data?.detail;
       setErr(typeof d === 'string' ? d : (ex?.message || 'Invalid code'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Handler invoked by DeviceLimitModal when the user picks a device to kick.
+  // We retry the ORIGINAL login (or MFA) path with `replaceSessionId` set.
+  const handleDeviceLimitPick = async (sessionId) => {
+    setKickingSid(sessionId); setErr(null);
+    try {
+      let u;
+      if (deviceLimit?.path === 'mfa') {
+        u = await loginVerifyMfa(mfaToken, mfaCode.trim(), useRecovery, { replaceSessionId: sessionId });
+      } else {
+        u = await login(email.trim(), password, { replaceSessionId: sessionId });
+        if (u && u.requiresMfa) {
+          setMfaToken(u.mfaToken);
+          setDeviceLimit(null);
+          return;
+        }
+      }
+      navigate(roleHome(u.role), { replace: true });
+    } catch (ex) {
+      if (ex?.deviceLimitExceeded) {
+        // Server rejected the replace (session was already revoked etc)
+        // — refresh the modal with the fresh device list.
+        setDeviceLimit({
+          cap: ex.cap, count: ex.count, devices: ex.devices,
+          path: deviceLimit?.path || 'login',
+        });
+      } else {
+        const d = ex?.response?.data?.detail;
+        setErr(typeof d === 'string' ? d : (ex?.message || 'Sign out failed'));
+        setDeviceLimit(null);
+      }
+    } finally {
+      setKickingSid(null);
     }
   };
 
@@ -205,6 +261,17 @@ const roleHome = (role) => {
           <OpenInAppLink />
         </div>
       </div>
+
+      {deviceLimit && (
+        <DeviceLimitModal
+          devices={deviceLimit.devices}
+          cap={deviceLimit.cap}
+          count={deviceLimit.count}
+          busySid={kickingSid}
+          onPick={handleDeviceLimitPick}
+          onCancel={() => setDeviceLimit(null)}
+        />
+      )}
     </div>
   );
 }
