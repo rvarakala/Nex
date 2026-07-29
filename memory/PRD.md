@@ -1,5 +1,37 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ❓ Doctor / Clinician FAQ on Landing Page (2026-07-29)
+
+**Trigger**: Founder needed a canonical, publicly-linkable page answering common questions from enquiring doctors (mobile support, offline mode, DPDPA, encryption, backup, export, multi-user, pricing).
+
+### What shipped
+- **Tabbed FAQ section** on the landing page (`LandingPageV3.jsx`) at `#faq`. Two tabs:
+  - **General** — original 6 pre-launch questions (trial, DPDPA, GST, import, multi-branch, cancellation)
+  - **For Clinicians** — new 10 doctor-facing questions covering everything asked in the sample enquiry
+- **Deep-linkable** — `audinexa.com/#faq-clinicians` (or `#faq-doctors`) opens directly on the clinician tab and instant-scrolls to the section, ready to paste into WhatsApp replies
+- **Footer link added** — "For Clinicians" now appears in the footer under Product
+- **Saffron pill tab styling** matches the landing page design system (F.mono font, C.saffron accent)
+
+### The 10 clinician Q&As covered
+1. PC vs mobile/tablet (responsive PWA-style)
+2. Offline mode (encrypted local cache + write outbox)
+3. Data storage + tenant isolation (India cloud, DPDPA, row-level separation)
+4. Security (HTTPS, bcrypt, 7-role RBAC, 2FA, session revocation, brute-force protection)
+5. Encryption in-transit (TLS 1.3) + at-rest (Mongo enc, AES-GCM 256 in browser cache)
+6. Backup (daily 03:00 IST, point-in-time restore)
+7. Data export (built-in module, CSV + PDF + signed ZIP)
+8. Multi-user (unlimited on Std/Premium, 7-role RBAC, multi-branch)
+9. Cloud access (any browser, any location)
+10. Pricing (₹499 / ₹999 / ₹1,499 tiers, 30-day Premium trial, Razorpay)
+
+### Testing verified
+- ✅ Screenshot confirms deep-link `#faq-clinicians` lands correctly on the clinician tab with first Q&A expanded
+- ✅ Apostrophe rendering fixed (typography curly quotes rendered literally, not as `&rsquo;`)
+- ✅ Frontend lint clean
+
+---
+
+
 ## 🎁 Comped Clinics Report (2026-07-28)
 
 **Trigger**: After adding the "Gift Free Trial" flow, founder needs a tab that lists every gifted clinic with its months, reason, expiry, and days-remaining — the early-adopter cohort tracker.

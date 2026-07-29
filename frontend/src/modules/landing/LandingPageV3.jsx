@@ -785,7 +785,33 @@ function FaqItem({ q, a, idx }) {
   );
 }
 function FAQ() {
-  const items = [
+  const [tab, setTab] = useState('general');
+
+  // Support deep-links: /#faq-clinicians opens the clinician tab AND scrolls
+  // to the section so Dr. Ravindra can paste "audinexa.com/#faq-clinicians"
+  // in WhatsApp replies and land the reader right on the doctor Q&A.
+  useEffect(() => {
+    const applyHash = () => {
+      const h = (window.location.hash || '').toLowerCase();
+      if (h.includes('clinician') || h.includes('doctor')) {
+        setTab('clinicians');
+        // Give React a beat to render the switched tab, then jump straight
+        // to the section (instant, not smooth — the visitor already asked
+        // for this exact section by URL).
+        setTimeout(() => {
+          const el = document.getElementById('faq');
+          if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' });
+        }, 200);
+      } else if (h === '#faq') {
+        setTab('general');
+      }
+    };
+    applyHash();
+    window.addEventListener('hashchange', applyHash);
+    return () => window.removeEventListener('hashchange', applyHash);
+  }, []);
+
+  const generalItems = [
     { q: 'What&rsquo;s in the free 30-day trial?', a: 'Everything. Full Premium access — diagnostics, hearing-aid sales, repair, analytics, referral partners. No card required. After 30 days your clinic automatically moves to the Basic plan (still free) unless you upgrade.' },
     { q: 'How does AUDINEXA handle DPDPA?', a: 'Every patient record is encrypted at rest, access-audited, and comes with a one-click data-export bundle for compliance requests. We&rsquo;re DPDPA-ready out of the box.' },
     { q: 'Is invoicing GST-compliant?', a: 'Yes — CGST / SGST / IGST auto-computed, HSN codes for every device SKU, e-invoice format ready for your CA. Monthly summary CSV exportable in one click.' },
@@ -793,6 +819,22 @@ function FAQ() {
     { q: 'What about multiple branches?', a: 'Yes — every plan supports multi-branch. Owners see rolled-up analytics; each branch has its own MRD sequence, invoice numbering, and staff scoping.' },
     { q: 'How do I cancel?', a: 'One click in Settings → Billing. No calls, no email loops. You keep read-only access to your data for 90 days after cancellation, and can export everything as a CSV bundle.' },
   ];
+
+  const clinicianItems = [
+    { q: 'Is AUDINEXA PC-only, or does it work on mobile and tablet?', a: 'It’s a fully responsive web app that works on desktops, laptops, tablets and mobile phones through any modern browser (Chrome, Safari, Edge, Firefox). No app-store install required. The mobile layout has a dedicated bottom navigation bar so audiologists can do sessions, quick sales and appointments right from an iPad at the chairside.' },
+    { q: 'Is there an offline version for clinics without continuous internet?', a: 'Yes — AUDINEXA has a built-in offline mode. Recently viewed patient records, invoices and reports stay accessible from an encrypted local cache. New writes (audiograms, invoices, appointments) are queued in a local outbox and sync automatically once the connection returns. Power cuts and Wi-Fi drops never block a clinic visit.' },
+    { q: 'How is patient data stored and protected?', a: 'Data lives on enterprise MongoDB hosted on secure Indian cloud infrastructure. The platform is DPDPA-compliant. Each clinic has strict data isolation — one clinic can never see or query another clinic’s data (row-level tenant separation enforced server-side on every request). Every access, edit and delete is written to a full audit trail with user, timestamp and IP.' },
+    { q: 'How secure is the software against data loss, unauthorized access and cyber threats?', a: 'HTTPS-only end-to-end (Cloudflare WAF at the edge). Passwords hashed with bcrypt (never stored in plain text). 7-role RBAC — Owner, Audiologist, Front Desk, Service Technician, Read-only, etc. — so staff only see what they need. Session-level revocation lets the owner log out any staff device instantly. Optional 2-Factor Authentication for owner accounts. Rate limiting + brute-force protection on login.' },
+    { q: 'Is data encrypted during storage and transmission?', a: 'In transit: TLS 1.3 (HTTPS) on every request. At rest: MongoDB encryption + JWT session tokens signed with a 256-bit secret. The offline cache in your browser uses AES-GCM 256-bit encryption with a fresh 12-byte IV per record — banking-grade.' },
+    { q: 'Does the software provide automatic data backup and recovery?', a: 'Yes — automated daily backups at 03:00 IST to a separate secure region. Point-in-time restore available on request through our support channel. Nothing you save is ever more than 24 hours away from a warm copy.' },
+    { q: 'Can I export or retrieve my patient data if I switch to another system later?', a: 'Absolutely — no vendor lock-in. AUDINEXA has a built-in Data Export module that lets you download your full patient roster (CSV), all audiograms + diagnostic reports (PDF), invoices + payment history (CSV + PDF), hearing-aid sales, fittings, service tickets, AMC contracts (CSV), and a complete data package as a signed ZIP. One click, any time, no ticket required.' },
+    { q: 'Is there a multi-user facility for clinics with multiple Audiologists / SLPs?', a: 'Yes — unlimited users on Standard and Premium tiers with granular 7-role RBAC and multi-branch support. You can run Delhi + Bangalore + Chennai branches under one clinic account with a single dashboard rollup and per-branch analytics.' },
+    { q: 'Does it support cloud-based access from different locations?', a: 'Yes — 100% cloud-native. Log in from any browser at home, in the OP chamber or on the go. Your data follows you, not the device. All you need is a browser and an internet connection (offline mode covers the gaps).' },
+    { q: 'What is the pricing? One-time or subscription?', a: 'Simple subscription model, all-inclusive, no hidden fees (GST extra). BASIC ₹499 / month (₹4,990 annual — 2 months free) for solo practices. STANDARD ₹999 / month (₹9,990 annual) for 2-5 audiologists, single branch. PREMIUM ₹1,499 / month (₹14,990 annual) for multi-branch, unlimited users, full HA sales + service + analytics. Every new clinic gets a 30-day PREMIUM trial with no credit card required. Payments via Razorpay (UPI / cards / net-banking).' },
+  ];
+
+  const items = tab === 'clinicians' ? clinicianItems : generalItems;
+
   return (
     <section id="faq" className="relative py-24" style={{ background: C.bone }} data-testid="landing-faq">
       <div className="relative max-w-4xl mx-auto px-6 md:px-8">
@@ -800,11 +842,43 @@ function FAQ() {
           <SectionEyebrow>QUESTIONS</SectionEyebrow>
           <SectionHeading>Frequently asked.</SectionHeading>
         </div>
-        <div className="mt-12">
-          {items.map((it, i) => <FaqItem key={i} q={it.q} a={it.a} idx={i} />)}
+
+        {/* Tab switcher */}
+        <div className="mt-10 flex items-center justify-center gap-2" data-testid="faq-tabs">
+          <FaqTab active={tab === 'general'} onClick={() => setTab('general')} testid="faq-tab-general">
+            General
+          </FaqTab>
+          <FaqTab active={tab === 'clinicians'} onClick={() => setTab('clinicians')} testid="faq-tab-clinicians">
+            For Clinicians
+          </FaqTab>
+        </div>
+
+        <div className="mt-8" key={tab /* remount so first item opens fresh */}>
+          {items.map((it, i) => <FaqItem key={`${tab}-${i}`} q={it.q} a={it.a} idx={i} />)}
         </div>
       </div>
     </section>
+  );
+}
+
+function FaqTab({ active, onClick, children, testid }) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testid}
+      className="px-4 py-2 text-sm rounded-full transition-all"
+      style={{
+        fontFamily: F.mono,
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase',
+        background: active ? C.saffron : 'transparent',
+        color: active ? 'white' : C.ink2,
+        border: active ? `1px solid ${C.saffron}` : `1px solid ${C.border}`,
+        fontWeight: active ? 700 : 500,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -838,6 +912,7 @@ function Footer() {
               <li><a href="#diagnostics" className="hover:text-white">Diagnostics</a></li>
               <li><a href="#pricing" className="hover:text-white">Pricing</a></li>
               <li><a href="#faq" className="hover:text-white">FAQ</a></li>
+              <li><a href="#faq-clinicians" className="hover:text-white">For Clinicians</a></li>
             </ul>
           </div>
           <div>
