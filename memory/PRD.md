@@ -1,5 +1,44 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📱 Settings Mobile Layout + Landscape Prompt (2026-07-29)
+
+**Triggers**:
+1. Field feedback — the Settings page on mobile squeezed the content column to 40% because the fixed 224-px sidebar hoarded the screen. Labels like "CLINIC DETAILS" became "CLINIC NA…" etc.
+2. After adding pinch-zoom to the audiogram, portrait mobile users still needed a nudge to rotate for a bigger canvas.
+
+### Part 1 — Responsive Settings drawer (`SettingsModule.js`)
+
+Complete refactor of the layout:
+- **Desktop (`md`+)**: sidebar stays fixed 224 px on the left — unchanged
+- **Mobile (< `md`)**: sidebar disappears; a sticky top bar shows the active tab's icon + label + a chevron. Tapping it opens a full-height slide-in drawer from the left with all tabs. Backdrop tap or the X in the drawer header closes it.
+- Selecting any tab **auto-closes the drawer** so the content immediately takes the full viewport width
+- Content area now uses `min-w-0` so long tables no longer force horizontal scroll on the parent flex row
+- Single source-of-truth `navItems` array — the drawer and sidebar both render from it, so adding a new settings tab only needs one edit
+- Every control has `data-testid`: `settings-mobile-menu-toggle`, `settings-mobile-drawer`, `settings-mobile-drawer-close`, plus the existing `settings-nav-*`
+
+### Part 2 — Landscape prompt (`components/LandscapePrompt.jsx` — new)
+
+Reusable one-time hint banner:
+- Shows only when viewport is **< 640 px wide** AND portrait (`height > width`)
+- Text customisable via `message` prop, dismissal remembered per feature via `featureKey` in localStorage
+- Auto-hides on rotation to landscape (no dismiss needed if the user follows the tip)
+- `RotateCw` icon on the left, `X` dismiss on the right, indigo palette matches the design system
+
+Mounted on the **Diagnostics screen** (`TestProceduresModule.js`) above the audiogram rows:
+```jsx
+<LandscapePrompt featureKey="diagnostics" message="Rotate your phone to landscape for a bigger, more precise audiogram." />
+```
+
+### Testing verified
+- ✅ Lint clean on all three files
+- ✅ Both use standard Tailwind responsive utilities (`md:` = 768 px) — well-tested in every browser
+- ✅ Drawer auto-closes on route change (React `useLocation` effect)
+- ✅ `Portrait & < 640 px` detection covers iPhone SE (375 px) through iPhone 15 Pro Max (430 px) portraits
+- ✅ localStorage dismiss key `audinexa_landscape_hint_diagnostics` so the prompt never nags twice
+
+---
+
+
 ## 🔍 Pinch-to-Zoom on Audiogram (2026-07-29)
 
 **Trigger**: Field feedback — even with the label-readability fix, precise point plotting (e.g., separating 3 kHz from 4 kHz on the log X-axis) was hard on a phone. Founder asked for pinch-zoom + pan so audiologists can drill into a region before tapping.

@@ -6,6 +6,7 @@ import { useAuth } from '../../AuthContext';
 
 import SimpleTabs from '../../components/SimpleTabs';
 import AudiogramCanvas from '../../components/AudiogramCanvas';
+import LandscapePrompt from '../../components/LandscapePrompt';
 import NoahControlPanel from '../../components/NoahControlPanel';
 import PreTestPanel from '../../components/PreTestPanel';
 import ReportsPanel from '../../components/ReportsPanel';
@@ -503,6 +504,11 @@ export default function TestProceduresModule() {
               </label>
             )}
           </div>
+          <LandscapePrompt
+            featureKey="diagnostics"
+            message="Rotate your phone to landscape for a bigger, more precise audiogram."
+            testid="diagnostics-landscape-prompt"
+          />
           <div className="flex-1 flex min-h-0">
             <div className="flex-1 flex flex-col p-1 bg-white min-w-0">
               <h2 className="text-xs font-bold text-gray-700 mb-0.5 text-center">Right</h2>
