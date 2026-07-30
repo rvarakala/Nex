@@ -206,6 +206,46 @@ export default function DiagnosticsQueueBoard() {
     }
   };
 
+  // Phase C / #4 — One-tap "→ Next stage" chip actions.
+  // waiting → checked_in: front-desk marks arrival, patient waits for audio
+  // to call them. Does NOT navigate away (audiologist stays on the board).
+  const advanceCheckin = async (row) => {
+    setStarting(row.patient_id);
+    try {
+      await axios.post(`${API}/diagnostics/queue/checkin`, {
+        patient_id: row.patient_id,
+        token_id: row.token_id || undefined,
+        appointment_id: row.appointment_id || undefined,
+      });
+      await load();
+    } catch (e) {
+      setErr(describeError(e, 'Could not check-in patient'));
+    } finally {
+      setStarting(null);
+    }
+  };
+  // checked_in → in_progress: starts the session AND navigates the
+  // audiologist into /test so they can begin. Same as the card's default
+  // click action but wired through the explicit "→ Next stage" chip so
+  // FD-users get a visible affordance.
+  const advanceStart = async (row) => {
+    await startAndNavigate(row);
+  };
+  // in_progress → completed: closes the current session. Stays on the board.
+  const advanceComplete = async (row) => {
+    await markComplete(row);
+  };
+
+  // Which action + label to show for the "→ Next stage" chip on a given card.
+  // Returns null when the state is terminal (completed) so no chip renders.
+  const nextStageAction = useCallback((row) => {
+    const state = row.state;
+    if (state === 'waiting')     return { label: 'Check-in',   handler: () => advanceCheckin(row),  targetLabel: 'Checked In' };
+    if (state === 'checked_in')  return { label: 'Start test', handler: () => advanceStart(row),    targetLabel: 'In Progress' };
+    if (state === 'in_progress') return { label: 'Complete',   handler: () => advanceComplete(row), targetLabel: 'Completed' };
+    return null;
+  }, []);
+
   const pickAndStart = async (row) => {
     if (row.state === 'completed') {
       if (!row.session_id) {
@@ -386,6 +426,7 @@ export default function DiagnosticsQueueBoard() {
                     fromCol={col.key}
                     isBusy={starting === row.patient_id}
                     onPick={() => pickAndStart(row)}
+                    nextStage={nextStageAction(row)}
                     onDragStart={(e) => {
                       setDragFrom(col.key);
                       e.dataTransfer.effectAllowed = 'move';
@@ -456,7 +497,7 @@ export default function DiagnosticsQueueBoard() {
 }
 
 // ────────────────────────── Patient Card ──────────────────────────
-function PatientCard({ row, fromCol, isBusy, onPick, onDragStart, onDragEnd }) {
+function PatientCard({ row, fromCol, isBusy, onPick, nextStage, onDragStart, onDragEnd }) {
   const draggable = fromCol !== 'completed';
   const isInProgress = row.state === 'in_progress';
   const isCompleted  = row.state === 'completed';
@@ -531,10 +572,30 @@ function PatientCard({ row, fromCol, isBusy, onPick, onDragStart, onDragEnd }) {
         </div>
       )}
 
-      {/* Bottom action row */}
-      <div className="flex items-center justify-end mt-2 text-[11px] font-semibold text-cyan-700 gap-1 group-hover:text-cyan-800">
-        {isBusy ? 'Opening…' : ctaLabel}
-        <ChevronRight size={12} strokeWidth={2.6} />
+      {/* Bottom action row — default click hint + one-tap "→ Next stage" chip */}
+      <div className="flex items-center justify-between mt-2 gap-2">
+        {nextStage ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              // Guard against the card's outer onClick (which auto-starts the
+              // test / opens the report). This chip is a distinct action, so
+              // we stop propagation to keep the two flows unambiguous.
+              e.stopPropagation();
+              if (!isBusy) nextStage.handler();
+            }}
+            disabled={isBusy}
+            data-testid={`dq-next-stage-${row.patient_id}`}
+            title={`Move to ${nextStage.targetLabel}`}
+            className="inline-flex items-center gap-1 text-[10.5px] font-extrabold px-2 py-1 rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40 transition-colors uppercase tracking-wide"
+          >
+            {isBusy ? '…' : `→ ${nextStage.label}`}
+          </button>
+        ) : <span />}
+        <div className="flex items-center text-[11px] font-semibold text-cyan-700 gap-1 group-hover:text-cyan-800">
+          {isBusy ? 'Opening…' : ctaLabel}
+          <ChevronRight size={12} strokeWidth={2.6} />
+        </div>
       </div>
     </div>
   );

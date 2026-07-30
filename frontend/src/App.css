@@ -130,3 +130,58 @@
     padding-top: 24px;
     border-top: 2px dashed #9ca3af;
 }
+
+/* ==================== COMPACT / 1-PAGE REPORT LAYOUT ==================== */
+/* Applied when the audiologist ticks "Fit to 1 A4 page" in the report
+ * builder. Compresses vertical rhythm across every section so
+ * PTA + Tymp + Speech + Recs comfortably fit on a single A4 sheet
+ * without dropping any clinical content. Padding + font sizes + section
+ * gaps shrink slightly; nothing on the print itself hides.
+ *
+ * NB: only tightens the LIVE preview + PRINT output — the sidebar and
+ * other chrome are unaffected because this class is scoped to
+ * `#report-preview`. */
+#report-preview.report-compact {
+    /* Slightly tighter page margins (10mm → 7mm) buys ~20mm of extra
+       vertical space per page — usually enough to fit Recs on p1. */
+    padding: 7mm 9mm !important;
+    font-size: 11px;
+    line-height: 1.35;
+}
+#report-preview.report-compact h1,
+#report-preview.report-compact h2,
+#report-preview.report-compact h3,
+#report-preview.report-compact h4 {
+    margin-top: 0.35em;
+    margin-bottom: 0.25em;
+}
+#report-preview.report-compact section,
+#report-preview.report-compact > div > div {
+    margin-top: 6px;
+    margin-bottom: 6px;
+}
+#report-preview.report-compact table {
+    font-size: 10px;
+}
+#report-preview.report-compact table th,
+#report-preview.report-compact table td {
+    padding: 2px 4px !important;
+}
+/* Compact banner headers rendered by SectionTitle */
+#report-preview.report-compact .section-title,
+#report-preview.report-compact .section-title * {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+    font-size: 11px !important;
+}
+/* Pure-Tone Section — cap chart height so PTA doesn't hog vertical space */
+#report-preview.report-compact svg[data-audiogram="true"],
+#report-preview.report-compact .audiogram-svg,
+#report-preview.report-compact .pt-audiogram {
+    max-height: 180px !important;
+}
+/* Case-history + Recommendations paragraphs — reduce leading */
+#report-preview.report-compact p {
+    margin-top: 3px;
+    margin-bottom: 3px;
+}

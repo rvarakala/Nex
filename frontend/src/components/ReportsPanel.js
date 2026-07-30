@@ -86,6 +86,12 @@ const ReportsPanel = ({
   const [showABC, setShowABC] = useState(false);
   const [showBing, setShowBing] = useState(false);
   const tuningForkFull = showABC || showBing;
+  // Phase D / #8 — Compact 1-page layout. When ON:
+  //   • Tymp is forced inline (never on p2)
+  //   • Audiogram forced to 'standard' (small)
+  //   • CSS class `.report-compact` tightens padding + font-sizes
+  // Off by default so existing reports keep their generous spacing.
+  const [compactLayout, setCompactLayout] = useState(false);
 
   // ========== Clinic branding — sourced from Settings (2026-07-30) ==========
   // Previously this was maintained in localStorage inside a dedicated
@@ -146,9 +152,12 @@ const ReportsPanel = ({
     impedanceData?.et_dysfunction?.enabled ||
     impedanceData?.etf_intact?.enabled
   );
-  const useSeparatePage =
-    tympPlacement === 'separate' ||
-    (tympPlacement === 'auto' && autoSeparatePage);
+  // Compact 1-page mode wins over any Tymp placement / audiogram-size
+  // choices — the whole point is to squeeze onto ONE sheet.
+  const useSeparatePage = compactLayout
+    ? false
+    : (tympPlacement === 'separate' || (tympPlacement === 'auto' && autoSeparatePage));
+  const effectiveAudiogramSize = compactLayout ? 'standard' : audiogramSize;
 
   // ========== Debounced auto-save ==========
   const saveTimer = useRef(null);
@@ -217,7 +226,7 @@ const ReportsPanel = ({
     caseHistoryNarrative,
     rightEarData, leftEarData, preTestData, impedanceData, speechData,
     specialTestsData, oaeData, soundfieldData, abrData, pediatricData, tinnitusData,
-    audiogramMode, audiogramSize, useSeparatePage, tuningForkFull,
+    audiogramMode, audiogramSize: effectiveAudiogramSize, useSeparatePage, tuningForkFull,
     showABC, showBing,
     recText, furtherAdvice,
     provisionalDiagnosis,
@@ -326,6 +335,8 @@ const ReportsPanel = ({
           autoSeparatePage={autoSeparatePage}
           audiogramSize={audiogramSize}
           setAudiogramSize={setAudiogramSize}
+          compactLayout={compactLayout}
+          setCompactLayout={setCompactLayout}
           ptFindings={findings.pure_tone || ''} setPtFindings={(v) => setFinding('pure_tone', v)}
           immFindings={findings.tympanometry || ''} setImmFindings={(v) => setFinding('tympanometry', v)}
           speechFindings={findings.speech || ''} setSpeechFindings={(v) => setFinding('speech', v)}
@@ -357,7 +368,8 @@ const ReportsPanel = ({
         </div>
         <div
           id={previewId}
-          className="mx-auto bg-white shadow-lg report-page"
+          className={`mx-auto bg-white shadow-lg report-page ${compactLayout ? 'report-compact' : ''}`}
+          data-testid={compactLayout ? 'report-compact-on' : 'report-compact-off'}
           style={{ width: '210mm', minHeight: '297mm', padding: '10mm 12mm', fontFamily: 'Arial, sans-serif', color: '#1f2937' }}
         >
           <ReportHeader clinic={clinic} />

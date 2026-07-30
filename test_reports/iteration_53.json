@@ -1,0 +1,40 @@
+{
+  "summary": "Phase C (Kanban one-tap → Next Stage chip) and Phase D (Report Fit-to-1-A4 compact toggle) tested end-to-end. Backend pytest: 4/4 checkin cases PASS (after fixing slot-collision retry in the pre-existing test file — see updated_files). Phase B regression suite (test_appointment_ha_wing.py) still 5/5 PASS. Frontend Playwright covered all chip-label / column-flip / stopPropagation / navigation assertions for Phase C and all class-toggle / audiogram-disable / page-break-suppression assertions for Phase D. All review-request assertions verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_features": [
+    {"item": "Phase C — Waiting chip", "evidence": "Fresh scheduled appointment for patient ACS-2026-254ED907 (TESTC WAIT ZM7L) rendered on Waiting column with [data-testid=dq-next-stage-ACS-2026-254ED907] label '→ Check-in'. Click flipped counts waiting 1→0, checked_in 0→1 without page navigation (URL stayed /test). Card outer default-handler did NOT navigate (stopPropagation guard works)."},
+    {"item": "Phase C — CheckedIn chip", "evidence": "After first click, same patient re-appeared in dq-col-checked_in with chip label '→ Start test'. Clicking it opened the /test procedures view (Pure Tone/Impedance/Speech tabs) with 'Active test: TESTC WAIT ZM7L' banner — matches spec (start_and_navigate)."},
+    {"item": "Phase C — InProgress chip", "evidence": "Existing in_progress card 'TEST UI B 787' rendered chip '→ COMPLETE'. Clicking flipped in_progress 2→1 and completed 0→1; URL unchanged."},
+    {"item": "Phase C — Completed no chip", "evidence": "dq-col-completed contained 1 card ('TEST UI B 787') with a 'View report' CTA and ZERO [data-testid^=dq-next-stage-] elements (verified via document.querySelectorAll count = 0)."},
+    {"item": "Phase C backend — POST /api/diagnostics/queue/checkin", "evidence": "pytest test_diagnostics_queue_checkin.py — 4/4 PASS: promote scheduled→checked_in, idempotent second call returns already_checked_in=true, refuses to demote in_progress, no-match returns ok=true. Fixed pre-existing slot-collision bug in helper (see updated_files)."},
+    {"item": "Phase D — report-compact-toggle presence + label", "evidence": "In Reports tab of active session, sidebar shows Print size block containing [data-testid=report-compact-toggle] checkbox with label 'Fit to 1 A4 page' + helper 'Compact mode — tighter spacing, small audiogram, Tymp inline. Saves a sheet of paper per print.'"},
+    {"item": "Phase D — class + testid toggle on #report-preview", "evidence": "OFF: class='mx-auto bg-white shadow-lg report-page ' testid=report-compact-off. ON: class='...report-page report-compact' testid=report-compact-on. Un-tick removes report-compact and restores testid to report-compact-off."},
+    {"item": "Phase D — Audiogram size picker forced-disabled by compact", "evidence": "With Tymp placement='New page' (useSeparatePage=true), Standard/Large/Extra Large buttons are enabled (opacity 1, disabled=false). Ticking compact toggle → all 3 become disabled (opacity 0.4, cursor not-allowed) since compactLayout forces useSeparatePage=false in ReportsPanel.js:157-159."},
+    {"item": "Phase D — Tymp placement override + page-break suppression", "evidence": "With Tymp 'New page', #report-preview .report-page-break exists (true). After compact ON, that element is REMOVED (query returns null) → Tymp is forced inline as the effectiveTympPlacement collapses to inline. Preview screenshot confirms PTA + Tymp on one A4 sheet."},
+    {"item": "Phase B regression (item #3 backend)", "evidence": "pytest test_appointment_ha_wing.py — 5/5 PASS (unchanged from iteration_52)."}
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_diagnostics_queue_checkin.py",
+    "/app/backend/tests/test_appointment_ha_wing.py",
+    "/app/test_reports/pytest/phase_c.xml",
+    "/app/test_reports/pytest/phase_c_d.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DiagnosticsQueueBoard.js:580-593 — chip button correctly calls e.stopPropagation() before invoking nextStage.handler(), and honours isBusy via disabled attribute. Good.",
+    "ReportsPanel.js:157-160 — compactLayout override logic is clean and one-liner; effectiveAudiogramSize + useSeparatePage both derived from single source of truth (compactLayout). No divergent code paths.",
+    "BuilderSidebar.js:530-550 — Print size block uses a nested <input> inside <label> with visual styling swap (bg-emerald-50 vs bg-white). Consistent with the rest of the sidebar's design language. data-testid on the input, not the label — the Playwright test still worked but if you want to click on the label region for a11y, the testid would need to move.",
+    "backend/routers/diagnostics_queue.py — new /queue/checkin endpoint promote-only guard prevents demotion; test_checkin_refuses_to_demote_in_progress locks that in. Idempotent contract is honored (already_checked_in flag)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_diagnostics_queue_checkin.py — hardened _make_today_appt() to auto-retry across a wider slot range (was hitting 409 slot conflicts from earlier test runs re-using same hour+minute). No production code changes; only test-helper hardening."
+  ],
+  "success_rate": {"backend": "100% (4/4 checkin + 5/5 HA wing regression)", "frontend": "100% (all Phase C + Phase D assertions PASS)"},
+  "test_credentials": "dltest@example.com / TestPass@123 (DL Test Clinic — clinic_owner user USR-C19B4B1D)",
+  "seed_data_creation": "Created 1 new patient 'TESTC WAIT ZM7L' (ACS-2026-254ED907) + 1 scheduled appointment for today (IST) to exercise the Waiting → CheckedIn → InProgress chip flow. Multiple secondary appointments were created earlier by the retry helper on the same day; safe to leave (all 5-min slots, no invoices).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase C + D fully green in iteration_53. Both the backend endpoint (POST /api/diagnostics/queue/checkin) and the frontend chip/compact-toggle UI meet spec. For quick regression next time: (1) pytest /app/backend/tests/test_diagnostics_queue_checkin.py -v — should be 4/4 PASS every run now (retry helper handles slot collisions across a full 8am-10pm range). (2) On UI, seed a fresh patient (existing patients today may be dedup'd into completed column). CSRF cookie name is `audinexa_csrf`, header `X-CSRF-Token`, needed for POST via fetch/eval. staff_id + audiologist_id both required for /api/appointments POST — DL Test only has USR-C19B4B1D; no dedicated audiologist role user (bk-save UI submit still blocked accordingly). (3) Compact toggle → audiogram picker gets disabled indirectly via useSeparatePage=false override; to see the transition you must first click Tymp 'New page' before toggling compact.",
+  "rca of the issue": "N/A — no issues surfaced. Only note: the existing pytest suite had a slot-collision bug where re-running on the same day would 409-conflict because it hard-coded hour + a modulo-55 minute; fixed with an auto-retry loop scanning the full hour."
+}

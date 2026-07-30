@@ -475,3 +475,98 @@ async def complete_diagnostics(
     )
 
     return {"ok": True, "session_id": payload.session_id}
+
+
+# --------------------------------------------------------------------------
+# One-tap "→ Next stage" — waiting → checked_in
+#
+# The Kanban Board's `→ Next stage` chip on a waiting card calls this endpoint
+# so the front-desk can move the patient into the "Checked In" column without
+# starting the diagnostic session (that only happens when the audiologist is
+# ready). Idempotent — re-calling on a checked-in card is a no-op.
+# --------------------------------------------------------------------------
+
+class CheckinIn(BaseModel):
+    """Accept any one of the identifiers — we look up whichever is present."""
+    patient_id: str
+    token_id: Optional[str] = None
+    appointment_id: Optional[str] = None
+
+
+@router.post("/queue/checkin")
+async def checkin_diagnostics(
+    payload: CheckinIn,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Front-desk marked the patient as arrived.
+
+    Flips the linked appointment/token from waiting/scheduled → checked_in.
+    Returns which artefacts were updated so the UI can decide whether to
+    refresh the queue.
+    """
+    clinic_id = user["clinic_id"]
+    today_start_iso = ist_day_start_utc().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates = {"appointment": False, "token": False}
+
+    # Update the appointment first — its status is what drives the Kanban.
+    # We ONLY promote from scheduled/confirmed → checked_in. Never demote
+    # an in-progress or completed row back to checked_in.
+    ADVANCEABLE_APPT = {"scheduled", "confirmed"}
+    appt = None
+    if payload.appointment_id:
+        appt = await db.appointments.find_one(
+            {"appointment_id": payload.appointment_id, "clinic_id": clinic_id}, {"_id": 0},
+        )
+    if not appt:
+        day_key = _ymd_ist()
+        appt = await db.appointments.find_one(
+            {
+                "clinic_id": clinic_id,
+                "patient_id": payload.patient_id,
+                "start_at": {"$gte": f"{day_key}T00:00:00", "$lte": f"{day_key}T23:59:59"},
+                "status": {"$in": list(ADVANCEABLE_APPT)},
+            },
+            {"_id": 0},
+            sort=[("start_at", 1)],
+        )
+    if appt and appt.get("status") in ADVANCEABLE_APPT:
+        await db.appointments.update_one(
+            {"appointment_id": appt["appointment_id"], "clinic_id": clinic_id},
+            {"$set": {"status": "checked_in", "check_in_at": now_iso}},
+        )
+        updates["appointment"] = True
+
+    # Also close the "waiting" token — moves it to "in_consultation" so the
+    # queue-board's token pane matches the appointment status. Same
+    # promote-only guard as the appointment above.
+    ADVANCEABLE_TOKEN = {"waiting"}
+    tok = None
+    if payload.token_id:
+        tok = await db.tokens.find_one(
+            {"token_id": payload.token_id, "clinic_id": clinic_id}, {"_id": 0},
+        )
+    if not tok:
+        tok = await db.tokens.find_one(
+            {
+                "clinic_id": clinic_id,
+                "patient_id": payload.patient_id,
+                "issued_at": {"$gte": today_start_iso},
+                "status": {"$in": list(ADVANCEABLE_TOKEN)},
+            },
+            {"_id": 0},
+            sort=[("issued_at", -1)],
+        )
+    if tok and tok.get("status") in ADVANCEABLE_TOKEN:
+        await db.tokens.update_one(
+            {"token_id": tok["token_id"]},
+            {"$set": {"status": "in_consultation", "called_at": now_iso}},
+        )
+        updates["token"] = True
+
+    if not any(updates.values()):
+        # Nothing to update — patient likely already checked in.
+        return {"ok": True, "updates": updates, "already_checked_in": True}
+
+    return {"ok": True, "updates": updates}

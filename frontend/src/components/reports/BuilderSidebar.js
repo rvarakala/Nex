@@ -420,6 +420,8 @@ export const BuilderSidebar = ({
   tympPlacement, setTympPlacement, useSeparatePage, autoSeparatePage,
   // Audiogram size (effective only when useSeparatePage)
   audiogramSize, setAudiogramSize,
+  // Phase D — compact 1-page layout toggle
+  compactLayout, setCompactLayout,
   // Editable textareas / inputs
   ptFindings, setPtFindings,             // legacy alias for findings.pure_tone
   immFindings, setImmFindings,           // legacy alias for findings.tympanometry
@@ -519,6 +521,34 @@ export const BuilderSidebar = ({
         useSeparatePage={useSeparatePage}
         autoSeparatePage={autoSeparatePage}
       />
+
+      {/* Phase D / #8 — Fit everything on 1 A4 page. Overrides tymp
+          placement + audiogram size + tightens CSS spacing so front-desk
+          stops burning two sheets per report. */}
+      <div>
+        <div className="text-[10px] font-bold text-gray-600 mt-2 mb-1">Print size</div>
+        <label
+          className={`flex items-center gap-2 px-2 py-1.5 text-[11px] border rounded cursor-pointer ${
+            compactLayout ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-gray-300'
+          }`}
+          title="Force PTA + Tymp + Speech + Recommendations onto a single A4 sheet"
+        >
+          <input
+            type="checkbox"
+            checked={!!compactLayout}
+            onChange={(e) => setCompactLayout?.(e.target.checked)}
+            data-testid="report-compact-toggle"
+            className="w-3.5 h-3.5"
+          />
+          <span className="flex-1">
+            <div className="font-semibold text-gray-700">Fit to 1 A4 page</div>
+            <div className="text-[9px] text-gray-500 leading-tight">
+              Compact mode — tighter spacing, small audiogram, Tymp inline.
+              Saves a sheet of paper per print.
+            </div>
+          </span>
+        </label>
+      </div>
 
       <AudiogramSizeToggle
         audiogramSize={audiogramSize}
