@@ -87,22 +87,30 @@ async def mint_session_row(
     request: Optional[Request],
     *,
     purpose: str = "login",
+    remember_device: bool = True,
 ) -> str:
-    """Insert a row in `user_sessions` and return the new session_id."""
+    """Insert a row in `user_sessions` and return the new session_id.
+
+    `remember_device` — when False, marks this session as ephemeral so
+    `utils/device_limits.count_active_sessions()` skips it (see the
+    remember-me checkbox on the login form). Also drives cookie TTL via
+    `set_auth_cookies(..., remember_device=...)`.
+    """
     sid = "S-" + secrets.token_urlsafe(20)
     now = datetime.now(timezone.utc)
     ua = (request.headers.get("user-agent") if request else None) or ""
     doc = {
-        "session_id":    sid,
-        "user_id":       user["user_id"],
-        "clinic_id":     user.get("clinic_id"),
-        "created_at":    now,
-        "last_seen_at":  now,
-        "ip":            _extract_ip(request),
-        "user_agent":    ua[:300],
-        "device_label":  label_from_user_agent(ua),
-        "purpose":       purpose,           # "login" | "mfa" | "switch_clinic" | "signup"
-        "revoked_at":    None,
+        "session_id":       sid,
+        "user_id":          user["user_id"],
+        "clinic_id":        user.get("clinic_id"),
+        "created_at":       now,
+        "last_seen_at":     now,
+        "ip":               _extract_ip(request),
+        "user_agent":       ua[:300],
+        "device_label":     label_from_user_agent(ua),
+        "purpose":          purpose,           # "login" | "mfa" | "switch_clinic" | "signup"
+        "revoked_at":       None,
+        "remember_device":  bool(remember_device),
     }
     await db.user_sessions.insert_one(doc)
 
@@ -142,6 +150,10 @@ class SessionOut(BaseModel):
     user_agent: Optional[str] = None
     purpose: Optional[str] = None
     current: bool
+    # `remember_device` was added later so older rows may not have it —
+    # treat missing as True (they were minted before ephemeral existed
+    # and always got the long-lived cookie).
+    remember_device: bool = True
 
 
 def _iso(v):
@@ -168,6 +180,7 @@ async def list_sessions(user=Depends(get_current_user), db=Depends(get_db)):
             user_agent=r.get("user_agent"),
             purpose=r.get("purpose"),
             current=(r["session_id"] == cur_sid),
+            remember_device=r.get("remember_device", True),
         )
         for r in rows
     ]

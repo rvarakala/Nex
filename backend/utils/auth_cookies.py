@@ -39,6 +39,11 @@ from fastapi import Request, Response
 
 # 7 days — same as JWT_ACCESS_TTL_SECONDS in auth.py.
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60
+# 30 days — long-lived when the user ticks "Remember this device".
+COOKIE_MAX_AGE_REMEMBERED = 30 * 24 * 60 * 60
+# 8 hours — ephemeral sessions (unchecked box). Bounds the abuse window
+# for cap-skipping sessions and forces frequent re-auth on shared machines.
+COOKIE_MAX_AGE_EPHEMERAL = 8 * 60 * 60
 
 ACCESS_COOKIE = "access_token"
 CSRF_COOKIE = "audinexa_csrf"
@@ -95,6 +100,8 @@ def set_auth_cookies(
     response: Response,
     token: str,
     request: Optional[Request] = None,
+    *,
+    remember_device: bool = True,
 ) -> str:
     """Set both auth cookies on a successful login / switch-clinic /
     mfa-verify-login response. Returns the newly-minted CSRF token (so
@@ -103,10 +110,16 @@ def set_auth_cookies(
 
     Pass the FastAPI `Request` so we can auto-scope the cookie Domain
     correctly for the audinexa.com family (apex + www).
+
+    `remember_device` picks the cookie TTL:
+      * True  → 30 days (persist across browser restarts, real device).
+      * False → 8 hours (ephemeral, matches the incognito-test-drive
+                intent behind the login checkbox).
     """
     secure = _is_production()
     domain = _resolve_cookie_domain(request)
     csrf = secrets.token_urlsafe(32)
+    max_age = COOKIE_MAX_AGE_REMEMBERED if remember_device else COOKIE_MAX_AGE_EPHEMERAL
 
     # Belt-and-braces migration from the legacy host-only cookies.
     # When we're setting a `.audinexa.com`-scoped cookie, ALSO emit a
@@ -124,7 +137,7 @@ def set_auth_cookies(
     response.set_cookie(
         key=ACCESS_COOKIE,
         value=token,
-        max_age=COOKIE_MAX_AGE,
+        max_age=max_age,
         httponly=True,         # ← the whole point: JS cannot read this
         secure=secure,
         samesite="lax",        # blocks easy CSRF cases; double-submit covers the rest
@@ -134,7 +147,7 @@ def set_auth_cookies(
     response.set_cookie(
         key=CSRF_COOKIE,
         value=csrf,
-        max_age=COOKIE_MAX_AGE,
+        max_age=max_age,
         httponly=False,        # ← JS reads this and sends X-CSRF-Token
         secure=secure,
         samesite="lax",

@@ -17,6 +17,13 @@ export default function LoginPage() {
   const [mfaCode, setMfaCode] = useState('');
   const [useRecovery, setUseRecovery] = useState(false);
 
+  // ── Remember-device checkbox ──
+  // Default TRUE — matches Google/Notion behaviour: normal users stay
+  // signed in for 30 days. Un-tick it on a coworker's machine or in an
+  // incognito test-drive → session becomes ephemeral (8-hour cookie) and
+  // does NOT count against the clinic's tier device cap.
+  const [rememberDevice, setRememberDevice] = useState(true);
+
   // ── Device-limit modal state ──
   // When the server returns 409 DEVICE_LIMIT_EXCEEDED, we surface a picker
   // so the user chooses which of their existing devices to sign out. The
@@ -42,7 +49,7 @@ const roleHome = (role) => {
     e?.preventDefault();
     setBusy(true); setErr(null);
     try {
-      const u = await login(email.trim(), password);
+      const u = await login(email.trim(), password, { rememberDevice });
       if (u && u.requiresMfa) {
         setMfaToken(u.mfaToken);
         return;
@@ -72,7 +79,7 @@ const roleHome = (role) => {
     e?.preventDefault();
     setBusy(true); setErr(null);
     try {
-      const u = await loginVerifyMfa(mfaToken, mfaCode.trim(), useRecovery);
+      const u = await loginVerifyMfa(mfaToken, mfaCode.trim(), useRecovery, { rememberDevice });
       navigate(roleHome(u.role), { replace: true });
     } catch (ex) {
       if (ex?.deviceLimitExceeded) {
@@ -95,9 +102,9 @@ const roleHome = (role) => {
     try {
       let u;
       if (deviceLimit?.path === 'mfa') {
-        u = await loginVerifyMfa(mfaToken, mfaCode.trim(), useRecovery, { replaceSessionId: sessionId });
+        u = await loginVerifyMfa(mfaToken, mfaCode.trim(), useRecovery, { replaceSessionId: sessionId, rememberDevice });
       } else {
-        u = await login(email.trim(), password, { replaceSessionId: sessionId });
+        u = await login(email.trim(), password, { replaceSessionId: sessionId, rememberDevice });
         if (u && u.requiresMfa) {
           setMfaToken(u.mfaToken);
           setDeviceLimit(null);
@@ -239,13 +246,34 @@ const roleHome = (role) => {
             <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2" data-testid="login-error">{err}</div>
           )}
 
+          <label
+            className="flex items-start gap-2 cursor-pointer select-none group"
+            data-testid="login-remember-device-row"
+          >
+            <input
+              type="checkbox"
+              checked={rememberDevice}
+              onChange={(e) => setRememberDevice(e.target.checked)}
+              data-testid="login-remember-device"
+              className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+            />
+            <span className="text-[11.5px] leading-tight text-slate-600 group-hover:text-slate-800">
+              <span className="font-semibold text-slate-700">Remember this device for 30 days</span>
+              <span className="block text-[10.5px] text-slate-500 mt-0.5">
+                {rememberDevice
+                  ? 'Stays signed in on this device. Counts toward your plan\u2019s device limit.'
+                  : 'Ephemeral session \u2014 signs out in 8 hours and does NOT use a device slot. Use for incognito test-drives.'}
+              </span>
+            </span>
+          </label>
+
           <button
             type="submit"
             disabled={busy}
             data-testid="login-submit"
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold text-sm rounded-lg shadow-md transition-colors"
           >
-            {busy ? 'Signing in…' : 'Sign in'}
+            {busy ? 'Signing in\u2026' : 'Sign in'}
           </button>
 
           <p className="text-center text-[11px] text-slate-500 pt-1" data-testid="login-forgot-username-hint">

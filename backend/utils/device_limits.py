@@ -86,17 +86,25 @@ def _stale_cutoff() -> datetime:
 
 
 async def count_active_sessions(db, user_id: str) -> int:
-    """Number of sessions that would currently count against the cap."""
+    """Number of sessions that would currently count against the cap.
+
+    Ephemeral sessions (`remember_device=False`) are excluded — they only
+    live ~8 hours and are meant for incognito test-drives. Rows minted
+    before this feature shipped have no `remember_device` field at all
+    and are treated as remembered (they were long-lived by default).
+    """
     return await db.user_sessions.count_documents({
         "user_id": user_id,
         "revoked_at": None,
         "last_seen_at": {"$gte": _stale_cutoff()},
+        "remember_device": {"$ne": False},
     })
 
 
 async def list_active_sessions(db, user_id: str) -> list[dict[str, Any]]:
     """Sessions that would count against the cap — for the frontend picker.
 
+    Same filter as `count_active_sessions()` so the numbers stay in sync.
     Ordered oldest-last-seen first so the user sees the least useful
     device at the top of the list (the one they should probably kick).
     """
@@ -105,6 +113,7 @@ async def list_active_sessions(db, user_id: str) -> list[dict[str, Any]]:
             "user_id": user_id,
             "revoked_at": None,
             "last_seen_at": {"$gte": _stale_cutoff()},
+            "remember_device": {"$ne": False},
         },
         {
             "_id": 0,
@@ -148,19 +157,32 @@ async def enforce_or_warn(
     clinic: Optional[dict],
     *,
     replace_session_id: Optional[str] = None,
+    remember_device: bool = True,
 ) -> dict:
     """Called by the login pipeline BEFORE mint_session_row().
 
     Returns a dict describing the outcome. The caller decides what to do
     with it:
         {"action": "allow"}                         → mint session normally
+        {"action": "allow_ephemeral"}               → ephemeral, cap skipped
         {"action": "warn", "count": N, "cap": C}    → mint but flag it
         {"action": "block", "devices": [...], ...}  → raise HTTP 409
+
+    When `remember_device=False`, we short-circuit as "allow_ephemeral" so
+    the login always proceeds and the row is minted with remember_device=False
+    (which count_active_sessions ignores). This lets the audiologist pop
+    open an incognito window to sanity-check the patient portal without
+    burning one of the clinic's paid device slots.
 
     Handles the "replace-and-login" path: if the caller passed
     replace_session_id AND the user is at cap, we revoke that session
     first, then re-check and allow.
     """
+    # Ephemeral sessions bypass the cap entirely — they auto-expire in ~8h
+    # so the abuse potential is bounded by wall-clock, not by policy.
+    if not remember_device:
+        return {"action": "allow_ephemeral", "count": 0, "cap": cap_for_user(user, clinic)}
+
     cap = cap_for_user(user, clinic)
     if cap >= UNLIMITED:
         return {"action": "allow", "count": 0, "cap": cap}

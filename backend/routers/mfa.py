@@ -175,6 +175,9 @@ class MfaLoginVerifyIn(BaseModel):
     # on a previous login attempt and picked a device to kick, pass its
     # session_id here so we revoke + mint in one shot.
     replace_session_id: str | None = None
+    # "Remember this device" — same semantics as LoginRequest. Defaults
+    # to True so the existing MFA UI (no checkbox yet) behaves as before.
+    remember_device: bool = True
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────
@@ -324,6 +327,7 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
     dl_result = await enforce_or_warn(
         db, user, clinic_for_cap,
         replace_session_id=payload.replace_session_id,
+        remember_device=payload.remember_device,
     )
     if dl_result["action"] == "block":
         raise HTTPException(
@@ -336,7 +340,7 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
                 "message": f"You are signed in on {dl_result['count']} devices — your plan allows {dl_result['cap']}. Sign out on one device to continue.",
             },
         )
-    sid = await mint_session_row(db, user, request, purpose="mfa")
+    sid = await mint_session_row(db, user, request, purpose="mfa", remember_device=payload.remember_device)
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
         token_version=int(user.get("token_version", 0) or 0),
@@ -354,7 +358,7 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
     # P1 XSS hardening — set httpOnly cookies (matched on the verify-login
     # path so the post-2FA browser session uses cookie auth).
     from utils.auth_cookies import set_auth_cookies
-    csrf = set_auth_cookies(response, token, request)
+    csrf = set_auth_cookies(response, token, request, remember_device=payload.remember_device)
 
     resp_body = {
         "access_token": token,
@@ -370,12 +374,13 @@ async def mfa_verify_login(request: Request, payload: MfaLoginVerifyIn, response
         },
         "clinic": clinic,
     }
-    if dl_result and dl_result.get("action") in {"warn", "allow"}:
+    if dl_result and dl_result.get("action") in {"warn", "allow", "allow_ephemeral"}:
         resp_body["device_limit"] = {
             "action":   dl_result["action"],
-            "count":    dl_result.get("count", 0) + 1,
+            "count":    dl_result.get("count", 0) + (0 if dl_result["action"] == "allow_ephemeral" else 1),
             "cap":      dl_result["cap"],
             "replaced": dl_result.get("replaced"),
+            "ephemeral": dl_result["action"] == "allow_ephemeral",
         }
     return resp_body
 

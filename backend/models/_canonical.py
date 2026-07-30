@@ -77,6 +77,14 @@ class LoginRequest(BaseModel):
     # DEVICE_LIMIT_EXCEEDED picker includes the session_id the user chose
     # to kick. Backend revokes it and mints the new session in one hop.
     replace_session_id: str | None = Field(default=None, max_length=64)
+    # "Remember this device for 30 days" checkbox on the login form.
+    # * True  → long-lived (30-day cookie) session that counts against
+    #           the tier's concurrent-device cap.
+    # * False → ephemeral (~8-hour cookie) session that does NOT count
+    #           against the cap — designed for incognito test-drives on
+    #           a coworker's laptop, patient-facing kiosk previews, etc.
+    # Default TRUE so existing clients + tests behave unchanged.
+    remember_device: bool = True
 
 
 # ==================== TOKEN + QUEUE (UC-01 front-desk) ====================

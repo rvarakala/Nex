@@ -625,6 +625,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     dl_result = await enforce_or_warn(
         db, user, clinic_for_cap,
         replace_session_id=req.replace_session_id,
+        remember_device=req.remember_device,
     )
     if dl_result["action"] == "block":
         raise HTTPException(
@@ -638,7 +639,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
             },
         )
 
-    sid = await mint_session_row(db, user, request, purpose="login")
+    sid = await mint_session_row(db, user, request, purpose="login", remember_device=req.remember_device)
     token = create_access_token(
         user["user_id"], user["email"], user["role"], user["clinic_id"],
         token_version=int(user.get("token_version", 0) or 0),
@@ -651,7 +652,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     # P1 XSS hardening — also set httpOnly cookies. The JSON body still
     # returns `access_token` for backward compat with existing localStorage
     # clients during the migration window.
-    csrf = set_auth_cookies(response, token, request)
+    csrf = set_auth_cookies(response, token, request, remember_device=req.remember_device)
     resp_body = {
         "access_token": token,
         "token_type": "bearer",
@@ -669,12 +670,13 @@ async def login(req: LoginRequest, request: Request, response: Response):
     # Surface the device-limit outcome so the frontend can render either
     # a soft banner ("You are at 2/2 devices — upgrade to Standard for
     # 2 more slots") in warn-mode or nothing when the cap isn't hit.
-    if dl_result and dl_result.get("action") in {"warn", "allow"}:
+    if dl_result and dl_result.get("action") in {"warn", "allow", "allow_ephemeral"}:
         resp_body["device_limit"] = {
             "action":  dl_result["action"],
-            "count":   dl_result.get("count", 0) + 1,   # include the session we just minted
+            "count":   dl_result.get("count", 0) + (0 if dl_result["action"] == "allow_ephemeral" else 1),
             "cap":     dl_result["cap"],
             "replaced": dl_result.get("replaced"),
+            "ephemeral": dl_result["action"] == "allow_ephemeral",
         }
     return resp_body
 

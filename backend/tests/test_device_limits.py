@@ -150,3 +150,85 @@ def test_replace_session_id_atomic_revoke_and_mint():
     assert other["session_id"] not in active_ids, (
         "replace_session_id did not revoke the target row"
     )
+
+
+# ─── Remember-device checkbox ── ephemeral sessions bypass the cap ─────
+
+def test_ephemeral_session_does_not_count_against_cap():
+    """When the login body sets remember_device=false, /device-limit's
+    `count` MUST stay the same across those logins, and the session row
+    is tagged remember_device=False.
+    """
+    # Bring the audio user back to a known state.
+    seed = _login(AUDIO_EMAIL, AUDIO_PASSWORD, ua=UA_MAC).json()["access_token"]
+    _revoke_all_but_current(seed)
+    time.sleep(0.4)
+
+    # Baseline count on the newly-created remembered session.
+    baseline = requests.get(f"{API}/auth/sessions/device-limit", headers=H(seed), timeout=10).json()
+    baseline_count = baseline["count"]
+
+    # Fire 3 ephemeral logins from different UAs — none should bump `count`.
+    for ua in (UA_IOS, UA_WIN, "curl/8.4"):
+        r = requests.post(
+            f"{API}/auth/login",
+            json={"email": AUDIO_EMAIL, "password": AUDIO_PASSWORD, "remember_device": False},
+            headers={"User-Agent": ua}, timeout=10,
+        )
+        assert r.status_code == 200, r.text
+        dl = r.json().get("device_limit") or {}
+        assert dl.get("action") == "allow_ephemeral", f"ephemeral login must short-circuit, got {dl}"
+        assert dl.get("ephemeral") is True
+
+    after = requests.get(f"{API}/auth/sessions/device-limit", headers=H(seed), timeout=10).json()
+    assert after["count"] == baseline_count, (
+        f"Ephemeral logins bumped the counted-devices number: {baseline_count} → {after['count']}"
+    )
+
+    # The rows must exist in the sessions list AND be flagged remember_device=False
+    # so the UI can show the "Ephemeral" pill.
+    rows = requests.get(f"{API}/auth/sessions", headers=H(seed), timeout=10).json()
+    ephemerals = [s for s in rows if s.get("remember_device") is False]
+    assert len(ephemerals) >= 3, (
+        f"Expected ≥3 ephemeral session rows, got {[s['device_label'] for s in rows]}"
+    )
+
+
+def test_ephemeral_bypass_is_not_a_cap_loophole_for_remembered():
+    """Ephemeral sessions must not somehow decrement the remembered-count
+    used to enforce the cap: after firing several ephemeral logins, a
+    fresh REMEMBERED login must still see them as invisible AND the cap
+    should still block a 3rd REMEMBERED login (in enforce mode) or warn
+    (in warn mode).
+    """
+    seed = _login(AUDIO_EMAIL, AUDIO_PASSWORD, ua=UA_MAC).json()["access_token"]
+    _revoke_all_but_current(seed)
+    time.sleep(0.4)
+
+    # 2 remembered sessions (at cap for BASIC).
+    _login(AUDIO_EMAIL, AUDIO_PASSWORD, ua=UA_IOS)  # remember=True default
+    # 3 ephemerals — cap-blind.
+    for ua in (UA_WIN, "curl/8.4", "Postman/10.20"):
+        requests.post(
+            f"{API}/auth/login",
+            json={"email": AUDIO_EMAIL, "password": AUDIO_PASSWORD, "remember_device": False},
+            headers={"User-Agent": ua}, timeout=10,
+        )
+
+    dl = requests.get(f"{API}/auth/sessions/device-limit", headers=H(seed), timeout=10).json()
+    # Only the 2 remembered rows count.
+    assert dl["count"] == 2, f"Expected count=2 (2 remembered), got {dl}"
+
+    # A 3rd remembered login in warn mode: must succeed with action=='warn'.
+    # In enforce mode: 409. Either outcome proves the cap is intact.
+    r = requests.post(
+        f"{API}/auth/login",
+        json={"email": AUDIO_EMAIL, "password": AUDIO_PASSWORD},
+        headers={"User-Agent": "Firefox/latest"}, timeout=10,
+    )
+    if r.status_code == 409:
+        detail = r.json().get("detail") or {}
+        assert detail.get("code") == "DEVICE_LIMIT_EXCEEDED"
+    else:
+        assert r.status_code == 200
+        assert (r.json().get("device_limit") or {}).get("action") == "warn"

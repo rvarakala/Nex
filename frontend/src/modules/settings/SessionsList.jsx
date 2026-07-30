@@ -194,6 +194,15 @@ export default function SessionsList() {
                       <Check size={10} /> This device
                     </span>
                   )}
+                  {s.remember_device === false && (
+                    <span
+                      data-testid={`session-ephemeral-${s.session_id}`}
+                      title="Ephemeral session — signs out in 8 hours and does not count toward your device limit."
+                      className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-800 rounded"
+                    >
+                      Ephemeral
+                    </span>
+                  )}
                   {s.purpose && s.purpose !== 'login' && (
                     <span className="text-[10px] text-slate-400 font-mono uppercase">
                       via {s.purpose}

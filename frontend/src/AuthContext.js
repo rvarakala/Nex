@@ -174,11 +174,12 @@ export const AuthProvider = ({ children }) => {
     } catch { /* ignore */ }
   }, []);
 
-  const login = async (email, password, { replaceSessionId = null } = {}) => {
+  const login = async (email, password, { replaceSessionId = null, rememberDevice = true } = {}) => {
     let r;
     try {
       r = await axios.post(`${API}/auth/login`, {
         email, password,
+        remember_device: !!rememberDevice,
         ...(replaceSessionId ? { replace_session_id: replaceSessionId } : {}),
       });
     } catch (e) {
@@ -228,11 +229,12 @@ export const AuthProvider = ({ children }) => {
     return r.data.user;
   };
 
-  const loginVerifyMfa = async (mfaToken, code, useRecoveryCode = false, { replaceSessionId = null } = {}) => {
+  const loginVerifyMfa = async (mfaToken, code, useRecoveryCode = false, { replaceSessionId = null, rememberDevice = true } = {}) => {
     let r;
     try {
       r = await axios.post(`${API}/auth/mfa/verify-login`, {
         mfa_token: mfaToken, code, use_recovery_code: useRecoveryCode,
+        remember_device: !!rememberDevice,
         ...(replaceSessionId ? { replace_session_id: replaceSessionId } : {}),
       });
     } catch (e) {
