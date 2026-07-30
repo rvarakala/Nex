@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -38,6 +39,19 @@ export default function ProcurementPage() {
           onClick={() => setCreating(true)}
           className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm"
         >+ New PO</button>
+      </div>
+
+      {/* Cross-link to the Vendors master so a fresh clinic can see how to
+          set up the pre-requisite before hitting the "no vendors" wall in
+          the PO modal. Hidden once at least one vendor exists to avoid
+          clutter. */}
+      <div className="mb-3 flex items-center gap-3 text-[11px] text-slate-500">
+        <span>Need to manage suppliers?</span>
+        <Link
+          to="/ha/vendors"
+          data-testid="ha-procurement-vendors-link"
+          className="font-semibold text-indigo-600 hover:underline"
+        >Open Vendors master →</Link>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
@@ -90,6 +104,8 @@ function CreatePOModal({ onClose, onCreated }) {
   const [lines, setLines] = useState([{ _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_cost: 0, gst_rate: 18 }]);
   const [err, setErr] = useState('');
   const [showVendorForm, setShowVendorForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -103,13 +119,35 @@ function CreatePOModal({ onClose, onCreated }) {
       setProducts(p.data);
       if (b.data[0]) setBranch(b.data[0].branch_id);
       if (v.data[0]) setVendor(v.data[0].vendor_id);
+      setLoaded(true);
+      // If the clinic has ZERO vendors, drop the user straight into the
+      // Quick-Add-Vendor form. Blank dropdowns + a scary "Vendor not found"
+      // error banner were the reported UX on 2026-07-30 — proactive
+      // guidance is the fix.
+      if ((v.data || []).length === 0) setShowVendorForm(true);
     })();
   }, []);
 
   const total = lines.reduce((a, l) => a + l.qty * l.unit_cost * (1 + l.gst_rate / 100), 0);
 
+  // Validation state — kept as booleans so the submit button + inline hints
+  // stay in sync without a separate "server-said-so" round-trip.
+  const hasVendor = !!vendor;
+  const hasLines = lines.some((l) => l.product_id && l.qty > 0);
+  const canSubmit = loaded && hasVendor && hasLines && !saving;
+
   const submit = async () => {
     setErr('');
+    // Client-side gates so we never surface backend errors that already
+    // have a clearer UI-level explanation.
+    if (!hasVendor) {
+      setErr(vendors.length === 0
+        ? 'Add a vendor first — click "+ Add your first vendor" above.'
+        : 'Pick a vendor from the dropdown to continue.');
+      return;
+    }
+    if (!hasLines) { setErr('Add at least one product line with a quantity.'); return; }
+    setSaving(true);
     try {
       const body = {
         branch_id: branch,
@@ -117,11 +155,20 @@ function CreatePOModal({ onClose, onCreated }) {
         expected_date: expected || null,
         lines: lines.filter(l => l.product_id && l.qty > 0),
       };
-      if (!body.lines.length) { setErr('Add at least one line'); return; }
       await axios.post(`${API}/ha/purchase-orders`, body);
       onCreated();
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Save failed');
+      const d = e?.response?.data?.detail;
+      // The backend's "Vendor not found" is 99% a stale vendor_id on the
+      // client (deleted vendor kept in memory). Surface a nudge instead of
+      // the raw string.
+      if (typeof d === 'string' && d.toLowerCase().includes('vendor')) {
+        setErr(`${d}. Pick a different vendor, or use "+ Add vendor" to create a fresh one.`);
+      } else {
+        setErr(typeof d === 'string' ? d : 'Save failed');
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -139,8 +186,14 @@ function CreatePOModal({ onClose, onCreated }) {
           </Field>
           <Field label="Vendor *">
             <div className="flex gap-1">
-              <select value={vendor} onChange={(e) => setVendor(e.target.value)} data-testid="ha-po-vendor" className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm">
-                {vendors.length === 0 && <option value="">— no vendors —</option>}
+              <select
+                value={vendor}
+                onChange={(e) => { setVendor(e.target.value); setErr(''); }}
+                data-testid="ha-po-vendor"
+                disabled={vendors.length === 0}
+                className={`flex-1 border rounded px-2 py-1 text-sm ${vendors.length === 0 ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed' : 'border-slate-300'}`}
+              >
+                {vendors.length === 0 && <option value="">— no vendors yet —</option>}
                 {vendors.map(v => <option key={v.vendor_id} value={v.vendor_id}>{v.name}</option>)}
               </select>
               <button
@@ -156,6 +209,41 @@ function CreatePOModal({ onClose, onCreated }) {
             <input type="date" value={expected} onChange={(e) => setExpected(e.target.value)} className="w-full border border-slate-300 rounded px-2 py-1 text-sm" />
           </Field>
         </div>
+
+        {/* Empty-state coach — surfaces the fix path immediately instead of
+            letting the user submit and see "Vendor not found" from the API. */}
+        {loaded && vendors.length === 0 && (
+          <div
+            className="mb-4 border border-amber-300 bg-amber-50 rounded-lg p-3 flex items-start gap-3"
+            data-testid="ha-po-empty-vendors"
+          >
+            <div className="text-2xl">📦</div>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-amber-900">No vendors yet</div>
+              <div className="text-[11px] text-amber-800 leading-snug">
+                Purchase orders need at least one supplier. Add one now — it takes 30 seconds
+                and you&apos;ll be able to reuse it for every future PO.
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowVendorForm(true)}
+                  data-testid="ha-po-add-first-vendor"
+                  className="px-2.5 py-1 text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm"
+                >
+                  + Add your first vendor
+                </button>
+                <Link
+                  to="/ha/vendors"
+                  onClick={onClose}
+                  className="text-[11px] font-semibold text-indigo-600 hover:underline"
+                >
+                  Or open the Vendors master →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="border border-slate-200 rounded-md overflow-hidden">
           <table className="w-full text-sm">
@@ -204,7 +292,19 @@ function CreatePOModal({ onClose, onCreated }) {
 
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded">Cancel</button>
-          <button onClick={submit} data-testid="ha-po-save" className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded">Create PO</button>
+          <button
+            onClick={submit}
+            disabled={!canSubmit}
+            title={
+              !hasVendor ? 'Pick a vendor first'
+                : !hasLines ? 'Add at least one product line'
+                : ''
+            }
+            data-testid="ha-po-save"
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded"
+          >
+            {saving ? 'Creating…' : 'Create PO'}
+          </button>
         </div>
       </div>
       {showVendorForm && (
@@ -236,8 +336,17 @@ function QuickAddVendor({ onClose, onCreated }) {
       const r = await axios.post(`${API}/vendors`, f);
       onCreated(r.data);
     } catch (e) {
+      const status = e?.response?.status;
       const d = e?.response?.data?.detail;
-      setErr(typeof d === 'string' ? d : 'Save failed');
+      if (status === 403) {
+        // Only clinic_owner + inventory_manager (+super_admin/founder) can
+        // create vendors. Front desk / audiologist / accounts see this.
+        setErr('Your role can\u2019t add vendors — ask a clinic owner or inventory manager to add this supplier and try again.');
+      } else if (status === 401) {
+        setErr('Your session expired. Please sign in again and retry.');
+      } else {
+        setErr(typeof d === 'string' ? d : 'Save failed');
+      }
     } finally {
       setSaving(false);
     }
