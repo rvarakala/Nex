@@ -89,13 +89,18 @@ def _parse_window(start: Optional[str], end: Optional[str]) -> tuple[datetime, d
     return start_dt, end_dt
 
 
-def _compute_payout(revenue: float, patient_count: int,
+def _compute_payout(revenue: float, flat_patient_count: int,
                      mode: Optional[str], value: float) -> float:
     """Translate a configured cut into rupees owed.
 
     Two modes:
       • percent → `value%` of `revenue` (e.g. 10% of ₹50 000 = ₹5 000)
-      • flat    → `value × patient_count` (e.g. ₹500 per referred patient)
+      • flat    → `value × flat_patient_count`. `flat_patient_count` MUST
+        be the count of patients who ACTUALLY contributed revenue to
+        this bucket (diag or HA), NOT the aggregate referred-patient
+        count. Otherwise a "flat per patient HA cut" would pay the
+        doctor even for patients who never bought a hearing aid.
+        (Regression fix — see test_referral_flat_payout_scoping.py.)
     """
     if not mode or not value:
         return 0.0
@@ -106,7 +111,7 @@ def _compute_payout(revenue: float, patient_count: int,
     if mode == "percent":
         return round(revenue * v / 100.0, 2)
     if mode == "flat":
-        return round(v * max(0, int(patient_count)), 2)
+        return round(v * max(0, int(flat_patient_count)), 2)
     return 0.0
 
 
@@ -139,6 +144,12 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
             "patient_ids": set(),
             "diagnostics_revenue": 0.0,
             "ha_sales_revenue": 0.0,
+            # Per-patient contribution tracking so we can count only the
+            # patients who ACTUALLY contributed to each bucket for the
+            # flat-per-patient payout mode. Also lets the drill-down show
+            # each patient's billing without a second Mongo aggregation.
+            "per_patient_diag": {},   # {patient_id: cumulative diag ₹}
+            "per_patient_ha": {},     # {patient_id: cumulative HA ₹}
         }
 
     # 2. Find every patient in the clinic that points to one of these
@@ -197,6 +208,19 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
         doctors[did]["diagnostics_revenue"] += diag_rev
         doctors[did]["ha_sales_revenue"] += ha_rev
         doctors[did]["patient_ids"].add(inv.get("patient_id"))
+        # Attribute each invoice's contribution to the patient — the
+        # per-patient dicts feed the drill-down UI and the flat-per-patient
+        # payout counts.
+        pid = inv.get("patient_id")
+        if pid:
+            if diag_rev:
+                doctors[did]["per_patient_diag"][pid] = (
+                    doctors[did]["per_patient_diag"].get(pid, 0.0) + diag_rev
+                )
+            if ha_rev:
+                doctors[did]["per_patient_ha"][pid] = (
+                    doctors[did]["per_patient_ha"].get(pid, 0.0) + ha_rev
+                )
 
     # 4. Tighten HA revenue against the linked HA-sale lifecycle. The user's
     #    rule: only "delivered AND paid" sales count. Trials/returns/
@@ -238,21 +262,38 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
                 continue
             for ln in (inv.get("lines") or []):
                 if isinstance(ln, dict) and ln.get("product_type") == "Hearing Aid":
+                    amt = float(ln.get("line_total") or 0.0)
                     doctors[did]["ha_sales_revenue"] = max(
-                        0.0,
-                        doctors[did]["ha_sales_revenue"] - float(ln.get("line_total") or 0.0),
+                        0.0, doctors[did]["ha_sales_revenue"] - amt,
                     )
+                    # Mirror the trim on the per-patient dict so the
+                    # flat-count / drill-down see the corrected value.
+                    pid = inv.get("patient_id")
+                    if pid and pid in doctors[did]["per_patient_ha"]:
+                        doctors[did]["per_patient_ha"][pid] = max(
+                            0.0, doctors[did]["per_patient_ha"][pid] - amt,
+                        )
+                        if doctors[did]["per_patient_ha"][pid] == 0.0:
+                            doctors[did]["per_patient_ha"].pop(pid, None)
 
     # 5. Finalise: patient counts + payout computation.
     rows = []
     for d in doctors.values():
         d["patient_count"] = len(d.pop("patient_ids", set()))
+        # Flat-per-patient counts MUST use the buckets that actually saw
+        # revenue — see _compute_payout for the reasoning. A patient
+        # whose HA line was fully blacklisted has been popped from
+        # per_patient_ha, so they no longer count for the HA flat cut.
+        diag_flat_count = len([pid for pid, amt in d["per_patient_diag"].items() if amt > 0])
+        ha_flat_count = len([pid for pid, amt in d["per_patient_ha"].items() if amt > 0])
+        d["diag_patient_count"] = diag_flat_count
+        d["ha_patient_count"] = ha_flat_count
         d["diagnostics_payout"] = _compute_payout(
-            d["diagnostics_revenue"], d["patient_count"],
+            d["diagnostics_revenue"], diag_flat_count,
             d["diag_cut_mode"], d["diag_cut_value"],
         )
         d["ha_payout"] = _compute_payout(
-            d["ha_sales_revenue"], d["patient_count"],
+            d["ha_sales_revenue"], ha_flat_count,
             d["ha_cut_mode"], d["ha_cut_value"],
         )
         d["total_payout"] = round(d["diagnostics_payout"] + d["ha_payout"], 2)
@@ -619,7 +660,24 @@ async def doctor_drill_down(
         row = {
             "patient_count": 0, "diagnostics_revenue": 0.0, "ha_sales_revenue": 0.0,
             "diagnostics_payout": 0.0, "ha_payout": 0.0, "total_payout": 0.0,
+            "per_patient_diag": {}, "per_patient_ha": {},
         }
+
+    # Enrich the patients list with per-patient billing (the user's ask:
+    # "when I click on a doctor's name I should see each referred
+    # patient and their billing towards Diagnostics & Hearing aids").
+    # Only counts PAID invoices in the window and honours the HA-sale
+    # blacklist — same logic as the aggregate payout.
+    per_p_diag = row.get("per_patient_diag") or {}
+    per_p_ha = row.get("per_patient_ha") or {}
+    for p in patients:
+        pid = p["patient_id"]
+        p["diag_revenue"] = round(float(per_p_diag.get(pid, 0.0)), 2)
+        p["ha_revenue"] = round(float(per_p_ha.get(pid, 0.0)), 2)
+        p["total_revenue"] = round(p["diag_revenue"] + p["ha_revenue"], 2)
+    # Sort patients: contributors first (higher revenue first), then
+    # zero-revenue "referred but hasn't bought yet" rows alphabetically.
+    patients.sort(key=lambda pp: (-(pp.get("total_revenue") or 0), (pp.get("name") or "").lower()))
 
     # 4. HA fittings — closed sales in window from this doctor's referrals.
     ha_fittings = []

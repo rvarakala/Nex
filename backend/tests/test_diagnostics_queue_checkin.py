@@ -85,34 +85,39 @@ def audiologist_id(hdrs) -> str:
 def _make_today_appt(hdrs, patient_id, audiologist_id, hour: int = 15, minute: int = 0) -> str:
     """Create a scheduled appointment for today (IST). Returns appointment_id.
 
-    Auto-retries with a different minute if we hit a 409 slot conflict from
-    prior test runs on the same day.
+    Auto-retries with a different minute AND across the full working-day
+    hours (8-21) if we hit a 409 slot conflict from prior test runs on
+    the same day. Slot-collision failures should be rare — the search
+    space is ~14 hours × 60 minutes = 840 slots.
     """
     last_err = None
-    for attempt in range(30):
-        # Try requested minute first, then wander through the hour
-        m = (minute + attempt) % 60
-        slot = f"{_ist_today_ymd()}T{hour:02d}:{m:02d}:00"
-        payload = {
-            "patient_id": patient_id,
-            "audiologist_id": audiologist_id,
-            "counterparty_type": "patient",
-            "counterparty_id": patient_id,
-            "service": "PTA (checkin test)",
-            "start_at": slot,
-            "duration_minutes": 5,
-            "visit_type": "walkin",
-            "recommended_tests": ["pta"],
-            "wing": "diagnostic",
-        }
-        r = requests.post(f"{BASE_URL}/api/appointments", headers=hdrs, json=payload, timeout=15)
-        if r.status_code in (200, 201):
-            return r.json()["appointment_id"]
-        if r.status_code == 409:
-            last_err = r.text
-            continue
-        assert False, r.text
-    assert False, f"Could not find free slot after 30 attempts: {last_err}"
+    # Walk across hours + minutes so a heavily-populated day still finds
+    # a free slot. Start at the requested hour/minute for determinism.
+    hours = list(range(hour, 22)) + list(range(8, hour))
+    for h in hours:
+        for m_offset in range(60):
+            m = (minute + m_offset) % 60
+            slot = f"{_ist_today_ymd()}T{h:02d}:{m:02d}:00"
+            payload = {
+                "patient_id": patient_id,
+                "audiologist_id": audiologist_id,
+                "counterparty_type": "patient",
+                "counterparty_id": patient_id,
+                "service": "PTA (checkin test)",
+                "start_at": slot,
+                "duration_minutes": 5,
+                "visit_type": "walkin",
+                "recommended_tests": ["pta"],
+                "wing": "diagnostic",
+            }
+            r = requests.post(f"{BASE_URL}/api/appointments", headers=hdrs, json=payload, timeout=15)
+            if r.status_code in (200, 201):
+                return r.json()["appointment_id"]
+            if r.status_code == 409:
+                last_err = r.text
+                continue
+            assert False, r.text
+    assert False, f"Could not find free slot after scanning 8am-10pm: {last_err}"
 
 
 class TestQueueCheckin:

@@ -188,8 +188,19 @@ export default function AppointmentsCalendarPage() {
   const clearAll = () => setSelectedStaffIds([]);
 
   // ---- Booking flow --------------------------------------------------------
+  // Anyone who conducts diagnostics is a valid appointment resource — not just
+  // users with role='audiologist'. Small clinics run as one-person operations
+  // (owner does testing + admin) and would otherwise see an EMPTY dropdown
+  // and get stuck at the "Still needed: audiologist" validation. We include:
+  //   • audiologist   — canonical role
+  //   • clinic_owner  — small-clinic owner-operators
+  //   • technician    — hearing-aid + service-only clinics
+  // We DELIBERATELY exclude front_desk and accounts — they book appts on
+  // behalf of others, they don't conduct tests themselves.
+  const DIAGNOSTIC_STAFF_ROLES = new Set(['audiologist', 'clinic_owner', 'technician']);
   const audiologistsForModal = useMemo(
-    () => staff.filter((s) => s.role === 'audiologist'),
+    () => staff.filter((s) => DIAGNOSTIC_STAFF_ROLES.has(s.role)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [staff],
   );
 

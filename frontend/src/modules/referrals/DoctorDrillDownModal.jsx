@@ -214,8 +214,8 @@ export default function DoctorDrillDownModal({ doctorId, range, onClose }) {
               <section>
                 <SectionHeading
                   icon={User}
-                  title="Referred patients (all-time)"
-                  hint={`${data.patient_total} patients`}
+                  title="Referred patients — billing breakdown"
+                  hint={`${data.patient_total} patients · sorted by revenue`}
                 />
                 {data.patients.length > 0 && (
                   <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -225,24 +225,56 @@ export default function DoctorDrillDownModal({ doctorId, range, onClose }) {
                           <th className="text-left px-3 py-2">Patient</th>
                           <th className="text-left px-3 py-2">MRD</th>
                           <th className="text-left px-3 py-2">Contact</th>
+                          <th className="text-right px-3 py-2">Diagnostics ₹</th>
+                          <th className="text-right px-3 py-2">Hearing Aid ₹</th>
+                          <th className="text-right px-3 py-2">Total ₹</th>
                           <th className="text-left px-3 py-2">First visit</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {data.patients.map((p) => (
-                          <tr key={p.patient_id} className="hover:bg-slate-50">
-                            <td className="px-3 py-2">
-                              <div className="font-semibold text-slate-800">{p.name}</div>
-                              {p.age && p.gender && (
-                                <div className="text-[10px] text-slate-500">{p.age}y · {p.gender}</div>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 font-mono text-[11px] text-slate-600">{p.mrd || '—'}</td>
-                            <td className="px-3 py-2 text-slate-600">{p.mobile || '—'}</td>
-                            <td className="px-3 py-2 text-slate-600 tabular-nums">{p.first_visit || '—'}</td>
-                          </tr>
-                        ))}
+                        {data.patients.map((p) => {
+                          // "Zero-revenue" patients are shown with muted
+                          // styling so the audiologist can spot referred-
+                          // but-not-yet-billed patients at a glance.
+                          const zero = !(p.total_revenue || 0);
+                          return (
+                            <tr
+                              key={p.patient_id}
+                              data-testid={`drilldown-patient-row-${p.patient_id}`}
+                              className={`hover:bg-slate-50 ${zero ? 'opacity-70' : ''}`}
+                            >
+                              <td className="px-3 py-2">
+                                <div className="font-semibold text-slate-800">{p.name}</div>
+                                {p.age && p.gender && (
+                                  <div className="text-[10px] text-slate-500">{p.age}y · {p.gender}</div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-[11px] text-slate-600">{p.mrd || '—'}</td>
+                              <td className="px-3 py-2 text-slate-600">{p.mobile || '—'}</td>
+                              <td className="px-3 py-2 text-right tabular-nums font-semibold text-emerald-700">
+                                {p.diag_revenue ? fmtINR(p.diag_revenue) : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums font-semibold text-violet-700">
+                                {p.ha_revenue ? fmtINR(p.ha_revenue) : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums font-black text-slate-800">
+                                {p.total_revenue ? fmtINR(p.total_revenue) : <span className="text-slate-400">₹0</span>}
+                              </td>
+                              <td className="px-3 py-2 text-slate-600 tabular-nums">{p.first_visit || '—'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
+                      {/* Column totals — sanity check against the KPI strip. */}
+                      <tfoot className="bg-slate-50/60 border-t-2 border-slate-200">
+                        <tr className="text-[11px] font-black text-slate-800">
+                          <td className="px-3 py-2" colSpan={3}>Totals ({data.patient_total} patients)</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-emerald-800">{fmtINR(data.revenue.diagnostics)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-violet-800">{fmtINR(data.revenue.ha_sales)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-900">{fmtINR(data.revenue.total)}</td>
+                          <td className="px-3 py-2"></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 )}

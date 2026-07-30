@@ -666,7 +666,28 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
               <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">Audiologist *</label>
               <select value={audiologistId} onChange={(e) => setAudiologistId(e.target.value)} data-testid="bk-audiologist"
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white">
-                {audiologists.map((a) => <option key={a.user_id} value={a.user_id}>{a.name}</option>)}
+                {audiologists.length === 0 && (
+                  <option value="" disabled>No staff available — add one in Settings → Staff</option>
+                )}
+                {audiologists.length > 0 && !audiologistId && (
+                  <option value="">— select —</option>
+                )}
+                {audiologists.map((a) => {
+                  // Show the role next to the name so reception can tell
+                  // apart the audiologist from the clinic-owner-doing-tests,
+                  // especially in small clinics where multiple roles map to
+                  // one person. Role labels use human-friendly wording.
+                  const roleLabel = ({
+                    audiologist: 'Audiologist',
+                    clinic_owner: 'Owner',
+                    technician: 'Technician',
+                  }[a.role] || a.role || '');
+                  return (
+                    <option key={a.user_id} value={a.user_id}>
+                      {a.name}{roleLabel ? ` — ${roleLabel}` : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div>

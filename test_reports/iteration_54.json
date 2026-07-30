@@ -1,0 +1,35 @@
+{
+  "summary": "Verified all 3 fixes from the review request (Bug1 audiologist dropdown, Bug2 flat-per-patient HA payout scoping, Feature3 drill-down per-patient billing) end-to-end. Backend: 12/12 pytest PASS across test_referral_flat_payout_scoping (3), test_appointment_ha_wing (5), test_diagnostics_queue_checkin (4). Frontend: Playwright verified DL Test clinic → New Appointment → Patient intent → audiologist dropdown lists 'DL Owner — Owner' (1 real option with role suffix); Referral Corner shows Total Payout Owed = ₹160 (not ₹5,160) with Dr Ak row Diag ₹160 + HA ₹0; DoctorDrillDownModal has new 'Diagnostics ₹ / Hearing Aid ₹ / Total ₹' columns, Demo4 row = ₹1,600 / — / ₹1,600, tfoot totals match KPIs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_features": [
+    {"item": "Bug1 — Audiologist dropdown populated when clinic has only clinic_owner", "evidence": "GET /appointments → New Appointment → intent 'Patient' → [data-testid=bk-audiologist] options = [{value: 'USR-C19B4B1D', text: 'DL Owner — Owner'}]. Role suffix ' — Owner' correctly rendered per BookAppointmentModal.js:680-687. front_desk/accounts excluded via DIAGNOSTIC_STAFF_ROLES set in AppointmentsCalendarPage.jsx:200."},
+    {"item": "Bug2 — Flat HA payout no longer multiplies aggregate patient_count", "evidence": "GET /api/referrals/dashboard July 2026 for Dr Ak (DR-REPRO-AK): patient_count=1, diag_patient_count=1, ha_patient_count=0, diagnostics_payout=₹160 (10% × 1600), ha_payout=₹0 (5000 × 0), total_payout=₹160. UI card [data-testid=ref-kpi-payout] renders '₹160'. Dr Ak row shows Diag ₹160 · HA ₹0 · Total ₹160. Was ₹5,160 before fix."},
+    {"item": "Bug2 — Flat diag payout scoping (edge case)", "evidence": "test_flat_diag_payout_scopes_to_diag_patients_only PATCHes Dr Ak diag_cut to flat=200: diagnostics_payout drops to ₹200 (1 diag patient × 200), ha_payout stays ₹0, total ₹200. Restore succeeds. PASS."},
+    {"item": "Feature3 — Doctor drill-down per-patient billing table", "evidence": "Click [data-testid=ref-doc-drilldown-DR-REPRO-AK] opens [data-testid=doctor-drilldown-modal]. Patients table (data-testid=drilldown-patients-table) headers = ['Patient','MRD','Contact','Diagnostics ₹','Hearing Aid ₹','Total ₹','First visit']. Demo4 row [data-testid=drilldown-patient-row-ACS-REPRO-DEMO4] shows ₹1,600 diag, '—' HA, ₹1,600 total. tfoot 'Totals (1 patients)' = ₹1,600 / ₹0 / ₹1,600 — matches KPI strip."},
+    {"item": "Feature3 — Backend detail endpoint per-patient revenue", "evidence": "GET /api/referrals/doctors/DR-REPRO-AK/detail returns patients[].diag_revenue=1600.0, ha_revenue=0.0, total_revenue=1600.0 for Demo4 (test_drilldown_includes_per_patient_revenue PASS)."},
+    {"item": "Regression — Phase B HA-wing appointment suite", "evidence": "pytest test_appointment_ha_wing.py — 5/5 PASS."},
+    {"item": "Regression — Diagnostics queue check-in suite", "evidence": "pytest test_diagnostics_queue_checkin.py — 4/4 PASS."}
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_referral_flat_payout_scoping.py",
+    "/app/backend/tests/test_appointment_ha_wing.py",
+    "/app/backend/tests/test_diagnostics_queue_checkin.py",
+    "/app/test_reports/pytest/iter54.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/referrals.py — _compute_payout correctly uses flat_patient_count (per-bucket count); doctors dict tracks per_patient_diag / per_patient_ha across the invoice walk and the HA-blacklist trim; drill-down enriches patients from these dicts and sorts by total_revenue DESC. Clean and locked in with 3 regression tests.",
+    "frontend BookAppointmentModal.js:668-691 — empty-state option ('No staff available — add one in Settings → Staff') + '— select —' placeholder + role-suffix rendering handles all 3 audiologist-dropdown edge cases cleanly.",
+    "AppointmentsCalendarPage.jsx:200 — DIAGNOSTIC_STAFF_ROLES Set is well-documented (excludes front_desk/accounts). Small-clinic single-user case is now unblocked.",
+    "DoctorDrillDownModal.jsx:213-278 — tfoot totals derive from data.revenue.* (which comes from the same _dashboard_rows path as the KPI strip), so the table footer can't drift from the KPI cards — good single-source-of-truth choice."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (all 3 review-request assertions PASS)"},
+  "test_credentials": "dltest@example.com / TestPass@123 (DL Test Clinic, clinic_owner USR-C19B4B1D). Doctor DR-REPRO-AK 'Dr Ak' + patient ACS-REPRO-DEMO4 'Demo4' seeded and intact.",
+  "seed_data_creation": "None — reused existing seed created by main agent's python script (DR-REPRO-AK, ACS-REPRO-DEMO4, INV-REPRO-DEMO4).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 review-request items (Bug1, Bug2, Feature3) fully green in iter54. If any regression suspected, run: pytest /app/backend/tests/test_referral_flat_payout_scoping.py -v. The 3rd test PATCHes and restores Dr Ak's cut config within a try/finally so it's safe to re-run. Note DL Test clinic has ONLY clinic_owner USR-C19B4B1D — bk-audiologist dropdown has exactly 1 non-empty option ('DL Owner — Owner'). The intent-chooser testids are 'apt-intent-patient' etc. — use those instead of 'text=Patient' (which collides with the sidebar Patients link).",
+  "rca of the issue": "N/A — no new issues surfaced."
+}
