@@ -1,5 +1,42 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🏷️ Procurement "Vendor is Missing" bug — FIXED (2026-07-30)
+
+**Reported**: User screenshot on `https://audinexa.com/ha/procurement` showed New Purchase Order modal with vendor dropdown reading "— no vendors —" and a red "Vendor not found" banner. Complaint: "Vendor is Missing".
+
+**Root cause**: Pure UX discoverability bug. The clinic had zero vendors, so:
+1. The dropdown showed "— no vendors —"
+2. The user clicked Create PO anyway → backend rejected with "Vendor not found"
+3. The existing `+` quick-add button was a tiny icon next to the dropdown — non-obvious
+
+No backend bug — the QuickAddVendor flow already existed, just wasn't discoverable to a new clinic.
+
+**Fix (frontend-only, `modules/ha/ProcurementPage.js`)**:
+- **Auto-open** the QuickAddVendor modal when `vendors.length === 0` on first PO-modal load.
+- **Amber coach card** (testid `ha-po-empty-vendors`) with "No vendors yet" copy + big **"+ Add your first vendor"** CTA + link to `/ha/vendors` master page.
+- **Disable** the vendor `<select>` when empty (cursor-not-allowed styling).
+- **Client-side gate**: Create PO button `disabled` until a vendor + at least one product line are picked. Prevents the "Vendor not found" scary banner ever showing.
+- **Role-aware 403 handling** in QuickAddVendor: audiologist / accounts / front-desk see "Your role can't add vendors — ask a clinic owner or inventory manager to add this supplier and try again." instead of the raw Pydantic detail.
+- **Cross-link** on the Procurement page itself: "Need to manage suppliers? Open Vendors master →" (testid `ha-procurement-vendors-link`).
+
+**Testing (iteration_50)** — 100% PASS across all 7 acceptance items:
+- T1 auto-open + coach card + disabled dropdown + disabled Create PO — PASS
+- T2 zero POSTs when Create PO is clicked with no vendor — PASS
+- T3 vendors cross-link navigates correctly — PASS
+- T4 happy-path save → dropdown enabled + vendor auto-selected + coach card gone; on re-open QuickAdd does NOT auto-open — PASS
+- T5 audiologist gets friendly 403 message — PASS
+- T6 regression: for a clinic WITH vendors, coach card is hidden — PASS
+- T7 backend role gate `POST /api/vendors`: owner 200, audiologist 403, super_admin bypass 200 — PASS (new pytest at `tests/test_vendor_role_gate.py`)
+
+**⚠️ Note from testing agent**: `dltest` clinic is BASIC-tier in preview so `/ha/*` module is tier-locked. Prod clinic hitting this bug is presumably on Standard/Premium (or the user is on a different tenant). Worth confirming with the reporter which clinic actually saw it.
+
+**Files touched**
+- `frontend/src/modules/ha/ProcurementPage.js` — CreatePOModal (auto-open, coach card, disabled state) + QuickAddVendor (role-aware error mapping)
+- `backend/tests/test_vendor_role_gate.py` — new regression (added by testing agent)
+
+---
+
+
 ## 🧾 Refund Receipt Print (2026-07-30)
 
 **Ask**: "Add a Print refund receipt button on the refund row so clinics can hand the patient a paper trail."
