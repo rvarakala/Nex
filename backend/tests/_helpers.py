@@ -73,7 +73,7 @@ ACCOUNTS_PASSWORD: str = os.environ.get("TEST_ACCOUNTS_PASSWORD", "Pytest@123")
 # Founder is always seeded (even when DISABLE_DEMO_SEED=1) so smoke tests
 # and platform-level checks can rely on it.
 FOUNDER_EMAIL: str = os.environ.get("FOUNDER_EMAIL", "founder@audinexa.com")
-FOUNDER_PASSWORD: str = os.environ.get("FOUNDER_PASSWORD", "founder123")
+FOUNDER_PASSWORD: str = os.environ.get("FOUNDER_PASSWORD", "AudinexaFounder@2026")
 
 
 def login(email: str, password: str, *, timeout: int = 20) -> str:

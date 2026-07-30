@@ -160,7 +160,14 @@ async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
 
     # ---- 2. Founder user ----
     founder_email = os.environ.get("FOUNDER_EMAIL", "founder@audinexa.com")
-    founder_pw = os.environ.get("FOUNDER_PASSWORD", "founder123")
+    # Distinguish "env explicitly set" vs "using the fallback default" — critical
+    # for the idempotency guard below. If the operator never set FOUNDER_PASSWORD,
+    # we MUST NOT touch the stored hash after the initial seed, otherwise every
+    # backend restart resets whatever the user changed via forgot-password.
+    env_pw_raw = os.environ.get("FOUNDER_PASSWORD")
+    env_pw_explicit = env_pw_raw is not None
+    founder_pw = env_pw_raw if env_pw_explicit else "founder123"
+
     found = await db.users.find_one({"email": founder_email})
     if not found:
         await db.users.insert_one(serialize_datetime({
@@ -191,15 +198,57 @@ async def seed_founder_only(db: AsyncIOMotorDatabase) -> None:
             founder_email, found.get("role"),
         )
     else:
-        # Keep password in sync if env changed — but only when the existing
-        # row is genuinely the founder (guarded above).
-        if not verify_password(founder_pw, found.get("password_hash", "")):
+        # ⚠️ Non-idempotent-seed guard (2026-07-30 incident):
+        # The original code below was:
+        #     if not verify_password(founder_pw, found["password_hash"]):
+        #         update password_hash from env
+        # which is the exact anti-pattern the auth playbook warns about —
+        # on EVERY backend restart it would clobber any password change the
+        # founder had made via /api/auth/reset-password or self-service.
+        # Symptom the user saw: "I reset my password, it works in this
+        # session, but next time I come back it's broken again."
+        #
+        # Fix:  Only sync from env when BOTH conditions hold:
+        #   (a) The operator explicitly set FOUNDER_PASSWORD in .env
+        #       (not the "founder123" fallback default), AND
+        #   (b) The founder has NEVER changed their password themselves
+        #       (no `password_changed_at` field on the user document).
+        # Once (b) is false, env-sync is permanently disabled for this
+        # account. If the operator needs an emergency reset, they should
+        # use the /api/auth/forgot-password flow or clear
+        # `password_changed_at` manually.
+        user_ever_changed_pw = bool(found.get("password_changed_at"))
+        env_pw_matches_stored = verify_password(founder_pw, found.get("password_hash", ""))
+
+        if user_ever_changed_pw:
+            if env_pw_explicit and not env_pw_matches_stored:
+                # Loudly warn ops so they know their env override is being
+                # ignored — otherwise a stale env var stays silently wrong.
+                logger.warning(
+                    "FOUNDER_PASSWORD env is set but does NOT match the "
+                    "current stored hash for %s. Skipping env-sync — the "
+                    "founder has changed their password themselves "
+                    "(password_changed_at=%s). To force-reset from env, "
+                    "unset `password_changed_at` on the user row.",
+                    founder_email, found.get("password_changed_at"),
+                )
+            # else: user has changed pw and env matches (or env not set) → nothing to do.
+        elif env_pw_explicit and not env_pw_matches_stored:
+            # First-time boot after operator set FOUNDER_PASSWORD, and the
+            # founder has never used forgot-password yet → safe to sync.
             await db.users.update_one(
                 {"email": founder_email, "role": "founder"},
-                {"$set": {"password_hash": hash_password(founder_pw), "role": "founder",
+                {"$set": {"password_hash": hash_password(founder_pw),
+                          "role": "founder",
                           "clinic_id": PLATFORM_CLINIC_ID}},
             )
-            logger.info(f"Founder password synced from env: {founder_email}")
+            logger.info(
+                "Founder password synced from FOUNDER_PASSWORD env: %s "
+                "(user has never changed password themselves).",
+                founder_email,
+            )
+        # else: env not explicit OR env matches stored → no-op. This is the
+        # steady-state after the founder has done forgot-password once.
 
     # Self-heal: founder is internal — must never be trapped behind the
     # email-verification gate. Runs on every boot; no-op if already verified.

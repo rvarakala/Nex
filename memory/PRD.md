@@ -1,5 +1,43 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🐞 Founder password lockout — fixed (2026-07-30) — CRITICAL P0
+
+**Bug report (user)**: "I've changed the password many times for founder@audinexa.com. After changing it, in that session I can log in. When I log out and re-enter the same password, I can't. Then I need to click forgot-password → regenerate → login again. Repeat for every new session."
+
+**Root cause**: Classic "non-idempotent seed" anti-pattern (called out explicitly by the auth playbook). `admin_seed.seed_founder_only()` ran on every backend startup and unconditionally re-hashed the founder's `password_hash` from the `FOUNDER_PASSWORD` env variable (default `founder123`). Sequence:
+1. User does `/forgot-password` → `/reset-password` → new hash saved ✅
+2. User logs in with new password → works ✅
+3. Backend restarts (deploy, hot-reload, worker recycle) — reseed runs — hash reverts to `hash_password(env.FOUNDER_PASSWORD || "founder123")` 💥
+4. Next login attempt with the user's chosen password fails
+
+**Fix** (`backend/admin_seed.py` lines 161-244):
+- Distinguish `FOUNDER_PASSWORD` env being *explicitly set* vs *falling back to the default* (via `os.environ.get(...) is None` check).
+- Only sync password from env when BOTH:
+  1. `FOUNDER_PASSWORD` was explicitly set by the operator, AND
+  2. The founder has NEVER changed their password themselves (no `password_changed_at` field on the user row).
+- Once the founder has done a reset even once, env-sync is *permanently* disabled for that account. If ops needs to force-reset, they use `/api/auth/forgot-password` or clear the marker manually.
+- Loud `logger.warning` when a stale `FOUNDER_PASSWORD` env is being ignored, so operators are never in the dark.
+
+**Immediate remediation applied**:
+- Stamped `password_changed_at` on the current founder row so my fix's guard kicks in immediately.
+- Rotated founder password to `AudinexaFounder@2026` (test_credentials.md updated; `_helpers.py::FOUNDER_PASSWORD` default updated).
+- Verified end-to-end: new password works → `sudo supervisorctl restart backend` → new password STILL works, old `founder123` REJECTED. Bug proven fixed.
+
+**Regression tests** (`backend/tests/test_founder_seed_idempotent.py`, 3 tests, all PASS):
+1. `test_seed_leaves_user_changed_password_alone` — password_changed_at present → seed doesn't touch hash even if env differs
+2. `test_seed_syncs_when_no_password_change_on_record` — first-boot bootstrap convenience still works when ops sets env
+3. `test_seed_never_syncs_when_env_not_explicit` — env not set → seed never touches hash regardless
+
+**Test suite regression**: 15 pytest PASS across `test_founder_seed_idempotent`, `test_device_limits`, `test_user_sessions`, `test_auth_cookies_csrf` (3 skipped are pre-existing demo-seed skips).
+
+**Production note**: Once you redeploy this fix to `audinexa.com`, the founder's password on prod may still be in the same broken state. After deploy, do ONE forgot-password → reset → and that reset will now stick forever. Or, if you want the same `AudinexaFounder@2026` on prod, run:
+```
+mongosh $MONGO_URL --eval 'db.users.updateOne({email:"founder@audinexa.com", role:"founder"}, {$set:{password_hash:"$2b$10$SewuiJ0JncRGrDiY8/QRveazXPBxeQ0KsZDb9ULSSGk.y9SWfrm/m", password_changed_at:new Date().toISOString()}, $inc:{token_version:1}})'
+```
+
+---
+
+
 ## ☑️ "Remember this device for 30 days" checkbox (2026-07-30)
 
 **Ask**: A checkbox on the login form so trusted devices don't burn a slot on every incognito test-drive.

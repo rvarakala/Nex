@@ -9,6 +9,15 @@
 
 
 
+> **🔑 Founder password rotated (2026-07-30)**: The founder account is
+> now `founder@audinexa.com` / `AudinexaFounder@2026`. The old default
+> `founder123` no longer works. This was set as part of the fix for the
+> non-idempotent-seed bug — see PRD.md for context. `password_changed_at`
+> is now stamped on the user row so future backend restarts will NOT
+> reset it. Pytest picks the new password up automatically via
+> `tests/_helpers.py::FOUNDER_PASSWORD`.
+
+
 > **🔒 Device limit (2026-07-29)**: Per-user concurrent-session cap enforced
 > based on clinic tier (BASIC=2, STANDARD=4, PREMIUM=8, founder/super_admin=∞).
 > Currently in **warn-only mode** — env `DEVICE_LIMIT_ENFORCE=false`. Flip to
