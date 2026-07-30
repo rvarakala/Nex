@@ -1,5 +1,41 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✨ Phase B — Booking Flow Polish (2026-07-31) — 2 items DELIVERED
+
+**User request (11-point mega-list)**: Phase B closes items #2 and #3.
+
+**Shipped**
+- **#2 Register + Book Appointment button** — New action on `/patients/new`. `NewPatientPage.js:172-208` adds a `book_appointment` branch to `submit()` that creates the patient, then navigates to `/appointments?bookForPatientId=<id>&bookForPatientName=<name>`. `AppointmentsCalendarPage.jsx:105-124` reads those params via `useSearchParams`, auto-opens `BookAppointmentModal` with `existing={patient_id, patient_name}` (so the patient is pre-selected & the search input is read-only), and strips the params via `setSearchParams(..., {replace:true})` to prevent re-open on refresh. Testid: `btn-register-book-apt`.
+- **#3 HA/Service chips + Wing routing** — `BookAppointmentModal.js` gets a new Wing toggle (`bk-wing-diagnostic` / `bk-wing-hearing_aid`) above the visit-type picker. Diagnostic keeps the classic PTA/IMP/OAE/ABR/etc. chips; Hearing Aid swaps them for 9 HA chips (`bk-ha-ha_trial / ha_fitting / ha_programming / ha_followup / ha_repair / ha_earmould / ha_battery / ha_sale_bte / ha_sale_ric`) with catalog-first prices (falls back to `defaultPrice`). Selecting HA chips:
+  - Auto-fills invoice lines from the HA catalogue (HAF, EARMOULD, BATTERY, HA-BTE, HA-RIC — ad-hoc lines when catalog misses).
+  - Sends `wing='hearing_aid'` + `hearing_aid_services=[…]` + derived `category` on `POST /api/appointments/with-invoice`.
+  - Auto-derives category per chip (Trial→demo, Sale→other, Fitting/Programming/Follow-up/Ear Mould→fitting).
+  - Shows the routing hint `bk-wing-ha-hint`: "This booking will be routed to the Hearing Aid module."
+  - Toggling wings clears the OTHER side's chip selection AND drops its invoice lines (no stale-payload risk).
+  - Snaps auto-summed duration to the nearest allowed `DURATIONS` bucket `[15, 30, 45, 60, 75, 90, 105, 120]` (fixes iteration_52 LOW-priority display bug — was rendering "15 min" because 75 wasn't in the list).
+
+**Backend contract**
+- `models/_canonical.py`: Added `hearing_aid_services: List[str]` + `wing: Literal["diagnostic","hearing_aid"]` to both `AppointmentBase` and `AppointmentCreate`. Defaults preserve back-compat.
+- `routers/appointments.py`: pass-through on both create (~L376) AND update (~L562) endpoints.
+- `routers/report_handover.py`: `AppointmentWithInvoiceRequest` accepts `wing`, `hearing_aid_services`, optional `category`, plus derived-category fallback (`fitting` for HA wing, else `consultation`).
+
+**Testing** (`test_reports/iteration_52.json` + `backend/tests/test_appointment_ha_wing.py`)
+- Backend: **5/5 pytest cases PASSED** (create HA appointment, create HA with invoice, PUT updates HA fields, default `wing=diagnostic` for legacy payloads, hearing_aid_services persistence).
+- Frontend: **100%** — all review-request assertions confirmed via Playwright (auto-open + patient pre-select, URL strip, all 9 HA chips + prices, invoice auto-fill totalling ₹2,700, wing-switch cleanup, missing-hint copy, negative reload).
+- LOW-priority DURATION visual bug (raised in iteration_52) FIXED post-hoc via `snapDurationToAllowed()` helper + expanded `DURATIONS` list.
+
+**Files touched**
+- `frontend/src/modules/patients/NewPatientPage.js`
+- `frontend/src/modules/appointments/AppointmentsCalendarPage.jsx`
+- `frontend/src/modules/appointments/components/BookAppointmentModal.js`
+- `backend/models/_canonical.py`
+- `backend/routers/appointments.py`
+- `backend/routers/report_handover.py`
+- `backend/tests/test_appointment_ha_wing.py` (NEW — 5 tests)
+
+---
+
+
 ## ✨ Phase A — UX Polish Bundle (2026-07-31) — 5 quick wins DELIVERED
 
 **User request (11-point mega-list)**: Split into phases. Phase A closes items #1, #5, #6, #9, #11.

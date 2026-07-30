@@ -7,7 +7,25 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const ROOMS = ['Room 1', 'Room 2', 'Sound Booth'];
-const DURATIONS = [15, 30, 45, 60, 90];
+const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120];
+
+// Snap an arbitrary total (in minutes) to the closest allowed duration
+// bucket. Prevents auto-sum outputs like 80 min (ha_fitting + ha_earmould)
+// from silently defaulting the <select> back to the first option because
+// the computed value isn't present in DURATIONS. Ties go UP so reception
+// always gets ≥ the estimated time.
+const snapDurationToAllowed = (mins) => {
+  if (!mins || mins <= DURATIONS[0]) return DURATIONS[0];
+  if (mins >= DURATIONS[DURATIONS.length - 1]) return DURATIONS[DURATIONS.length - 1];
+  let best = DURATIONS[0];
+  let bestDiff = Infinity;
+  for (const d of DURATIONS) {
+    const diff = Math.abs(d - mins);
+    // < instead of <= so equal-distance snaps prefer the LARGER bucket.
+    if (diff < bestDiff) { best = d; bestDiff = diff; }
+  }
+  return best;
+};
 
 // Front-desk "what tests to perform" chip picker. Kept in sync with the
 // RECOMMENDED_TAB_MAP in TestProceduresModule — the audiologist sees the
@@ -245,8 +263,8 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
         const fallback = (HA_BY_KEY[k] || {}).defaultMin || 30;
         return sum + (fromCatalog > 0 ? fromCatalog : fallback);
       }, 0);
-      const snapped = Math.max(15, Math.round(total / 15) * 15);
-      setDuration(snapped);
+      // Snap to the nearest ALLOWED duration so the <select> displays it.
+      setDuration(snapDurationToAllowed(total));
       return;
     }
     if (recommendedTests.length === 0) return;
@@ -256,9 +274,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
       const fallback = (TEST_BY_KEY[k] || {}).defaultMin || 15;
       return sum + (fromCatalog > 0 ? fromCatalog : fallback);
     }, 0);
-    // Snap to the nearest 15 min so the dropdown stays consistent.
-    const snapped = Math.max(15, Math.round(total / 15) * 15);
-    setDuration(snapped);
+    setDuration(snapDurationToAllowed(total));
   }, [recommendedTests, hearingAidServices, wing, visitType, matchService, durationManuallySet]);
 
   // Auto-sync invoice lines to ticked tests / HA services (consultation → no invoice).
@@ -724,7 +740,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             <div>
               <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">
                 Duration
-                {!durationManuallySet && recommendedTests.length > 0 && (
+                {!durationManuallySet && (recommendedTests.length > 0 || hearingAidServices.length > 0) && (
                   <span className="ml-1 text-[9px] font-normal text-emerald-700 normal-case">· auto</span>
                 )}
               </label>
