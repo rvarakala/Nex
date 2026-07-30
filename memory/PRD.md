@@ -1,5 +1,42 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔴 3-in-1 Bug Fix — Audiologist filter + Payout scoping + Drill-down (2026-07-31)
+
+**User report (screenshots)**:
+1. Book Appointment modal → **Audiologist dropdown blank** (small clinics with only `clinic_owner` role couldn't book).
+2. Referral Corner → **"Total Payout Owed = ₹5,000" for a doctor with 1 diag-only patient and ₹5,000/pt flat HA cut** (should be ₹0 for HA, ₹160 for diag = ₹160 total).
+3. Clicking a doctor's name should show **per-patient billing** for Diagnostics + HA.
+
+**Root causes**
+- **Bug 1**: `AppointmentsCalendarPage.jsx` filtered `s.role === 'audiologist'` — DL Test clinic has only `clinic_owner`, so the array was empty and the `<select>` blanked.
+- **Bug 2**: `_compute_payout` in `referrals.py` used the aggregate `patient_count` for `mode='flat'`, multiplying ₹5000 by "all referred patients" instead of "patients with an actual HA sale". Same latent issue for `flat diagnostics` mode.
+- **Feature 3**: Drill-down endpoint aggregated revenue at the doctor level only; per-patient revenue was never returned.
+
+**Shipped**
+- **Fix 1** (`AppointmentsCalendarPage.jsx:189-207` + `BookAppointmentModal.js:668-691`) — Widened `DIAGNOSTIC_STAFF_ROLES = {audiologist, clinic_owner, technician}` set (excludes front_desk/accounts — they book but don't test). Dropdown now renders `<Name> — <Role>` so reception knows who's who. Empty-state option `"No staff available — add one in Settings → Staff"` when the set is truly empty.
+- **Fix 2** (`referrals.py:92-116, 128-145, 198-215, 245-283, 285-310`) — Refactored payout math:
+  - Doctors track `per_patient_diag` + `per_patient_ha` dicts across the invoice walk.
+  - Blacklist trim ALSO deducts from the per-patient HA dict (drops the patient when HA hits ₹0).
+  - Compute `diag_flat_count = |{pid : diag_rev > 0}|` and `ha_flat_count = |{pid : ha_rev > 0}|`.
+  - `_compute_payout(rev, flat_patient_count, mode, value)` uses the scoped count for `flat` mode.
+  - Dashboard row now exposes `diag_patient_count` + `ha_patient_count` for the UI.
+- **Feature 3** (`referrals.py:605-655` + `DoctorDrillDownModal.jsx:213-278`) — Drill-down endpoint enriches `patients[]` with `diag_revenue / ha_revenue / total_revenue` from the per-patient dicts, sorts by revenue DESC (zero-revenue "referred but not billed yet" rows at the bottom in muted style). Modal table gets 3 new columns + a `tfoot` totals row that mirrors the KPI strip.
+
+**Testing** (`test_reports/iteration_54.json`)
+- Backend pytest: **12/12 PASS** (3 new `test_referral_flat_payout_scoping.py` + 5 regression `test_appointment_ha_wing.py` + 4 regression `test_diagnostics_queue_checkin.py`).
+- Frontend Playwright: **100%** — all 3 review-request assertions confirmed (dropdown populated, ₹160 total not ₹5,160, per-patient table with correct footer).
+- **0 bugs, 0 minor issues, 0 action items.**
+
+**Files touched**
+- `backend/routers/referrals.py` (payout scoping + per-patient tracking + drill-down enrichment)
+- `backend/tests/test_referral_flat_payout_scoping.py` (NEW — 3 regression tests)
+- `frontend/src/modules/appointments/AppointmentsCalendarPage.jsx` (DIAGNOSTIC_STAFF_ROLES)
+- `frontend/src/modules/appointments/components/BookAppointmentModal.js` (dropdown role suffix + empty-state)
+- `frontend/src/modules/referrals/DoctorDrillDownModal.jsx` (per-patient billing table + tfoot)
+
+---
+
+
 ## ✨ Phase C + D — Kanban One-Tap & 1-Page Report (2026-07-31) — 2 items DELIVERED
 
 **User request (11-point mega-list)**: Phase C closes item #4, Phase D closes item #8.
