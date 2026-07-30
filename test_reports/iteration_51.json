@@ -1,0 +1,61 @@
+{
+  "summary": "Frontend-only verification of Phase A bundle (items #1/#5/#6/#9/#11). Combined code inspection + live UI checks (login as dltest@example.com). Item #5 verified end-to-end at runtime (Available Tests tiles → deep-link URL). Items #6/#9/#11 verified through comprehensive source review — ReportBuilder requires an active test session which needs seed patients + queue rows that DL Test clinic does not yet have. Item #1 code path verified; runtime unverified due to no patient records with referring_doctor_id in the DL Test clinic. /settings/clinic loads with the expected 'DL Test Clinic' name.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": [
+    {
+      "item": "#5 Available Tests deep-link",
+      "evidence": "Clicking [data-testid='dq-launch-pta'] on /test navigated to /test?tab=pure_tone (captured mid-navigation), then the URL was stripped back to /test — matching TestProceduresModule.js useSearchParams behaviour.",
+      "intent_copy_present": true,
+      "tiles_present": {
+        "dq-launch-pta": true, "dq-launch-speech": true, "dq-launch-imp": true,
+        "dq-launch-oae": true, "dq-launch-abr": true, "dq-launch-tinn": true,
+        "dq-launch-sfa": true, "dq-launch-vra": true, "dq-launch-vemp": true,
+        "dq-launch-special": true
+      },
+      "naming_note": "Impedance tile testid is 'dq-launch-imp' (lowercased LAUNCHER_TILES.key 'IMP'), not 'dq-launch-impedance' as loosely mentioned in the review request. Matches source; not a bug."
+    },
+    {
+      "item": "#6 Audiogram zoom controls",
+      "evidence": "AudiogramCanvas.js lines 793-828: container uses 'absolute bottom-2 right-2 flex flex-row items-center gap-0.5' — moved from top-right vertical stack to bottom-right horizontal strip. Testids audiogram-zoom-controls / audiogram-zoom-in / audiogram-zoom-out / audiogram-zoom-fit / audiogram-zoom-level all present. Runtime rendering not exercised (needs an active test session in /test)."
+    },
+    {
+      "item": "#9 Further Advice removed",
+      "evidence": "RecommendationsAdviceSection.js: single-column full-width Recommendations cell only; the `advice` prop is intentionally ignored (comment retained for upstream call-site compat). BuilderSidebar.js: 'Further Advice (ENT)' textarea removed (comment placeholder left at lines 593-596). No `report-further-advice` testid exists anywhere in the tree."
+    },
+    {
+      "item": "#11 Clinic branding from Settings",
+      "evidence": "BuilderSidebar.js lines 500-507 render [data-testid='report-branding-hint'] with copy 'Clinic branding now comes from Settings → Clinic Details' and [data-testid='report-branding-open-settings'] link to /settings/clinic. ClinicBrandingPanel is defined but no longer instantiated inside sidebarInner. ReportsPanel.js lines 104-138 fetches GET /api/settings/clinic + GET /api/settings/clinic/logo to hydrate the clinic state (localStorage removed). ReportHeader.js lines 28-70 render amber-italic placeholder '[Your Clinic Name — set in Settings]' when rawName is blank plus the hint '(add address & phone in Settings)' with correct testids report-clinic-header / report-clinic-name / report-clinic-hint. Live check: /settings/clinic loads name='DL Test Clinic', phone='+919999888777', city='Bangalore', state='KA' — GET /api/settings/clinic is definitely populated for this clinic."
+    },
+    {
+      "item": "#1 Referral doctor auto-fill",
+      "evidence": "BookAppointmentModal.js lines 465-478: patient row onClick sets selectedPatient, then if p.referring_doctor_id → setVisitType('referral') + setReferringDoctorId(p.referring_doctor_id). Runtime UI verified up to the search input (bk-patient-search shown, visit toggle default is bk-visit-walkin active), but no patients were returned for query 'a' — DL Test clinic appears to have zero patients with the required referring_doctor_id preset."
+    }
+  ],
+  "runtime_gaps": [
+    "Item #1 needs a seed patient in the DL Test clinic with referring_doctor_id set (the review request already flags this as a manual step).",
+    "Items #6, #9, #11 in-preview verification requires an active diagnostics session. No patients in queue → TestProceduresModule falls back to DiagnosticsQueueBoard, so ReportsPanel never mounts under normal navigation. Suggest main-agent-seeded session for future testing agent."
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "Optionally seed one dltest patient with referring_doctor_id set + one queued session so future testing agents can exercise the full Report Builder DOM (items #6/#9/#11) and the referral auto-fill (#1) at runtime.",
+    "Consider aligning the impedance launcher testid — the review request wording implies 'dq-launch-impedance' though the code correctly emits 'dq-launch-imp'. Purely cosmetic."
+  ],
+  "critical_code_review_comments": [
+    "ReportsPanel.js: setClinic_readOnly = () => {} is defined but never used (line 141) — dead assignment. Not harmful.",
+    "AudiogramCanvas.js zoom control uses '−' minus-sign character which is visually consistent; testids/labels all correct.",
+    "BuilderSidebar.js still imports DEFAULT_CLINIC + fileToResizedBase64 for the vestigial ClinicBrandingPanel definition that is never rendered — safe to remove in a cleanup pass to trim bundle size.",
+    "TestProceduresModule.js ALLOWED_TABS whitelist correctly guards the deep-link and strips the query after mount using replace:true so history/back is not polluted."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "100% for accessible flows; item #1 & preview-mode items #6/#9/#11 verified by inspection only due to missing seed data"},
+  "test_credentials": "dltest@example.com / TestPass@123",
+  "seed_data_creation": "None created. DL Test clinic has no patients and no active sessions.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "To fully exercise the Report Builder at runtime: (1) POST /api/patients with a referring_doctor_id, (2) POST /api/diagnostics/queue/start to activate a session, then load /test — TestProceduresModule will mount the pure_tone + reports panels and expose the audiogram-zoom-controls, report-branding-hint, and report-clinic-header testids for direct DOM inspection. For item #11 placeholder mode, PATCH /api/settings/clinic to blank the name, reload the Reports tab and assert the amber italic placeholder — then restore the name."
+}

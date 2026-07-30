@@ -20,7 +20,13 @@ export const ReportHeader = ({ clinic }) => {
   // Auto-shrink the clinic name when it's long enough to risk awkward wrapping.
   // Threshold picked empirically: ~42 chars comfortably fits 2 lines at 17px;
   // beyond that, drop one step so 2 lines remain readable.
-  const name = (clinic.name || '').trim();
+  const rawName = (clinic.name || '').trim();
+  // Placeholder mode: when Settings → Clinic Details has never been filled
+  // in (name is blank), we render a *visible* prompt so the audiologist
+  // notices before printing. Wired 2026-07-30 with the branding-from-Settings
+  // migration.
+  const isPlaceholder = !rawName;
+  const name = rawName || '[Your Clinic Name — set in Settings]';
   const nameClass = name.length > 52
     ? 'text-[13px] leading-snug'
     : name.length > 42
@@ -28,7 +34,7 @@ export const ReportHeader = ({ clinic }) => {
       : 'text-[17px] leading-tight';
 
   return (
-    <header className="border-b-2 border-blue-700 pb-1.5">
+    <header className="border-b-2 border-blue-700 pb-1.5" data-testid="report-clinic-header">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {clinic.logo_base64 ? (
@@ -39,14 +45,19 @@ export const ReportHeader = ({ clinic }) => {
             />
           ) : (
             <div className={`bg-blue-700 text-white flex items-center justify-center font-black text-lg flex-shrink-0 ${logoClass}`}>
-              {(name || 'C').charAt(0).toUpperCase()}
+              {(rawName || 'C').charAt(0).toUpperCase()}
             </div>
           )}
           <div className="min-w-0 flex-1">
             {clinic.tagline && (
               <div className="text-[10px] text-gray-600 font-medium leading-tight break-words">{clinic.tagline}</div>
             )}
-            <div className={`font-extrabold text-blue-900 break-words ${nameClass}`}>{name}</div>
+            <div
+              className={`font-extrabold break-words ${nameClass} ${isPlaceholder ? 'text-amber-600 italic' : 'text-blue-900'}`}
+              data-testid="report-clinic-name"
+            >
+              {name}
+            </div>
           </div>
         </div>
         <div className="text-[10px] text-right text-gray-700 leading-tight flex-shrink-0 max-w-[42%]">
@@ -54,6 +65,11 @@ export const ReportHeader = ({ clinic }) => {
           {clinic.address_line2 && <div className="break-words">{clinic.address_line2}</div>}
           {clinic.tel && <div>Tel: {clinic.tel}</div>}
           {clinic.email && <div className="break-all">{clinic.email}</div>}
+          {isPlaceholder && (
+            <div className="text-[9px] text-amber-600 italic mt-0.5 no-print" data-testid="report-clinic-hint">
+              (add address & phone in Settings)
+            </div>
+          )}
         </div>
       </div>
       <div className="text-center mt-1">

@@ -96,6 +96,25 @@ const chipFor = (raw = '') => {
 // Available-tests launcher tiles — informational shortcut row below the
 // Kanban. Each tile shows count-of-patients-with-this-test-recommended
 // today so the audiologist can see the diagnostic mix at a glance.
+// Map LAUNCHER_TILES.key → the corresponding `activeTab` value used by
+// TestProceduresModule so a click deep-links straight into that panel
+// for the currently active patient (issue #5, 2026-07-30). VRA has no
+// dedicated tab yet — routes to "pediatric" which is the closest fit.
+// VEMP lacks a panel too, so it opens the "special" tab where the
+// audiologist can note vestibular results manually.
+const LAUNCHER_TAB_KEY = {
+  PTA: 'pure_tone',
+  SPEECH: 'speech',
+  IMP: 'impedance',
+  OAE: 'oae',
+  ABR: 'abr',
+  TINN: 'tinnitus',
+  SFA: 'soundfield',
+  VRA: 'pediatric',
+  VEMP: 'special',
+  SPECIAL: 'special',
+};
+
 const LAUNCHER_TILES = [
   { key: 'PTA',     title: 'Pure-Tone Audiometry', sub: 'Air + bone thresholds', Icon: Activity,   iconBg: '#DBEAFE', iconColor: '#2563EB', accent: '#3B82F6' },
   { key: 'SPEECH',  title: 'Speech Audiometry',    sub: 'SRT + SDS',             Icon: Mic,        iconBg: '#FED7AA', iconColor: '#EA580C', accent: '#F97316' },
@@ -404,7 +423,10 @@ export default function DiagnosticsQueueBoard() {
               <button
                 key={tile.key}
                 data-testid={`dq-launch-${tile.key.toLowerCase()}`}
-                onClick={() => navigate('/test')}
+                onClick={() => {
+                  const tab = LAUNCHER_TAB_KEY[tile.key];
+                  navigate(tab ? `/test?tab=${tab}` : '/test');
+                }}
                 className="relative bg-white rounded-2xl border border-slate-100 hover:shadow-[0_10px_24px_-8px_rgba(15,29,58,0.18)] hover:-translate-y-0.5 transition-all p-4 text-left group"
                 style={{ borderTop: `4px solid ${tile.accent}` }}
               >

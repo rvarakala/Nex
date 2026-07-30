@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
 import { useAuth } from '../../AuthContext';
 
@@ -79,8 +79,25 @@ export default function TestProceduresModule() {
   const { activeTest, clearActiveTest } = useTestContext();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState('pre_test');
+  // Deep-link support (issue #5, 2026-07-30) — the DiagnosticsQueueBoard
+  // Available-Tests tiles push `/test?tab=<panel>`. If we land here with
+  // that query, honour it as the initial tab. Whitelist guards against
+  // stale/invalid values from bookmarks.
+  const ALLOWED_TABS = ['pre_test', 'pure_tone', 'speech', 'impedance', 'special', 'oae', 'soundfield', 'abr', 'pediatric', 'tinnitus', 'reports'];
+  const requestedTab = searchParams.get('tab');
+  const initialTab = ALLOWED_TABS.includes(requestedTab) ? requestedTab : 'pre_test';
+  const [activeTab, setActiveTab] = useState(initialTab);
+  // Clean the URL after we've consumed the deep-link so refreshes don't
+  // repeatedly jump back to the same panel — user might have moved on.
+  useEffect(() => {
+    if (requestedTab) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('tab');
+      setSearchParams(next, { replace: true });
+    }
+  }, [requestedTab, searchParams, setSearchParams]);
   const [activeTest_ear, setActiveTest_ear] = useState('ac_right');
   const [masked, setMasked] = useState(false);
   const [extendedFrequency, setExtendedFrequency] = useState(false);

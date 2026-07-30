@@ -462,11 +462,28 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             {patientDropdown && !isEdit && patientResults.length > 0 && (
               <div className="absolute z-10 mt-0.5 w-full max-h-40 overflow-auto bg-white border border-slate-300 rounded shadow-lg">
                 {patientResults.map((p) => (
-                  <button key={p.patient_id} type="button" onClick={() => { setSelectedPatient(p); setPatientQuery(p.name); setPatientDropdown(false); }}
+                  <button key={p.patient_id} type="button" onClick={() => {
+                    setSelectedPatient(p);
+                    setPatientQuery(p.name);
+                    setPatientDropdown(false);
+                    // Auto-populate referring doctor from the patient's
+                    // registration record (issue #1, 2026-07-30). If the
+                    // patient was created with `referring_doctor_id`, we
+                    // switch the visit type to "referral" and pre-select
+                    // the doctor so the audiologist doesn't have to type
+                    // the same name twice.
+                    if (p.referring_doctor_id) {
+                      setVisitType('referral');
+                      setReferringDoctorId(p.referring_doctor_id);
+                    }
+                  }}
                     data-testid={`bk-patient-${p.patient_id}`}
                     className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0">
                     <div className="font-medium">{p.name}</div>
                     <div className="text-[9px] text-slate-500">{p.mrd || p.patient_id} · {p.age}{(p.gender||'')[0]}{p.mobile ? ` · ${p.mobile}` : ''}</div>
+                    {p.referring_physician && (
+                      <div className="text-[9px] text-blue-600 italic">Ref: {p.referring_physician}</div>
+                    )}
                   </button>
                 ))}
               </div>

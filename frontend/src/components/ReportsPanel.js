@@ -6,7 +6,7 @@ import ReportPreflightModal from './reports/ReportPreflightModal';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // Constants, narrative builder
-import { CLINIC_STORAGE_KEY, TOGGLEABLE_SECTIONS, FINDINGS_TITLES, loadClinic, fmtDate } from './reports/constants';
+import { TOGGLEABLE_SECTIONS, FINDINGS_TITLES, fmtDate } from './reports/constants';
 import { buildCaseHistoryNarrative } from './reports/narrative';
 
 // Layout pieces
@@ -87,13 +87,58 @@ const ReportsPanel = ({
   const [showBing, setShowBing] = useState(false);
   const tuningForkFull = showABC || showBing;
 
-  // ========== Clinic branding (localStorage) ==========
-  const [clinic, setClinic] = useState(loadClinic);
+  // ========== Clinic branding — sourced from Settings (2026-07-30) ==========
+  // Previously this was maintained in localStorage inside a dedicated
+  // "Clinic Branding" panel on the report builder — duplicating what
+  // /settings/clinic already collects. User asked to remove the panel
+  // and pull ONLY from the Settings source of truth so every report
+  // stays in sync with the clinic profile automatically.
+  //
+  // Fallback: if the Settings load fails or the fields are blank, we
+  // render a placeholder header on the report ("[Your Clinic Name —
+  // set in Settings]") via ReportHeader so audiologists notice.
+  const [clinic, setClinic] = useState({
+    name: '', tagline: '', address_line1: '', address_line2: '',
+    tel: '', email: '', logo_base64: null, logo_shape: 'circle',
+  });
   useEffect(() => {
-    try {
-      localStorage.setItem(CLINIC_STORAGE_KEY, JSON.stringify(clinic));
-    } catch { /* ignore quota errors */ }
-  }, [clinic]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/settings/clinic`);
+        const s = r.data || {};
+        if (cancelled) return;
+        // Compose the two-line address the report layout expects.
+        const line1 = s.address || '';
+        const line2 = [s.city, s.state, s.pincode].filter(Boolean).join(', ');
+        setClinic((prev) => ({
+          ...prev,
+          name: s.name || '',
+          tagline: '',  // no longer maintained separately
+          address_line1: line1,
+          address_line2: line2,
+          tel: s.phone || '',
+          email: s.email || '',
+        }));
+        // Best-effort logo fetch — API is /settings/clinic/logo which
+        // returns 404 when the clinic has no logo uploaded. We ignore
+        // errors here; ReportHeader gracefully handles a null logo.
+        try {
+          const lr = await axios.get(`${API}/settings/clinic/logo`, { responseType: 'blob' });
+          if (cancelled) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (!cancelled) setClinic((prev) => ({ ...prev, logo_base64: reader.result }));
+          };
+          reader.readAsDataURL(lr.data);
+        } catch { /* no logo uploaded yet */ }
+      } catch { /* keep placeholder header */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  // No-op setter for downstream compat — BuilderSidebar no longer edits
+  // clinic branding but still receives the prop.
+  const setClinic_readOnly = () => {};
 
   // Auto rule: if Reflex Decay, ET Dysfunction, or ETF-Intact are enabled, default to separate page
   const autoSeparatePage = !!(
@@ -270,7 +315,7 @@ const ReportsPanel = ({
           onToggleSection={toggleSection}
           onMoveSection={moveSection}
           clinic={clinic}
-          setClinic={setClinic}
+          setClinic={setClinic_readOnly}
           showABC={showABC}
           setShowABC={setShowABC}
           showBing={showBing}

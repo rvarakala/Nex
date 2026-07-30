@@ -785,17 +785,21 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
         }}
       />
 
-      {/* Zoom controls — visible only when the audiogram is interactive */}
+      {/* Zoom controls — visible only when the audiogram is interactive.
+          Positioned bottom-right (8 kHz × profound-loss corner, near-zero
+          overlap with real audiogram data). Horizontal strip keeps it tiny.
+          Reported 2026-07-30: the earlier top-right vertical stack was
+          obscuring the 8 kHz normal-hearing cells. */}
       {onPlotPoint && (
         <div
-          className="absolute top-2 right-2 flex flex-col gap-1 bg-white/95 border border-gray-300 rounded shadow-sm p-1 z-10"
+          className="absolute bottom-2 right-2 flex flex-row items-center gap-0.5 bg-white/95 border border-gray-300 rounded shadow-sm px-0.5 py-0.5 z-10"
           data-testid="audiogram-zoom-controls"
         >
           <button
             type="button"
             onClick={() => applyZoom(zoom * 1.4)}
             disabled={zoom >= 4}
-            className="w-8 h-8 text-lg font-semibold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
+            className="w-6 h-6 text-base font-semibold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
             title="Zoom in (or pinch)"
             data-testid="audiogram-zoom-in"
           >+</button>
@@ -803,7 +807,7 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
             type="button"
             onClick={() => applyZoom(zoom / 1.4)}
             disabled={zoom <= 1}
-            className="w-8 h-8 text-lg font-semibold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
+            className="w-6 h-6 text-base font-semibold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
             title="Zoom out"
             data-testid="audiogram-zoom-out"
           >−</button>
@@ -811,14 +815,14 @@ const AudiogramCanvas = ({ ear, data, onPlotPoint, activeMode, masked, noRespons
             type="button"
             onClick={resetZoom}
             disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
-            className="w-8 h-7 text-[10px] font-bold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
+            className="h-6 px-1.5 text-[9px] font-bold text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40"
             title="Fit"
             data-testid="audiogram-zoom-fit"
           >FIT</button>
           {zoom > 1.05 && (
-            <div className="text-[10px] text-center text-slate-500 font-mono" data-testid="audiogram-zoom-level">
+            <span className="text-[9px] font-mono text-slate-500 pl-1" data-testid="audiogram-zoom-level">
               {zoom.toFixed(1)}×
-            </div>
+            </span>
           )}
         </div>
       )}

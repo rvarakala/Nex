@@ -492,7 +492,19 @@ export const BuilderSidebar = ({
         WhatsApp opens a pre-filled message with the clinical summary. Print as PDF first and attach it to the chat for the full report.
       </div>
 
-      <ClinicBrandingPanel clinic={clinic} setClinic={setClinic} />
+      {/* Clinic branding panel removed 2026-07-30 — the report now reads
+          the clinic name / address / logo directly from Settings so
+          there's only one source of truth. Edit branding at
+          /settings/clinic. A subtle hint keeps the link discoverable
+          from inside the builder without adding editable fields. */}
+      <div className="border border-slate-200 bg-slate-50 rounded p-1.5 text-[9px] text-slate-500 leading-snug" data-testid="report-branding-hint">
+        <span className="font-semibold text-slate-600">Clinic branding</span>
+        {' '}now comes from{' '}
+        <a href="/settings/clinic" className="text-indigo-600 hover:underline" data-testid="report-branding-open-settings">
+          Settings → Clinic Details
+        </a>
+        . Any changes there update every report automatically.
+      </div>
 
       <SectionsList sections={sections} onToggle={onToggleSection} onMove={onMoveSection} />
 
@@ -578,13 +590,10 @@ export const BuilderSidebar = ({
         rows={5}
         placeholder={'Binaural amplification trial.\nCommunication strategies counselling.\nAnnual audiometric re-evaluation.'}
       />
-      <Textarea
-        label="Further Advice (ENT)"
-        testid="report-further-advice"
-        value={furtherAdvice}
-        onChange={setFurtherAdvice}
-        placeholder="ENT consultation for…"
-      />
+      {/* "Further Advice (ENT)" textarea removed 2026-07-30 per user
+          request — the section it wrote into was retired from the report
+          template. Clinicians now include any ENT referral notes inline
+          within the recommendations block above. */}
       <TextInput
         label="Audiologist License #"
         testid="report-license"
