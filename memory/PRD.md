@@ -1,5 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ☑️ "Remember this device for 30 days" checkbox (2026-07-30)
+
+**Ask**: A checkbox on the login form so trusted devices don't burn a slot on every incognito test-drive.
+
+### Behaviour
+| Checkbox state | Cookie TTL | Counts against tier cap? | Row `remember_device` |
+| --- | --- | --- | --- |
+| Checked (default) | 30 days | ✅ Yes | `true` |
+| Unchecked | 8 hours | ❌ No | `false` |
+
+Ephemeral sessions naturally self-expire — no cron, no cleanup job. The `count_active_sessions` query filters `{remember_device: {$ne: false}}` so ephemerals never occupy a slot.
+
+### Files touched
+- **Backend**: `models/_canonical.py` (LoginRequest), `routers/mfa.py` (MfaLoginVerifyIn + wire-through), `utils/device_limits.py` (`allow_ephemeral` action), `utils/auth_cookies.py` (2 new cookie-TTL constants + `remember_device` param), `routers/user_sessions.py` (`mint_session_row` + `SessionOut` expose the flag), `server.py` (wire into `/auth/login`).
+- **Frontend**: `pages/LoginPage.js` (checkbox default-checked with data-testid `login-remember-device`, copy toggles conditionally), `AuthContext.js` (both `login()` and `loginVerifyMfa()` accept `{rememberDevice}`), `modules/settings/SessionsList.jsx` (amber "Ephemeral" pill next to any row where `remember_device===false`).
+- **Tests**: `tests/test_device_limits.py` — 2 new tests (`test_ephemeral_session_does_not_count_against_cap`, `test_ephemeral_bypass_is_not_a_cap_loophole_for_remembered`). Full suite = 6/6 PASS.
+
+### Backward compatibility
+- Rows minted before this feature have no `remember_device` field → filtered as `true` (they were long-lived by default). No migration required.
+- Response payload for `/auth/login` adds `device_limit.ephemeral` boolean but preserves all existing fields.
+- Existing frontend code (mobile PWA, integration tests) that omits `remember_device` in the login body gets `True` by default → identical UX to the pre-feature world.
+
+### Testing (iteration_49)
+- 16 pytest tests PASS end-to-end (including cookie Max-Age byte-check via `requests`).
+- Frontend: checkbox default-checked, copy toggles both directions, ephemeral login lands on `/patients`, `session-ephemeral-<sid>` pill visible on Sessions page.
+- **Success rate: 100 %** (backend + frontend).
+
+---
+
+
 ## 🔒 Per-User Device Restriction (2026-07-29)
 
 **User ask**: Netflix-style device limit — BASIC clinics get 2 concurrent devices per user, STANDARD 4. Founder/super_admin unlimited. On the (N+1)ᵗʰ login, prompt user to pick a device to sign out. 7-day warn-only rollout before hard enforcement.
