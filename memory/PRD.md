@@ -1,5 +1,42 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✨ Phase C + D — Kanban One-Tap & 1-Page Report (2026-07-31) — 2 items DELIVERED
+
+**User request (11-point mega-list)**: Phase C closes item #4, Phase D closes item #8.
+
+**Shipped**
+- **#4 One-Tap "→ Next stage" chip on the Kanban** — `DiagnosticsQueueBoard.js` gets a dark `→ Check-in` / `→ Start test` / `→ Complete` chip on every non-terminal card. State-aware:
+  - Waiting → `POST /api/diagnostics/queue/checkin` (NEW endpoint) → CheckedIn column, no navigation.
+  - Checked-in → existing `/queue/start` → InProgress + navigate to /test procedures.
+  - In-progress → existing `/queue/complete` → Completed column, no navigation.
+  - Completed → no chip (terminal).
+  - `e.stopPropagation()` on chip guards against the card's outer default-click. Testid: `dq-next-stage-<patient_id>`.
+- **#8 Fit to 1 A4 page toggle** — `BuilderSidebar.js` gets a new `Print size` block with `[data-testid=report-compact-toggle]` checkbox `Fit to 1 A4 page`. When ON:
+  - Adds `.report-compact` CSS class to `#report-preview` (tightens padding 10mm→7mm, font-size 11px, section margins, table cell padding, audiogram SVG max-height 180px).
+  - Forces `useSeparatePage = false` (Tymp always inline) — overrides any manual "New page" pick.
+  - Forces `audiogramSize = 'standard'` (smallest) — disables the Standard/Large/XL picker.
+  - PTA + Tymp + Speech + Recommendations all land on 1 A4 sheet.
+  - `data-testid` on `#report-preview` flips between `report-compact-on` / `report-compact-off` for tests.
+
+**Backend contract**
+- New endpoint: `POST /api/diagnostics/queue/checkin` accepts `{patient_id, appointment_id?, token_id?}`. Only promotes `scheduled|confirmed → checked_in` on the appointment AND `waiting → in_consultation` on the token. NEVER demotes an in-progress / completed row (regression guard `ADVANCEABLE_APPT` / `ADVANCEABLE_TOKEN`). Idempotent — returns `{ok:true, updates:{appointment,token}, already_checked_in?:true}`.
+
+**Testing** (`test_reports/iteration_53.json`)
+- Backend pytest: **4/4 PASS** (`test_diagnostics_queue_checkin.py`) + **5/5 PASS** regression (`test_appointment_ha_wing.py`). Test helper hardened by testing subagent for slot-collision retries.
+- Frontend Playwright: **100%** — all chip labels + column-flips + stopPropagation + navigation + class-toggle + audiogram-disable + page-break-suppression assertions verified.
+- **0 bugs, 0 minor issues, 0 action items**.
+
+**Files touched**
+- `backend/routers/diagnostics_queue.py` (new `/queue/checkin` endpoint with promote-only guards)
+- `backend/tests/test_diagnostics_queue_checkin.py` (NEW — 4 tests, hardened by testing agent)
+- `frontend/src/modules/test/DiagnosticsQueueBoard.js` (advanceCheckin/Start/Complete + nextStageAction + chip button)
+- `frontend/src/App.css` (`.report-compact` CSS rules)
+- `frontend/src/components/ReportsPanel.js` (compactLayout state + effectiveAudiogramSize + useSeparatePage override + preview class)
+- `frontend/src/components/reports/BuilderSidebar.js` (Print size block + report-compact-toggle)
+
+---
+
+
 ## ✨ Phase B — Booking Flow Polish (2026-07-31) — 2 items DELIVERED
 
 **User request (11-point mega-list)**: Phase B closes items #2 and #3.
