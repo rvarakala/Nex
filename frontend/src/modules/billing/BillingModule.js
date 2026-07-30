@@ -3,6 +3,7 @@ import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import InvoicesListPage from './InvoicesListPage';
 import InvoiceDetailPage from './InvoiceDetailPage';
 import CreateInvoicePage from './CreateInvoicePage';
+import PaymentsRefundsPage from './PaymentsRefundsPage';
 import ServiceCatalogPage from './ServiceCatalogPage';
 import MySubscriptionPage from './MySubscriptionPage';
 import { useAuth } from '../../AuthContext';
@@ -37,10 +38,11 @@ export default function BillingModule() {
 
   return (
     <div className="h-full flex flex-col" data-testid="billing-module">
-      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 flex-shrink-0">
-        <h2 className="text-sm font-bold text-slate-800 mr-3">Billing</h2>
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 flex-shrink-0 overflow-x-auto">
+        <h2 className="text-sm font-bold text-slate-800 mr-3 shrink-0">Billing</h2>
         <Tab to="/billing" testid="bill-tab-invoices" label="Invoices" />
         <Tab to="/billing/new" testid="bill-tab-new" label="+ New Invoice" />
+        <Tab to="/billing/payments" testid="bill-tab-payments" label="Payments & Refunds" />
         {canManageCatalog && <Tab to="/billing/catalog" testid="bill-tab-catalog" label="Service Catalog" />}
         {canSeeSubscription && <Tab to="/billing/my-subscription" testid="bill-tab-my-sub" label="My Subscription" />}
       </div>
@@ -49,6 +51,7 @@ export default function BillingModule() {
         <Routes>
           <Route index element={<InvoicesListPage />} />
           <Route path="new" element={<CreateInvoicePage />} />
+          <Route path="payments" element={<PaymentsRefundsPage />} />
           <Route path="invoice/:invoiceId" element={<InvoiceDetailPage />} />
           <Route
             path="catalog"

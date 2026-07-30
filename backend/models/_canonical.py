@@ -368,9 +368,19 @@ class Payment(BaseModel):
     # de-normalisation needs without breaking historical data.
     clinic_id: Optional[str] = None
     invoice_id: Optional[str] = None
+    # `kind` distinguishes patient-in-payments from clinic-out-refunds.
+    # Refunds are stored as Payment rows with `kind="refund"` and a
+    # NEGATIVE `amount` — `_sum_invoice()` then subtracts them
+    # naturally from `paid_total`. Rows minted before the refund
+    # feature (2026-07-30) don't have this field → treated as "payment"
+    # by the default. Do NOT change the default: it preserves the
+    # historic invariant that `sum(payments.amount) == paid_total`.
+    kind: Literal["payment", "refund"] = "payment"
     method: Optional[Literal["cash", "upi", "card", "bank_transfer", "insurance"]] = None
     amount: float
     reference: Optional[str] = None                              # Txn ref / UPI UTR / card last-4
+    # Free-text refund reason — required when kind=="refund", ignored otherwise.
+    reason: Optional[str] = None
     paid_at: Optional[Union[str, datetime]] = Field(default_factory=datetime.utcnow)
     received_by_user_id: Optional[str] = None
     notes: Optional[str] = None
@@ -381,6 +391,20 @@ class PaymentCreate(BaseModel):
     amount: float
     reference: Optional[str] = None
     notes: Optional[str] = None
+
+
+class RefundCreate(BaseModel):
+    """Body for POST /api/billing/invoices/{id}/refund. All refunds are
+    RECORD-ONLY — no gateway integration. Actual money movement is
+    handled by the clinic offline (cash back, manual UPI reversal, bank
+    transfer). The row lands in the same `payments` collection with
+    `kind="refund"` for audit-trail purposes.
+    """
+    amount: float = Field(gt=0, description="Positive ₹ amount to refund")
+    method: Literal["cash", "upi", "card", "bank_transfer", "insurance"]
+    reason: str = Field(min_length=3, max_length=500)
+    reference: Optional[str] = Field(default=None, max_length=120)
+    notes: Optional[str] = Field(default=None, max_length=500)
 
 
 class Invoice(BaseModel):
@@ -415,9 +439,12 @@ class Invoice(BaseModel):
     round_off: float = 0.0
 
     paid_total: float = 0.0
+    # Positive display value: sum of |amount| across refund payments.
+    # Added 2026-07-30 with the clinic refund flow.
+    refunded_total: float = 0.0
     due_total: float = 0.0
 
-    status: Literal["draft", "paid", "partial", "refunded", "cancelled"] = "draft"
+    status: Literal["draft", "paid", "partial", "refunded", "partially_refunded", "cancelled"] = "draft"
 
     payments: List[Payment] = []
 

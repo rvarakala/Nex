@@ -12,6 +12,7 @@ export default function InvoiceDetailPage() {
   const [inv, setInv] = useState(null);
   const [loading, setLoading] = useState(true);
   const [payOpen, setPayOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,6 +75,17 @@ export default function InvoiceDetailPage() {
         {inv.status !== 'cancelled' && inv.due_total > 0.01 && (
           <button onClick={() => setPayOpen(true)} data-testid="inv-add-payment"
             className="px-3 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded">+ Collect Payment</button>
+        )}
+        {inv.status !== 'cancelled' && inv.paid_total > 0.01
+          && ['clinic_owner', 'accounts', 'front_desk', 'super_admin', 'founder'].includes(user?.role) && (
+          <button
+            onClick={() => setRefundOpen(true)}
+            data-testid="inv-refund"
+            title={`Refundable balance: ${fmtINR(inv.paid_total)}`}
+            className="px-3 py-1 text-xs border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold rounded"
+          >
+            ↩ Refund
+          </button>
         )}
         {inv.status === 'paid' && (
           <button
@@ -268,6 +280,13 @@ export default function InvoiceDetailPage() {
           onSaved={(updated) => { setInv(updated); setPayOpen(false); }}
         />
       )}
+      {refundOpen && (
+        <RefundDialog
+          invoice={inv}
+          onClose={() => setRefundOpen(false)}
+          onSaved={(updated) => { setInv(updated); setRefundOpen(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -458,6 +477,170 @@ const PaymentDialog = ({ invoice, onClose, onSaved }) => {
             data-testid="pay-submit"
             className="px-4 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded">
             {busy ? 'Saving…' : `Receive ${fmtINR(Number(amount) || 0)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------- REFUND DIALOG (record-only, no gateway) ----------
+// Roles allowed: clinic_owner, accounts, front_desk, super_admin, founder.
+// Amount is capped at the invoice's current `paid_total` — the backend
+// enforces the same cap, so double-submission or race between two tabs
+// cannot over-refund.
+const RefundDialog = ({ invoice, onClose, onSaved }) => {
+  const [method, setMethod] = useState(
+    // Default to the same method as the most recent forward payment so the
+    // clinic doesn't have to think about it (mirror-refund is the common case).
+    (invoice.payments || [])
+      .filter((p) => (p.kind || 'payment') === 'payment')
+      .slice(-1)[0]?.method || 'cash',
+  );
+  const refundableCeiling = Number(invoice.paid_total) || 0;
+  const [amount, setAmount] = useState(refundableCeiling);
+  const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const amtNum = Number(amount) || 0;
+  const overCap = amtNum > refundableCeiling + 0.01;
+  const invalid = !amtNum || amtNum <= 0 || overCap || (reason || '').trim().length < 3;
+
+  const submit = async () => {
+    if (invalid) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await axios.post(`${API}/billing/invoices/${invoice.invoice_id}/refund`, {
+        amount: amtNum,
+        method,
+        reason: reason.trim(),
+        reference: reference || null,
+        notes: notes || null,
+      });
+      onSaved(r.data);
+    } catch (e) {
+      setErr(describeError(e, 'Refund failed'));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+         data-testid="refund-dialog">
+      <div className="bg-white rounded-lg shadow-2xl w-[460px] max-w-full">
+        <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-rose-50 to-white">
+          <h3 className="text-sm font-bold text-slate-800">Issue Refund · Record-only</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-red-600 text-lg" data-testid="refund-close">×</button>
+        </div>
+        <div className="p-4 space-y-2.5">
+          <div className="bg-rose-50 border border-rose-200 rounded p-2 text-[11px] text-slate-700">
+            <div><b>{invoice.patient_name}</b> · {invoice.invoice_no}</div>
+            <div>
+              Paid so far: <b className="text-emerald-700">{fmtINR(invoice.paid_total)}</b>
+              {invoice.refunded_total > 0.01 && (
+                <> · Previously refunded: <b className="text-rose-700">{fmtINR(invoice.refunded_total)}</b></>
+              )}
+            </div>
+            <div className="text-[10px] text-slate-500 mt-1 italic">
+              Actual money transfer happens outside AUDINEXA — we only record the refund here for your books.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-5 gap-1">
+            {PAYMENT_METHODS.map((m) => (
+              <button key={m.value}
+                onClick={() => setMethod(m.value)}
+                data-testid={`rf-method-${m.value}`}
+                className={`px-1.5 py-1.5 text-[10px] font-semibold rounded border transition-colors ${
+                  method === m.value ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-0.5">
+              Amount to refund (₹) · max {fmtINR(refundableCeiling)}
+            </label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              max={refundableCeiling}
+              min={0}
+              data-testid="rf-amount"
+              className={`w-full px-2 py-1.5 text-lg font-bold border rounded text-right tabular-nums ${
+                overCap ? 'text-rose-700 border-rose-400 bg-rose-50' : 'text-rose-700 border-slate-300'
+              }`}
+            />
+            {overCap && (
+              <div className="text-[10px] text-rose-700 mt-0.5" data-testid="rf-over-cap">
+                Cannot exceed the paid balance ({fmtINR(refundableCeiling)}).
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-0.5">
+              Reason <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              data-testid="rf-reason"
+              placeholder="Why is this being refunded? (min 3 chars — e.g. Trial hearing aid returned, service cancelled, wrong charge…)"
+              rows={2}
+              maxLength={500}
+              className="w-full px-2 py-1 text-xs border border-slate-300 rounded resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-0.5">
+              Reference {method === 'upi' ? '(UPI UTR)' : method === 'card' ? '(Card last-4)' : '(optional)'}
+            </label>
+            <input
+              type="text"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              data-testid="rf-reference"
+              className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-0.5">
+              Internal notes (not shown to patient)
+            </label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              data-testid="rf-notes"
+              maxLength={500}
+              className="w-full px-2 py-1 text-xs border border-slate-300 rounded"
+            />
+          </div>
+
+          {err && <ErrorToast err={err} testid="rf-error" />}
+
+          <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+            Refunds are <b>final</b> — you can&apos;t undo them from the app.
+            Double-check the amount before you continue.
+          </div>
+        </div>
+        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded" data-testid="rf-cancel">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={busy || invalid}
+            data-testid="rf-submit"
+            className="px-4 py-1 text-xs bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold rounded"
+          >
+            {busy ? 'Refunding…' : `Refund ${fmtINR(amtNum || 0)}`}
           </button>
         </div>
       </div>

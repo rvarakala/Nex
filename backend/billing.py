@@ -8,7 +8,7 @@ GST invoice engine with:
 - Report delivery logging (print / whatsapp / email / in_person)
 """
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import datetime
 import logging
 import re
@@ -20,7 +20,7 @@ from database import get_db
 from models import (
     Service, ServiceCreate,
     Invoice, InvoiceCreate, InvoiceLine, InvoiceLineCreate,
-    Payment, PaymentCreate,
+    Payment, PaymentCreate, RefundCreate,
     ReportDelivery,
     INVOICE_STATUSES,
 )
@@ -167,7 +167,13 @@ def _apply_tax_split(lines: List[InvoiceLine], inter_state: bool):
 
 
 def _sum_invoice(inv: Invoice):
-    """Compute invoice totals from lines + payments."""
+    """Compute invoice totals from lines + payments.
+
+    Refunds are recorded as Payment rows with `kind="refund"` and a
+    NEGATIVE amount, so `paid_total = sum(all amounts)` correctly reflects
+    net money-in-hand. `refunded_total` is the positive display value
+    (|sum of refund amounts|) used for the UI and the "refunded" pill.
+    """
     inv.subtotal = round(sum(ln.taxable_value for ln in inv.lines), 2)
     inv.discount_total = round(sum(ln.discount_amount for ln in inv.lines), 2)
     inv.cgst_total = round(sum(ln.cgst_amount for ln in inv.lines), 2)
@@ -178,9 +184,23 @@ def _sum_invoice(inv: Invoice):
     inv.rounded_total = round(inv.grand_total)
     inv.round_off = round(inv.rounded_total - inv.grand_total, 2)
     inv.paid_total = round(sum(p.amount for p in inv.payments), 2)
+    inv.refunded_total = round(
+        sum(-p.amount for p in inv.payments if (p.kind or "payment") == "refund"),
+        2,
+    )
     inv.due_total = round(inv.rounded_total - inv.paid_total, 2)
     if inv.status != "cancelled":
-        if inv.paid_total <= 0:
+        # Refund-aware status. A refund exists when refunded_total > 0.
+        # * Full refund (refunded ≈ original paid) → "refunded"
+        # * Partial refund (some money still in hand) → "partially_refunded"
+        # * No refund → classic draft / partial / paid ladder.
+        has_refund = inv.refunded_total > 0.01
+        original_paid = round(inv.paid_total + inv.refunded_total, 2)
+        if has_refund and original_paid > 0 and (inv.refunded_total >= original_paid - 0.01):
+            inv.status = "refunded"
+        elif has_refund:
+            inv.status = "partially_refunded"
+        elif inv.paid_total <= 0:
             inv.status = "draft"
         elif inv.due_total <= 0.01:
             inv.status = "paid"
@@ -557,6 +577,165 @@ async def add_payment(invoice_id: str, payload: PaymentCreate,
                 f"Auto-flip on payment skipped for sale {linked_sale_no}: {exc.detail}",
             )
     return inv
+
+
+@billing_router.post("/billing/invoices/{invoice_id}/refund", response_model=Invoice)
+async def refund_invoice(invoice_id: str, payload: RefundCreate,
+                         user=Depends(get_current_user), db=Depends(get_db)):
+    """Record a refund against a paid/partial invoice — record-only, no
+    payment-gateway integration. Persists a Payment row with
+    `kind="refund"` and a NEGATIVE amount so `_sum_invoice()` naturally
+    subtracts it from `paid_total` and re-derives the status.
+
+    * Full refund   → status becomes ``refunded``
+    * Partial refund → status becomes ``partially_refunded``
+    * Repeated partials are additive (multiple refund rows accumulate).
+
+    Roles allowed: clinic_owner, accounts, front_desk, super_admin, founder.
+    """
+    if user.get("role") not in {"clinic_owner", "accounts", "front_desk", "super_admin", "founder"}:
+        raise HTTPException(status_code=403, detail="You don't have permission to issue refunds")
+
+    inv_doc = await db.invoices.find_one({"invoice_id": invoice_id, "clinic_id": user["clinic_id"]}, {"_id": 0})
+    if not inv_doc:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    status_now = (inv_doc.get("status") or "").lower()
+    if status_now == "cancelled":
+        raise HTTPException(status_code=400, detail="Cannot refund a cancelled invoice")
+    if status_now == "draft":
+        raise HTTPException(status_code=400, detail="Nothing to refund — this invoice has no payments yet")
+
+    # Refundable ceiling = current paid_total (which already accounts for
+    # any earlier refunds since they're negative rows). Guards against
+    # accidental over-refunding.
+    paid_now = float(inv_doc.get("paid_total") or 0)
+    if paid_now <= 0.01:
+        raise HTTPException(status_code=400, detail="This invoice has no positive balance to refund")
+    if payload.amount > paid_now + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Refund amount ₹{payload.amount:.2f} exceeds refundable balance ₹{paid_now:.2f}",
+        )
+
+    refund_row = Payment(
+        clinic_id=user["clinic_id"],
+        invoice_id=invoice_id,
+        kind="refund",
+        method=payload.method,
+        # Stored as a NEGATIVE amount — see Payment.kind docstring.
+        amount=-round(float(payload.amount), 2),
+        reference=payload.reference,
+        reason=payload.reason,
+        notes=payload.notes,
+        received_by_user_id=user["user_id"],
+    )
+    await db.payments.insert_one(_serialize(refund_row.model_dump()))
+
+    inv = Invoice(**_deserialize(inv_doc))
+    inv.payments.append(refund_row)
+    _sum_invoice(inv)
+
+    await db.invoices.update_one(
+        {"invoice_id": invoice_id},
+        {"$set": _serialize({
+            "payments": [p.model_dump() for p in inv.payments],
+            "paid_total": inv.paid_total,
+            "refunded_total": inv.refunded_total,
+            "due_total": inv.due_total,
+            "status": inv.status,
+        })},
+    )
+    return inv
+
+
+# --------------- CONSOLIDATED PAYMENTS + REFUNDS LISTING ---------------
+
+
+@billing_router.get("/billing/payments")
+async def list_payments_and_refunds(
+    kind: Optional[Literal["payment", "refund"]] = None,
+    since: Optional[str] = None,             # ISO date, e.g. 2026-07-01
+    until: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    user=Depends(get_current_user), db=Depends(get_db),
+):
+    """Consolidated view for the Billing → Payments & Refunds tab.
+
+    Joins each payment row with its parent invoice so the UI can render
+    invoice_no, patient_name, current invoice status alongside the
+    payment amount, method, and (for refunds) the reason.
+    """
+    q: dict = {"clinic_id": user["clinic_id"]}
+    if kind:
+        q["kind"] = kind
+    elif kind is None:
+        # `kind` was added 2026-07-30; old rows don't carry it. Treat missing
+        # as "payment" so the default view (no filter) still surfaces legacy.
+        pass
+    if since or until:
+        rng: dict = {}
+        if since:
+            rng["$gte"] = since
+        if until:
+            rng["$lte"] = until
+        q["paid_at"] = rng
+
+    limit = max(1, min(int(limit or 100), 500))
+    offset = max(0, int(offset or 0))
+    cursor = db.payments.find(q, {"_id": 0}).sort("paid_at", -1).skip(offset).limit(limit)
+    rows = await cursor.to_list(length=limit)
+
+    # Enrich with invoice_no + patient_name for the UI.
+    inv_ids = list({r.get("invoice_id") for r in rows if r.get("invoice_id")})
+    inv_map: dict[str, dict] = {}
+    if inv_ids:
+        inv_cursor = db.invoices.find(
+            {"invoice_id": {"$in": inv_ids}, "clinic_id": user["clinic_id"]},
+            {"_id": 0, "invoice_id": 1, "invoice_no": 1, "patient_name": 1,
+             "patient_id": 1, "status": 1, "grand_total": 1, "rounded_total": 1},
+        )
+        async for inv in inv_cursor:
+            inv_map[inv["invoice_id"]] = inv
+
+    enriched = []
+    for r in rows:
+        inv = inv_map.get(r.get("invoice_id"), {})
+        # Backfill kind for legacy rows — anything with a positive amount
+        # is a payment; anything negative is a refund. Cheap heuristic.
+        row_kind = r.get("kind") or ("refund" if float(r.get("amount") or 0) < 0 else "payment")
+        enriched.append({
+            "payment_id":     r.get("payment_id"),
+            "invoice_id":     r.get("invoice_id"),
+            "invoice_no":     inv.get("invoice_no"),
+            "patient_id":     inv.get("patient_id"),
+            "patient_name":   inv.get("patient_name"),
+            "invoice_status": inv.get("status"),
+            "kind":           row_kind,
+            "amount":         float(r.get("amount") or 0),
+            "method":         r.get("method"),
+            "reference":      r.get("reference"),
+            "reason":         r.get("reason"),
+            "notes":          r.get("notes"),
+            "paid_at":        r.get("paid_at"),
+            "received_by_user_id": r.get("received_by_user_id"),
+        })
+
+    # Rollup — powers the top-of-page KPIs.
+    total_payments = round(sum(x["amount"] for x in enriched if x["kind"] == "payment"), 2)
+    total_refunds = round(-sum(x["amount"] for x in enriched if x["kind"] == "refund"), 2)
+    return {
+        "items": enriched,
+        "count": len(enriched),
+        "offset": offset,
+        "limit": limit,
+        "totals": {
+            "payments": total_payments,
+            "refunds": total_refunds,
+            "net": round(total_payments - total_refunds, 2),
+        },
+    }
 
 
 @billing_router.post("/billing/invoices/{invoice_id}/cancel", response_model=Invoice)

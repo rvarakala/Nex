@@ -30,15 +30,25 @@ export const fmtDateTime = (iso) => {
 };
 
 export const STATUS_BADGE = {
-  draft:     'bg-slate-100 text-slate-700 border-slate-300',
-  partial:   'bg-amber-100 text-amber-800 border-amber-300',
-  paid:      'bg-emerald-100 text-emerald-800 border-emerald-300',
-  refunded:  'bg-blue-100 text-blue-800 border-blue-300',
-  cancelled: 'bg-rose-100 text-rose-700 border-rose-300 line-through',
+  draft:                'bg-slate-100 text-slate-700 border-slate-300',
+  partial:              'bg-amber-100 text-amber-800 border-amber-300',
+  paid:                 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  refunded:             'bg-blue-100 text-blue-800 border-blue-300',
+  partially_refunded:   'bg-indigo-100 text-indigo-800 border-indigo-300',
+  cancelled:            'bg-rose-100 text-rose-700 border-rose-300 line-through',
+};
+
+// Human labels — "partially_refunded" is ugly as-is; keep the key/value
+// clean but render "Partial refund" on the pill.
+const STATUS_LABEL = {
+  partially_refunded: 'Partial refund',
 };
 
 export const StatusPill = ({ status }) => (
-  <span className={`text-[10px] px-1.5 py-0.5 font-bold rounded border uppercase tracking-wider ${STATUS_BADGE[status] || STATUS_BADGE.draft}`}>
-    {status}
+  <span
+    className={`text-[10px] px-1.5 py-0.5 font-bold rounded border uppercase tracking-wider whitespace-nowrap ${STATUS_BADGE[status] || STATUS_BADGE.draft}`}
+    data-testid={`status-pill-${status}`}
+  >
+    {STATUS_LABEL[status] || status}
   </span>
 );

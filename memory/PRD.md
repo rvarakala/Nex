@@ -1,5 +1,56 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 💸 Clinic Refund Flow (2026-07-30) — P0 bug + new feature
+
+**User report**: "check refund option is there or not?? … 2 options are there under Billing — Invoices & Payments & Refunds — both looks same … if refund option is not there or wired, please implement that."
+
+### The bug that made both look identical
+Sidebar (`AppShell.js:275`) linked to `/billing/payments`, but `BillingModule.js` had NO route registered for it. Fallthrough sent every visit back to `/billing` → identical Invoices list rendering under both nav items.
+
+### What shipped
+**Design decisions (user-approved)**: record-only refund (no gateway); roles = clinic_owner + accounts + front_desk + super_admin + founder; partial + full refunds; amount + method + reason (min 3 chars) fields; immutable once issued.
+
+**Backend**
+- New `Payment.kind: Literal["payment", "refund"]` (default `"payment"`); refunds stored with NEGATIVE amount so `_sum_invoice()` naturally subtracts them.
+- New `Payment.reason` for refund reasons.
+- New `Invoice.refunded_total` (positive display value) + `partially_refunded` status literal.
+- Refund-aware status derivation in `_sum_invoice()`:
+  - Full refund (refunded ≈ original paid) → `refunded`
+  - Partial → `partially_refunded`
+  - Otherwise existing ladder (draft → partial → paid).
+- `POST /api/billing/invoices/{id}/refund` — role-gated, over-refund guard, atomic.
+- `GET /api/billing/payments` — consolidated feed with `kind` filter, date range, ordered by paid_at desc, enriched with `invoice_no` + `patient_name`, rollup KPIs `{payments, refunds, net}`.
+
+**Frontend**
+- Route `/billing/payments` now maps to new `PaymentsRefundsPage.jsx`:
+  - Three KPI cards (Payments received / Refunds issued / Net collections)
+  - Filter tabs: All · Payments only · Refunds only
+  - Consolidated table with kind pill, invoice link, patient, method, amount (signed + colored), reason/reference, notes
+  - LandscapePrompt banner for mobile
+- `InvoiceDetailPage`:
+  - New `↩ Refund` button (rose outline) visible when `paid_total > 0`, hidden if cancelled, role-gated
+  - New `RefundDialog` — mirror-refund default (picks method of most-recent payment), amount capped at `paid_total`, mandatory reason field, real-time over-cap validation, "Refunds are final" warning
+- `billingUtils.js`: added `partially_refunded` badge color (indigo) + friendly label "Partial refund"
+- `BillingModule.js`: added `<Tab to="/billing/payments" testid="bill-tab-payments">` — clicking either the sidebar or top-tab now correctly highlights the new page
+
+### Testing
+- **5 pytest tests** in `tests/test_billing_refunds.py` — all PASS: partial+full flow, /billing/payments enrichment, draft-invoice guard, role-gate 403, amount>0 Pydantic guard.
+- **End-to-end curl**: verified partial (₹4k), accumulated partial (₹5k), over-refund block, final closure (₹1k), status transitions.
+- **UI smoke**: `/billing/payments` KPIs + rows visible, refund tab filter works, refund dialog opens+submits, invoice detail shows "Partial refund" pill + refund line in payments table with signed `-₹3,000.00`.
+- **Regression suite**: 20 pass, 5 skipped (pre-existing demo-seed skips), 0 failures across billing + auth + sessions.
+
+### Files touched
+- `backend/billing.py` — refund endpoint + consolidated payments endpoint + status logic
+- `backend/models/_canonical.py` — Payment.kind/reason, Invoice.refunded_total, status literal
+- `backend/tests/test_billing_refunds.py` — new (5 tests)
+- `frontend/src/modules/billing/PaymentsRefundsPage.jsx` — new
+- `frontend/src/modules/billing/InvoiceDetailPage.js` — RefundDialog + button
+- `frontend/src/modules/billing/BillingModule.js` — new route + tab
+- `frontend/src/modules/billing/billingUtils.js` — partially_refunded badge
+
+---
+
+
 ## 🐞 Founder password lockout — fixed (2026-07-30) — CRITICAL P0
 
 **Bug report (user)**: "I've changed the password many times for founder@audinexa.com. After changing it, in that session I can log in. When I log out and re-enter the same password, I can't. Then I need to click forgot-password → regenerate → login again. Repeat for every new session."
