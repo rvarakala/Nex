@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import StaffRail from './components/StaffRail';
@@ -27,6 +27,7 @@ const VIEWS = ['day', 'week', 'month', 'persons'];
 export default function AppointmentsCalendarPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [view, setView] = useState('week');
   const [anchor, setAnchor] = useState(() => new Date());
@@ -100,6 +101,29 @@ export default function AppointmentsCalendarPage() {
   }, []);
 
   useEffect(() => { loadStaff(); }, [loadStaff]);
+
+  // Phase B #2 — Deep-link auto-open: when NewPatientPage sends the user
+  // here via `Register + Book Appointment →`, the freshly-saved patient
+  // arrives on the query string. Open the modal with the patient
+  // pre-selected and strip the params so refreshes / back-navigation
+  // don't re-open the modal unexpectedly.
+  useEffect(() => {
+    const pid = searchParams.get('bookForPatientId');
+    if (!pid) return;
+    const pname = searchParams.get('bookForPatientName') || '';
+    setModalInitial({
+      initialDate: new Date(),
+      existing: { patient_id: pid, patient_name: pname },
+    });
+    setModalOpen(true);
+    // Drop the params so a refresh doesn't re-trigger. `replace:true`
+    // keeps the entry out of the history stack.
+    const next = new URLSearchParams(searchParams);
+    next.delete('bookForPatientId');
+    next.delete('bookForPatientName');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- Load appointments for the visible window ----------------------------
   const loadAppointments = useCallback(async () => {

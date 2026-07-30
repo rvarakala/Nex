@@ -172,6 +172,18 @@ export default function NewPatientPage() {
       const r = await axios.post(`${API}/patients`, payload);
       const patient = r.data;
 
+      // NEW: skip the token/session dance for the "book appointment"
+      // action — instead, hand off to the Appointments calendar with the
+      // freshly-created patient pre-selected in the modal (Phase B #2).
+      if (action === 'book_appointment') {
+        const qs = new URLSearchParams({
+          bookForPatientId: patient.patient_id,
+          bookForPatientName: patient.name || '',
+        });
+        navigate(`/appointments?${qs.toString()}`);
+        return;
+      }
+
       // Issue token
       const tk = await axios.post(`${API}/tokens`, {
         patient_id: patient.patient_id,
@@ -427,6 +439,14 @@ export default function NewPatientPage() {
                 data-testid="btn-register-print"
                 className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded disabled:opacity-50"
               >Register + Print Token</button>
+              <button
+                type="button"
+                onClick={() => submit('book_appointment')}
+                disabled={!valid || busy}
+                data-testid="btn-register-book-apt"
+                title="Save the patient and jump straight into booking an appointment for them."
+                className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
+              >Register + Book Appointment →</button>
               <button
                 type="button"
                 onClick={() => submit('start_diagnostics')}

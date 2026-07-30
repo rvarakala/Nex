@@ -1,5 +1,33 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## ✨ Phase A — UX Polish Bundle (2026-07-31) — 5 quick wins DELIVERED
+
+**User request (11-point mega-list)**: Split into phases. Phase A closes items #1, #5, #6, #9, #11.
+
+**Shipped**
+- **#6 Audiogram zoom controls** — repositioned from top-right vertical stack to a compact bottom-right horizontal strip (`AudiogramCanvas.js:793-828`). Testids: `audiogram-zoom-controls / -in / -out / -fit / -level`.
+- **#9 "Further Advice (ENT)" removed** — dropped from `RecommendationsAdviceSection.js` (single-col Recommendations only) and from `BuilderSidebar.js` (textarea + label removed). No `report-further-advice` testid anywhere.
+- **#11 Clinic branding wired to Settings** — `ReportsPanel.js` now hydrates clinic from `GET /api/settings/clinic` + `/logo` (localStorage removed). `BuilderSidebar.js` renders a hint (`report-branding-hint`) with a deep-link to `/settings/clinic`. Placeholder text `[Your Clinic Name — set in Settings]` shows in amber italic when name is blank (testids `report-clinic-header / -name / -hint`).
+- **#1 Referring doctor auto-fill on Book Appt** — `BookAppointmentModal.js:465-478`: when reception picks a patient who has `referring_doctor_id`, visit type auto-switches to Referral and doctor is pre-selected.
+- **#5 Available Tests deep-link** — `DiagnosticsQueueBoard` Available-Tests tiles push `/test?tab=<panel>`; `TestProceduresModule` honours it via `useSearchParams` and strips the query after mount. Testids: `dq-launch-pta / -imp / -speech / -oae / -abr / -tinn / -sfa / -vra / -vemp / -special`.
+
+**Testing** (`test_reports/iteration_51.json`)
+- **0 bugs, 0 critical issues**. Frontend-only verification. Item #5 verified end-to-end at runtime (URL captured mid-navigation). Items #1/#6/#9/#11 verified via code inspection + `/settings/clinic` live check for the DL Test clinic (name='DL Test Clinic', phone/city/state populated).
+- Cosmetic notes (non-blocking): seed data suggestion for future testing agents, minor dead-code cleanup opportunity in `BuilderSidebar.js`, `ReportsPanel.js:141` unused `setClinic_readOnly`.
+
+**Files touched**
+- `frontend/src/modules/test/components/AudiogramCanvas.js`
+- `frontend/src/modules/test/components/RecommendationsAdviceSection.js`
+- `frontend/src/modules/test/components/BuilderSidebar.js`
+- `frontend/src/modules/test/components/ReportsPanel.js`
+- `frontend/src/modules/test/components/ReportHeader.js`
+- `frontend/src/modules/test/TestProceduresModule.js`
+- `frontend/src/modules/appointments/components/BookAppointmentModal.js`
+- `frontend/src/modules/diagnostics/DiagnosticsQueueBoard.js`
+
+---
+
+
 ## 🏷️ Procurement "Vendor is Missing" bug — FIXED (2026-07-30)
 
 **Reported**: User screenshot on `https://audinexa.com/ha/procurement` showed New Purchase Order modal with vendor dropdown reading "— no vendors —" and a red "Vendor not found" banner. Complaint: "Vendor is Missing".

@@ -386,6 +386,13 @@ class AppointmentWithInvoiceRequest(BaseModel):
     visit_type: Literal["referral", "walkin", "consultation"] = "walkin"
     recommended_tests: List[str] = []
     referred_by: Optional[str] = None
+    # HA wing chips + routing — optional, defaults to diagnostic wing.
+    hearing_aid_services: List[str] = []
+    wing: Literal["diagnostic", "hearing_aid"] = "diagnostic"
+    # Appointment category — front desk can override the default derived
+    # from wing (e.g., HA sale → "other" instead of "fitting").
+    category: Optional[Literal["consultation", "diagnostic", "fitting", "meeting", "demo", "other"]] = None
+    referring_doctor_id: Optional[str] = None
     # Invoice fields
     raise_invoice: bool = True
     invoice_lines: List[LineItemIn] = []
@@ -399,6 +406,14 @@ async def create_appointment_with_invoice(
     """Atomic: create appointment + (optionally) a draft invoice in one call."""
     from routers.appointments import create_appointment, AppointmentCreate
 
+    # Derive category if not explicitly set. HA wing defaults to "fitting"
+    # (covers trials, fittings, follow-ups, programming, ear moulds), while
+    # diagnostic wing keeps the existing "consultation" default so the
+    # calendar colour-coding stays consistent with pre-Phase B rows.
+    derived_category = payload.category
+    if derived_category is None:
+        derived_category = "fitting" if payload.wing == "hearing_aid" else "consultation"
+
     apt_payload = AppointmentCreate(
         patient_id=payload.patient_id,
         audiologist_id=payload.audiologist_id,
@@ -411,6 +426,10 @@ async def create_appointment_with_invoice(
         visit_type=payload.visit_type,
         recommended_tests=payload.recommended_tests,
         referred_by=payload.referred_by,
+        hearing_aid_services=payload.hearing_aid_services,
+        wing=payload.wing,
+        category=derived_category,
+        referring_doctor_id=payload.referring_doctor_id,
     )
     apt = await create_appointment(apt_payload, user=user, db=db)
     apt_dict = apt.model_dump() if hasattr(apt, "model_dump") else apt

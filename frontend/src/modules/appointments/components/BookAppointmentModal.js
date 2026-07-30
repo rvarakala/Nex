@@ -47,6 +47,35 @@ const FRONTDESK_TEST_OPTIONS = [
 ];
 const TEST_BY_KEY = Object.fromEntries(FRONTDESK_TEST_OPTIONS.map((t) => [t.key, t]));
 
+// Phase B #3 — Hearing-Aid wing service chips. Routes the appointment to
+// the HA module (category=`fitting` by default) and drafts invoice lines
+// from the HA catalogue (HAF / HA-BTE / HA-RIC / EARMOULD / BATTERY).
+//
+// The `category` field lets us override the wing's default when a specific
+// chip is more of a `demo` or `other` — e.g. HA Trial is a demo, HA Sale
+// is `other` (product purchase, not a fitting session).
+const HA_SERVICE_OPTIONS = [
+  { key: 'ha_trial',       label: 'HA Trial / Demo',   defaultMin: 45, defaultPrice: 0,     category: 'demo',
+    catalogCodes: [],             catalogNameHints: ['trial', 'demo'] },
+  { key: 'ha_fitting',     label: 'HA Fitting',        defaultMin: 60, defaultPrice: 1500,  category: 'fitting',
+    catalogCodes: ['HAF'],        catalogNameHints: ['hearing aid fitting', 'fitting'] },
+  { key: 'ha_programming', label: 'Programming',       defaultMin: 45, defaultPrice: 1000,  category: 'fitting',
+    catalogCodes: ['HAP'],        catalogNameHints: ['programming', 'fine tune', 'fine-tune'] },
+  { key: 'ha_followup',    label: 'HA Follow-up',      defaultMin: 30, defaultPrice: 500,   category: 'fitting',
+    catalogCodes: ['HAFU'],       catalogNameHints: ['follow-up', 'followup', 'review'] },
+  { key: 'ha_repair',      label: 'Repair / Service',  defaultMin: 30, defaultPrice: 0,     category: 'other',
+    catalogCodes: ['HAR'],        catalogNameHints: ['repair', 'service'] },
+  { key: 'ha_earmould',    label: 'Ear Mould',         defaultMin: 20, defaultPrice: 1200,  category: 'fitting',
+    catalogCodes: ['EARMOULD'],   catalogNameHints: ['ear mould', 'earmould', 'mould'] },
+  { key: 'ha_battery',     label: 'Battery / Accy.',   defaultMin: 10, defaultPrice: 300,   category: 'other',
+    catalogCodes: ['BATTERY'],    catalogNameHints: ['battery', 'accessor'] },
+  { key: 'ha_sale_bte',    label: 'HA Sale — BTE',     defaultMin: 60, defaultPrice: 35000, category: 'other',
+    catalogCodes: ['HA-BTE'],     catalogNameHints: ['bte'] },
+  { key: 'ha_sale_ric',    label: 'HA Sale — RIC',     defaultMin: 60, defaultPrice: 55000, category: 'other',
+    catalogCodes: ['HA-RIC'],     catalogNameHints: ['ric'] },
+];
+const HA_BY_KEY = Object.fromEntries(HA_SERVICE_OPTIONS.map((t) => [t.key, t]));
+
 export default function BookAppointmentModal({ audiologists, initialDate, initialTime, existing, onClose, onSaved }) {
   const isEdit = !!existing?.appointment_id;
   const today = useMemo(() => (initialDate ? initialDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)), [initialDate]);
@@ -90,6 +119,16 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   const [recommendedTests, setRecommendedTests] = useState(
     Array.isArray(existing?.recommended_tests) ? existing.recommended_tests : [],
   );
+  // Phase B #3 — Wing routing. `diagnostic` shows the classic PTA/IMP/etc.
+  // chips; `hearing_aid` swaps them for HA Fitting / Trial / Sale / Ear
+  // Mould etc. and routes the appointment to the HA module (category=
+  // `fitting` or `other` per chip). Legacy rows default to diagnostic.
+  const [wing, setWing] = useState(existing?.wing || 'diagnostic');
+  const [hearingAidServices, setHearingAidServices] = useState(
+    Array.isArray(existing?.hearing_aid_services) ? existing.hearing_aid_services : [],
+  );
+  const toggleHaService = (k) => setHearingAidServices((prev) =>
+    prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
   const [referredBy, setReferredBy] = useState(existing?.referred_by || '');
   // Doctor picker — feeds the same `referredBy` free-text field so the
   // downstream appointment payload doesn't change shape. Also passes
@@ -117,9 +156,12 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   //   3. fuzzy name `includes` against the chip's `catalogNameHints`
   // Returns `null` only if ALL strategies miss — handled by the invoice
   // auto-sync below (which then drafts a line with the chip's `defaultPrice`).
-  const matchService = useCallback((chipKey) => {
+  //
+  // Phase B #3 — accepts an optional `chipRegistry` so the same lookup
+  // works for HA_SERVICE_OPTIONS. Defaults to TEST_BY_KEY for back-compat.
+  const matchService = useCallback((chipKey, chipRegistry = TEST_BY_KEY) => {
     if (!catalog.length) return null;
-    const meta = TEST_BY_KEY[chipKey];
+    const meta = chipRegistry[chipKey];
     if (!meta) return null;
     const lc = (s) => (s || '').toLowerCase().trim();
     const codes = (meta.catalogCodes || []).map((c) => c.toUpperCase());
@@ -144,10 +186,10 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   // Per-chip price for the chip label. Prefers the clinic's catalogue, but
   // falls back to the chip's `defaultPrice` so reception always sees a price
   // (even on tenants whose catalogue is incomplete — like fresh signups).
-  const chipPrice = useCallback((chipKey) => {
-    const svc = matchService(chipKey);
+  const chipPrice = useCallback((chipKey, chipRegistry = TEST_BY_KEY) => {
+    const svc = matchService(chipKey, chipRegistry);
     if (svc && svc.price != null) return Number(svc.price);
-    const meta = TEST_BY_KEY[chipKey];
+    const meta = chipRegistry[chipKey];
     return meta && meta.defaultPrice ? Number(meta.defaultPrice) : null;
   }, [matchService]);
 
@@ -157,8 +199,16 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   // "I'll do PTA + Impedance + OAE today" — so we collapse the chip list
   // into a friendly summary like "PTA + Impedance + OAE". For edits of
   // legacy appointments with no chips, preserve the original `service`.
+  //
+  // Phase B #3 — HA wing derives from HA chips instead of test chips.
   const derivedService = useMemo(() => {
     if (visitType === 'consultation') return 'Consultation';
+    if (wing === 'hearing_aid') {
+      if (hearingAidServices.length === 0) return existing?.service || 'Hearing Aid';
+      const labels = hearingAidServices.map((k) => (HA_BY_KEY[k] || {}).label || k);
+      if (labels.length <= 3) return labels.join(' + ');
+      return `${labels.slice(0, 2).join(' + ')} +${labels.length - 2} more`;
+    }
     if (visitType === 'referral' && recommendedTests.length === 0) {
       return existing?.service || 'Referral';
     }
@@ -166,13 +216,39 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     const labels = recommendedTests.map((k) => (TEST_BY_KEY[k] || {}).label || k);
     if (labels.length <= 3) return labels.join(' + ');
     return `${labels.slice(0, 2).join(' + ')} +${labels.length - 2} more`;
-  }, [visitType, recommendedTests, existing]);
+  }, [visitType, wing, recommendedTests, hearingAidServices, existing]);
+
+  // Derived appointment category. Diagnostic wing keeps the legacy
+  // `consultation` default; HA wing takes the first chip's `category`
+  // (falls back to `fitting`). Front desk doesn't need to think about
+  // this — it just powers calendar colour + downstream module routing.
+  const derivedCategory = useMemo(() => {
+    if (visitType === 'consultation') return 'consultation';
+    if (wing === 'hearing_aid') {
+      if (hearingAidServices.length === 0) return 'fitting';
+      const first = HA_BY_KEY[hearingAidServices[0]];
+      return first?.category || 'fitting';
+    }
+    return existing?.category || 'diagnostic';
+  }, [visitType, wing, hearingAidServices, existing]);
 
   // Auto-sum duration from selected chips (catalog `duration_minutes` first,
   // else the static defaultMin). Front desk can still override the dropdown.
   useEffect(() => {
     if (durationManuallySet) return;
     if (visitType === 'consultation') { setDuration(30); return; }
+    if (wing === 'hearing_aid') {
+      if (hearingAidServices.length === 0) return;
+      const total = hearingAidServices.reduce((sum, k) => {
+        const svc = matchService(k, HA_BY_KEY);
+        const fromCatalog = Number(svc?.duration_minutes || 0);
+        const fallback = (HA_BY_KEY[k] || {}).defaultMin || 30;
+        return sum + (fromCatalog > 0 ? fromCatalog : fallback);
+      }, 0);
+      const snapped = Math.max(15, Math.round(total / 15) * 15);
+      setDuration(snapped);
+      return;
+    }
     if (recommendedTests.length === 0) return;
     const total = recommendedTests.reduce((sum, k) => {
       const svc = matchService(k);
@@ -183,26 +259,29 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     // Snap to the nearest 15 min so the dropdown stays consistent.
     const snapped = Math.max(15, Math.round(total / 15) * 15);
     setDuration(snapped);
-  }, [recommendedTests, visitType, matchService, durationManuallySet]);
+  }, [recommendedTests, hearingAidServices, wing, visitType, matchService, durationManuallySet]);
 
-  // Auto-sync invoice lines to ticked tests (consultation → no invoice).
+  // Auto-sync invoice lines to ticked tests / HA services (consultation → no invoice).
   // We ALWAYS draft a line per chip — even when the catalog is missing
-  // the entry — so reception sees every test on the invoice. Missing
+  // the entry — so reception sees every test/service on the invoice. Missing
   // catalog entries fall back to the chip's hard-coded `defaultPrice`
   // and are flagged with `_unmapped: true` so the table can hint that
   // the price is editable.
   useEffect(() => {
     if (isEdit) return;
     if (visitType === 'consultation') { setInvoiceLines([]); return; }
+    const activeChips = wing === 'hearing_aid' ? hearingAidServices : recommendedTests;
+    const registry = wing === 'hearing_aid' ? HA_BY_KEY : TEST_BY_KEY;
     setInvoiceLines((prev) => {
       // Preserve user edits on already-present lines; add missing; drop unticked.
-      const kept = prev.filter((l) => recommendedTests.includes(l._chip));
+      // Also drops lines from the OTHER wing when the wing toggle flips.
+      const kept = prev.filter((l) => activeChips.includes(l._chip));
       const existingChips = new Set(kept.map((l) => l._chip));
-      const additions = recommendedTests
+      const additions = activeChips
         .filter((k) => !existingChips.has(k))
         .map((k) => {
-          const meta = TEST_BY_KEY[k] || {};
-          const svc = matchService(k);
+          const meta = registry[k] || {};
+          const svc = matchService(k, registry);
           if (svc) {
             return {
               _key: Math.random().toString(36).slice(2),
@@ -234,7 +313,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
         });
       return [...kept, ...additions];
     });
-  }, [recommendedTests, visitType, catalog, matchService, isEdit]);
+  }, [recommendedTests, hearingAidServices, wing, visitType, catalog, matchService, isEdit]);
 
   const updateInvoiceLine = (key, patch) =>
     setInvoiceLines((prev) => prev.map((l) => l._key === key ? { ...l, ...patch } : l));
@@ -358,7 +437,8 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     // For new appointments, require ≥1 chip (or consultation). For edits we
     // accept the legacy single-`service` value the row was created with so
     // older appointments don't get blocked from being edited.
-    (isEdit || visitType === 'consultation' || recommendedTests.length > 0);
+    (isEdit || visitType === 'consultation'
+      || (wing === 'hearing_aid' ? hearingAidServices.length > 0 : recommendedTests.length > 0));
 
   // Collect human-readable reasons the form isn't submittable yet.
   // Surfaced both under the Patient field and next to the Book button so
@@ -368,8 +448,12 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   if (!audiologistId) missing.push('audiologist');
   if (!date) missing.push('date');
   if (!time) missing.push('time');
-  if (!isEdit && visitType !== 'consultation' && recommendedTests.length === 0) {
-    missing.push('at least one test');
+  if (!isEdit && visitType !== 'consultation') {
+    if (wing === 'hearing_aid' && hearingAidServices.length === 0) {
+      missing.push('at least one HA service');
+    } else if (wing === 'diagnostic' && recommendedTests.length === 0) {
+      missing.push('at least one test');
+    }
   }
 
   // Patient-field helper states (not a *blocking* error — just UX nudges).
@@ -382,12 +466,21 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     setBusy(true); setErr(null);
     try {
       const startIso = `${date}T${time}:00`;
+      // Wing-aware payload — HA wing sends HA services + zeroes out
+      // diagnostic test chips (and vice versa) so the appointment row
+      // never carries stale chips from the OTHER wing.
+      const isHaWing = wing === 'hearing_aid';
+      const recTests = visitType === 'consultation' || isHaWing ? [] : recommendedTests;
+      const haServices = visitType === 'consultation' || !isHaWing ? [] : hearingAidServices;
       if (isEdit) {
         await axios.put(`${API}/appointments/${existing.appointment_id}`, {
           audiologist_id: audiologistId, service: derivedService, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
           visit_type: visitType,
-          recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
+          wing,
+          category: derivedCategory,
+          recommended_tests: recTests,
+          hearing_aid_services: haServices,
           referred_by: visitType === 'referral' ? (referredBy || null) : null,
           referring_doctor_id: visitType === 'referral' ? (referringDoctorId || null) : null,
         });
@@ -400,7 +493,10 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
           service: derivedService, room: room || null, priority,
           start_at: startIso, duration_minutes: duration, notes,
           visit_type: visitType,
-          recommended_tests: visitType === 'consultation' ? [] : recommendedTests,
+          wing,
+          category: derivedCategory,
+          recommended_tests: recTests,
+          hearing_aid_services: haServices,
           referred_by: visitType === 'referral' ? (referredBy || null) : null,
           referring_doctor_id: visitType === 'referral' ? (referringDoctorId || null) : null,
           raise_invoice: raiseInvoice && invoiceLines.length > 0,
@@ -670,6 +766,43 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
               <div className="flex-1 h-px bg-slate-200" />
             </div>
 
+            {/* Phase B #3 — Wing toggle: Diagnostic vs Hearing Aid.
+                Drives which chip set is shown + which module the
+                appointment is routed to. Hidden on consultation
+                (audiologist decides). Legacy edits default to
+                diagnostic so existing appts keep working. */}
+            {visitType !== 'consultation' && (
+              <div className="flex gap-1 mb-2" role="radiogroup" aria-label="wing-selector">
+                {[
+                  { key: 'diagnostic',  label: 'Diagnostic',   tip: 'Audiology tests (PTA, Impedance, OAE, etc.)' },
+                  { key: 'hearing_aid', label: 'Hearing Aid',  tip: 'HA fitting / trial / repair / sale — routes to Hearing Aid module' },
+                ].map((w) => (
+                  <button key={w.key} type="button" onClick={() => {
+                    setWing(w.key);
+                    // Flipping wings clears chips from the other side so we
+                    // don't send stale selections to the backend.
+                    if (w.key === 'diagnostic') setHearingAidServices([]);
+                    else setRecommendedTests([]);
+                    // Reset duration override so it re-syncs to new chips.
+                    setDurationManuallySet(false);
+                  }} title={w.tip}
+                    data-testid={`bk-wing-${w.key}`}
+                    className={`flex-1 px-2 py-1 text-[11px] font-semibold rounded border transition-colors ${
+                      wing === w.key
+                        ? 'bg-teal-600 text-white border-teal-700 shadow-sm'
+                        : 'bg-white text-slate-700 border-slate-300 hover:border-teal-300 hover:bg-teal-50'
+                    }`}>
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {wing === 'hearing_aid' && visitType !== 'consultation' && (
+              <div className="mb-2 px-2 py-1 text-[10px] text-teal-800 bg-teal-50 border border-teal-200 rounded" data-testid="bk-wing-ha-hint">
+                This booking will be routed to the <b>Hearing Aid</b> module.
+              </div>
+            )}
+
             {/* Visit type — 3 cases requested by the user */}
             <div className="flex gap-1 mb-2" role="radiogroup" aria-label="visit-type">
               {[
@@ -705,40 +838,71 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
               </div>
             )}
 
-            {/* Test chip-picker — hidden for consultation (audiologist decides).
-                Each chip shows the catalog price inline (looked up via
-                `chipPrice`) so reception sees totals at a glance. Toggling
-                a chip drives BOTH (a) the audiologist's pre-checked test
-                tabs and (b) the inline invoice draft. */}
+            {/* Test / HA chip-picker — hidden for consultation (audiologist decides).
+                DIAGNOSTIC wing → PTA / IMP / OAE etc. HEARING AID wing → HA Fitting
+                / Trial / Sale / Ear Mould etc. Each chip shows the catalog price
+                inline (looked up via `chipPrice`). Toggling drives BOTH the
+                audiologist's pre-checked test tabs and the inline invoice draft. */}
             {visitType !== 'consultation' ? (
-              <div>
-                <div className="text-[10px] text-slate-500 mb-1">
-                  Pick the tests for this visit — auto-fills the invoice and pre-checks the audiologist's tabs.
+              wing === 'hearing_aid' ? (
+                <div>
+                  <div className="text-[10px] text-slate-500 mb-1">
+                    Pick the HA services for this visit — auto-fills the invoice and routes to the Hearing Aid module.
+                  </div>
+                  <div className="flex flex-wrap gap-1" data-testid="bk-ha-services">
+                    {HA_SERVICE_OPTIONS.map((t) => {
+                      const on = hearingAidServices.includes(t.key);
+                      const price = chipPrice(t.key, HA_BY_KEY);
+                      return (
+                        <button key={t.key} type="button" onClick={() => toggleHaService(t.key)}
+                          data-testid={`bk-ha-${t.key}`}
+                          title={price != null ? `${t.label} · ₹${price.toLocaleString('en-IN')}` : t.label}
+                          className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border transition-colors ${
+                            on
+                              ? 'bg-teal-600 text-white border-teal-700'
+                              : 'bg-white text-slate-600 border-slate-300 hover:border-teal-400 hover:bg-teal-50'
+                          }`}>
+                          {on ? '✓ ' : ''}{t.label}
+                          {price != null && price > 0 && (
+                            <span className={`ml-1 tabular-nums ${on ? 'text-teal-100' : 'text-slate-400'}`}>
+                              · ₹{price.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1" data-testid="bk-recommended-tests">
-                  {FRONTDESK_TEST_OPTIONS.map((t) => {
-                    const on = recommendedTests.includes(t.key);
-                    const price = chipPrice(t.key);
-                    return (
-                      <button key={t.key} type="button" onClick={() => toggleRecTest(t.key)}
-                        data-testid={`bk-rec-${t.key}`}
-                        title={price != null ? `${t.label} · ₹${price.toLocaleString('en-IN')}` : t.label}
-                        className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border transition-colors ${
-                          on
-                            ? 'bg-sky-600 text-white border-sky-700'
-                            : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400 hover:bg-sky-50'
-                        }`}>
-                        {on ? '✓ ' : ''}{t.label}
-                        {price != null && (
-                          <span className={`ml-1 tabular-nums ${on ? 'text-sky-100' : 'text-slate-400'}`}>
-                            · ₹{price.toLocaleString('en-IN')}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+              ) : (
+                <div>
+                  <div className="text-[10px] text-slate-500 mb-1">
+                    Pick the tests for this visit — auto-fills the invoice and pre-checks the audiologist's tabs.
+                  </div>
+                  <div className="flex flex-wrap gap-1" data-testid="bk-recommended-tests">
+                    {FRONTDESK_TEST_OPTIONS.map((t) => {
+                      const on = recommendedTests.includes(t.key);
+                      const price = chipPrice(t.key);
+                      return (
+                        <button key={t.key} type="button" onClick={() => toggleRecTest(t.key)}
+                          data-testid={`bk-rec-${t.key}`}
+                          title={price != null ? `${t.label} · ₹${price.toLocaleString('en-IN')}` : t.label}
+                          className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border transition-colors ${
+                            on
+                              ? 'bg-sky-600 text-white border-sky-700'
+                              : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400 hover:bg-sky-50'
+                          }`}>
+                          {on ? '✓ ' : ''}{t.label}
+                          {price != null && (
+                            <span className={`ml-1 tabular-nums ${on ? 'text-sky-100' : 'text-slate-400'}`}>
+                              · ₹{price.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )
             ) : (
               <div className="px-2 py-1.5 text-[11px] text-violet-700 bg-violet-50 border border-violet-200 rounded italic" data-testid="bk-consultation-note">
                 The audiologist will decide which tests to run after speaking with the patient.

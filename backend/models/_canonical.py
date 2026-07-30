@@ -190,6 +190,14 @@ class Appointment(BaseModel):
     visit_type: Literal["referral", "walkin", "consultation"] = "walkin"
     recommended_tests: List[str] = Field(default_factory=list)   # e.g. ["pta", "impedance"]
     referred_by: Optional[str] = None                            # ENT / GP name if visit_type=referral
+    # Hearing Aid wing chips picked by front-desk. Distinct from
+    # `recommended_tests` so downstream diagnostic modules ignore them.
+    # e.g. ["ha_fitting", "ha_trial", "ha_earmould"]
+    hearing_aid_services: List[str] = Field(default_factory=list)
+    # Which "wing" this appointment is routed to. Drives category + module
+    # navigation. `diagnostic` = audiology tests, `hearing_aid` = HA fitting/
+    # sales/service. Optional — defaults to diagnostic for legacy rows.
+    wing: Literal["diagnostic", "hearing_aid"] = "diagnostic"
 
     start_at: datetime                                # Full timestamp (UTC)
     end_at: datetime
@@ -234,6 +242,10 @@ class AppointmentCreate(BaseModel):
     visit_type: Literal["referral", "walkin", "consultation"] = "walkin"
     recommended_tests: List[str] = Field(default_factory=list)
     referred_by: Optional[str] = None
+    # HA-wing chips + wing routing (mirror AppointmentBase). Optional so
+    # existing callers don't break.
+    hearing_aid_services: List[str] = Field(default_factory=list)
+    wing: Literal["diagnostic", "hearing_aid"] = "diagnostic"
     # When a referral appointment is booked via ReferringDoctorPicker,
     # the picker also emits the doctor_id — the appointments router uses
     # it to auto-link the patient to that referring doctor so the
