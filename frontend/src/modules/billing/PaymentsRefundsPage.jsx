@@ -9,8 +9,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, RefreshCw, TrendingUp, TrendingDown, IndianRupee } from 'lucide-react';
+import { ArrowUpRight, Printer, RefreshCw, TrendingUp, TrendingDown, IndianRupee } from 'lucide-react';
 import { API, fmtINR, fmtDateTime } from './billingUtils';
+import { printRefundReceipt } from './refundReceipt';
+import { useAuth } from '../../AuthContext';
 import LandscapePrompt from '../../components/LandscapePrompt';
 
 const KIND_LABELS = {
@@ -24,6 +26,7 @@ const methodShort = (m) => {
 };
 
 export default function PaymentsRefundsPage() {
+  const { clinic } = useAuth();
   const [filter, setFilter] = useState('all');    // 'all' | 'payment' | 'refund'
   const [rows, setRows] = useState([]);
   const [totals, setTotals] = useState({ payments: 0, refunds: 0, net: 0 });
@@ -172,15 +175,27 @@ export default function PaymentsRefundsPage() {
                     )}
                   </Td>
                   <Td>
-                    {r.invoice_id && (
-                      <Link
-                        to={`/billing/invoice/${r.invoice_id}`}
-                        className="inline-flex items-center gap-0.5 text-[11px] text-slate-500 hover:text-emerald-700"
-                        title="Open invoice"
-                      >
-                        Open <ArrowUpRight size={11} />
-                      </Link>
-                    )}
+                    <div className="flex items-center gap-1 justify-end">
+                      {kind === 'refund' && (
+                        <button
+                          onClick={() => printRefundReceipt(r, null, clinic)}
+                          data-testid={`pr-print-refund-${r.payment_id}`}
+                          title="Print 80 mm refund receipt for the patient"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded"
+                        >
+                          <Printer size={11} /> Print
+                        </button>
+                      )}
+                      {r.invoice_id && (
+                        <Link
+                          to={`/billing/invoice/${r.invoice_id}`}
+                          className="inline-flex items-center gap-0.5 text-[11px] text-slate-500 hover:text-emerald-700 px-1"
+                          title="Open invoice"
+                        >
+                          Open <ArrowUpRight size={11} />
+                        </Link>
+                      )}
+                    </div>
                   </Td>
                 </tr>
               );

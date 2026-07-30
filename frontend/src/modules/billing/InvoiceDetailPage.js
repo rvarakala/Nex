@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Printer as PrinterIcon } from 'lucide-react';
 import { API, fmtINR, fmtDate, fmtDateTime, PAYMENT_METHODS, StatusPill } from './billingUtils';
+import { printRefundReceipt } from './refundReceipt';
 import { useAuth } from '../../AuthContext';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
 
@@ -235,20 +237,57 @@ export default function InvoiceDetailPage() {
               <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
                 <tr>
                   <th className="px-2 py-1 text-left">Date</th>
+                  <th className="px-2 py-1 text-left">Kind</th>
                   <th className="px-2 py-1 text-left">Method</th>
-                  <th className="px-2 py-1 text-left">Reference</th>
+                  <th className="px-2 py-1 text-left">Reference / Reason</th>
                   <th className="px-2 py-1 text-right">Amount</th>
+                  <th className="px-2 py-1 text-right print:hidden" />
                 </tr>
               </thead>
               <tbody>
-                {inv.payments.map((p) => (
-                  <tr key={p.payment_id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-2 py-1 text-slate-600">{fmtDateTime(p.paid_at)}</td>
-                    <td className="px-2 py-1 capitalize font-semibold text-slate-700">{p.method.replace('_', ' ')}</td>
-                    <td className="px-2 py-1 font-mono text-slate-600">{p.reference || '—'}</td>
-                    <td className="px-2 py-1 text-right tabular-nums font-semibold">{fmtINR(p.amount)}</td>
-                  </tr>
-                ))}
+                {inv.payments.map((p) => {
+                  const isRefund = (p.kind || 'payment') === 'refund' || Number(p.amount) < 0;
+                  return (
+                    <tr
+                      key={p.payment_id}
+                      className={`border-b border-slate-100 last:border-0 ${isRefund ? 'bg-rose-50/50' : ''}`}
+                      data-testid={`inv-pay-row-${p.payment_id}`}
+                    >
+                      <td className="px-2 py-1 text-slate-600">{fmtDateTime(p.paid_at)}</td>
+                      <td className="px-2 py-1">
+                        {isRefund ? (
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-rose-700 bg-rose-100 border border-rose-200 rounded px-1 py-0.5">Refund</span>
+                        ) : (
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-0.5">Payment</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 capitalize font-semibold text-slate-700">
+                        {(p.method || '').replace('_', ' ')}
+                      </td>
+                      <td className="px-2 py-1 font-mono text-slate-600 max-w-[280px] truncate" title={p.reason || p.reference || ''}>
+                        {p.reference && <span>{p.reference}</span>}
+                        {p.reference && p.reason && <span className="text-slate-300"> · </span>}
+                        {p.reason && <span className="not-italic text-slate-700">{p.reason}</span>}
+                        {!p.reference && !p.reason && <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className={`px-2 py-1 text-right tabular-nums font-semibold ${isRefund ? 'text-rose-700' : ''}`}>
+                        {isRefund ? '−' : ''}{fmtINR(Math.abs(p.amount))}
+                      </td>
+                      <td className="px-2 py-1 text-right print:hidden">
+                        {isRefund && (
+                          <button
+                            onClick={() => printRefundReceipt(p, inv, clinic)}
+                            data-testid={`inv-print-refund-${p.payment_id}`}
+                            title="Print 80 mm refund receipt for the patient"
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 border border-rose-200 rounded"
+                          >
+                            <PrinterIcon size={10} /> Print
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -1,5 +1,29 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🧾 Refund Receipt Print (2026-07-30)
+
+**Ask**: "Add a Print refund receipt button on the refund row so clinics can hand the patient a paper trail."
+
+**What shipped**
+- **New**: `frontend/src/modules/billing/refundReceipt.js` — `printRefundReceipt(refund, invoice, clinic)` opens an 80 mm thermal-format popup with clinic branding, receipt ref (`RFND-<payment_id>`), invoice link, patient block (name + MRD + mobile), refund method + reference + reason + notes, big "REFUNDED ₹X" line, processed-by attribution, signature & clinic-stamp lines, and a 5-business-days disclaimer. All dynamic values HTML-escaped via `esc()`.
+- **Wired on**:
+  - `PaymentsRefundsPage` — every refund row gets a compact rose "🖨 Print" button next to the "Open ↗" link. Testid `pr-print-refund-<payment_id>`.
+  - `InvoiceDetailPage` payments table — rebuilt table now has 6 columns (Date / Kind pill / Method / Reference+Reason / Amount / Actions). Refund rows have a rose-tinted background, negative signed amount (`−₹3,000.00`), and a "🖨 Print" button (testid `inv-print-refund-<payment_id>`). Button hidden in the A4 print view via `print:hidden`.
+
+**Testing**
+- 4 refund print buttons rendered on `/billing/payments` (all rows, filter-refund).
+- 1 refund print button rendered on `/billing/invoice/INV-C42BE71A-6` payments table.
+- End-to-end popup smoke: title = "Refund RFND-FBCE0509", contents include "REFUND RECEIPT", patient name, invoice#, reason, ₹ amount. Auto-print + auto-close on popup — matches the existing "Thermal Receipt" flow for consistency.
+- No new backend code — the receipt is composed purely from the existing `/billing/payments` (consolidated) or `invoice.payments` (embedded) shape.
+
+**Files touched**
+- `frontend/src/modules/billing/refundReceipt.js` (new)
+- `frontend/src/modules/billing/PaymentsRefundsPage.jsx`
+- `frontend/src/modules/billing/InvoiceDetailPage.js`
+
+---
+
+
 ## 💸 Clinic Refund Flow (2026-07-30) — P0 bug + new feature
 
 **User report**: "check refund option is there or not?? … 2 options are there under Billing — Invoices & Payments & Refunds — both looks same … if refund option is not there or wired, please implement that."
