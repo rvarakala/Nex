@@ -8,8 +8,9 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Sparkles, RotateCcw, Tag, AlertTriangle } from 'lucide-react';
+import { Sparkles, RotateCcw, Tag, AlertTriangle, Plus } from 'lucide-react';
 import ModalShell from '../../components/ModalShell';
+import AddSerialModal from './AddSerialModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -26,6 +27,7 @@ export default function DemoStockPage() {
   const [filter, setFilter] = useState('all'); // all | available | out
   const [search, setSearch] = useState('');
   const [showPromote, setShowPromote] = useState(false);
+  const [showAddNew, setShowAddNew] = useState(false);
 
   const load = async () => {
     setLoading(true); setErr('');
@@ -85,11 +87,18 @@ export default function DemoStockPage() {
             Units reserved for patient trials. Every trial draws from this pool — flag a saleable unit as demo to include it here.
           </p>
         </div>
-        <button
-          onClick={() => setShowPromote(true)}
-          data-testid="ha-demo-add-btn"
-          className="px-3 py-1.5 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-md shadow-sm"
-        >+ Add to Demo Pool</button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAddNew(true)}
+            data-testid="ha-demo-addnew-btn"
+            className="px-3 py-1.5 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-md shadow-sm inline-flex items-center gap-1"
+          ><Plus size={13} /> Add Demo Unit</button>
+          <button
+            onClick={() => setShowPromote(true)}
+            data-testid="ha-demo-add-btn"
+            className="px-3 py-1.5 text-xs font-semibold text-purple-700 border border-purple-300 hover:bg-purple-50 rounded-md"
+          >Swap Saleable → Demo</button>
+        </div>
       </div>
 
       {/* Stats bar */}
@@ -193,6 +202,13 @@ export default function DemoStockPage() {
 
       {showPromote && (
         <PromoteModal onClose={() => setShowPromote(false)} onDone={() => { setShowPromote(false); load(); }} />
+      )}
+      {showAddNew && (
+        <AddSerialModal
+          pool="demo"
+          onClose={() => setShowAddNew(false)}
+          onDone={() => { setShowAddNew(false); load(); }}
+        />
       )}
     </div>
   );

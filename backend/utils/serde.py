@@ -61,6 +61,9 @@ def deserialize_datetime(obj):
         "dpa_accepted_at", "last_test_at",
         # AUDINEXA Phase B — Imported clinical YYYY-MM-DD visit dates (PatientNote / Invoice / Appointment side metadata)
         "visit_date", "invoice_date",
+        # HA borrow lifecycle (Inventory Phase B) — model declares these
+        # as Optional[str] so they must stay strings on the way out.
+        "borrowed_at", "returned_at",
     }
     if isinstance(obj, dict):
         # For string-typed date keys, coerce native datetime values back to

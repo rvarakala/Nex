@@ -88,7 +88,11 @@ class AMCContract(BaseModel):
     contract_no: str                                 # AMC-YYYY-NNNN
     clinic_id: str
     branch_id: Optional[str] = None
-    plan_id: str
+    # `plan_id` is required for new contracts but legacy/imported rows in
+    # some tenants (esp. demo-seed tenants and pre-2026 clinics) may not
+    # have it — make it optional on the response model so listing doesn't
+    # 500. The write path (`AMCContractCreate`) still enforces it.
+    plan_id: Optional[str] = None
     plan_snapshot: dict = Field(default_factory=dict)  # frozen copy at sale time
     patient_id: str
     patient_name: Optional[str] = None

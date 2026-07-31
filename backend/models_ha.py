@@ -448,7 +448,7 @@ class Fitting(BaseModel):
     branch_id: str
     patient_id: str
     patient_name: Optional[str] = None
-    audiologist_user_id: str
+    audiologist_user_id: Optional[str] = None   # legacy/quick-sale rows may lack this
     audiologist_name: Optional[str] = None
     sale_no: Optional[str] = None                              # link to HA Sale (optional)
     quote_no: Optional[str] = None                             # link to source Quote (optional)
@@ -461,7 +461,7 @@ class Fitting(BaseModel):
     # REM is postponed (Q2); keep a placeholder so we can extend without migration.
     rem: Optional[dict] = None
     notes: Optional[str] = None
-    created_by_user_id: str
+    created_by_user_id: Optional[str] = None    # legacy/quick-sale rows may lack this
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
 

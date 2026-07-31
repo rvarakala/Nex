@@ -1,0 +1,32 @@
+{
+  "summary": "Regression + feature verification for the Inventory 500-fix + Demo 'Add Demo Unit' rollout. Backend: all 6 previously-500 endpoints now return 200 (serial-items, amc/contracts, fittings, demo-stock, saleable-stock + borrowed-attention). Ran the requested 3 pytest files (10/10 passed) and a new regression suite (6/6 passed). Frontend: walked all 6 HA inventory tabs — zero red 'Internal server error' banners and zero 5xx XHRs. Feature: '+ Add Demo Unit' modal works end-to-end with both Vendor and Borrowed sources. Saleable Stock '+ Add to Saleable Pool' shared modal still works. Dashboard 'na-borrowed' chip renders correct count (2) and deep-links to /ha/saleable-stock?source=borrowed with the Borrowed filter pre-selected. Test-created serials cleaned up (3 deleted from serial_items).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "HA Add Serial modal (both pools)", "issues": ["Console hydration warning: '<span> cannot be a child of <option>'. Caused by the preview-env DevTools instrumentation (x-ve-dynamic spans injected into <option> children) — not app source code. Non-blocking, appears only in preview build."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ha_inventory_500_regression.py",
+    "/app/backend/tests/test_referral_ha_wing_bucketing.py",
+    "/app/backend/tests/test_referral_flat_payout_scoping.py",
+    "/app/backend/tests/test_referring_doctor_autofill.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix looks tightly scoped and correct: serde whitelist additions + 3 model relaxations to Optional handle legacy rows without breaking write validation.",
+    "Shared AddSerialModal (~214 lines) is a clean DRY win over previously duplicating the modal — testid prefix + accent driven by `pool` prop.",
+    "Minor: DemoStockPage 'Total demo units' KPI label may render across multiple DOM nodes; my regex probe returned -1 (KPI itself is visible in screenshot — verified visually), so this is a test-side limitation, not an app bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ha_inventory_500_regression.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16 pytest across 4 files)", "frontend": "100% (all 6 tabs + 3 add flows + dashboard chip)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123",
+  "seed_data_creation": "Created 3 serials during E2E (DEMO-E2E-29e2f9, DEMO-BOR-92e639, SALE-E2E-f7f36f) then deleted them from serial_items collection.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Inventory 500-fix + Demo Add-Unit feature is stable. /app/backend/tests/test_ha_inventory_500_regression.py is a lightweight guardrail for the 5 formerly-500 endpoints — keep it in the regression pool. Owner login owner@thesoundclinic.in/demo123 currently has 32 saleable + demo units, 1 borrowed-here in saleable + 1 borrowed in demo (Return Borrowed chip = 2)."
+}
