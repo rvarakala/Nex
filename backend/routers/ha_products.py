@@ -125,6 +125,14 @@ class SerialAddIn(BaseModel):
     pool: Literal["saleable", "demo", "loaner", "refurbished"] = "saleable"
     warranty_end_date: Optional[str] = None
     grn_no: Optional[str] = None
+    # Provenance — when a unit is borrowed from another clinic we MUST
+    # capture where it came from + why, so the owner has a clean audit
+    # trail and the "Needs Attention" widget can nudge front desk to
+    # return it. `source_kind="vendor"` is the default and doesn't need
+    # the borrow fields.
+    source_kind: Literal["vendor", "borrowed"] = "vendor"
+    borrowed_from: Optional[str] = None
+    borrow_reason: Optional[str] = None
 
 
 @router.post("/products/{product_id}/serials")
@@ -172,6 +180,14 @@ async def add_serials_to_product(
     docs = []
     created: List[dict] = []
     for p in payload:
+        # Borrowed units MUST identify the source clinic so the "Needs
+        # Attention" widget on the main dashboard has something to show.
+        # Reason is optional but strongly recommended for the audit trail.
+        if p.source_kind == "borrowed" and not (p.borrowed_from or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Borrowed units must have 'borrowed_from' set (source clinic name).",
+            )
         si = SerialItem(
             clinic_id=user["clinic_id"],
             branch_id=p.branch_id,
@@ -181,6 +197,10 @@ async def add_serials_to_product(
             pool=p.pool,
             warranty_end_date=p.warranty_end_date,
             grn_no=p.grn_no,
+            source_kind=p.source_kind,
+            borrowed_from=(p.borrowed_from or "").strip() or None,
+            borrow_reason=(p.borrow_reason or "").strip() or None,
+            borrowed_at=now_iso if p.source_kind == "borrowed" else None,
             updated_at=now_iso,
         )
         docs.append(serialize_datetime(si.model_dump()))

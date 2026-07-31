@@ -132,7 +132,7 @@ export default function DemoStockPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-10 text-slate-400 italic text-sm" data-testid="ha-demo-empty">
           {rows.length === 0
-            ? 'No demo units yet. Click "+ Add to Demo Pool" to flag a saleable unit as a demo.'
+            ? 'No demo units yet. Click "+ Add to Demo Pool" to swap a saleable unit into the demo pool for a trial.'
             : 'No units match this filter.'}
         </div>
       ) : (

@@ -23,7 +23,7 @@ import {
   Calendar, UserPlus, Ear, ShoppingBag, IndianRupee,
   ArrowRight, Plus, Headphones, FileSpreadsheet,
   AlertTriangle, Wrench, MessageSquare, ChevronRight, Clock, Box, Zap,
-  Users, AlertCircle, Coins,
+  Users, AlertCircle, Coins, ArrowLeftRight,
 } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import BookAppointmentModal from '../appointments/components/BookAppointmentModal';
@@ -201,7 +201,7 @@ const CardHeader = ({ title, action }) => (
  *  Renders: [icon + label] · [3 pill chips] · [REVIEW ALL →]  all on one row.
  *  Each chip retains its brand left-border colour, brand icon, and count.
  *  When count > 0 the number badge lights up (bg + pulsing dot). */
-function NeedsAttentionRow({ recalls, lowStock, repairsPending, onRecalls, onLowStock, onRepairs, onReviewAll }) {
+function NeedsAttentionRow({ recalls, lowStock, repairsPending, borrowedReturns, onRecalls, onLowStock, onRepairs, onBorrowedReturns, onReviewAll }) {
   const chips = [
     {
       title: 'Recall Reminders', count: recalls, onClick: onRecalls, testid: 'na-recalls',
@@ -214,6 +214,13 @@ function NeedsAttentionRow({ recalls, lowStock, repairsPending, onRecalls, onLow
     {
       title: 'Device Pending', count: repairsPending, onClick: onRepairs, testid: 'na-repairs',
       border: '#0EA5E9', iconBg: '#DBEAFE', iconColor: '#2563EB', icon: <Wrench size={13} strokeWidth={2.4} />,
+    },
+    // Borrowed units still with the clinic — visible to the owner so
+    // return-to-source doesn't slip through the cracks. Clicking routes
+    // to Saleable Stock filtered on `source=borrowed`.
+    {
+      title: 'Return Borrowed', count: borrowedReturns, onClick: onBorrowedReturns, testid: 'na-borrowed',
+      border: '#F43F5E', iconBg: '#FFE4E6', iconColor: '#BE123C', icon: <ArrowLeftRight size={13} strokeWidth={2.4} />,
     },
   ];
   return (
@@ -300,7 +307,7 @@ export default function ModernDashboard() {
   const [testMix, setTestMix] = useState({ pta: 0, speech: 0, imp: 0, oae: 0, abr: 0, total: 0 });
   const [audiologists, setAudiologists] = useState([]);
   const [bookOpen, setBookOpen] = useState(false);
-  const [alerts, setAlerts] = useState({ recalls: 0, low_stock: 0, repairs_pending: 0 });
+  const [alerts, setAlerts] = useState({ recalls: 0, low_stock: 0, repairs_pending: 0, borrowed_returns: 0 });
   // Clinic Pulse — filling the left-column gap with clinical/front-office
   // insight (Doctor Schedule uses `audiologists` state; trials + warranty
   // are computed from HA fittings).
@@ -326,7 +333,7 @@ export default function ModernDashboard() {
     const today = todayISO();
     (async () => {
       const safe = async (p) => { try { return await p; } catch { return { data: [] }; } };
-      const [rAppts, rPts, rTests, rInv, rRecentPts, rUsers, rRepairs, rLowStock] = await Promise.all([
+      const [rAppts, rPts, rTests, rInv, rRecentPts, rUsers, rRepairs, rLowStock, rBorrowed] = await Promise.all([
         safe(axios.get(`${API}/appointments`, { params: { from_date: today, to_date: today, limit: 200 } })),
         safe(axios.get(`${API}/patients`,      { params: { from_date: today, to_date: today, limit: 200 } })),
         safe(axios.get(`${API}/sessions`,      { params: { from_date: today, to_date: today, limit: 200 } })),
@@ -335,6 +342,7 @@ export default function ModernDashboard() {
         safe(axios.get(`${API}/users`)),
         safe(axios.get(`${API}/ha/service-tickets`, { params: { status: 'ready_for_pickup', limit: 1 } })),
         safe(axios.get(`${API}/ha/accessory-stock`, { params: { low_stock_only: true, limit: 1 } })),
+        safe(axios.get(`${API}/ha/borrowed-attention`)),
       ]);
 
       const arr = (r) => Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.appointments || r.data?.patients || r.data?.sessions || r.data?.invoices || r.data?.sales || []);
@@ -382,7 +390,13 @@ export default function ModernDashboard() {
 
       const repairsCount = arr(rRepairs).length || (rRepairs.data?.total || 0);
       const lowStockCount = arr(rLowStock).length || (rLowStock.data?.total || 0);
-      setAlerts({ recalls: 0, low_stock: lowStockCount, repairs_pending: repairsCount });
+      const borrowedCount = Number(rBorrowed?.data?.count || 0);
+      setAlerts({
+        recalls: 0,
+        low_stock: lowStockCount,
+        repairs_pending: repairsCount,
+        borrowed_returns: borrowedCount,
+      });
 
       // ── Front-office snapshot ─────────────────────────────
       const waitingRoom = todayAppts.filter((a) => a.status === 'checked_in').length;
@@ -516,9 +530,11 @@ export default function ModernDashboard() {
         recalls={alerts.recalls}
         lowStock={alerts.low_stock}
         repairsPending={alerts.repairs_pending}
+        borrowedReturns={alerts.borrowed_returns}
         onRecalls={() => navigate('/patients/list?filter=recall')}
         onLowStock={() => navigate('/ha/inventory')}
         onRepairs={() => navigate('/repair')}
+        onBorrowedReturns={() => navigate('/ha/saleable-stock?source=borrowed')}
         onReviewAll={() => navigate('/care')}
       />
 

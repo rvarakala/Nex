@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import ProductCataloguePage from './ProductCataloguePage';
 import InventoryBoardPage from './InventoryBoardPage';
 import DemoStockPage from './DemoStockPage';
+import SaleableStockPage from './SaleableStockPage';
 import ProcurementPage from './ProcurementPage';
 import VendorsPage from './VendorsPage';
 import QuotationStudioPage from './QuotationStudioPage';
@@ -34,11 +35,12 @@ const SALES_TABS = [
 ];
 
 const INVENTORY_TABS = [
-  { to: '/ha/inventory',   label: 'Inventory Board', testid: 'ha-tab-inventory' },
-  { to: '/ha/demo-stock',  label: 'Demo Stock',      testid: 'ha-tab-demo-stock' },
-  { to: '/ha/amc',         label: 'AMC',             testid: 'ha-tab-amc' },
-  { to: '/ha/procurement', label: 'Procurement',     testid: 'ha-tab-procurement' },
-  { to: '/ha/products',    label: 'Catalogue',       testid: 'ha-tab-products' },
+  { to: '/ha/inventory',      label: 'Inventory Board', testid: 'ha-tab-inventory' },
+  { to: '/ha/demo-stock',     label: 'Demo Stock',      testid: 'ha-tab-demo-stock' },
+  { to: '/ha/saleable-stock', label: 'Saleable Stock',  testid: 'ha-tab-saleable-stock' },
+  { to: '/ha/amc',            label: 'AMC',             testid: 'ha-tab-amc' },
+  { to: '/ha/procurement',    label: 'Procurement',     testid: 'ha-tab-procurement' },
+  { to: '/ha/products',       label: 'Catalogue',       testid: 'ha-tab-products' },
 ];
 
 const Tab = ({ to, label, testid }) => (
@@ -78,6 +80,7 @@ export default function HAModule() {
           <Route path="inventory" element={<InventoryBoardPage />} />
           <Route path="transfers" element={<StockTransfersPage />} />
           <Route path="demo-stock" element={<DemoStockPage />} />
+          <Route path="saleable-stock" element={<SaleableStockPage />} />
           <Route path="quotations/*" element={<QuotationStudioPage />} />
           <Route path="trials" element={<TrialsPage />} />
           <Route path="fittings" element={<FittingLedgerPage />} />

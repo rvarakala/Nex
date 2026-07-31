@@ -67,7 +67,7 @@ export default function ProductCataloguePage() {
               <th className="px-3 py-2 text-left">Form</th>
               <th className="px-3 py-2 text-left">Tier</th>
               <th className="px-3 py-2 text-right">MRP</th>
-              <th className="px-3 py-2 text-right">Cost</th>
+              <th className="px-3 py-2 text-center">Sale Unit</th>
               <th className="px-3 py-2 text-right">Min Sell</th>
               <th className="px-3 py-2 text-right">Wty (m)</th>
               <th className="px-3 py-2 text-center">Serialised</th>
@@ -85,7 +85,11 @@ export default function ProductCataloguePage() {
                 <td className="px-3 py-2 text-xs"><span className="bg-slate-100 rounded px-1.5 py-0.5">{p.form_factor}</span></td>
                 <td className="px-3 py-2 text-xs capitalize">{p.tech_tier || '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtINR(p.mrp)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtINR(p.cost)}</td>
+                <td className="px-3 py-2 text-center text-[11px]">
+                  <span className="bg-indigo-50 text-indigo-700 rounded px-1.5 py-0.5 uppercase tracking-wide">
+                    {p.sale_unit === 'kit' ? 'Kit' : (p.sale_unit === 'pair' ? 'Pair · 2' : 'Single · 1')}
+                  </span>
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-slate-700">{fmtINR(p.min_sell_price)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{p.warranty_months}</td>
                 <td className="px-3 py-2 text-center">{p.is_serialised ? '✓' : '—'}</td>
@@ -116,6 +120,7 @@ function ProductForm({ productId, onClose, onSaved }) {
   const [f, setF] = useState({
     brand: '', model: '', form_factor: 'RIC', tech_tier: '',
     warranty_months: 24, mrp: 0, cost: 0, min_sell_price: 0,
+    sale_unit: 'single',
     hsn: '9021', gst_rate: 18, is_serialised: true, connectivity: [],
   });
   const [err, setErr] = useState('');
@@ -209,7 +214,21 @@ function ProductForm({ productId, onClose, onSaved }) {
           </select>
         </Field>
         <Field label="MRP (₹)"><input type="number" value={f.mrp} onChange={(e) => setF({ ...f, mrp: Number(e.target.value) })} data-testid="ha-pf-mrp" className="w-full border border-slate-300 rounded px-2 py-1" /></Field>
-        <Field label="Cost (₹)"><input type="number" value={f.cost} onChange={(e) => setF({ ...f, cost: Number(e.target.value) })} data-testid="ha-pf-cost" className="w-full border border-slate-300 rounded px-2 py-1" /></Field>
+        <Field label="Sale Unit">
+          {/* Cost lives on the Procurement PO now — this dropdown replaces
+              it here so the catalogue captures how the manufacturer packs
+              the SKU. Kit = mfg-boxed pair billed as one line item. */}
+          <select
+            value={f.sale_unit || 'single'}
+            onChange={(e) => setF({ ...f, sale_unit: e.target.value })}
+            data-testid="ha-pf-saleunit"
+            className="w-full border border-slate-300 rounded px-2 py-1"
+          >
+            <option value="single">1 · Single (one aid)</option>
+            <option value="pair">2 · Pair (two aids)</option>
+            <option value="kit">Kit (boxed pair)</option>
+          </select>
+        </Field>
         <Field label="Min Sell Price (₹)"><input type="number" value={f.min_sell_price} onChange={(e) => setF({ ...f, min_sell_price: Number(e.target.value) })} data-testid="ha-pf-min" className="w-full border border-slate-300 rounded px-2 py-1" /></Field>
         <Field label="Warranty (months)"><input type="number" value={f.warranty_months} onChange={(e) => setF({ ...f, warranty_months: Number(e.target.value) })} data-testid="ha-pf-wty" className="w-full border border-slate-300 rounded px-2 py-1" /></Field>
         <Field label="HSN"><input value={f.hsn} onChange={(e) => setF({ ...f, hsn: e.target.value })} className="w-full border border-slate-300 rounded px-2 py-1" /></Field>

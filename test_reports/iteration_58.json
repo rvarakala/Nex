@@ -1,0 +1,35 @@
+{
+  "summary": "End-to-end validation of 4-phase Saleable-Stock + Borrowed-source + Dashboard-widget feature. All 9 requested checks PASS. Backend regression suite (test_referral_flat_payout_scoping + test_referral_ha_wing_bucketing + test_referring_doctor_autofill) = 10/10 pass. GET /api/referrals/dashboard returns HTTP 200 with diagnostics_payout/ha_payout/total_payout keys for both owner@thesoundclinic.in (5 rows) and dltest@example.com (6 rows, non-zero HA payouts on linked doctors). GET /api/ha/saleable-stock returns 28 items + totals; GET /api/ha/borrowed-attention returns {count:0,top:[]}. Frontend: Catalogue New-Product modal has NO Cost field and shows the ha-pf-saleunit dropdown with Single/Pair/Kit — product saved with sale_unit=kit and KIT badge appears in table. /ha/saleable-stock loads with all 5 KPIs, 28 rows, and all source/state/testid selectors present. Adding a borrowed unit correctly requires and displays borrowed_from + reason, shows red BORROWED badge and source-clinic text on the row. Return-to-Source modal opens with serial pre-displayed, and after confirm the row disappears. Validation: attempting to save a borrowed unit with empty Borrowed-from keeps modal open and shows inline error 'Borrowed units need a \"Borrowed from\" (source clinic)'. Main Dashboard Needs-Attention row now shows 4 chips (na-recalls, na-low-stock, na-repairs, na-borrowed); clicking na-borrowed routes to /ha/saleable-stock?source=borrowed as specified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Catalogue /ha/products", "issues": ["Table still shows a ₹0 column next to the Sale Unit badge (see row: '₹2,30,000 KIT ₹0 24'). Likely a leftover cost column header/cell rendering 0 after the cost field was removed. Cosmetic — not blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referral_flat_payout_scoping.py",
+    "/app/backend/tests/test_referral_ha_wing_bucketing.py",
+    "/app/backend/tests/test_referring_doctor_autofill.py"
+  ],
+  "action_items": [
+    "OPTIONAL/COSMETIC: On Catalogue table, remove the residual '₹0' cost column now that Cost has been replaced by Sale Unit (Phase A) — currently every row renders a ₹0 alongside the KIT/PAIR/SINGLE badge.",
+    "OPTIONAL/CLEANUP: E2E created one Catalogue product (Brand=GnResound, Model=iAX50-E2E-43b00f) that could not be deleted via a public DELETE endpoint (no /api/ha/products/{id} DELETE found). Consider adding a delete endpoint or manually purging from the sound-clinic tenant."
+  ],
+  "critical_code_review_comments": [
+    "SaleableStockPage.jsx reads `data.totals` — API returns `totals` (not `kpis`) — consistent, no drift, good.",
+    "Referral dashboard regression fix (iteration_57) verified holding: 200 OK + payout keys for both tenants.",
+    "The 500s observed on /patients, /ha/inventory, /ha/amc are HA-fittings XHR failures pre-existing and flagged in iteration_57 — unrelated to this build (as noted by main agent)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (Sound Clinic PREMIUM); dltest@example.com / TestPass@123 (regression tenant)",
+  "seed_data_creation": "Created + deleted BORROW-E2E-* serial (via B2 add + B3 return flow so it's already returned/inactive). One residual Catalogue product 'GnResound iAX50-E2E-43b00f' left (no DELETE endpoint available).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 4 phases + Dashboard chip work end-to-end. Backend regression 10/10 stable. Only cosmetic residual ₹0 column in Catalogue table remains from cost->sale_unit swap; not part of acceptance criteria."
+}

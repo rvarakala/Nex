@@ -89,6 +89,11 @@ SerialPool = Literal[
 
 FormFactor = Literal["RIC", "BTE", "ITE", "ITC", "CIC", "IIC", "accessory"]
 TechTier = Literal["essential", "standard", "advanced", "premium"]
+# `sale_unit` — how the manufacturer bills the SKU: as a single aid, as a
+# pair (2 aids), or as a Kit (boxed pair with accessories). "Kit" and
+# "pair" both represent 2 physical aids but usually have different price
+# points and are billed as ONE line item on the invoice.
+SaleUnit = Literal["single", "pair", "kit"]
 
 
 class Product(BaseModel):
@@ -106,6 +111,10 @@ class Product(BaseModel):
     mrp: float = 0.0
     cost: float = 0.0
     min_sell_price: float = 0.0
+    # Default billing unit for this SKU. Front desk can still override on
+    # each sale, but 90% of the time the manufacturer's pack size decides
+    # this (e.g., "Signia iX 7 Kit" is always sold as a Kit at ₹230k).
+    sale_unit: SaleUnit = "single"
     hsn: str = "9021"                                          # hearing aids default HSN
     gst_rate: float = 18.0
     is_serialised: bool = True
@@ -124,6 +133,7 @@ class ProductCreate(BaseModel):
     mrp: float = 0.0
     cost: float = 0.0
     min_sell_price: float = 0.0
+    sale_unit: SaleUnit = "single"
     hsn: str = "9021"
     gst_rate: float = 18.0
     is_serialised: bool = True
@@ -131,6 +141,13 @@ class ProductCreate(BaseModel):
 
 
 # ==================== SERIAL ITEM ====================
+
+# `source_kind` — where did this physical unit come from into our clinic?
+# "vendor" = normal PO purchase (default). "borrowed" = short-term borrow
+# from another clinic to fulfill a specific patient's trial / sale when
+# our own saleable stock is short. Borrowed units MUST be returned.
+SerialSourceKind = Literal["vendor", "borrowed"]
+
 
 class SerialItem(BaseModel):
     """One physical unit. serial_no = manufacturer sticker (scanned/typed at GRN)."""
@@ -145,6 +162,17 @@ class SerialItem(BaseModel):
     warranty_end_date: Optional[str] = None                    # ISO date string (YYYY-MM-DD)
     grn_no: Optional[str] = None
     current_patient_id: Optional[str] = None
+    # Borrow-tracking. Only meaningful when source_kind == "borrowed".
+    # `borrowed_from` is free-text (usually another clinic's name); the
+    # `borrow_reason` is captured for the owner audit trail; `returned_at`
+    # is set the moment the unit is handed back — after that, the row is
+    # marked state=RETIRED so it disappears from active stock lists.
+    source_kind: SerialSourceKind = "vendor"
+    borrowed_from: Optional[str] = None
+    borrow_reason: Optional[str] = None
+    borrowed_at: Optional[str] = None                          # ISO datetime
+    returned_at: Optional[str] = None                          # ISO datetime
+    return_note: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
 

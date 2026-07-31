@@ -44,6 +44,8 @@ async def list_serial_items(
     pool: Optional[str] = None,
     product_id: Optional[str] = None,
     current_patient_id: Optional[str] = None,
+    source_kind: Optional[str] = None,          # "vendor" | "borrowed"
+    only_active: bool = False,                  # drop returned/retired rows
     search: Optional[str] = None,
     limit: int = 200,
     user=Depends(get_current_user),
@@ -62,6 +64,15 @@ async def list_serial_items(
         q["product_id"] = product_id
     if current_patient_id:
         q["current_patient_id"] = current_patient_id
+    if source_kind in ("vendor", "borrowed"):
+        # Legacy rows (created before source_kind existed) don't have the
+        # field at all — they should be treated as vendor by default.
+        if source_kind == "vendor":
+            q["$or"] = [{"source_kind": "vendor"}, {"source_kind": {"$exists": False}}]
+        else:
+            q["source_kind"] = "borrowed"
+    if only_active:
+        q["state"] = {"$nin": ["RETIRED", "RETURNED", "SOLD", "DAMAGED"]}
     if search:
         safe = re.escape(search.strip())
         if safe:
@@ -314,6 +325,144 @@ async def list_demo_stock(
         r["current_patient"] = patmap.get(r.get("current_patient_id"))
         out.append(r)
     return out
+
+
+# ==================== SALEABLE STOCK (Phase B) ====================
+
+@router.get("/saleable-stock")
+async def list_saleable_stock(
+    branch_id: Optional[str] = None,
+    source_kind: Optional[str] = None,   # "vendor" | "borrowed" | None (all)
+    user=Depends(get_current_user), db=Depends(get_db),
+):
+    """Saleable pool — every unit that could be sold to a patient.
+    Excludes demo pool and lifecycle-terminated states (SOLD / RETIRED /
+    RETURNED). Rows come hydrated with product + optional borrow-source
+    context so the UI can render source badges without a second call.
+    """
+    q = _branch_scope(user)
+    q["pool"] = "saleable"
+    q["state"] = {"$nin": ["SOLD", "RETIRED", "RETURNED", "DAMAGED"]}
+    if branch_id:
+        if not user_can_see_branch(user, branch_id):
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        q["branch_id"] = branch_id
+    if source_kind in ("vendor", "borrowed"):
+        if source_kind == "vendor":
+            q["$or"] = [{"source_kind": "vendor"}, {"source_kind": {"$exists": False}}]
+        else:
+            q["source_kind"] = "borrowed"
+    rows = await db.serial_items.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+    product_ids = list({r["product_id"] for r in rows if r.get("product_id")})
+    pmap: dict = {}
+    if product_ids:
+        async for p in db.ha_products.find(
+            {"clinic_id": user["clinic_id"], "product_id": {"$in": product_ids}},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1,
+             "form_factor": 1, "sale_unit": 1, "mrp": 1, "min_sell_price": 1},
+        ):
+            pmap[p["product_id"]] = p
+
+    # KPI strip totals
+    total = len(rows)
+    available = sum(1 for r in rows if r.get("state") == "IN_STOCK")
+    on_trial = sum(1 for r in rows if r.get("state") == "TRIAL_OUT")
+    reserved = sum(1 for r in rows if r.get("state") == "RESERVED")
+    borrowed = sum(1 for r in rows if r.get("source_kind") == "borrowed")
+
+    out = []
+    for r in rows:
+        r = deserialize_datetime(r)
+        r["product"] = pmap.get(r.get("product_id"))
+        out.append(r)
+    return {
+        "totals": {
+            "total": total, "available": available, "on_trial": on_trial,
+            "reserved": reserved, "borrowed_still_here": borrowed,
+        },
+        "items": out,
+    }
+
+
+@router.post("/serial-items/{serial_id}/return-borrow")
+async def return_borrowed_unit(
+    serial_id: str,
+    payload: Optional[dict] = None,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Hand a borrowed unit back to the source clinic. The row stays in
+    the DB (so history + audit remain) but its state flips to RETURNED
+    and it drops off active stock lists.
+    """
+    row = await db.serial_items.find_one(
+        {"serial_id": serial_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Unit not found")
+    if not user_can_see_branch(user, row.get("branch_id")):
+        raise HTTPException(status_code=403, detail="Branch access denied")
+    if row.get("source_kind") != "borrowed":
+        raise HTTPException(status_code=409, detail="Only borrowed units can be returned to source")
+    if row.get("state") in ("SOLD", "RETIRED", "RETURNED"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot return — unit is {row['state']}",
+        )
+    now = datetime.now(timezone.utc).isoformat()
+    note = ((payload or {}).get("note") or "").strip() or "Returned to source clinic"
+    await db.serial_items.update_one(
+        {"serial_id": serial_id},
+        {"$set": {
+            "state": "RETURNED",
+            "returned_at": now,
+            "return_note": note,
+            "updated_at": now,
+        }},
+    )
+    await db.serial_events.insert_one({
+        "serial_id": serial_id,
+        "from": row["state"], "to": "RETURNED",
+        "at": now, "actor_user_id": user["user_id"],
+        "ref_doc": {"kind": "return-to-source",
+                    "borrowed_from": row.get("borrowed_from")},
+        "note": note,
+    })
+    updated = await db.serial_items.find_one({"serial_id": serial_id}, {"_id": 0})
+    return deserialize_datetime(updated)
+
+
+@router.get("/borrowed-attention")
+async def borrowed_needs_attention(
+    user=Depends(get_current_user), db=Depends(get_db),
+):
+    """Fuel for the Main Dashboard "Needs Attention" widget — count and
+    top-5 preview of borrowed units still sitting in this clinic (i.e.
+    not yet returned to source).
+    """
+    q = _branch_scope(user)
+    q["source_kind"] = "borrowed"
+    q["state"] = {"$nin": ["RETURNED", "RETIRED"]}
+    rows = await db.serial_items.find(
+        q, {"_id": 0, "serial_id": 1, "serial_no": 1, "product_id": 1,
+            "borrowed_from": 1, "borrow_reason": 1, "borrowed_at": 1, "state": 1},
+    ).sort("borrowed_at", 1).to_list(200)
+
+    # Hydrate the top 5 with brand/model for the widget preview.
+    top = rows[:5]
+    product_ids = list({r.get("product_id") for r in top if r.get("product_id")})
+    pmap: dict = {}
+    if product_ids:
+        async for p in db.ha_products.find(
+            {"clinic_id": user["clinic_id"], "product_id": {"$in": product_ids}},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1},
+        ):
+            pmap[p["product_id"]] = p
+    for r in top:
+        r["product"] = pmap.get(r.get("product_id"))
+
+    return {"count": len(rows), "top": top}
 
 
 # ==================== ACCESSORY STOCK ====================
