@@ -198,6 +198,58 @@ No backend bug — the QuickAddVendor flow already existed, just wasn't discover
 
 ---
 
+## 🐛 3-in-1 Bug Fix Batch — Referral HA Payout, Patient Prefill, Report Referred-By Autofill (2026-07-31)
+
+**User report** (production tenant `clinic-the-hearing-clinic-83fc17`, patient Ramana + Dr Vikram):
+> "check Ramana Patient on dr vikram from The Hearing clinic .. He was Tested and Fitted with Hearing Aid - but no referral payout is shown - even though its configured … after registering the patient - from their Profile if i want to add appointment - name of the Patient is not automatically seen in patient name … refered doctor name is not wired to the Report Section - there i need to add referal doctor name again"
+
+### Bug 1 — HA sale not showing on referring-doctor payout
+**Root cause**: `POST /api/appointments/with-invoice` frontend never sent `product_type` on invoice lines. Backend `LineItemIn` didn't even accept the field. The referrals rollup keyed off `line.product_type == "Hearing Aid"` — so every HA-wing sale was silently bucketed as **diagnostic** revenue, and the HA payout stayed ₹0 even when the doctor's HA cut was configured.
+
+**Fixes shipped**:
+1. Backend `report_handover.py::LineItemIn` — added `product_type: Optional[Literal["Hearing Aid", "Accessory", "Other"]] = None`.
+2. Backend `report_handover.py::create_with_invoice` — when `wing == "hearing_aid"`, every line without a `product_type` is auto-tagged `"Hearing Aid"` before persistence (belt-and-suspenders).
+3. Frontend `BookAppointmentModal.js::onSubmit` — sends `product_type: "Hearing Aid"` on invoice lines when HA wing is active.
+4. Backend `referrals.py::_compute_referral_rollup` — new fallback: batch-fetch the linked `appointment.wing` per invoice; when `wing == "hearing_aid"`, the ENTIRE invoice's revenue is bucketed as HA regardless of line tagging. This heals existing production invoices without a migration. Same fallback applied to the blacklist-trim block.
+
+### Bug 2 — Patient name not auto-selected on Book Appointment from Patient Profile
+**Root cause**: `PatientProfilePage.jsx` `Link` to `/patients/appointments` used `state={{ bookForPatient: {...} }}` (React Router state), but the mounted `AppointmentsBoard` never called `useLocation()` — the state was silently dropped.
+
+**Fix**: Migrated to URL query params (mirror of `AppointmentsCalendarPage.jsx`):
+- `PatientProfilePage.jsx` — Link now uses `?bookForPatientId=&bookForPatientName=`.
+- `AppointmentsBoard.jsx` — reads the params via `useSearchParams()` on mount, opens modal with `existing={{patient_id, patient_name}}`, strips params (regression guard: page reload does not re-open the modal).
+
+### Bug 3 — Referred doctor name not auto-populating in Report Section
+**Root cause**: `ReportsPanel.js` initialized `referredBy` from only `initialBuilder?.referred_by` — never from the patient's registration data. Front desk captured the doctor at registration, but the audiologist had to retype the name on every report.
+
+**Fixes shipped**:
+1. Backend `diagnostics_queue.py::queue/start` — response now enriches `patient` with `referring_doctor_id`, `referring_doctor_name` (resolved from `referring_doctors` collection), and free-text `referring_physician`.
+2. Backend `hearing_report_versions.py::_load_patient` — same enrichment on archived report snapshots, so re-opening a completed report also auto-populates.
+3. Frontend `ReportsPanel.js` — `initialReferredBy` chain: `initialBuilder?.referred_by || patient?.referring_doctor_name || patient?.referring_physician || ''`. Uses `||` (truthy) not `??` (nullish) so persisted empty strings also fall through to the patient's referral name.
+
+### Verification (iteration_55.json)
+- Backend pytest: 9/9 pass across `test_referral_flat_payout_scoping.py`, `test_referral_ha_wing_bucketing.py` (4 new), `test_referring_doctor_autofill.py` (2 new).
+- E2E API scripts (persisted under `tests/e2e_bug1_referral_payout.py` and `e2e_bug3_queue_start_autofill.py`) confirm the dashboard produces `ha_sales_revenue=30000, ha_payout=5000` for both new (`product_type='Hearing Aid'`) and legacy (missing `product_type`) invoice shapes.
+- Playwright: patient prefill in Book Appointment modal verified from Patient Profile; reload regression confirmed.
+- Preview URL: https://referral-payout-lab.preview.emergentagent.com
+
+### Files touched
+- `backend/routers/report_handover.py` (LineItemIn + HA wing auto-tag)
+- `backend/routers/referrals.py` (HA wing fallback in rollup + blacklist trim)
+- `backend/routers/diagnostics_queue.py` (queue/start referral enrichment)
+- `backend/routers/hearing_report_versions.py` (_load_patient referral enrichment)
+- `frontend/src/modules/appointments/components/BookAppointmentModal.js` (product_type on HA lines)
+- `frontend/src/modules/patients/PatientProfilePage.jsx` (query-param link)
+- `frontend/src/modules/patients/AppointmentsBoard.jsx` (useSearchParams prefill)
+- `frontend/src/components/ReportsPanel.js` (initialReferredBy fallback chain)
+- `backend/tests/test_referral_ha_wing_bucketing.py` (new — 4 tests)
+- `backend/tests/test_referring_doctor_autofill.py` (new — 2 tests)
+- `backend/tests/e2e_bug1_referral_payout.py` (new — persisted by testing agent)
+- `backend/tests/e2e_bug3_queue_start_autofill.py` (new — persisted by testing agent)
+
+---
+
+
 
 ## 💸 Clinic Refund Flow (2026-07-30) — P0 bug + new feature
 
