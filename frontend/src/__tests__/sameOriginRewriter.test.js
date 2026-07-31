@@ -59,8 +59,8 @@ describe('rewriteToSameOriginIfNeeded', () => {
   });
 
   test('preview environment: env var matches page host → no-op', () => {
-    setHost('https://careful-feedback.preview.emergentagent.com');
-    const same = 'https://careful-feedback.preview.emergentagent.com/api/auth/me';
+    setHost('https://referral-payout-lab.preview.emergentagent.com');
+    const same = 'https://referral-payout-lab.preview.emergentagent.com/api/auth/me';
     expect(rewriteToSameOriginIfNeeded(same)).toBe(same);
   });
 
