@@ -1,0 +1,29 @@
+{
+  "summary": "Verified Diagnostics Queue Kanban column-height cap + inner scroll fix on /test. Seeded 8 waiting tokens (Scroll-Test-1..8) directly into MongoDB (appointments API required audiologist_id+start_at, so DB seeding was used instead per agent-to-agent note). Verified on Desktop 1920x1080 and Mobile 375x667. All 5 acceptance criteria PASS. Test data cleaned up (9 patients + 9 tokens deleted).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "acceptance_results": {
+    "1_column_height_cap": "PASS — waiting column height = 900px, computed max-height = 900px (matches calc(100vh-180px) for 1080 viewport). Column bottom = 1126px vs viewport 1080px (~46px overshoot due to sticky top banner+header, but column itself is bounded and does NOT stretch with 11 cards). document.height == window.height (1080) => no page-below-fold growth.",
+    "2_inner_scroll": "PASS — .dq-col-scroll has overflow-y:auto, scrollHeight=1334 > clientHeight=852, canScroll=true. Programmatic el.scrollTop=200 -> scrollTop=200 confirmed. dq-count-waiting badge = 11 (>=8).",
+    "3_cross_column_balance": "PASS — all four columns waiting/checked_in/in_progress/completed report identical height=900px & max-height=900px. Grid docWidth==winWidth==1920, no horizontal overflow.",
+    "4_mobile_no_cap": "PASS — at 375x667, waiting column max-height='none', natural height=1382px. md: prefix correctly disabled below 768px breakpoint.",
+    "5_empty_column_placeholder": "PASS — checked_in column shows dashed 'No patients in this stage.' placeholder with min-height=120px preserved."
+  },
+  "test_report_links": ["/tmp/seed_kanban.py (temporary seeder — not committed)"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: /api/appointments/with-invoice requires audiologist_id + start_at as mandatory pydantic fields — the review request mentioned raise_invoice=false alone would suffice, but the endpoint 422s without those. Not a bug, just noting the divergence between the request instructions and the real API contract for future seeders."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "owner@thesoundclinic.in / demo123",
+  "seed_data_creation": "8 waiting tokens + 8 patients (Scroll-Test-1..8) inserted directly into MongoDB db.tokens & db.patients for clinic tenant-sound-clinic-blr. All cleaned up post-test (delete_many by name regex).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Kanban column-height fix on /app/frontend/src/modules/test/DiagnosticsQueueBoard.js works as intended. If seeding is needed again, use direct MongoDB inserts into db.tokens (patient_id, token_no, status='waiting', clinic_id, issued_at=today ISO) — /api/appointments/with-invoice requires audiologist_id+start_at fields.",
+  "rca of the issue": "N/A — this was a UX enhancement (max-height cap + inner scroll), not a bug. Fix verified working."
+}

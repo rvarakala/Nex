@@ -380,7 +380,7 @@ export default function DiagnosticsQueueBoard() {
             <div
               key={col.key}
               data-testid={`dq-col-${col.key}`}
-              className={`flex flex-col rounded-2xl bg-white border border-slate-100 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)] min-h-[280px] overflow-hidden transition-all ${
+              className={`flex flex-col rounded-2xl bg-white border border-slate-100 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)] min-h-[280px] md:max-h-[calc(100vh-180px)] overflow-hidden transition-all ${
                 isHovered ? 'ring-2 ring-offset-2 ring-cyan-400 shadow-xl scale-[1.005]' : ''
               } ${isInvalidHover ? 'opacity-70' : ''}`}
               onDragOver={(e) => {
@@ -409,8 +409,12 @@ export default function DiagnosticsQueueBoard() {
                 </span>
               </div>
 
-              {/* Rows */}
-              <div className="flex-1 p-3 space-y-2.5 overflow-auto">
+              {/* Rows — capped at column max-h so anything beyond ~5
+                  cards scrolls in place instead of stretching the whole
+                  column (which used to push the page height silently).
+                  `min-h-0` is REQUIRED on a flex-column child for the
+                  child's own overflow-auto to actually engage. */}
+              <div className="flex-1 min-h-0 p-3 space-y-2.5 overflow-y-auto dq-col-scroll">
                 {rows.length === 0 ? (
                   <div className={`h-full min-h-[120px] flex items-center justify-center text-center rounded-xl border-2 border-dashed ${
                     isHovered ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 bg-slate-50/60'
