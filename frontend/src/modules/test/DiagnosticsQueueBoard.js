@@ -380,7 +380,7 @@ export default function DiagnosticsQueueBoard() {
             <div
               key={col.key}
               data-testid={`dq-col-${col.key}`}
-              className={`flex flex-col rounded-2xl bg-white border border-slate-100 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)] h-[520px] overflow-hidden transition-all ${
+              className={`flex flex-col rounded-2xl bg-white border border-slate-100 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.06)] h-[600px] overflow-hidden transition-all ${
                 isHovered ? 'ring-2 ring-offset-2 ring-cyan-400 shadow-xl scale-[1.005]' : ''
               } ${isInvalidHover ? 'opacity-70' : ''}`}
               onDragOver={(e) => {
