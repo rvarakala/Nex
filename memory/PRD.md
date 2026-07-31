@@ -198,6 +198,47 @@ No backend bug — the QuickAddVendor flow already existed, just wasn't discover
 
 ---
 
+## ✅ Vishnu / Dr Prasad End-to-End Walkthrough + Bug Fix (2026-07-31)
+
+**Walkthrough executed on preview** (Sound Clinic tenant `tenant-sound-clinic-blr`):
+
+1. **Seed via API**:
+   - Created Dr. Prasad Kumar (`DR-052992D1`) — referring doctor, cuts: diag 50% percent, HA 10% percent.
+   - Created catalogue SKU **GnResound iAX50** (`PRD-3A545B49`) — MRP ₹230,000, sale_unit=`kit`, warranty 36 months.
+   - Registered patient **Vishnu Reddy** (`ACS-2026-CFFCC3E8`) — 62y male, `referring_doctor_id=DR-052992D1`.
+2. **Diagnostic appointment + invoice** via `POST /api/appointments/with-invoice` (wing=diagnostic): PTA ₹800 + Impedance ₹600 → invoice `INV/2026/000002` for **₹1,400**, marked paid via cash.
+3. **HA-wing appointment + invoice** via `POST /api/appointments/with-invoice` (wing=hearing_aid, line `product_type='Hearing Aid'`): GnResound iAX50 Kit ₹230,000 → invoice `INV/2026/000003`, marked paid via bank_transfer.
+4. **Referral Corner** now shows Dr. Prasad Kumar's row with:
+   - Diag Rev ₹1,400 → payout **₹700** (50%)
+   - HA Rev ₹2,30,000 → payout **₹23,000** (10%)
+   - **Total Owed ₹23,700** ✅
+5. **Doctor Drill-Down modal** also correctly renders the payout breakdown + per-patient billing table (Vishnu Reddy · ₹1,400 diag + ₹2,30,000 HA = ₹2,31,400).
+
+### 🐛 Bug caught + fixed during walkthrough
+
+**`/api/referrals/dashboard` was excluding same-day invoices when the client sent a date-only `end` param**
+
+Root cause: `_parse_window` did `datetime.fromisoformat("2026-07-31")` → `2026-07-31 00:00:00 UTC`. Invoices raised later that same day (Vishnu's at 10:04 UTC) were ABOVE the range and silently excluded → the "This month" default view showed ₹0 payout when ₹23,700 was actually owed.
+
+**Fix**: In `_parse_window`, when `end` string is date-only (`len <= 10`), pad it to `23:59:59.999999` before the clamp-to-now check. Full-ISO end strings pass through unchanged. Added 3 unit tests (`test_referral_dashboard_end_of_day.py`) locking in the behaviour.
+
+### Verification (iteration_60.json)
+- **19/19 pytest pass** across 5 test files (end-of-day + HA wing bucketing + flat payout scoping + referring doctor autofill + inventory 500 regression).
+- Full E2E on preview: KPI strip, doctor row, drill-down modal — all match expected values exactly.
+- No new console errors on /referrals, /patients, /ha/demo-stock, /ha/saleable-stock.
+- Preserved: Vishnu, Dr Prasad, and both paid invoices for the user's production walkthrough decision.
+
+### Optional follow-ups suggested by testing agent
+1. Add `data-testid="ref-row-{doctor_id}"` on Referral Corner rows for more robust future automation.
+2. Add a visible "Referred by …" chip on the Patient Profile header (backend already enriches `referring_doctor_name`, frontend not yet displaying it in a prominent chip).
+
+### Files touched
+- `backend/routers/referrals.py` (`_parse_window` end-of-day padding)
+- `backend/tests/test_referral_dashboard_end_of_day.py` (NEW, 3 tests)
+
+---
+
+
 ## 🛠 Inventory Regression Fixes + Demo "Add Demo Unit" Feature (2026-07-31)
 
 **User report** (Vishnu/Dr Prasad walkthrough blocked):
