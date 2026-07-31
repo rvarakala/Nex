@@ -198,6 +198,32 @@ No backend bug — the QuickAddVendor flow already existed, just wasn't discover
 
 ---
 
+## 🎯 Quotation Pair-Side Fix — "For Quotation Why do one Need Serial Number?" (2026-07-31)
+
+**User complaint** (screenshot):
+> New Quote → Binaural checked → picked Phonak I30 with side='both', qty 1, unit ₹1,60,000, disc 30%, GST 0% → SAVE returns "Pair quote must have exactly one LEFT + one RIGHT serialised line (got L=0, R=0)". Complaint: "For Quotation Why do one Need Serial Number ??"
+
+**Root cause**: The word **"serialised"** in the error message was misleading — quote lines never carry a serial number, but the copy made owners think they had to pick a specific unit. And the backend actually needed `side="left"` + `side="right"` (not "both") — the frontend's Binaural toggle used to create 2 rows but they collapsed to 1 when any field was edited, sending `side="both"` back to the backend.
+
+**Fix**:
+1. New helper `_explode_both_sides(is_pair, lines)` in `routers/ha_quotations.py` — for pair quotes, silently expands any line with `side='both'` or `side='single'` into a LEFT + RIGHT pair at qty=1, same unit price. Applied in BOTH `create_quotation` AND `update_quotation` (testing-agent flagged the update-path parity gap during iteration_61).
+2. Error message rewritten — no more "serialised" word. Now: *"Pair quote must have exactly one LEFT + one RIGHT hearing-aid line (got L=X, R=Y). Tick 'Binaural' and pick a product; the modal auto-splits it into L + R for you."*
+3. Frontend `QuotationStudioPage.js` Binaural toggle now creates a SINGLE row with `side='both'` (backend expands invisibly). Helper text updated: "one row per SKU; we auto-split into L + R for you."
+
+### Verification (iteration_61.json)
+- **10/10 pytest pass** (`test_pair_quote_both_side_expansion.py` — 5 unit tests + `test_pair_quote_api_e2e.py` — 5 API e2e tests via preview URL).
+- Playwright E2E: logged in as owner, opened New Quote, picked Vishnu Reddy, ticked Binaural → ONE row rendered (not 2), picked GnResound iAX50 @ ₹1,60,000 with 30% discount, saved → HTTP 200, GET detail shows 2 lines with `side=left` + `side=right`, total = ₹2,24,000 ✓.
+- Testing agent's minor find: two form inputs (discount%, GST%) still lack data-testids on the Quotation modal — logged as a follow-up UX polish, not a bug.
+
+### Files touched
+- `backend/routers/ha_quotations.py` (`_explode_both_sides` + wired into create + update; error copy)
+- `frontend/src/modules/ha/QuotationStudioPage.js` (single-row Binaural toggle + helper copy)
+- `backend/tests/test_pair_quote_both_side_expansion.py` (NEW, 5 unit tests)
+- `backend/tests/test_pair_quote_api_e2e.py` (NEW, 5 API e2e tests via preview URL)
+
+---
+
+
 ## ✅ Vishnu / Dr Prasad End-to-End Walkthrough + Bug Fix (2026-07-31)
 
 **Walkthrough executed on preview** (Sound Clinic tenant `tenant-sound-clinic-blr`):

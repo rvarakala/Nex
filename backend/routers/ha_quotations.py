@@ -257,10 +257,15 @@ async def update_quotation(
     missing = set(product_ids) - set(products)
     if missing:
         raise HTTPException(status_code=400, detail=f"Unknown products: {sorted(missing)}")
-    _validate_pair(payload.is_pair, payload.lines)
-    sub, disc, gst, total = _compute_quote_totals(payload.lines)
+    # Apply the same pair-normalisation as create_quotation so editing
+    # a pair quote and setting a line to side='both' also auto-splits
+    # into L + R (parity fix flagged by the testing agent, 2026-07-31).
+    normalised_lines = _explode_both_sides(payload.is_pair, payload.lines)
+    _validate_pair(payload.is_pair, normalised_lines)
+    sub, disc, gst, total = _compute_quote_totals(normalised_lines)
 
     upd = payload.model_dump()
+    upd["lines"] = [ln.model_dump() for ln in normalised_lines]
     upd.update({
         "subtotal": sub, "discount_amount": disc, "gst_amount": gst, "total": total,
         "updated_at": datetime.now(timezone.utc).isoformat(),
