@@ -407,6 +407,20 @@ async def start_diagnostics(
             {"$set": {"status": "in_progress"}},
         )
 
+    # --- Resolve referring doctor name so the Report Section can
+    # auto-populate the "Referred by" field. Patients created before
+    # this field existed will simply have `referring_doctor_name=None`
+    # and the report falls back to the free-text `referring_physician`.
+    referring_doctor_name: Optional[str] = None
+    ref_doc_id = patient.get("referring_doctor_id")
+    if ref_doc_id:
+        rd = await db.referring_doctors.find_one(
+            {"doctor_id": ref_doc_id, "clinic_id": clinic_id},
+            {"_id": 0, "name": 1},
+        )
+        if rd:
+            referring_doctor_name = rd.get("name")
+
     return {
         "session_id": session["session_id"],
         "patient": {
@@ -416,6 +430,12 @@ async def start_diagnostics(
             "gender": patient.get("gender"),
             "mrd": patient.get("mrd"),
             "mobile": patient.get("mobile"),
+            # Registration-time referral context — surfaced so the
+            # Report Builder can auto-fill "Referred by" without the
+            # audiologist retyping the doctor's name.
+            "referring_doctor_id": ref_doc_id,
+            "referring_doctor_name": referring_doctor_name,
+            "referring_physician": patient.get("referring_physician"),
         },
         "token_id": (token or {}).get("token_id"),
         "appointment_id": (appt or {}).get("appointment_id"),

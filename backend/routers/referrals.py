@@ -172,6 +172,15 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
     # 3. Pull PAID invoices in window for those patients. Split each
     #    invoice's revenue by line `product_type` so a single mixed
     #    invoice (PTA + HA fitting) correctly contributes to both totals.
+    #
+    #    Reliability note (2026-07-31): historical invoices raised through
+    #    `POST /api/appointments/with-invoice` didn't carry `product_type`
+    #    on their lines — the wing was stored on the appointment but not
+    #    mirrored onto the invoice lines. So we ALSO peek at the linked
+    #    appointment's `wing` field and, when it's "hearing_aid", treat
+    #    the ENTIRE invoice as HA revenue regardless of line tagging.
+    #    This heals existing production data without a migration.
+    invoices_to_process: list[dict] = []
     async for inv in db.invoices.find(
         {
             "clinic_id": clinic_id,
@@ -179,11 +188,28 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
             "status": "paid",
             "invoice_date": {"$gte": start_iso, "$lte": end_iso},
         },
-        {"_id": 0, "patient_id": 1, "lines": 1, "ticket_no": 1, "session_id": 1, "grand_total": 1},
+        {"_id": 0, "patient_id": 1, "lines": 1, "ticket_no": 1, "session_id": 1, "grand_total": 1, "appointment_id": 1},
     ):
+        invoices_to_process.append(inv)
+
+    # Batch-fetch the linked appointments so we know each invoice's wing.
+    appt_ids = list({inv.get("appointment_id") for inv in invoices_to_process if inv.get("appointment_id")})
+    wing_by_appt: dict[str, str] = {}
+    if appt_ids:
+        async for a in db.appointments.find(
+            {"clinic_id": clinic_id, "appointment_id": {"$in": appt_ids}},
+            {"_id": 0, "appointment_id": 1, "wing": 1},
+        ):
+            wing_by_appt[a["appointment_id"]] = a.get("wing") or "diagnostic"
+
+    for inv in invoices_to_process:
         did = patient_to_doctor.get(inv.get("patient_id"))
         if not did or did not in doctors:
             continue
+
+        # If the linked appointment is on the HA wing, count the whole
+        # invoice as HA revenue (heals legacy `product_type=None` rows).
+        is_ha_wing = wing_by_appt.get(inv.get("appointment_id") or "") == "hearing_aid"
 
         diag_rev = 0.0
         ha_rev = 0.0
@@ -191,7 +217,7 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
             if not isinstance(ln, dict):
                 continue
             amt = float(ln.get("line_total") or 0.0)
-            if ln.get("product_type") == "Hearing Aid":
+            if is_ha_wing or ln.get("product_type") == "Hearing Aid":
                 ha_rev += amt
             else:
                 diag_rev += amt
@@ -200,7 +226,7 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
         # data) — fall back to grand_total and bucket by parent linkage.
         if not (diag_rev or ha_rev):
             gt = float(inv.get("grand_total") or 0.0)
-            if inv.get("ticket_no"):       # HA service ticket → HA
+            if is_ha_wing or inv.get("ticket_no"):       # HA service ticket → HA
                 ha_rev += gt
             else:
                 diag_rev += gt
@@ -255,13 +281,16 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
                 "status": "paid",
                 "invoice_date": {"$gte": start_iso, "$lte": end_iso},
             },
-            {"_id": 0, "patient_id": 1, "lines": 1},
+            {"_id": 0, "patient_id": 1, "lines": 1, "appointment_id": 1, "grand_total": 1},
         ):
             did = patient_to_doctor.get(inv.get("patient_id"))
             if not did or did not in doctors:
                 continue
+            is_ha_wing = wing_by_appt.get(inv.get("appointment_id") or "") == "hearing_aid"
             for ln in (inv.get("lines") or []):
-                if isinstance(ln, dict) and ln.get("product_type") == "Hearing Aid":
+                if not isinstance(ln, dict):
+                    continue
+                if is_ha_wing or ln.get("product_type") == "Hearing Aid":
                     amt = float(ln.get("line_total") or 0.0)
                     doctors[did]["ha_sales_revenue"] = max(
                         0.0, doctors[did]["ha_sales_revenue"] - amt,

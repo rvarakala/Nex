@@ -526,6 +526,11 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             unit_price: l.unit_price !== '' && l.unit_price != null ? Number(l.unit_price) : null,
             discount_type: l.discount_type || 'flat',
             discount_value: Number(l.discount_value) || 0,
+            // Tag HA-wing lines so the referral payout rollup buckets
+            // this revenue as HA sales (drives the doctor's HA cut).
+            // Diagnostic wing lines stay untagged and land in the
+            // diagnostics bucket.
+            product_type: wing === 'hearing_aid' ? 'Hearing Aid' : undefined,
           })),
         };
         await axios.post(`${API}/appointments/with-invoice`, payload);

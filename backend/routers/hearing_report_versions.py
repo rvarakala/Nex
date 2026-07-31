@@ -92,7 +92,21 @@ async def _load_patient(db, patient_id: str, clinic_id: str) -> dict:
     doc = await db.patients.find_one(
         {"patient_id": patient_id, "clinic_id": clinic_id}, {"_id": 0}
     )
-    return doc or {}
+    if not doc:
+        return {}
+    # Enrich with referring doctor NAME so the Report Builder can auto-fill
+    # "Referred by" without the audiologist retyping. If the front desk
+    # backfills the doctor after the report is completed, the next save
+    # picks it up here.
+    ref_doc_id = doc.get("referring_doctor_id")
+    if ref_doc_id and not doc.get("referring_doctor_name"):
+        rd = await db.referring_doctors.find_one(
+            {"doctor_id": ref_doc_id, "clinic_id": clinic_id},
+            {"_id": 0, "name": 1},
+        )
+        if rd:
+            doc["referring_doctor_name"] = rd.get("name")
+    return doc
 
 
 async def _load_clinic(db, clinic_id: str) -> dict:

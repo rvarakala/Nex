@@ -1,0 +1,30 @@
+{
+  "summary": "Verified all 3 bug fixes end-to-end (Bug 1 HA referral payout wiring, Bug 2 Add Appointment prefill from PatientProfile, Bug 3 referring-doctor auto-fill in diagnostics/queue/start + ReportsPanel). Backend pytest suite (referrals): 9/9 pass. E2E API scripts for Bug 1 (both product_type='Hearing Aid' and legacy shape) and Bug 3 (with/without doctor link) all pass. Playwright confirms href params, modal open + patient name prefill, and reload regression guard.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_referral_ha_wing_bucketing.py",
+    "/app/backend/tests/test_referring_doctor_autofill.py",
+    "/app/backend/tests/test_referral_flat_payout_scoping.py",
+    "/app/backend/tests/e2e_bug1_referral_payout.py",
+    "/app/backend/tests/e2e_bug3_queue_start_autofill.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "diagnostics_queue.py /queue/start correctly resolves referring_doctor_name via referring_doctors collection; falls back to None cleanly when no FK; also returns free-text referring_physician.",
+    "referrals._compute_referral_rollup HA-wing fallback (bucket entire invoice as HA revenue when appointment.wing='hearing_aid') successfully heals legacy invoices missing line-level product_type — verified with dashboard row showing ha_sales_revenue=30000, ha_payout=5000 for legacy shape.",
+    "PatientProfilePage 'Add Appointment' Link now correctly passes ?bookForPatientId=&bookForPatientName= query params which AppointmentsBoard reads then strips (verified regression: reload does not reopen modal).",
+    "ReportsPanel.js initialReferredBy chain correctly uses `||` (not `??`) so empty strings fall through to patient.referring_doctor_name → referring_physician."
+  ],
+  "updated_files": [
+    "/app/backend/tests/e2e_bug1_referral_payout.py (new)",
+    "/app/backend/tests/e2e_bug3_queue_start_autofill.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "dltest@example.com / TestPass@123 (clinic-dl-test-clinic-851466)",
+  "seed_data_creation": "Created ~5 TEST_-prefixed patients and TEST_Dr* referring doctors on the DL Test clinic (unique uuid suffix, ~2 doctors + 5 patients + 2 paid invoices + 2 diagnostics sessions). Data isolated by TEST_ prefix.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bug 1/2/3 all verified. Regression pytest suite: cd /app/backend && python3 -m pytest tests/test_referral_flat_payout_scoping.py tests/test_referral_ha_wing_bucketing.py tests/test_referring_doctor_autofill.py -v => 9 passed. Pre-existing failures in test_appointment_ha_wing.py were skipped per main agent's note (DB slot-collision pollution, unrelated). E2E API scripts are re-runnable at /app/backend/tests/e2e_bug1_referral_payout.py and e2e_bug3_queue_start_autofill.py. Console errors sanity check on /patients, /patients/appointments, /appointments, /test, /referrals came back clean (0 real errors).",
+  "rca of the issue": "N/A — bugs already fixed by main agent, this run is verification only."
+}

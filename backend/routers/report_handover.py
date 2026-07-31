@@ -371,6 +371,12 @@ class LineItemIn(BaseModel):
     unit_price: Optional[float] = None
     discount_type: Literal["flat", "percent"] = "flat"
     discount_value: float = 0.0
+    # Optional product tagging — the referral payout math buckets an
+    # invoice line as HA revenue when `product_type == "Hearing Aid"`.
+    # HA-wing bookings from the Book Appointment modal set this so the
+    # referring-doctor payout tracks HA sales correctly. Diagnostic lines
+    # leave it None and end up in the diagnostic bucket by default.
+    product_type: Optional[Literal["Hearing Aid", "Accessory", "Other"]] = None
 
 
 class AppointmentWithInvoiceRequest(BaseModel):
@@ -439,7 +445,18 @@ async def create_appointment_with_invoice(
         from billing import create_invoice as billing_create_invoice
         from models import InvoiceCreate, InvoiceLineCreate
 
-        lines = [InvoiceLineCreate(**ln.model_dump()) for ln in payload.invoice_lines]
+        # HA wing bookings — every invoice line MUST carry
+        # product_type="Hearing Aid" so the referring-doctor payout
+        # rollup buckets the revenue correctly. Frontend now sends the
+        # tag on HA chips, but we enforce it here too so any missed
+        # line (or a diagnostic wing later switched to HA) is captured.
+        default_product_type = "Hearing Aid" if payload.wing == "hearing_aid" else None
+        lines = []
+        for ln in payload.invoice_lines:
+            data = ln.model_dump()
+            if default_product_type and not data.get("product_type"):
+                data["product_type"] = default_product_type
+            lines.append(InvoiceLineCreate(**data))
         inv_payload = InvoiceCreate(
             patient_id=payload.patient_id,
             appointment_id=apt_dict.get("appointment_id"),

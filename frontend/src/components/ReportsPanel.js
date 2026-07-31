@@ -77,7 +77,21 @@ const ReportsPanel = ({
   const [provisionalDiagnosis, setProvisionalDiagnosis] = useState(
     initialBuilder?.provisional_diagnosis ?? ''
   );
-  const [referredBy, setReferredBy] = useState(initialBuilder?.referred_by ?? '');
+  // "Referred by" — hydrate from either:
+  //   1. Persisted builder state (audiologist has already saved a value)
+  //   2. Patient's linked referring doctor (from registration)
+  //   3. Patient's free-text `referring_physician` fallback
+  // Using `||` (truthy) not `??` (nullish) so we also fall through
+  // empty strings — audiologists frequently save with a blank
+  // "Referred by" and rely on the field auto-populating on re-open
+  // once the front desk backfills the patient's referring doctor.
+  const initialReferredBy = (
+    initialBuilder?.referred_by
+    || patient?.referring_doctor_name
+    || patient?.referring_physician
+    || ''
+  );
+  const [referredBy, setReferredBy] = useState(initialReferredBy);
   const [mrdEdit, setMrdEdit] = useState(patient?.patient_id || '');
 
   // ========== Layout preferences ==========

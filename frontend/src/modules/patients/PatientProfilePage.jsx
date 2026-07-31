@@ -199,8 +199,7 @@ export default function PatientProfilePage() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            to={`/patients/appointments`}
-            state={{ bookForPatient: { patient_id: patient.patient_id, name: patient.name } }}
+            to={`/patients/appointments?bookForPatientId=${encodeURIComponent(patient.patient_id)}&bookForPatientName=${encodeURIComponent(patient.name || '')}`}
             data-testid="profile-add-item"
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm shadow-indigo-600/20">
             <Plus size={13} /> Add Appointment

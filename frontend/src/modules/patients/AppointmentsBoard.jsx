@@ -6,7 +6,7 @@
  * Loads today's appointments from /api/appointments?date=today.
  */
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Plus, Search, MoreVertical, ArrowRight, X, Edit2, ListPlus, User, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
@@ -100,7 +100,30 @@ export default function AppointmentsBoard() {
   const [status, setStatus] = useState('all');
   const [testType, setTestType] = useState('all');
   const [bookOpen, setBookOpen]   = useState(false);
+  // When PatientProfilePage sends the user here via "Add Appointment",
+  // the freshly-selected patient arrives on the query string. Preserve
+  // the pre-selected patient across mounts so `BookAppointmentModal`
+  // opens with the name locked and the search input hidden.
+  const [bookPrefill, setBookPrefill] = useState(null);
   const [audiologists, setAudiologists] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Auto-open the booking modal when we arrive with ?bookForPatientId=…
+  // Mirror of the same behaviour on `AppointmentsCalendarPage.jsx` so
+  // "Add Appointment" from a patient profile always lands with the
+  // patient pre-selected regardless of which appointments view is
+  // rendered under `/patients/appointments`.
+  useEffect(() => {
+    const pid = searchParams.get('bookForPatientId');
+    if (!pid) return;
+    const pname = searchParams.get('bookForPatientName') || '';
+    setBookPrefill({ patient_id: pid, patient_name: pname });
+    setBookOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('bookForPatientId');
+    next.delete('bookForPatientName');
+    setSearchParams(next, { replace: true });
+  }, []);
 
   // Pull staff once for the booking modal — we expose audiologist + clinic_owner roles
   // so the front desk can assign the appointment to the appropriate person.
@@ -364,8 +387,9 @@ export default function AppointmentsBoard() {
           // Modal expects a JS Date object — `date` is the YYYY-MM-DD string
           // backing the date picker, so convert before passing.
           initialDate={new Date(date)}
-          onClose={() => setBookOpen(false)}
-          onSaved={() => { setBookOpen(false); load(); }}
+          existing={bookPrefill || undefined}
+          onClose={() => { setBookOpen(false); setBookPrefill(null); }}
+          onSaved={() => { setBookOpen(false); setBookPrefill(null); load(); }}
         />
       )}
     </div>
