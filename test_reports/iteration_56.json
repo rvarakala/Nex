@@ -1,0 +1,30 @@
+{
+  "summary": "Focused frontend login verification for the Sound Clinic demo tenant on preview URL. Drove the actual /login form with Playwright (not JSON API) for all 4 requested accounts. All logins succeeded: no 'Invalid email or password' banner, redirected out of /login into the authenticated app shell (sidebar with clinic 'The Sound Clinic — Bangaluru' PREMIUM tag, user avatar/name in footer, and role-appropriate landing page). /api/auth/me returned 200 for every account after login. Spot check on owner account confirms data pages (/patients, /appointments, /referrals) render with real seeded data (Dr. Rajesh Iyer as clinic owner, staff list including Dr. Aditi Krishnan, Dr. Vikram Reddy, Meera Bhat, Suresh Kumar; calendar shows real appointments for week of 27 Jul 2026).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "unknown (background XHR)", "issue": "Several 'Failed to load resource: 500' console errors observed on post-login dashboard for owner and front_desk sessions (not blocking login/nav). Likely a widget/analytics endpoint. Should be investigated but out of scope for login verification."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: Investigate the 500-status background XHRs firing on the owner/front_desk dashboards — surfaced in console but did not affect login or navigation. Reproduce by opening DevTools Network tab after logging in as owner@thesoundclinic.in."
+  ],
+  "critical_code_review_comments": [
+    "Login flow is functioning end-to-end (cookie/CSRF/session, /api/auth/me = 200, role-based landing). No regressions detected in login form or auth middleware.",
+    "Role-based routing works as expected: audiologist -> /test (Hearing Tests), clinic_owner -> /patients dashboard, front_desk -> /patients dashboard."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend only)", "frontend": "100% (5/5 login scenarios pass — all 4 requested + regression)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (WORKS), vikram@thesoundclinic.in / demo123 (WORKS), meera@thesoundclinic.in / demo123 (WORKS), dltest@example.com / TestPass@123 (WORKS, regression).",
+  "seed_data_creation": "None — used existing seed from scripts/seed_demo_premium.py that main agent already re-ran.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sound Clinic demo tenant is now correctly seeded and email_verified=true. All demo credentials work via the browser login form. If any future user reports 'Invalid email or password' for these accounts again, first check email_verified flag on the users doc for that tenant.",
+  "rca of the issue": "Original bug: Sound Clinic tenant not seeded in preview DB, and after initial seed users had email_verified=false which the login endpoint rejects with EMAIL_NOT_VERIFIED. Main agent's fix (a) ran seed_demo_premium.py to create tenant + 6 users + patients + appointments + referrals, (b) batch-updated email_verified=true for the 6 Sound Clinic users. Verification: browser login form now succeeds for owner/audiologist/front_desk and app shell renders with correct role landing pages. Fix confirmed working."
+}
