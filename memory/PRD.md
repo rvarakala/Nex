@@ -198,6 +198,49 @@ No backend bug — the QuickAddVendor flow already existed, just wasn't discover
 
 ---
 
+## 🛠 Inventory Regression Fixes + Demo "Add Demo Unit" Feature (2026-07-31)
+
+**User report** (Vishnu/Dr Prasad walkthrough blocked):
+> Inventory Board, AMC tab, and Demo Stock "Flag as Demo" modal all throwing 500. HA Fittings 500. Also: in Demo Stock add a Demo add flow — Keep it like we add Saleable Stock, just mark them as Demo.
+
+### Root causes + fixes
+
+**1. `/api/ha/serial-items` — 500 (ResponseValidationError ×5)**
+The new borrow-lifecycle fields (`borrowed_at`, `returned_at`) on `SerialItem` were declared `Optional[str]`, but the shared `deserialize_datetime` helper auto-parses any ISO-looking string into a `datetime` object during hydration, then Pydantic rejects the datetime → validation error, cascading a 500 across every consumer (Inventory Board, Demo Stock "Flag as Demo" search, Saleable Stock).
+Fix: added `borrowed_at` and `returned_at` to `STRING_DATE_KEYS` whitelist in `/app/backend/utils/serde.py` so those fields stay strings on the way out.
+
+**2. `/api/ha/amc/contracts` — 500**
+`AMCContract.plan_id` was declared as required `str`, but legacy seed rows lacked it → validation 500 on listing.
+Fix: response model relaxed to `plan_id: Optional[str] = None`. Write path (`AMCContractCreate`) still enforces the field.
+
+**3. `/api/ha/fittings` — 500**
+`Fitting.audiologist_user_id` and `Fitting.created_by_user_id` were required, but legacy quick-sale rows lacked them.
+Fix: both relaxed to `Optional[str] = None` on the response model.
+
+### Feature — Demo Stock "+ Add Demo Unit" (mirror of Saleable Stock)
+
+- Extracted the Saleable-Stock add-modal into a **shared component** `/app/frontend/src/modules/ha/AddSerialModal.jsx`. Accepts a `pool` prop (`saleable` | `demo`); the same component drives accent colour, heading, testid prefix, and payload's `pool` field.
+- `DemoStockPage.js` header now shows TWO buttons: primary filled **"+ Add Demo Unit"** (purple, `ha-demo-addnew-btn`) opening the shared modal with `pool='demo'`, plus the existing outline **"Swap Saleable → Demo"** (`ha-demo-add-btn`) for the cross-pool swap.
+- `SaleableStockPage.jsx` refactored to use the same shared modal (`pool='saleable'`) — no visual change, cleaner code.
+- `SaleableStockPage` also now honours `?source=vendor|borrowed` from the URL so the Dashboard "Return Borrowed" chip deep-links directly into the Borrowed filter.
+
+### Verification (iteration_59.json)
+- 16/16 pytest pass (10 referral suite + 6 new `test_ha_inventory_500_regression.py`).
+- 0 UI bugs, 0 500s across all 6 Inventory tabs.
+- End-to-end: "+ Add Demo Unit" flow tested with both Vendor and Borrowed sources; shared modal works for both pools; Dashboard chip count updates correctly (now shows 2 after seeding one borrowed unit in each pool).
+
+### Files touched
+- `backend/utils/serde.py` (STRING_DATE_KEYS whitelist)
+- `backend/routers/ha_amc.py` (plan_id optional on response model)
+- `backend/models_ha.py` (Fitting audiologist_user_id + created_by_user_id optional)
+- `frontend/src/modules/ha/AddSerialModal.jsx` (NEW — shared pool-aware modal)
+- `frontend/src/modules/ha/SaleableStockPage.jsx` (use shared modal, read ?source= query)
+- `frontend/src/modules/ha/DemoStockPage.js` (two-button header, wire shared modal)
+- `backend/tests/test_ha_inventory_500_regression.py` (NEW, 6 tests)
+
+---
+
+
 ## 🎯 Inventory Phase A+B+C+D — Sale Unit, Saleable Stock, Borrow/Return, Dashboard Widget (2026-07-31)
 
 **User ask** (paraphrased from transcript):
