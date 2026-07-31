@@ -198,6 +198,59 @@ No backend bug — the QuickAddVendor flow already existed, just wasn't discover
 
 ---
 
+## 🎯 Inventory Phase A+B+C+D — Sale Unit, Saleable Stock, Borrow/Return, Dashboard Widget (2026-07-31)
+
+**User ask** (paraphrased from transcript):
+> Remove Cost from the New Product modal, keep Qty with dropdown 1/2/Kit. Add a "Saleable Stock" tab — units live here from vendor OR borrowed. Borrow needs Reason. Return-to-source action. Display on Main Dashboard "Needs Attention" widget. Wire the HA sale → invoice → doctor's referral cut (diag 50%, HA 10% for Dr Prasad).
+
+### Phase A — Catalogue "New Product" modal
+- Removed the `Cost (₹)` input. Cost lives on the Procurement PO now (still persisted on `HAProduct.cost` field so historical reports keep working).
+- Added `Sale Unit` dropdown (`data-testid=ha-pf-saleunit`) with options `single` / `pair` / `kit`.
+- Backend `HAProduct` + `HAProductCreate` now carry `sale_unit: Literal["single","pair","kit"] = "single"`.
+- Catalogue table replaces the Cost column with a `Sale Unit` badge (`KIT` / `PAIR · 2` / `SINGLE · 1`).
+
+### Phase B — New "Saleable Stock" tab
+- New route `/ha/saleable-stock` (component `SaleableStockPage.jsx`).
+- New backend endpoints:
+  - `GET  /api/ha/saleable-stock` — pool==saleable, active states, hydrated with product; KPIs = total / available / reserved / on_trial / borrowed_still_here.
+  - `POST /api/ha/serial-items/{serial_id}/return-borrow` — flips state → RETURNED, writes serial_events audit row.
+  - `GET  /api/ha/borrowed-attention` — count + top-5 preview for the Dashboard widget.
+  - Filter params `source_kind=vendor|borrowed` + `only_active` added to `/api/ha/serial-items`.
+- Serial-item model extended with `source_kind`, `borrowed_from`, `borrow_reason`, `borrowed_at`, `returned_at`, `return_note`.
+- `POST /api/ha/products/{product_id}/serials` now validates that borrowed units carry a `borrowed_from` (returns 400 otherwise).
+- Add-to-Saleable modal has a Vendor/Borrowed toggle. Borrowed reveals a rose-tinted panel with free-text `Borrowed from` + `Reason` fields.
+
+### Phase C — Cross-pool swap for trials
+- Existing "+ Add to Demo Pool" + `POST /api/ha/serial-items/{id}/mark-demo` already does this cross-pool swap. Only the empty-state hint on `DemoStockPage.js` was reworded to make the swap concept clearer: "…swap a saleable unit into the demo pool for a trial."
+
+### Phase D — HA sale → invoice → referral payout wiring
+- Verified: `ha_sales.py` invoice creation already stamps `product_type: "Hearing Aid"` on invoice lines.
+- Combined with the iteration_55 fix (Book Appointment sending `product_type` for HA wing) + iteration_57 fix (dashboard finalize-loop guard), doctor's HA cut now flows end-to-end for both paths: Book Appointment → HA-wing invoice, and HA sale → sale invoice.
+- Regression suite (10 tests) still passes after Phase A-D changes.
+
+### Main Dashboard — "Needs Attention" widget
+- Added a fourth chip **Return Borrowed** (`data-testid=na-borrowed`) to the row, hydrated from `GET /api/ha/borrowed-attention`.
+- Click routes to `/ha/saleable-stock?source=borrowed` — the Saleable Stock page reads the query param and auto-filters to the Borrowed pool.
+- Icon: `ArrowLeftRight`; tone: rose. Zero-state = shows count "0" (chip stays visible so owners see it every day).
+
+### Verification (iteration_58.json)
+- Backend pytest: **10/10 pass** across `test_referral_flat_payout_scoping.py`, `test_referral_ha_wing_bucketing.py`, `test_referring_doctor_autofill.py`.
+- Curl end-to-end: borrow (with source) → returns 200; borrow (without source) → returns 400 with the exact validation message; needs-attention returns `{count: 1}` after add; return-to-source flips state to `RETURNED` with note and clears from active list.
+- Playwright: full 9-step scenario passed, 100% frontend, 0 UI bugs (the flagged "₹0" was the Min Sell column showing zero for the test product — not a stale Cost column).
+
+### Files touched
+- `backend/models_ha.py` (Product.sale_unit + SerialItem borrow fields)
+- `backend/routers/ha_products.py` (SerialAddIn + validation + stamp borrowed_at)
+- `backend/routers/ha_inventory.py` (3 new endpoints + source_kind filter)
+- `frontend/src/modules/ha/ProductCataloguePage.js` (cost → sale_unit)
+- `frontend/src/modules/ha/SaleableStockPage.jsx` (NEW)
+- `frontend/src/modules/ha/HAModule.js` (route + tab entry)
+- `frontend/src/modules/ha/DemoStockPage.js` (empty-state copy)
+- `frontend/src/modules/patients/ModernDashboard.jsx` (Return Borrowed chip + borrowed_attention fetch)
+
+---
+
+
 ## 🐛 3-in-1 Bug Fix Batch — Referral HA Payout, Patient Prefill, Report Referred-By Autofill (2026-07-31)
 
 **User report** (production tenant `clinic-the-hearing-clinic-83fc17`, patient Ramana + Dr Vikram):
