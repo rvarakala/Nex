@@ -166,8 +166,12 @@ async def _dashboard_rows(db, clinic_id: str, start_dt: datetime, end_dt: dateti
         if did and pid and did in doctors:
             patient_to_doctor[pid] = did
 
-    if not patient_to_doctor:
-        return list(doctors.values())
+    # Note: if `patient_to_doctor` is empty, the queries below produce
+    # no matches (they filter on `patient_id: {"$in": [...]}`) and we
+    # fall straight through to the finalize loop with all-zero rows.
+    # Regression fix (2026-07-31): the previous early-return here
+    # crashed /referrals/dashboard with `KeyError: 'diagnostics_payout'`
+    # for clinics whose referring doctors had no linked patients yet.
 
     # 3. Pull PAID invoices in window for those patients. Split each
     #    invoice's revenue by line `product_type` so a single mixed

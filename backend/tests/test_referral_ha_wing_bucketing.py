@@ -275,3 +275,57 @@ def test_mixed_wing_over_multiple_appointments():
             client.close()
 
     _run(_test())
+
+
+
+def test_doctors_without_linked_patients_still_finalize_payout_keys():
+    """Regression (2026-07-31): the /referrals/dashboard endpoint was
+    500-ing with `KeyError: 'diagnostics_payout'` for clinics whose
+    referring doctors had no patients linked yet. Root cause was an
+    early-return in `_dashboard_rows` that bypassed the finalize loop.
+
+    Guard: seed a doctor with NO linked patient and confirm the row
+    still ships every payout key (all zero) that the endpoint + CSV
+    export code depend on.
+    """
+    async def _test():
+        client, db = _mkdb()
+        suffix = uuid.uuid4().hex[:8]
+        clinic_id = f"clinic-nopts-{suffix}"
+        doctor_id = f"REFDOC-{suffix}"
+        try:
+            await db.clinics.insert_one({
+                "clinic_id": clinic_id, "name": f"NoPts Clinic {suffix}",
+                "subscription_tier": "PREMIUM",
+            })
+            await db.referring_doctors.insert_one({
+                "doctor_id": doctor_id, "clinic_id": clinic_id,
+                "name": "Dr Solo",
+                "diag_cut_mode": "percent", "diag_cut_value": 10.0,
+                "ha_cut_mode": "flat", "ha_cut_value": 5000.0,
+            })
+            # Intentionally NO patients created.
+
+            rows = await _run_rollup(db, clinic_id)
+            assert len(rows) == 1
+            row = rows[0]
+            # Every payout key must exist and default to zero.
+            for key in (
+                "diagnostics_payout", "ha_payout", "total_payout",
+                "total_revenue", "diag_patient_count", "ha_patient_count",
+                "patient_count",
+            ):
+                assert key in row, f"missing key {key!r} in row: {sorted(row)!r}"
+            assert row["diagnostics_payout"] == 0.0
+            assert row["ha_payout"] == 0.0
+            assert row["total_payout"] == 0.0
+            assert row["patient_count"] == 0
+            # And crucially: the endpoint totals block (which fails with
+            # KeyError if any key is missing) must succeed.
+            _ = sum(r["diagnostics_payout"] for r in rows)
+        finally:
+            await db.clinics.delete_many({"clinic_id": clinic_id})
+            await db.referring_doctors.delete_many({"clinic_id": clinic_id})
+            client.close()
+
+    _run(_test())

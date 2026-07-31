@@ -1,0 +1,35 @@
+{
+  "summary": "Verified the fix for Sound Clinic /api/referrals/dashboard 500 (KeyError: 'diagnostics_payout') by removing the early-return short-circuit in _dashboard_rows. All 10 existing referral pytest cases pass. Added a new backend regression suite (test_referrals_dashboard_bugfix.py) covering: (a) Sound Clinic dashboard returns 200 with all 11 required keys per row and all zeros; (b) Sound Clinic /api/referrals/pathways still 200; (c) dltest regression tenant still returns non-zero payouts with full row schema. Playwright drove /login -> /referrals as owner@thesoundclinic.in — the red 'Internal server error' banner is gone, the Referral Corner heading, KPI cards and 5 doctor rows all render with ₹0, and no /api/referrals XHR 500s observed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ha/fittings?filter=trial&limit=1", "issue": "Returns 500 on Sound Clinic tenant (observed as side-effect XHR while on /referrals page). Not related to this fix but worth investigating separately."},
+      {"endpoint": "/api/ha/fittings?warranty_expiring_days=30&limit=1", "issue": "Returns 500 on Sound Clinic tenant. Same pattern — likely a similar unguarded aggregation on empty data. Not blocking referrals fix."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referrals_dashboard_bugfix.py",
+    "/app/test_reports/pytest/iteration_57_bugfix.xml"
+  ],
+  "action_items": [
+    "Optional: investigate the /api/ha/fittings 500s on the Sound Clinic tenant — same 'empty aggregation' failure signature as the referrals bug just fixed."
+  ],
+  "critical_code_review_comments": [
+    "The removed early-return was a premature optimisation that broke the row-shape contract with the frontend. Good fix — a similar defensive pattern in /api/ha/fittings likely causes the collateral 500s observed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_referrals_dashboard_bugfix.py (new file, 3 tests)"
+  ],
+  "success_rate": {"backend": "100% (10/10 referral suite + 3/3 new regression)", "frontend": "100% (Sound Clinic /referrals renders cleanly, no red banner, no /api/referrals 500s)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 and dltest@example.com / TestPass@123 both verified working",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bug fully resolved. Sound Clinic /referrals renders 5 referring-doctor rows with all zeros as expected (Dr AK, Dr. Aarav Mehta, Dr. Anand Kumar, Dr. Prakash Iyer, Dr. Suma Rao). Note: /api/ha/fittings has a separate but similar 500 on the same tenant — worth flagging as a possible follow-up.",
+  "rca of the issue": "In routers/referrals.py _dashboard_rows, an early-return `if not patient_to_doctor: return list(doctors.values())` skipped the finalize loop that adds diagnostics_payout/ha_payout/total_payout/total_revenue/diag_patient_count/ha_patient_count keys onto each doctor dict. Downstream totals aggregation then hit KeyError. Fix removes the short-circuit — the aggregation queries below already no-op on empty patient_to_doctor (Mongo $in: []), so the finalize loop runs and every row ships with the full schema. Verified via pytest + curl + Playwright."
+}
