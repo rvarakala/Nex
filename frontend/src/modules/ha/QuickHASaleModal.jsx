@@ -38,7 +38,14 @@ function Field({ label, required, hint, children }) {
   );
 }
 
-export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId }) {
+export default function QuickHASaleModal({
+  onClose, onCreated, prefillPatientId,
+  // Additional prefills for the "Convert Trial → Sale" flow —
+  // audiologist has already picked brand+model during the trial,
+  // so we pre-fill them and leave the fresh saleable-stock serials
+  // blank for the audiologist to enter.
+  prefillBrand, prefillModel, prefillHaType,
+}) {
   const [branches, setBranches] = useState([]);
   const [patients, setPatients] = useState([]);
   const [search, setSearch] = useState('');
@@ -48,7 +55,9 @@ export default function QuickHASaleModal({ onClose, onCreated, prefillPatientId 
 
   const [form, setForm] = useState({
     branch_id: '',
-    brand: '', model: '', ha_type: 'BTE',
+    brand: prefillBrand || '',
+    model: prefillModel || '',
+    ha_type: prefillHaType || 'BTE',
     serial_left: '', serial_right: '',
     side: 'both',
     fitting_date: todayISO(),

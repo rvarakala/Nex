@@ -1,0 +1,49 @@
+{
+  "summary": "Verified the 3-part UX rework (Kit/Pair side dropdown, Convert-to-Sale via QuickHASaleModal, +New Fitting opens QuickHASaleModal). All 19 pytest cases pass. All 4 UI tests pass. Found and fixed ONE bug in TrialsPage.doConvertOpen where brand/model prefill silently failed because it called GET /ha/serial-items?search=<serial_id> (search filters by serial_no, not serial_id).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/ha/trials/{trial_no}", "issue": "Trials whose trial_no contains '/' (legacy TR/YYYY/NNNN format, e.g. TR/2026/0003) return 404 because path segment is split by ingress/router. 3 pre-existing active trials in tenant-sound-clinic-blr cannot be opened from the UI drawer (Uncaught runtime error visible). Fresh trials use new TRIAL-YYYY-NNNN format so this only affects legacy seed rows. Recommend either backfill legacy trial_no to hyphen format, or change route to POST /trials/lookup with body."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "TrialsPage.js doConvertOpen()", "issue": "FIXED by me — was calling GET /ha/serial-items?search=<serial_id> to hydrate brand/model prefill, but the search param filters by serial_no not serial_id, so it silently returned zero rows and left brand/model empty in the QuickHASaleModal. Replaced with direct GET /ha/serial-items/{serial_id}. After fix, brand='Phonak' and model='Audeo i70' correctly prefill from PRD-EB2F9032.", "selector": "[data-testid=\"quick-ha-brand\"] / [data-testid=\"quick-ha-model\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_trial_kit_pair_and_mark_converted.py",
+    "/app/backend/tests/test_pair_quote_both_side_expansion.py",
+    "/app/backend/tests/test_referral_dashboard_end_of_day.py",
+    "/app/backend/tests/test_referral_ha_wing_bucketing.py",
+    "/app/backend/tests/test_referring_doctor_autofill.py"
+  ],
+  "action_items": [
+    "Review my one-line fix in /app/frontend/src/modules/ha/TrialsPage.js (doConvertOpen prefill uses /serial-items/{id} directly).",
+    "Consider backfilling the 3 legacy TR/2026/000x active trials in tenant-sound-clinic-blr so their drawers can open (they currently 404 due to slash in path). Not caused by this iteration, but the 'Convert to Sale' UX is unreachable for them until fixed."
+  ],
+  "critical_code_review_comments": [
+    "TrialsPage.doConvertOpen: fixed. Was querying wrong field.",
+    "trial_no format contains '/' which conflicts with FastAPI path param — old seed data blocks the UI drawer. Newly-created trials use TRIAL-YYYY-NNNN so scope is limited but should be fixed.",
+    "mark-converted endpoint correctly returns serials to pool=demo, state=IN_STOCK, clears current_patient_id — behaviour verified end-to-end."
+  ],
+  "updated_files": [
+    "/app/frontend/src/modules/ha/TrialsPage.js"
+  ],
+  "success_rate": {"backend": "100% (19/19 pytest)", "frontend": "4/4 UX flows verified; 1 bug found and fixed"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic tenant-sound-clinic-blr)",
+  "seed_data_creation": "Created and cleaned up TRIAL-2026-0002 (TEST_convert_flow) — demo serial SI-2012B49A-5 confirmed returned to pool=demo, state=IN_STOCK after cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The pre-existing TR/2026/000x active trials in tenant-sound-clinic-blr are blocked from being opened in UI due to '/' in trial_no. Any future testing that requires clicking the trial drawer should create a fresh trial (which will get the safe TRIAL-YYYY-NNNN format) via API or +Issue Trial UI. QuickHASaleModal testid is 'quick-ha-sale-modal' (not 'quick-sale-modal' as review-request comment suggested).",
+  "test_evidence": {
+    "test_1_side_dropdown_options": "PASS — values=['single','left','right','pair','kit']; labels=['Single','Left','Right','Pair','Kit']",
+    "test_2_kit_pair_validation": "PASS — backend responded with detail: \"'Kit' trials need exactly 2 serial numbers, both from the same box (got 1).\"",
+    "test_3_convert_to_sale": "PASS — QuickHASaleModal opens, patient='Vishnu Reddy' prefilled, brand='Phonak' model='Audeo i70' prefilled (after fix), serial_left/right blank. mark-converted API sets status=converted, converted_sale_no populated, demo serial back to state=IN_STOCK pool=demo (verified before/after).",
+    "test_4_fitting_buttons": "PASS — [data-testid=ha-fit-new] '+ New Fitting' opens quick-ha-sale-modal; [data-testid=ha-fit-followup] '+ Follow-up Fitting' opens ha-fit-new-modal (old lightweight form)",
+    "test_5_backend_pytest": "PASS — 19 passed, 1 warning, 0 failures in 0.18s",
+    "test_6_console_sanity": "PASS — only expected 400/404 minor resource loads on /ha/products page, no red React runtime errors on /ha/trials, /ha/fittings, /ha/demo-stock, /ha/saleable-stock"
+  }
+}

@@ -16,6 +16,7 @@ from datetime import datetime, timezone, date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
@@ -140,6 +141,22 @@ async def create_trial(
     serial_ids = [s.serial_id for s in payload.serials]
     if len(set(serial_ids)) != len(serial_ids):
         raise HTTPException(status_code=400, detail="Duplicate serial in trial request")
+
+    # Pair / Kit trials always carry 2 physical serial numbers (one per
+    # ear, from the same box). Guard so front desk can't accidentally
+    # issue a "Kit" trial with just one aid or three.
+    pair_serials = [s for s in payload.serials if s.side == "pair"]
+    kit_serials  = [s for s in payload.serials if s.side == "kit"]
+    if pair_serials and len(pair_serials) != 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'Pair' trials need exactly 2 serial numbers (got {len(pair_serials)}).",
+        )
+    if kit_serials and len(kit_serials) != 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'Kit' trials need exactly 2 serial numbers, both from the same box (got {len(kit_serials)}).",
+        )
 
     rows = await db.serial_items.find(
         {"serial_id": {"$in": serial_ids}, "clinic_id": user["clinic_id"]}, {"_id": 0},
@@ -333,6 +350,77 @@ async def lost_trial(
 
 
 # ==================== CONVERT → SALE ====================
+
+class MarkConvertedIn(BaseModel):
+    """Payload for the lightweight `mark-converted` endpoint used by the
+    new Convert → Sale flow (2026-07-31 UX rework).
+
+    The heavyweight `POST /trials/{trial_no}/convert` mints a sale from
+    the demo unit itself — that's the OLD behaviour where the demo unit
+    got sold. Owners have since clarified that DEMO UNITS ARE NEVER SOLD;
+    a sale always draws a FRESH unit from Saleable Stock via
+    `QuickHASaleModal`. This new endpoint just closes the loop:
+      1. Marks trial.status = "converted", stamps `converted_sale_no`.
+      2. Returns every demo serial back to `pool=demo · state=IN_STOCK`
+         so the next patient can trial the same box.
+    """
+    sale_no: Optional[str] = None
+    sale_id: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.post("/trials/{trial_no}/mark-converted", response_model=Trial)
+async def mark_trial_converted(
+    trial_no: str, payload: MarkConvertedIn,
+    user=Depends(require_roles(*MUTATE_ROLES)),
+    db=Depends(get_db),
+):
+    """Close a trial as CONVERTED after a separate HA sale is recorded.
+
+    The sale itself is created via `QuickHASaleModal → POST /ha/quick-sale`
+    using a fresh unit from Saleable Stock. Once the sale-no is minted,
+    the frontend calls THIS endpoint to (a) close the trial, and
+    (b) return the demo serial(s) back to `pool=demo · state=IN_STOCK`.
+    """
+    row = await _load_trial(db, user["clinic_id"], trial_no)
+    if not user_can_see_branch(user, row["branch_id"]):
+        raise HTTPException(status_code=403, detail="Trial not in your branch")
+    if row["status"] not in {"active", "extended"}:
+        raise HTTPException(status_code=409, detail=f"Cannot mark converted a {row['status']} trial")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for s in row.get("serials", []):
+        sid = s["serial_id"]
+        cur = await db.serial_items.find_one({"serial_id": sid}, {"_id": 0, "state": 1})
+        if cur and cur["state"] == "TRIAL_OUT":
+            # Demo unit goes back into Demo Stock ready for the next patient.
+            await transition_serial(
+                db, sid, "IN_STOCK",
+                actor_user_id=user["user_id"],
+                ref_doc={"kind": "trial-converted", "id": trial_no,
+                         "sale_no": payload.sale_no, "sale_id": payload.sale_id},
+                note=f"Trial {trial_no} converted to sale {payload.sale_no or payload.sale_id or '(unknown)'} — demo unit returned to pool",
+            )
+            await db.serial_items.update_one(
+                {"serial_id": sid}, {"$set": {"current_patient_id": None}},
+            )
+
+    upd = {
+        "status": "converted",
+        "converted_sale_no": payload.sale_no,
+        "converted_sale_id": payload.sale_id,
+        "closed_at": now_iso,
+        "updated_at": now_iso,
+    }
+    if payload.note:
+        upd["notes"] = ((row.get("notes") or "") + f"\n[converted {now_iso[:10]}] {payload.note}").strip()
+
+    await db.ha_trials.update_one(
+        {"clinic_id": user["clinic_id"], "trial_no": trial_no},
+        {"$set": upd},
+    )
+    return deserialize_datetime({**row, **upd})
+
 
 @router.post("/trials/{trial_no}/convert", response_model=Sale)
 async def convert_trial_to_sale(

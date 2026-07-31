@@ -518,9 +518,17 @@ TrialStatus = Literal["active", "extended", "converted", "returned", "lost"]
 
 
 class TrialSerial(BaseModel):
-    """One serial unit loaned out on this trial (L+R supported)."""
+    """One serial unit loaned out on this trial.
+
+    `side` semantics:
+      • single / left / right → self-explanatory single-ear trials
+      • pair                  → this unit is one half of a pair (2 units)
+      • kit                   → this unit is one half of a Kit box (2 units)
+    Front desk MUST pick 2 physical serials when the trial is a pair or
+    a kit — each row keeps `side` marked so the ledger prints correctly.
+    """
     serial_id: str
-    side: Literal["left", "right", "single"] = "single"
+    side: Literal["left", "right", "single", "pair", "kit"] = "single"
 
 
 class Trial(BaseModel):
@@ -545,6 +553,7 @@ class Trial(BaseModel):
     notes: Optional[str] = None
     source: Optional[str] = "demo"  # "demo" (all picks from demo pool) | "external" (at least one non-demo — see notes)
     converted_sale_no: Optional[str] = None                    # if trial converted to sale
+    converted_sale_id: Optional[str] = None                    # sale_id for the QuickHASale that replaced the trial
     # Optional because legacy trials seeded before this field was required
     # (e.g. demo cohort) won't carry it. New trials always set it via
     # `routers/ha_trials.create_trial`.

@@ -116,13 +116,18 @@ export default function FittingLedgerPage() {
           </select>
           {canWrite && (
             <>
-              <button onClick={() => setQuickSale(true)} data-testid="ha-fit-quick-sale-new"
-                className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-md shadow-sm">
-                + Add HA Sale
-              </button>
-              <button onClick={() => setCreating(true)} data-testid="ha-fit-new"
-                className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm">
+              {/* Primary action — "+ New Fitting" now opens the full
+                  QuickHASaleModal because 95% of fittings happen at the
+                  moment of sale. The old lightweight fitting-session
+                  form is still available for post-sale adjustments via
+                  the "+ Follow-up Fitting" outline button. */}
+              <button onClick={() => setQuickSale(true)} data-testid="ha-fit-new"
+                className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm">
                 + New Fitting
+              </button>
+              <button onClick={() => setCreating(true)} data-testid="ha-fit-followup"
+                className="px-3 py-1.5 text-xs font-semibold text-indigo-700 border border-indigo-300 hover:bg-indigo-50 rounded-md">
+                + Follow-up Fitting
               </button>
             </>
           )}

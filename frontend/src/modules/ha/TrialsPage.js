@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import QuickHASaleModal from './QuickHASaleModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -345,6 +346,8 @@ function NewTrialModal({ onClose, onCreated }) {
                       <option value="single">Single</option>
                       <option value="left">Left</option>
                       <option value="right">Right</option>
+                      <option value="pair">Pair</option>
+                      <option value="kit">Kit</option>
                     </select>
                   )}
                 </div>
@@ -396,14 +399,18 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
   const [t, setT] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [mode, setMode] = useState(null); // 'extend' | 'convert' | null
+  const [mode, setMode] = useState(null); // 'extend' | null
   const [extendDate, setExtendDate] = useState('');
-  const [convertPrices, setConvertPrices] = useState([]);
+  // Convert → Sale now opens the full QuickHASaleModal so the audiologist
+  // can pick a FRESH unit from Saleable Stock (never sell the demo unit).
+  // After the sale saves, we call `mark-converted` to close the trial and
+  // send the demo unit back to Demo Stock (pool=demo · state=IN_STOCK).
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertPrefill, setConvertPrefill] = useState({ patient_id: null, brand: '', model: '' });
 
   const load = useCallback(async () => {
     const r = await axios.get(`${API}/ha/trials/${trialNo}`);
     setT(r.data);
-    setConvertPrices((r.data.serials || []).map(() => 0));
   }, [trialNo]);
 
   useEffect(() => { load(); }, [load]);
@@ -438,18 +445,46 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
     finally { setBusy(false); }
   };
 
-  const doConvert = async () => {
-    if (convertPrices.some(p => !p || Number(p) <= 0)) { setErr('Set a unit price for every serial'); return; }
+  const doConvertOpen = async () => {
+    // Hydrate brand + model from the demo unit's product so the sale
+    // modal opens pre-filled — audiologist just enters serials from
+    // Saleable Stock + pricing and hits Save.
     setBusy(true); setErr('');
+    let brand = '', model = '';
     try {
-      const r = await axios.post(`${API}/ha/trials/${trialNo}/convert`, {
-        unit_prices: convertPrices.map(Number), gst_rate: 18, discount_pct: 0,
+      const firstSid = (t?.serials || [])[0]?.serial_id;
+      if (firstSid) {
+        // Fetch by serial_id directly (the list search endpoint filters
+        // by serial_no, not serial_id, so it silently returned zero rows).
+        const rSi = await axios.get(`${API}/ha/serial-items/${firstSid}`);
+        const pid = rSi.data?.product_id;
+        if (pid) {
+          const rProd = await axios.get(`${API}/ha/products/${pid}`);
+          brand = rProd.data?.brand || '';
+          model = rProd.data?.model || '';
+        }
+      }
+    } catch { /* prefill is best-effort — user can type manually */ }
+    setConvertPrefill({ patient_id: t?.patient_id || null, brand, model });
+    setConvertOpen(true);
+    setBusy(false);
+  };
+
+  // Fired once the sale is created via QuickHASaleModal.
+  // Marks the trial as CONVERTED and returns the demo serial(s) to Demo Stock.
+  const onSaleCreated = async (sale) => {
+    try {
+      await axios.post(`${API}/ha/trials/${trialNo}/mark-converted`, {
+        sale_no: sale?.sale_no || null,
+        sale_id: sale?.sale_id || null,
+        note: 'Converted via QuickHASaleModal from trial drawer',
       });
-      await load(); onChanged();
-      setMode(null);
-      alert(`Sale ${r.data.sale_no} created (₹${Number(r.data.total).toLocaleString('en-IN')}).`);
-    } catch (e) { setErr(e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Convert failed'); }
-    finally { setBusy(false); }
+      setConvertOpen(false);
+      await load();
+      onChanged();
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Trial close failed');
+    }
   };
 
   const overdue = t && isOverdue(t);
@@ -499,27 +534,11 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
                       <button onClick={doExtend} disabled={busy || !extendDate} data-testid="ha-trial-extend-save" className="px-2 py-0.5 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white rounded">Save</button>
                       <button onClick={() => { setMode(null); setExtendDate(''); }} className="text-[10px] text-slate-500">Cancel</button>
                     </div>
-                  ) : mode === 'convert' ? (
-                    <div className="bg-indigo-50 border border-indigo-200 rounded p-3">
-                      <div className="text-[10px] uppercase tracking-wider text-indigo-800 font-semibold mb-2">Convert to Sale — set unit prices</div>
-                      {t.serials.map((s, i) => (
-                        <div key={s.serial_id} className="flex items-center gap-2 mb-1 text-[11px]">
-                          <span className="font-mono text-indigo-700 w-32 truncate">{s.serial_id}</span>
-                          <input type="number" value={convertPrices[i] ?? 0} onChange={(e) => {
-                            const v = [...convertPrices]; v[i] = e.target.value; setConvertPrices(v);
-                          }} placeholder="Unit price ₹" className="flex-1 border border-slate-300 rounded px-2 py-1 text-xs" data-testid={`ha-trial-convert-price-${i}`} />
-                        </div>
-                      ))}
-                      <div className="flex justify-end gap-2 mt-2">
-                        <button onClick={() => setMode(null)} className="text-[10px] text-slate-500">Cancel</button>
-                        <button onClick={doConvert} disabled={busy} data-testid="ha-trial-convert-save" className="px-3 py-1 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded">Convert</button>
-                      </div>
-                    </div>
                   ) : (
                     <div className="grid grid-cols-4 gap-2">
                       <button onClick={() => setMode('extend')} data-testid="ha-trial-extend-btn" className="px-2 py-1.5 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded">Extend</button>
                       <button onClick={doReturn} disabled={busy} data-testid="ha-trial-return-btn" className="px-2 py-1.5 text-[11px] font-bold bg-slate-600 hover:bg-slate-700 text-white rounded">Return</button>
-                      <button onClick={() => setMode('convert')} data-testid="ha-trial-convert-btn" className="px-2 py-1.5 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded">Convert to Sale</button>
+                      <button onClick={doConvertOpen} disabled={busy} data-testid="ha-trial-convert-btn" className="px-2 py-1.5 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded">Convert to Sale</button>
                       <button onClick={doLost} disabled={busy} data-testid="ha-trial-lost-btn" className="px-2 py-1.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded">Lost</button>
                     </div>
                   )}
@@ -529,6 +548,15 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
           </>
         )}
       </div>
+      {convertOpen && (
+        <QuickHASaleModal
+          onClose={() => setConvertOpen(false)}
+          onCreated={onSaleCreated}
+          prefillPatientId={convertPrefill.patient_id}
+          prefillBrand={convertPrefill.brand}
+          prefillModel={convertPrefill.model}
+        />
+      )}
     </div>
   );
 }
