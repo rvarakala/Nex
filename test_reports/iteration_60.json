@@ -1,0 +1,38 @@
+{
+  "summary": "Full E2E walkthrough validation for Vishnu/Dr Prasad + bug regression on _parse_window date-only end padding. All backend + frontend expectations met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referral_dashboard_end_of_day.py",
+    "/app/backend/tests/test_referral_ha_wing_bucketing.py",
+    "/app/backend/tests/test_referral_flat_payout_scoping.py",
+    "/app/backend/tests/test_referring_doctor_autofill.py",
+    "/app/backend/tests/test_ha_inventory_500_regression.py"
+  ],
+  "validation_results": {
+    "pytest_regression": "19/19 passed (3 end-of-day + 5 HA wing + 3 flat payout + 2 autofill + 6 inventory)",
+    "backend_api": "GET /api/referrals/dashboard?start=2026-07-01&end=2026-07-31 returns totals.total_payout=23700, Dr. Prasad Kumar row has diag_payout=700, ha_payout=23000, total_payout=23700 (bug fix confirmed - date-only end now includes 2026-07-31 10:04 UTC invoices)",
+    "e2e_referrals_kpi": "PASS - Referred Patients=1, Diag ₹1,400, HA ₹2,30,000, Total Owed ₹23,700",
+    "e2e_prasad_row": "PASS - 1 patient, ₹1,400 (50% ₹700), ₹2,30,000 (10% ₹23,000), ₹23,700",
+    "e2e_drilldown": "PASS - Diag 50%=₹700, HA 10%=₹23,000, Total ₹23,700; Vishnu Reddy row ₹1,400/₹2,30,000/₹2,31,400",
+    "no_new_500s": "PASS - /ha/demo-stock, /ha/saleable-stock, /patients, /referrals all clean"
+  },
+  "action_items": [
+    "OPTIONAL: Add data-testid='ref-row-{doctor_id}' on doctor rows in Referral Corner table for more robust automated testing (task 2 test-id was not found; tests currently pass by matching text 'Dr. Prasad Kumar').",
+    "OPTIONAL: Patient profile History tab does not surface referring doctor name inline. Backend enrichment is correct (unit tests pass); consider adding a visible chip/label 'Referred by Dr. Prasad Kumar' on profile header for the walkthrough."
+  ],
+  "critical_code_review_comments": [
+    "_parse_window date padding fix is correct and covered by 3 dedicated unit tests (date-only past, ISO past not padded, future clamped)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "owner@thesoundclinic.in / demo123",
+  "seed_data_creation": "None - preserved Vishnu (ACS-2026-CFFCC3E8), Dr Prasad Kumar (DR-052992D1), and invoices INV/2026/000002 (₹1,400 diag) + INV/2026/000003 (₹2,30,000 HA) as requested.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bug fix verified end-to-end. Vishnu + Dr Prasad + 2 paid invoices remain in Sound Clinic tenant for user walkthrough."
+}

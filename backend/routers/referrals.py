@@ -71,12 +71,23 @@ def _is_owner(user) -> bool:
 # ───────────────────────────────────────────────────────────────────────
 def _parse_window(start: Optional[str], end: Optional[str]) -> tuple[datetime, datetime]:
     """Default = month-to-date in IST. Clamps end to "now" to prevent
-    accidental future-dated queries from returning zero rows silently."""
+    accidental future-dated queries from returning zero rows silently.
+
+    When the caller passes a date-only string (`2026-07-31`), we pad the
+    end to 23:59:59.999999 so invoices created later that same day are
+    still included. Without this pad, an invoice raised at 10:04 on
+    31-Jul would be excluded from the "This month" query because the
+    end anchors at 00:00 of 31-Jul — a real bug hit during the Vishnu /
+    Dr Prasad walkthrough (2026-07-31).
+    """
     now = datetime.now(timezone.utc)
     if not end:
         end_dt = now
     else:
         end_dt = datetime.fromisoformat(end).replace(tzinfo=timezone.utc)
+        # Date-only input (no explicit time) → pad to end-of-day
+        if len(end) <= 10:
+            end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
         if end_dt > now:
             end_dt = now
     if not start:
