@@ -71,18 +71,50 @@ def _below_floor_indexes(lines: List[QuoteLine], products: dict[str, dict]) -> l
 
 
 def _validate_pair(is_pair: bool, lines: List[QuoteLine]) -> None:
-    """Pair quotes must have exactly 2 serialised lines, one LEFT one RIGHT."""
+    """Pair quotes need exactly one LEFT and one RIGHT line.
+
+    The word "serialised" is intentionally NOT used in the error message —
+    quote lines never carry serial numbers; a specific unit is reserved
+    only when the quote converts to a Sale.
+    """
     if not is_pair:
         return
-    # We allow additional accessory lines in a pair quote (batteries, domes),
-    # but there must be exactly one L and one R serialised line.
+    # Allow additional accessory lines (batteries, domes, etc.), but there
+    # must be exactly one LEFT and one RIGHT hearing-aid line with qty=1.
     left = sum(1 for ln in lines if ln.side == "left" and ln.qty == 1)
     right = sum(1 for ln in lines if ln.side == "right" and ln.qty == 1)
     if left != 1 or right != 1:
         raise HTTPException(
             status_code=400,
-            detail=f"Pair quote must have exactly one LEFT + one RIGHT serialised line (got L={left}, R={right})",
+            detail=(
+                f"Pair quote must have exactly one LEFT + one RIGHT hearing-aid "
+                f"line (got L={left}, R={right}). Tick 'Binaural' and pick a "
+                f"product; the modal auto-splits it into L + R for you."
+            ),
         )
+
+
+def _explode_both_sides(is_pair: bool, lines: List[QuoteLine]) -> List[QuoteLine]:
+    """For pair quotes, silently expand any line with `side='both'` (or
+    `side='single'`) into a LEFT + RIGHT pair, each qty=1 at the same
+    unit price. This is what most clinic owners mentally do when they
+    tick "Binaural" and enter one line — they mean "one for each ear".
+
+    Bug fix (2026-07-31): user reported "Pair quote must have exactly
+    one LEFT + one RIGHT serialised line (got L=0, R=0)" while quoting
+    Phonak I30 with side='both'. The frontend now trusts the backend
+    to normalise, so the modal stays simple (one row per SKU).
+    """
+    if not is_pair:
+        return lines
+    out: List[QuoteLine] = []
+    for ln in lines:
+        if ln.side in ("both", "single"):
+            out.append(ln.model_copy(update={"side": "left", "qty": 1}))
+            out.append(ln.model_copy(update={"side": "right", "qty": 1}))
+        else:
+            out.append(ln)
+    return out
 
 
 def _branch_scope(user: dict) -> dict:
@@ -141,9 +173,14 @@ async def create_quotation(
     if missing:
         raise HTTPException(status_code=400, detail=f"Unknown products: {sorted(missing)}")
 
-    _validate_pair(payload.is_pair, payload.lines)
+    # Normalise: for pair quotes, expand any "both/single" side into a
+    # matching LEFT + RIGHT pair before validation. Keeps the frontend
+    # UX simple ("pick one product, one price") while the DB rows still
+    # cleanly split left vs right for later fulfilment.
+    normalised_lines = _explode_both_sides(payload.is_pair, payload.lines)
+    _validate_pair(payload.is_pair, normalised_lines)
 
-    sub, disc, gst, total = _compute_quote_totals(payload.lines)
+    sub, disc, gst, total = _compute_quote_totals(normalised_lines)
     quote_no = await next_number(db, "qte", user["clinic_id"])
 
     q = Quotation(
@@ -154,7 +191,7 @@ async def create_quotation(
         patient_name=patient["name"],
         audiologist_user_id=payload.audiologist_user_id,
         is_pair=payload.is_pair,
-        lines=payload.lines,
+        lines=normalised_lines,
         subtotal=sub,
         discount_amount=disc,
         gst_amount=gst,

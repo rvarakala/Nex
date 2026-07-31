@@ -194,25 +194,15 @@ function NewQuoteModal({ onClose, onCreated }) {
           <input type="checkbox" checked={isPair} onChange={(e) => {
             const next = e.target.checked;
             setIsPair(next);
-            // Auto-shape lines so the backend pair validator (exactly one
-            // LEFT qty=1 + one RIGHT qty=1) is satisfied without making the
-            // clinic owner figure out the rule.
-            if (next) {
-              setLines(prev => {
-                const base = prev[0] || { _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 };
-                const left  = { ...base, _key: `${Math.random().toString(36).slice(2)}-L`, side: 'left',  qty: 1 };
-                const right = { ...base, _key: `${Math.random().toString(36).slice(2)}-R`, side: 'right', qty: 1 };
-                return [left, right];
-              });
-            } else {
-              // Collapse back to a single line keyed off the existing first row.
-              setLines(prev => {
-                const first = prev[0] || { _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 };
-                return [{ ...first, _key: Math.random().toString(36).slice(2), side: 'single', qty: 1 }];
-              });
-            }
+            // Backend auto-splits pair rows with side='both' into L+R
+            // (fix 2026-07-31). Keep the modal simple: one product row,
+            // side defaults to 'both' when binaural, 'single' otherwise.
+            setLines(prev => {
+              const first = prev[0] || { _key: Math.random().toString(36).slice(2), product_id: '', qty: 1, unit_price: 0, discount_pct: 0, gst_rate: 18 };
+              return [{ ...first, _key: Math.random().toString(36).slice(2), side: next ? 'both' : 'single', qty: 1 }];
+            });
           }} data-testid="ha-quote-is-pair" />
-          <span className="font-semibold">Binaural (L+R pair)</span> <span className="text-[11px] text-slate-500">— auto-creates one LEFT &amp; one RIGHT line</span>
+          <span className="font-semibold">Binaural (L+R pair)</span> <span className="text-[11px] text-slate-500">— one row per SKU; we auto-split into L + R for you</span>
         </label>
 
         <div className="border border-slate-200 rounded-md overflow-hidden">

@@ -1,0 +1,29 @@
+{
+  "summary": "Verified pair-quote side='both' expansion fix end-to-end. Backend auto-expands a single side='both'/'single' line into LEFT + RIGHT for is_pair quotes; error copy no longer says 'serialised'; frontend Binaural toggle now shows one row and helper text reads 'one row per SKU; we auto-split into L + R for you'. All 18 regression pytests pass (test_pair_quote_both_side_expansion + 4 previous suites). Added a new 5-test API e2e suite (tests/test_pair_quote_api_e2e.py) using owner@thesoundclinic.in against the public URL — all 5 pass (side='both' expands, explicit L+R still works, non-pair unchanged, error copy check, GET detail returns 2 lines). Playwright walkthrough: logged in as owner, opened New Quote modal, picked Vishnu Reddy (ACS-2026-CFFCC3E8), ticked Binaural → exactly 1 product row rendered with side='both', picked GnResound iAX50 (PRD-3A545B49) @ 160000, saved → POST /api/ha/quotations returned 200 with 2 lines sides=['left','right']. Quote QTE-2026-0006 appeared in the list.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Quotation Studio > New Quote modal", "issues": ["Discount% and GST% <input> fields in the line table have no data-testid — only qty/price/side/prod do. Adds a testability gap; suggest adding ha-quote-line-{i}-discount and ha-quote-line-{i}-gst."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pair_quote_api_e2e.py",
+    "/app/backend/tests/test_pair_quote_both_side_expansion.py"
+  ],
+  "action_items": [
+    "Optional: add data-testid=\"ha-quote-line-{i}-discount\" and \"...-gst\" to the two remaining inputs in QuotationStudioPage.js line table for cleaner Playwright automation."
+  ],
+  "critical_code_review_comments": [
+    "_explode_both_sides is only invoked in create_quotation; update_quotation (PUT /api/ha/quotations/{quote_no}) still calls _validate_pair directly without expansion. If a user edits a pair quote and sets a line to side='both', they'll hit the same L=0/R=0 error. Suggest applying the same normalisation in update_quotation for parity.",
+    "Below-floor warning is soft (only reflected in margin_analysis.requires_approval, no gate). Fine for MVP but worth flagging — 30% discount on a min_sell 230000 SKU sails through without owner approval enforcement."
+  ],
+  "updated_files": ["/app/backend/tests/test_pair_quote_api_e2e.py"],
+  "success_rate": {"backend": "100% (23/23: 18 regression + 5 new API e2e)", "frontend": "100% on the fix under test"},
+  "test_credentials": "owner@thesoundclinic.in / demo123",
+  "seed_data_creation": "Created 5 test quotations for Vishnu Reddy (QTE-2026-0001..0005) via API + 1 via UI (QTE-2026-0006). Did NOT delete Vishnu / Dr Prasad / their invoices per instruction.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pair-quote fix is solid. If PUT /api/ha/quotations/{quote_no} needs the same expansion (see critical_code_review_comments #1), add a test for it. Playwright discount/gst fields lack testids — worked around by leaving GST at default 18%."
+}
