@@ -700,7 +700,7 @@ async def seed():
         start_d = NOW.date() - timedelta(days=random.randint(2, 8))
         trial_docs.append({
             "trial_id": _id("TRL"),
-            "trial_no": f"TR/2026/{str(len(trial_docs)+1).zfill(4)}",
+            "trial_no": f"TR-2026-{str(len(trial_docs)+1).zfill(4)}",
             "clinic_id": CLINIC_ID, "branch_id": BRANCH_ID,
             "patient_id": patient["patient_id"], "patient_name": patient["name"],
             "patient_mobile": patient["mobile"],

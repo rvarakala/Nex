@@ -198,6 +198,50 @@ No backend bug — the QuickAddVendor flow already existed, just wasn't discover
 
 ---
 
+## 🎯 Trial → Sale UX Rework: Demo Pool Semantics Corrected (2026-07-31)
+
+**User mental-model clarification**:
+> Demo units are ALWAYS treated as demo units (they are not saleable) unless you took from the Saleable inventory. If we give the trial with actual demo units, we will sell instruments from Saleable Stock. When converting to Sale, it should open the +Add HA Sale window. And + New Fitting card should also open +Add HA Sale.
+
+**Correction on my earlier flowchart**: A demo unit's arc is `IN_STOCK → TRIAL_OUT → IN_STOCK` (endless loop). The sale always draws a FRESH unit from the Saleable pool. Demo units never get sold directly.
+
+### Changes shipped
+
+**1. Trial side dropdown — added `Pair` + `Kit` options**
+- `models_ha.py::TrialSerial.side` Literal expanded to `left / right / single / pair / kit`.
+- `routers/ha_trials.py::create_trial` validates: Pair/Kit trials MUST carry exactly 2 serial numbers (both from the same box), else HTTP 400 with a clear message.
+- `TrialsPage.js`: side dropdown now shows all 5 options.
+
+**2. "Convert to Sale" trial-drawer action → opens QuickHASaleModal**
+- Removed the old inline "unit-prices mini-form" that sold the DEMO serials directly (wrong).
+- Now opens the full `QuickHASaleModal` prefilled with (a) patient from the trial, (b) brand + model from the demo unit's catalogue SKU (fetched via `GET /ha/serial-items/{id}` → `GET /ha/products/{pid}`).
+- New backend endpoint `POST /api/ha/trials/{trial_no}/mark-converted` — closes the trial as CONVERTED and RETURNS the demo serial(s) to `pool=demo · state=IN_STOCK` so the next patient can trial the same box. Stamps `converted_sale_no` + `converted_sale_id` on the trial.
+
+**3. "+ New Fitting" now opens QuickHASaleModal**
+- Primary button on FittingLedgerPage ("+ New Fitting") now opens the full sale+fit+invoice modal (95% of fittings coincide with a sale).
+- Old lightweight fitting-session form preserved as secondary `+ Follow-up Fitting` outline button (for post-sale programming visits / adjustments where NO new sale is happening).
+- Testids: `ha-fit-new` (primary → QuickHASaleModal) + `ha-fit-followup` (secondary → old lightweight form).
+
+**4. Legacy trial_no backfill**
+- 3 pre-existing trials with `TR/YYYY/NNNN` (slash) trial_no couldn't be opened in the UI because FastAPI splits path segments on `/`. Backfilled to `TR-YYYY-NNNN` format. Also updated `scripts/seed_demo_premium.py` so future re-seeds use the safe format.
+
+### Verification (iteration_62.json)
+- 19/19 pytest pass (new `test_trial_kit_pair_and_mark_converted.py` + 4 previous suites).
+- Playwright E2E: side dropdown shows 5 options; Pair/Kit validation returns HTTP 400 for 1-serial payloads; Convert-to-Sale opens QuickHASaleModal prefilled with patient + brand + model; after Save + mark-converted, demo serial verified back to `pool=demo · state=IN_STOCK`.
+- Testing agent found + fixed one small prefill lookup bug (was using `search=serial_id` which filters by `serial_no` instead of a direct GET) — code review'd by main agent.
+
+### Files touched
+- `backend/models_ha.py` (TrialSerial side + Trial converted_sale_id)
+- `backend/routers/ha_trials.py` (Pair/Kit validation + `mark-converted` endpoint)
+- `backend/scripts/seed_demo_premium.py` (TR/ → TR- format)
+- `frontend/src/modules/ha/TrialsPage.js` (side options + Convert-to-Sale via QuickHASaleModal)
+- `frontend/src/modules/ha/QuickHASaleModal.jsx` (accepts prefillBrand / prefillModel / prefillHaType)
+- `frontend/src/modules/ha/FittingLedgerPage.js` (+ New Fitting → QuickHASaleModal; kept + Follow-up Fitting)
+- `backend/tests/test_trial_kit_pair_and_mark_converted.py` (NEW, 4 tests)
+
+---
+
+
 ## 🎯 Quotation Pair-Side Fix — "For Quotation Why do one Need Serial Number?" (2026-07-31)
 
 **User complaint** (screenshot):
