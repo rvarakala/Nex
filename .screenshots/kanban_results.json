@@ -1,0 +1,53 @@
+{
+  "column_heights_desktop": {
+    "waiting": {
+      "height": 520,
+      "width": 372
+    },
+    "checked_in": {
+      "height": 520,
+      "width": 372
+    },
+    "in_progress": {
+      "height": 520,
+      "width": 372
+    },
+    "completed": {
+      "height": 520,
+      "width": 372
+    }
+  },
+  "scroll_info": {
+    "scrollHeight": 1216,
+    "clientHeight": 472,
+    "canScroll": true,
+    "scrollTopAfter": 200,
+    "scrollTopBefore": 0
+  },
+  "card_heights": {
+    "count": 10,
+    "heights": [
+      107.75,
+      107.75,
+      107.75,
+      107.75,
+      107.75,
+      107.75,
+      107.75,
+      107.75,
+      107.75,
+      132
+    ]
+  },
+  "empty_column": {
+    "height": 520,
+    "text": "IN PROGRESS\n0\nNo patients in this stage.",
+    "hasPlaceholder": true
+  },
+  "column_heights_mobile": {
+    "waiting": 520,
+    "checked_in": 520,
+    "in_progress": 520,
+    "completed": 520
+  }
+}
