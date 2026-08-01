@@ -1,5 +1,32 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🎨 Clinic Tagline + Report/Template Fonts — end-to-end propagation (2026-08-01)
+
+**User ask (previous session)**:
+> in Settings > Under Clinic Details - i Want to Add Tag Line... and Also Give Option to Change the fonts on the Report as Well As on the Templates.
+
+**What was already in place** (previous agent, out of context before wiring the last step):
+- `backend/routers/settings.py::ClinicUpdate` already carries `tagline`, `report_font`, `template_font` (persisted on PUT, returned on GET).
+- `ClinicDetailsTab.js` already has the Tagline input + Report Font / Template Font dropdowns (12 curated PDF-safe font stacks) with data-testids.
+
+**What was still missing (fixed this session)**:
+1. `ReportsPanel.js` state hydration was hard-coding `tagline: ''` and never picking up `report_font` from `/api/settings/clinic`. Reports therefore never saw the new fields even after saving them. Fixed by reading `s.tagline` + `s.report_font` into the clinic state. `ReportHeader` at line 52-54 already renders `clinic.tagline` (conditional), and the report-preview inline style at line 393 already applies `clinic.report_font || 'Arial, sans-serif'` — so both surfaces now light up automatically.
+2. `BlankAudiogramTemplate.jsx` hard-coded `fontFamily: 'Helvetica, Arial, sans-serif'` and had no tagline row. Now:
+   - `fontFamily: clinic?.template_font || 'Helvetica, Arial, sans-serif'` on the A4 page wrapper.
+   - New tagline row (italic, small, gray) under the clinic name inside the letterhead header — data-testid `blank-audiogram-tagline`. Also added `data-testid="blank-audiogram-clinic-name"` on the clinic name for future testing.
+
+**Verification**
+- Backend: PUT `/api/settings/clinic` with tagline + report_font + template_font → response echoes all three; GET `/api/settings/clinic` returns them intact. Confirmed via curl against the preview URL.
+- Frontend (visual smoke): Blank Audiogram page loads with `TAGLINE COUNT: 1`, tagline text = "Listen Better. Live Brighter.", template_font = `"Palatino Linotype", "Book Antiqua", Palatino, serif`. Screenshot confirms the serif letterforms render on the header + demographic labels, and the tagline sits in italic gray under the clinic name.
+- Report Builder (`ReportsPanel.js`) automatically picks up `report_font` (inline style already existed) and `tagline` (existing `ReportHeader` conditional render). Diff is 3 lines — no visual risk.
+
+**Files touched**
+- `frontend/src/components/ReportsPanel.js` — populate `tagline` + `report_font` from settings response (previously overridden to empty).
+- `frontend/src/modules/settings/templates/BlankAudiogramTemplate.jsx` — apply `template_font` to page wrapper + render tagline row under clinic name.
+
+---
+
+
 ## 🔴 3-in-1 Bug Fix — Audiologist filter + Payout scoping + Drill-down (2026-07-31)
 
 **User report (screenshots)**:

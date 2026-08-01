@@ -310,7 +310,10 @@ export default function BlankAudiogramTemplate() {
             minHeight: '297mm',
             padding: '12mm 12mm 12mm 12mm',
             boxShadow: '0 4px 20px -4px rgba(0,0,0,0.15)',
-            fontFamily: 'Helvetica, Arial, sans-serif',
+            // `template_font` is the clinic-level typography choice from
+            // Settings → Clinic Details → Typography. Falls back to
+            // Helvetica when the clinic hasn't picked one.
+            fontFamily: clinic?.template_font || 'Helvetica, Arial, sans-serif',
             fontSize: '11px',
             lineHeight: '1.35',
           }}
@@ -327,9 +330,17 @@ export default function BlankAudiogramTemplate() {
               />
             )}
             <div className="flex-1">
-              <div className="font-bold text-[16px] tracking-tight uppercase">
+              <div className="font-bold text-[16px] tracking-tight uppercase" data-testid="blank-audiogram-clinic-name">
                 {clinic?.name || 'Your Clinic Name'}
               </div>
+              {clinic?.tagline && (
+                <div
+                  className="text-[10px] text-slate-700 italic mt-0.5"
+                  data-testid="blank-audiogram-tagline"
+                >
+                  {clinic.tagline}
+                </div>
+              )}
               {headerLine2 && (
                 <div className="text-[10px] text-slate-700 mt-0.5">
                   {headerLine2}

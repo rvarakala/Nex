@@ -120,6 +120,7 @@ const ReportsPanel = ({
   const [clinic, setClinic] = useState({
     name: '', tagline: '', address_line1: '', address_line2: '',
     tel: '', email: '', logo_base64: null, logo_shape: 'circle',
+    report_font: '',
   });
   useEffect(() => {
     let cancelled = false;
@@ -134,11 +135,17 @@ const ReportsPanel = ({
         setClinic((prev) => ({
           ...prev,
           name: s.name || '',
-          tagline: '',  // no longer maintained separately
+          // Tagline is captured in Settings → Clinic Details. When present,
+          // ReportHeader prints it as the small line above the clinic name.
+          tagline: s.tagline || '',
           address_line1: line1,
           address_line2: line2,
           tel: s.phone || '',
           email: s.email || '',
+          // Report typography chosen in Settings → Clinic Details → Typography.
+          // Applied inline on the A4 preview root so both on-screen preview
+          // and html2canvas PDF capture use the same family.
+          report_font: s.report_font || '',
         }));
         // Best-effort logo fetch — API is /settings/clinic/logo which
         // returns 404 when the clinic has no logo uploaded. We ignore
