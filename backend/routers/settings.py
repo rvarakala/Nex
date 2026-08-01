@@ -47,6 +47,7 @@ _MAX_LOGO_BYTES = 2 * 1024 * 1024  # 2 MB
 # ---------- Clinic details ----------
 class ClinicUpdate(BaseModel):
     name: Optional[str] = None
+    tagline: Optional[str] = None                                    # 1-line motto rendered on reports / print
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
@@ -56,6 +57,11 @@ class ClinicUpdate(BaseModel):
     website: Optional[str] = None
     gstin: Optional[str] = None
     pan: Optional[str] = None
+    # Typography overrides. Applied via inline style on the report /
+    # template root — takes effect for both on-screen preview AND the
+    # PDF capture (html2canvas). Falls back to Arial when unset.
+    report_font: Optional[str] = None
+    template_font: Optional[str] = None
 
 
 @router.get("/clinic")

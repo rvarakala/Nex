@@ -24,6 +24,10 @@ export default function ClinicDetailsTab() {
       setClinic(r.data);
       setF({
         name: r.data.name || '',
+        // Tagline sits under clinic name on every report / print template.
+        // Empty string means "no tagline" — the ReportHeader gracefully
+        // hides the row when tagline is falsy.
+        tagline: r.data.tagline || '',
         address: r.data.address || '',
         city: r.data.city || '',
         state: r.data.state || '',
@@ -33,6 +37,9 @@ export default function ClinicDetailsTab() {
         website: r.data.website || '',
         gstin: r.data.gstin || '',
         pan: r.data.pan || '',
+        // Font family for reports + print templates. Empty string = default (Arial).
+        report_font: r.data.report_font || '',
+        template_font: r.data.template_font || '',
       });
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Failed to load clinic');
@@ -128,6 +135,17 @@ export default function ClinicDetailsTab() {
       <div className="bg-white rounded border border-slate-200 p-4">
         <div className="grid grid-cols-2 gap-3 text-sm">
           <Fld label="Clinic Name *"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} data-testid="clinic-field-name" className={inputCls} /></Fld>
+          <Fld label="Tagline">
+            {/* One-line motto printed under the clinic name on every report. */}
+            <input
+              value={f.tagline}
+              onChange={(e) => setF({ ...f, tagline: e.target.value })}
+              data-testid="clinic-field-tagline"
+              placeholder="e.g., Listen Better. Live Brighter."
+              maxLength={80}
+              className={inputCls}
+            />
+          </Fld>
           <Fld label="Phone"><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} data-testid="clinic-field-phone" placeholder="+91 99999 99999" className={inputCls} /></Fld>
           <Fld label="Email"><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} data-testid="clinic-field-email" placeholder="clinic@example.in" className={inputCls} /></Fld>
           <Fld label="Website"><input value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} data-testid="clinic-field-website" placeholder="https://…" className={inputCls} /></Fld>
@@ -139,6 +157,43 @@ export default function ClinicDetailsTab() {
           <Fld label="GSTIN"><input value={f.gstin} onChange={(e) => setF({ ...f, gstin: e.target.value.toUpperCase() })} data-testid="clinic-field-gstin" placeholder="15-char GSTIN" className={`${inputCls} font-mono`} /></Fld>
           <Fld label="PAN"><input value={f.pan} onChange={(e) => setF({ ...f, pan: e.target.value.toUpperCase() })} data-testid="clinic-field-pan" placeholder="10-char PAN" className={`${inputCls} font-mono`} /></Fld>
         </div>
+
+        {/* Typography — choose the font for on-screen reports AND print templates. */}
+        <div className="mt-5 pt-4 border-t border-slate-100">
+          <div className="text-xs font-bold text-slate-700 mb-2">Typography</div>
+          <p className="text-[11px] text-slate-500 mb-3">
+            Applied to on-screen reports, print templates, and the exported PDF. Leave blank to use the default (Arial).
+          </p>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Fld label="Report Font">
+              <select
+                value={f.report_font}
+                onChange={(e) => setF({ ...f, report_font: e.target.value })}
+                data-testid="clinic-field-report-font"
+                className={inputCls}
+                style={{ fontFamily: f.report_font || undefined }}
+              >
+                {FONT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} style={{ fontFamily: o.value || undefined }}>{o.label}</option>
+                ))}
+              </select>
+            </Fld>
+            <Fld label="Print Template Font">
+              <select
+                value={f.template_font}
+                onChange={(e) => setF({ ...f, template_font: e.target.value })}
+                data-testid="clinic-field-template-font"
+                className={inputCls}
+                style={{ fontFamily: f.template_font || undefined }}
+              >
+                {FONT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} style={{ fontFamily: o.value || undefined }}>{o.label}</option>
+                ))}
+              </select>
+            </Fld>
+          </div>
+        </div>
+
         <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
           <button
             onClick={save}
@@ -151,6 +206,25 @@ export default function ClinicDetailsTab() {
     </div>
   );
 }
+
+// Curated PDF-safe font stack — every option here is either a system
+// font (installed on all major OS + printers) or a well-supported web
+// fallback. html2canvas needs the font to be actually rendered by the
+// browser at capture time, so we stick to safe choices.
+const FONT_OPTIONS = [
+  { value: '',                                    label: 'Default (Arial)' },
+  { value: 'Arial, sans-serif',                   label: 'Arial (clean)' },
+  { value: 'Helvetica, Arial, sans-serif',        label: 'Helvetica' },
+  { value: '"Segoe UI", Roboto, sans-serif',      label: 'Segoe UI / Roboto' },
+  { value: 'Georgia, "Times New Roman", serif',   label: 'Georgia (serif)' },
+  { value: '"Times New Roman", Times, serif',     label: 'Times New Roman' },
+  { value: '"Trebuchet MS", sans-serif',          label: 'Trebuchet MS' },
+  { value: 'Verdana, Geneva, sans-serif',         label: 'Verdana (wide)' },
+  { value: '"Courier New", Courier, monospace',   label: 'Courier New (mono)' },
+  { value: '"Palatino Linotype", "Book Antiqua", Palatino, serif', label: 'Palatino (classic)' },
+  { value: '"Cambria", Georgia, serif',           label: 'Cambria' },
+  { value: '"Calibri", "Segoe UI", sans-serif',   label: 'Calibri (modern)' },
+];
 
 const inputCls = 'w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-400';
 const Fld = ({ label, children, className = '' }) => (
