@@ -1,5 +1,51 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔧 3-in-1 Follow-up: AMC/Fittings 500 fix + Auto-decrement + Silicone Dome preset (2026-08-06)
+
+**Backend**
+- `utils/serde.py::safe_deserialize_rows()` — new shared helper. Given a list of Mongo rows + a Pydantic model, validates row-by-row and warn-logs+skips any row that fails validation. Rolls up a per-tenant "skipped N legacy rows" info log. Now used by:
+  - `GET /api/ha/serial-items` (was blocking the Accessories page's Serialised sub-tab)
+  - `GET /api/ha/amc/contracts` (same pre-existing 500 root cause)
+  - `GET /api/ha/fittings` (same)
+- `models/_canonical.py::InvoiceLine` gained 3 fields (`accessory_product_id`, `accessory_variant`, `accessory_stock_decremented` — the last is an idempotency flag). `InvoiceLineCreate` gets the first two so the UI can push them through when the accessory picker matures.
+- `utils/accessory_stock.py` — new module. `auto_decrement_accessory_stock()` runs from `billing.add_payment` AND `billing.create_invoice` on the paid transition. Resolves each Accessory line's product by explicit `accessory_product_id` first, then by unique brand+model fallback. Finds the target `accessory_stock` row via `(clinic_id, product_id, actor_branch_id, variant)`. Decrements qty (floored to 0 on shortfall), writes an `accessory_events` audit row per line, flips the per-line `accessory_stock_decremented` flag. Never raises — wrapped in try/except at the callers so stock-side mishaps never block a payment.
+- `routers/ha_inventory.py`:
+  - `GET /api/ha/accessory-presets` — new discovery endpoint returning the preset catalogue for the UI (renamed from `/products/presets` due to `/products/{product_id}` collision).
+  - `POST /api/ha/products/preset-seed` — new generic seeder. Accepts `preset_key` + brand + branch_ids. Currently supports `ric_receiver` and `silicone_dome`.
+  - `_seed_accessory_preset()` internal helper — idempotent: reuses an existing (brand, model, accessory_kind, active=true) product row if one exists, and only creates missing stock rows. Same idempotency guard was retro-fitted to the back-compat `POST /products/preset-ric-receiver` shim.
+- `_ACCESSORY_PRESETS` registry — 2 entries today (`ric_receiver` 9-variant, `silicone_dome` 4-size). Adding a new preset (e.g. wax guards) is a 5-line dict entry.
+
+**Frontend**
+- `AccessoriesPage.jsx::CatalogueTab` — now shows TWO preset quick-add buttons:
+  - **⚡ Quick-add Domes (S·M·L·Power)** (teal) — `data-testid=acc-catalogue-preset-domes`
+  - **⚡ Quick-add RIC Receivers** (indigo) — `data-testid=acc-catalogue-preset-ric`
+- Old `RicPresetModal` replaced with a generic `PresetSeedModal` driven by the `PRESET_CONFIG` map (2 entries — extending is one dict entry). Accent colour, submit label, banner text, default MRP + reorder level all key off the preset.
+
+**Testing**
+- `/app/backend/tests/test_accessories_preset_autodec.py` — 18/18 pytest cases pass. Covers:
+  - Legacy 500 regression (4 list endpoints)
+  - Preset discovery + auth gate
+  - Preset seeder happy path + idempotency + RIC back-compat + role gate + unknown preset 400
+  - Auto-decrement happy path, partial→paid transition, idempotency, non-accessory no-op, shortfall floor-to-zero, ambiguous brand+model graceful skip
+- Playwright e2e — both quick-add buttons render + save + idempotent second click.
+- 100% success both surfaces. No critical issues.
+
+**Design decisions**
+- Auto-decrement uses `user.branch_id` for the stock lookup (not an invoice-level branch, because the Invoice model doesn't carry one). Multi-branch tenants will need explicit branch tagging on the line later; for now the seeded tenant is single-branch.
+- Auto-decrement is wired at TWO call sites (`add_payment` + `create_invoice(initial_payment=…)`) so both "cash-in-hand at counter" and "invoice → partial → paid" flows fire the hook.
+- Idempotency uses a per-line flag on the InvoiceLine (`accessory_stock_decremented=true`) rather than a top-level invoice flag — this way if a line is added later (unusual but possible), only new lines get decremented.
+- `safe_deserialize_rows` is a SHARED helper on purpose — it's the standard fix pattern for any future strict-response endpoint that hits legacy data.
+
+**Follow-ups queued**
+- Split `AccessoriesPage.jsx` (1057 lines) into per-tab files (tester recommendation).
+- Frontend accessory picker on invoice line-item modal — sets `accessory_product_id` + `accessory_variant` explicitly, removing the brand+model fallback path.
+- Multi-branch stock resolution when the line item was invoiced from a different branch than the payment actor.
+- (Nice-to-have) Add Escape-to-close on `PresetSeedModal` for accessibility polish.
+- 2 unrelated 500s on the dashboard mentioned by the tester — needs a separate hunt (out of scope for this ask).
+
+---
+
+
 ## 📦 Accessories Inventory Module — Full MVP (2026-08-06)
 
 **User ask** (verbatim from Aug 06):
