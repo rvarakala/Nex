@@ -509,14 +509,23 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
     [slots, pickedTimeIso],
   );
   const pickedIsUnavailable = !!(
-    pickedTimeIso && slots.length > 0
+    // Never annoy an editor of a past appointment — the backend allows
+    // metadata-only edits on historical rows (`impacts_schedule=false`)
+    // and we don't want the amber panel spamming that flow.
+    !isEdit
+    && pickedTimeIso && slots.length > 0
     && (
       // Case 1: an exact slot exists in the grid but is blocked.
       (pickedSlot && !pickedSlot.available)
-      // Case 2: the time doesn't fall on a slot boundary at all (typed
-      // freely) — we can't confirm availability, but we CAN help if the
-      // user is targeting a past date / past hour.
-      || (!pickedSlot && (date < today || (date === today && time < nowHHMM)))
+      // Case 2: the picked time falls OUTSIDE the day's slot grid entirely
+      // (e.g. 21:45 for a 09:00-21:00 clinic, or 08:00 when the clinic
+      // opens at 09:00). The grid was fetched → it's authoritative → and
+      // the time doesn't match any slot → definitely off-clinic-hours.
+      || !pickedSlot
+      // Case 3 (defensive): past date. Usually covered by Case 1 above via
+      // reason='Time has passed', but keeps the correct behaviour when
+      // the picked time is between slot-grid boundaries.
+      || date < today
     )
   );
 
@@ -548,6 +557,9 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             staff_id: audiologistId,
             date: tomorrowISO,
             duration_minutes: duration,
+            // Match the same-day fetch — if the admin has override ticked,
+            // the tomorrow suggestions should reflect the same policy.
+            override: override ? 'true' : 'false',
           },
         });
         if (!cancelled) {
@@ -558,7 +570,7 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
       }
     })();
     return () => { cancelled = true; };
-  }, [needsTomorrow, audiologistId, tomorrowISO, duration, nextDaySlots?.date]);
+  }, [needsTomorrow, audiologistId, tomorrowISO, duration, override, nextDaySlots?.date]);
 
   const suggestions = React.useMemo(() => {
     if (!pickedIsUnavailable) return [];
@@ -861,14 +873,19 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
                       ? <><span className="font-mono">{time}</span> — {pickedSlot.reason}</>
                       : (date < today
                           ? <>That date is in the past</>
-                          : <>That time has already passed</>)}
+                          : (date === today && time < nowHHMM)
+                            ? <>That time has already passed</>
+                            // Neither past nor a blocked-in-grid slot →
+                            // means the picked time doesn't fit any slot
+                            // on the day (off clinic hours / off shift).
+                            : <><span className="font-mono">{time}</span> — Outside the audiologist&rsquo;s slots today</>)}
                   </div>
                   {suggestions.length > 0 ? (
                     <>
                       <div className="text-[10.5px] text-amber-800 mt-1 mb-1.5">
                         Try one of these instead:
                       </div>
-                      <div className="flex flex-wrap gap-1.5" data-testid="bk-suggestion-pills">
+                      <div className="flex flex-wrap gap-1.5" data-testid="bk-suggestion-pill-container">
                         {suggestions.map((s) => {
                           const sDate = s.start_at.slice(0, 10);
                           const sTime = s.start_at.slice(11, 16);

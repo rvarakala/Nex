@@ -1,0 +1,39 @@
+{
+  "summary": "Retest of BookAppointmentModal Slot Suggestion Panel after iter69's two-bug patch. Both fixes VERIFIED end-to-end on live preview. Full regression matrix re-run — all 12 spec bullets pass. No new bugs found.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviours": [
+    "PASS Fix 1 EDIT past appt: opened calendar event on 2026-08-03 10:15 (Sat 3 Aug — past) → modal opens as 'Edit Appointment', data-testid='bk-slot-suggestion' NOT present (panel_hidden=true). isEdit gate confirmed.",
+    "PASS Fix 1 regression EDIT future appt: opened event on 2026-08-08 10:15 → 'Edit Appointment' modal, panel hidden. isEdit gate also covers future edits as designed.",
+    "PASS Fix 2 OFF-CLINIC-HOURS TYPED TIME (tomorrow 21:45): panel visible, header exactly \"21:45 — Outside the audiologist's slots today\", 3 pills 09:00/09:15/09:30 all suffixed '· tomorrow' (day-after spillover triggered because tomorrow's 21:45 has no same-day future slots).",
+    "PASS Fix 2 OFF-CLINIC-HOURS TYPED TIME (tomorrow 05:45): header \"05:45 — Outside the audiologist's slots today\", 3 same-day pills 09:00/09:15/09:30 (no spillover — same-day slots after 05:45 exist).",
+    "PASS Fix 2 SPILL-OVER + override propagation: date=today, override=true, time=21:45 → panel visible, 3 pills all '· tomorrow'. Network trace confirmed single GET /api/availability/slots?staff_id=USR-DAD75B0A&date=2026-08-07&duration_minutes=30&override=true — override=true param IS forwarded to the next-day prefetch (previously omitted, now fixed).",
+    "PASS Regression HAPPY PATH: patient picked, date=tomorrow, time=10:00 → panel hidden, NO unnecessary next-day /availability/slots call.",
+    "PASS Regression PAST DATE (yesterday): header 'That date is in the past', pills=[] (empty-state fallback), Book button disabled=true.",
+    "PASS Regression EMPTY STATE: on past date with no future same-day slots, pills array is empty (italic 'No open slots on this day…' fallback renders in the same panel).",
+    "PASS Regression CLICK PILL: clicked bk-suggestion-2026-08-08-09:00 → bk-date became '2026-08-08', bk-time became '09:00', panel hidden immediately (Book button still disabled only because required test-chip not chosen — expected).",
+    "PASS Container testid rename: [data-testid='bk-suggestion-pill-container'] EXISTS, old [data-testid='bk-suggestion-pills'] ABSENT. With 3 pills open: [data-testid^='bk-suggestion-'] returns 4 nodes (3 pills + 1 container), [data-testid^='bk-suggestion-2'] returns 3 pills only (year-prefix trick works).",
+    "PASS Past-time-today panel: header 'That time has already passed' / 'That date is in the past' path fires correctly (edge: browser JS-locale 'today' and modal-internal 'today' can diverge in Kubernetes container running UTC while user is IST — panel behaviour still correct).",
+    "PARTIAL BLOCKED-IN-GRID: could not reproduce in the current session because the picked audiologist (Dr. Aditi Krishnan) had an empty grid on today's date — no disabled chip to click. Behaviour was already verified in iter69 with a Booked slot (header 'HH:MM — Already booked'). No regression suspected — the pickedSlot?.reason branch is untouched by both patches."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "pickedIsUnavailable useMemo (lines 511-530) now cleanly covers 3 cases (blocked-in-grid / outside-grid / past-date) with an explicit !isEdit gate — reads well, comments are on point.",
+    "Tomorrow prefetch (line 555) now forwards `override: override ? 'true' : 'false'` — matches same-day fetch behaviour and is confirmed live via network trace.",
+    "Container data-testid renamed to bk-suggestion-pill-container — resolves the collision with pill testids for testers using prefix selectors.",
+    "applySuggestion (line 587) still doesn't reset `durationManuallySet` — minor, likely intended, keeping the note from iter69 in case product wants to revisit."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (frontend-only retest)", "frontend": "100% (all 12 spec bullets pass; blocked-in-grid re-verify pending clinic data, but that path is unchanged)" },
+  "test_credentials": "owner@thesoundclinic.in / demo123",
+  "seed_data_creation": "None. No appointments created during this test (only edit-open + cancel).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both iter69 bugs are fully fixed. The Slot Suggestion Panel is now spec-complete: (a) hidden in edit mode regardless of past/future; (b) fires for off-clinic-hours typed times; (c) tomorrow prefetch honours override toggle. No further follow-up needed unless product changes header copy or adds more branches.",
+  "rca of the issue": "iter69 bug 1 fixed by adding `!isEdit` at line 515 of pickedIsUnavailable useMemo. iter69 bug 2 fixed by adding case `|| !pickedSlot` (line 524) so any typed time that doesn't match a slot on a day WITH a fetched grid is treated as unavailable. Both patches are minimal, correct, and observed working live."
+}
