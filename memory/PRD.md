@@ -1,5 +1,38 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 💡 Slot Suggestion Panel (2026-08-06)
+
+**User ask (verbatim)**:
+> "Slot Suggestion: When the picked slot is out of clinic hours, suggest the next 3 valid slots so front desk doesn't have to keep guessing."
+
+**Shipped**:
+- `BookAppointmentModal.js` — new amber advisory panel (`data-testid='bk-slot-suggestion'`) that renders proactively whenever the picked date/time is unbookable. Up to **3 click-to-fill pills** for the audiologist's next available slots. Container pills auto-spill to tomorrow when today runs out of future openings (` · tomorrow` suffix on the pill).
+- `pickedIsUnavailable` covers 3 cases with an `!isEdit` gate:
+  1. **Blocked slot in grid** — exact reason ("Already booked" / "Outside clinic hours / lunch break" / "Audiologist off today" / "Time has passed") surfaced verbatim from `/availability/slots`.
+  2. **Time outside the day's slot grid** — e.g. 21:45 for a 09:00-21:00 clinic. Panel says "HH:MM — Outside the audiologist's slots today".
+  3. **Past date** — separate header text, empty pills fallback.
+- Tomorrow prefetch is lazy — fires only when today has < 3 future openings. Honours the `override` toggle so admins get consistent suggestions when they've bypassed lunch/off-shift.
+- Empty state: "No open slots on this day. Try a later date or tick Override below." when zero suggestions land.
+
+**Iter69 bugs (found + patched same-session)**:
+1. Panel showed on **edit-mode past appointments** — spec says hide. Fixed with `!isEdit` in the useMemo.
+2. Typed times **outside the day's slot grid** (e.g. 21:45) didn't trigger the panel because `pickedIsUnavailable` only checked "blocked in grid" or "past date/time". Fixed by adding `|| !pickedSlot` — if the fetched grid is authoritative and the time doesn't intersect it, it's off-hours.
+
+**Iter70 verification** (100% green):
+- Fix 1 verified: edit-mode past appt → panel hidden (isEdit gate confirmed live).
+- Fix 2 verified: typed 21:45 → panel visible with "Outside the audiologist's slots today" header + 3 pills all suffixed ` · tomorrow`.
+- Override propagation: network trace confirmed `override=true` forwarded to the tomorrow prefetch call.
+- Container testid rename `bk-suggestion-pills` → `bk-suggestion-pill-container` eliminates the collision with pill testids.
+- All 12 regression matrix bullets pass (happy path, past-date, past-time, blocked-in-grid, click-pill, empty-state, container rename, override toggle).
+
+**Design decisions**:
+- Same-day only pills first, tomorrow spill only when needed — keeps the CTA visible without confusing users about which day they're booking.
+- Header shows the exact reason string when available (unifies with backend's slot eligibility ladder), falls back to friendly copy for edge cases.
+- `applySuggestion` intentionally does not reset `durationManuallySet` — audiologists who override duration probably want that override to persist across slot changes.
+
+---
+
+
 ## 🐛 Appointment Past-Time & Double-Booking Bug Fix (2026-08-06)
 
 **User report (production)**:
