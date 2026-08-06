@@ -1,5 +1,34 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 💳 Invoice Accessory Picker + Sales Report Card (2026-08-06)
+
+**Two shipped features from the user's next-action list.**
+
+**Backend**
+- `routers/accounts.py::accessory_sales` — new `GET /api/accounts/accessory-sales` endpoint. Aggregates paid invoices in the resolved date-window, sums `Accessory` line_totals, groups top-5 by `(brand, model, variant)` with `accessory_kind` joined in. Response: `{range, from, to, unit_count, revenue, invoice_count, top_skus:[...]}`. Same range keys as the parent `/revenue` endpoint (daily/weekly/monthly/quarterly/half_yearly/yearly/custom). Only counts `status='paid'` invoices — draft/partial invoices don't inflate the number.
+- No new fields on the InvoiceLine model — the previous session (2026-08-06 3-in-1 follow-up) already added `accessory_product_id` + `accessory_variant`. The picker below just pushes them from the frontend.
+
+**Frontend**
+- `AccountsRevenuePage.jsx` — new `AccessorySalesCard` component below the KPI row. Teal-gradient card with 3 headline numbers on the left (Revenue big, Units + Invoices as mini-cards) and a top-5 SKU breakdown on the right with mini bar-chart. Empty-state renders a friendly nudge ("No accessory lines on any paid invoices in this window yet"). Load is best-effort: if the endpoint errors, the whole page still renders (falls back to null via `.catch()`).
+- `CreateInvoicePage.js::AccessoryPicker` — new component rendered inside `ProductDetailsPanel` when `line.product_type === 'Accessory'`. Loads the accessory catalogue once, then on SKU pick fires a stock lookup and auto-fills `make/model/unit_price/gst_rate` plus attaches `accessory_product_id/accessory_variant`. Variant dropdown auto-disables for zero-variant SKUs (batteries), auto-picks the single variant for one-variant SKUs. Stock indicator shows aggregated qty across branches with tri-colour (rose 0 / amber below invoice-qty / emerald sufficient). Two advisory banners (OUT-of-stock, LOW-stock) render inline but never block save — the paid-invoice hook floors to zero on shortfall and logs the discrepancy, so the audiologist stays unblocked.
+- `CreateInvoicePage.js` payload — now includes `accessory_product_id` + `accessory_variant` on every submitted line (null when the user hasn't picked). This enables the paid-invoice auto-decrement hook shipped last session to run deterministically instead of relying on brand+model fallback matching.
+
+**Testing**
+- New `/app/backend/tests/test_accessory_sales_rollup.py` — 17-case pytest suite covering endpoint shape, arithmetic, all 6 range keys + custom, empty-window safety, no-auth 401, tenant scoping (founder cross-check), InvoiceLineCreate persistence of the accessory fields, regression on non-accessory lines. 17/17 pass.
+- Regression against `test_accessories_preset_autodec.py` — 6/6 pass.
+- Playwright e2e: revenue card renders with correct KPIs + top-5 breakdown, range chips re-fetch on toggle, empty-window shows friendly copy. Invoice picker renders on `Accessory` type, SKU dropdown lists 22 seeded accessories, battery correctly disables variant dropdown, RIC-receiver / Silicone Dome pick auto-fills the free-text fields, stock indicator tri-colour, OUT + LOW warning banners appear conditionally.
+- **End-to-end happy path**: Playwright created `INV/2026/000024` with 3× Silicone Dome L via the new picker, invoice saved as `paid`, Silicone Dome L stock decremented 20 → 17 via the auto-decrement hook (working as designed with the picker attaching the explicit product_id + variant).
+- Fixed a React hydration warning by concatenating the stock-marker into a single string inside the `<option>` (previously two adjacent JSX expressions).
+
+**Follow-ups queued (from tester's code-review comments)**
+- Defensive branch in `accessory_sales` for legacy invoices with datetime-typed `created_at` (currently assumes ISO strings). Fine for MVP; add on next refactor.
+- Rewrite the Python-side aggregation as a Mongo `$unwind` + `$group` pipeline once a tenant crosses ~20k paid invoices/year. Fine for MVP.
+- Cosmetic skeleton loader for the AccessorySalesCard to avoid the ~200ms `…` placeholder flash on initial load.
+- Top-5 SKU display uses first-seen casing (non-deterministic when invoices differ in casing). Very minor.
+
+---
+
+
 ## 🔍 Dashboard 500 Hunt (2026-08-06)
 
 **Investigation**: The prior testing agent flagged "2 unrelated 500s during the initial dashboard load". Full sweep of every dashboard-invoked endpoint (11 endpoints on `/patients` route) via authenticated Playwright:

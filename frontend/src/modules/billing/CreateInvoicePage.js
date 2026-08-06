@@ -875,8 +875,10 @@ function AccessoryPicker({ line, onChange }) {
             <option value="">— pick —</option>
             {variantLabels.map((v) => {
               const q = stockByVariant.get(v);
+              // Concatenate as a plain string so we never render a <span>
+              // inside <option> (invalid HTML → React hydration warning).
               const marker = q == null ? '' : q === 0 ? ' · OUT' : ` · ${q} on hand`;
-              return <option key={v} value={v}>{v}{marker}</option>;
+              return <option key={v} value={v}>{`${v}${marker}`}</option>;
             })}
           </select>
         </FieldLabel>
