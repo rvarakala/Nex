@@ -4,12 +4,13 @@ Serialised inventory (HA units): browse by branch / state / pool / brand / searc
 Lifecycle timeline: append-only `serial_events` rows from `transition_serial()`.
 Accessory stock: qty-tracked, consume / replenish via +/- delta.
 """
+import logging
 import re
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
@@ -20,6 +21,8 @@ from models_ha import (
     Product, SerialItem, SerialItemUpdate,
     AccessoryStock, AccessoryAdjust,
 )
+
+log = logging.getLogger(__name__)
 from utils.ha_states import transition_serial
 from utils.serde import serialize_datetime, deserialize_datetime
 
@@ -79,7 +82,25 @@ async def list_serial_items(
         if safe:
             q["serial_no"] = {"$regex": safe, "$options": "i"}
     rows = await db.serial_items.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    return [deserialize_datetime(r) for r in rows]
+    # Per-row deserialise so legacy pre-schema-tighten rows (e.g. missing
+    # `product_id` from ~mid-2025 imports) don't 500 the whole endpoint.
+    # We warn-log skipped rows so bad data still surfaces in observability.
+    out = []
+    skipped = 0
+    for r in rows:
+        try:
+            r_clean = deserialize_datetime(r)
+            SerialItem(**r_clean)  # validate; discard the model, keep the dict
+            out.append(r_clean)
+        except ValidationError as e:
+            skipped += 1
+            log.warning(
+                "serial_items row failed validation — skipping. serial_id=%s serial_no=%s err=%s",
+                r.get("serial_id"), r.get("serial_no"), str(e)[:200],
+            )
+    if skipped:
+        log.info("list_serial_items skipped %d legacy row(s) for clinic %s", skipped, user.get("clinic_id"))
+    return out
 
 
 @router.get("/serial-items/by-branch-summary")

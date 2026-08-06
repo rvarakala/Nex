@@ -1,5 +1,65 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📦 Accessories Inventory Module — Full MVP (2026-08-06)
+
+**User ask** (verbatim from Aug 06):
+> Add — Accessories tab in Inventory Section. Usually some accessories carry serial number
+> such as Charger, FM systems (Roger receiver, Transmitter, External Mic etc). Some accessories
+> like Batteries, Tips, Tubes, Pins, Wires, Coils & Ear molds etc don't carry any Serial Numbers.
+> They are usually different Type of Accessories — Consumable, Add-on & Replaceable
+> (like Receivers of RICs — they don't carry Serial Numbers but are Categorised into Power & Sizes
+> like 2M, 1M, 3M & Power Receivers like 10, 2P & 3P & standard Receivers like 1S, 2S & 3S).
+> Even receiver tips are Categorised based on SIZE.
+
+User picked scope option **1a** — Full MVP end-to-end (both modes + Dashboard chip already covered by
+the existing low-stock endpoint). Sensible defaults picked for the rest: **preset+editable variants**,
+**simple Adjust modal for MVP**, **atomic decrement on sale** (deferred to a follow-up), **optional expiry on batch items** (deferred).
+
+**Shipped this session**
+
+**Backend**
+- `models_ha.py::Product` + `ProductCreate` gained 3 optional fields:
+  - `accessory_kind` — one of 14 kinds (`charger`, `battery`, `tip`, `tube`, `ric_receiver`, `fm_receiver`, `fm_transmitter`, `external_mic`, `pin`, `wire`, `coil`, `ear_mold`, `wax_guard`, `other`).
+  - `accessory_category` — `Literal["consumable" | "addon" | "replaceable"]`.
+  - `variant_labels: List[str]` — per-SKU size/power variants (e.g. `["1M","2M","3M","10P","2P","3P","1S","2S","3S"]` for RIC receivers).
+  - All optional / defaulted for back-compat with existing HA SKUs.
+- `routers/ha_inventory.py` — 3 NEW endpoints:
+  - `GET /api/ha/accessory-stock-hydrated` — same rows as `/accessory-stock` but with product + branch joined in, plus a `kpis` block (`total_skus / zero_stock / low_stock / ok_stock`) that reflects the whole clinic (independent of the `low_stock_only` filter on items).
+  - `POST /api/ha/products/{product_id}/init-accessory-stock` — idempotently bulk-creates `accessory_stock` rows for every `(branch × variant)` combination. Rejects when the product is `is_serialised=true`. Role-gated to `clinic_owner | inventory_manager`.
+  - `POST /api/ha/products/preset-ric-receiver` — one-tap create-a-SKU + seed 9 zero-qty stock rows per branch. Creates the Product with `accessory_kind='ric_receiver'`, `accessory_category='replaceable'`, `variant_labels=RIC_RECEIVER_VARIANTS`. Role-gated.
+- **Fix (pre-existing bug found by testing agent):** `GET /api/ha/serial-items` was 500-ing for tenants that had legacy SOLD rows with `product_id=None` (early-adopter data from before schema was tightened). Solution: per-row `SerialItem(**row)` validate inside the endpoint with `try/except ValidationError` — bad rows log a warning and get skipped instead of blowing up the whole response. Also fixed swallowed traceback by adding `logging.getLogger(__name__)` and warn-logging skipped rows. Backend testing agent confirmed this same root cause also breaks `/api/ha/amc/contracts` and `/api/ha/fittings` — those are NOT patched in this session (out of scope for the Accessories feature) and are queued as follow-ups.
+
+**Frontend**
+- New file `frontend/src/modules/ha/AccessoriesPage.jsx` (~1030 lines, 6 components).
+  Structure: main page + 3 sub-tabs (Catalogue · Batch Stock · Serialised) + 3 modals (NewAccessory · RicPreset · AdjustStock).
+- `HAModule.js` — added `'accessories'` to `INVENTORY_PATHS` set, added Accessories tab entry to `INVENTORY_TABS`, added `<Route path='accessories' element={<AccessoriesPage />} />`.
+- Catalogue sub-tab lists every `form_factor='accessory'` product with **CategoryBadge** color-coding (consumable=amber, add-on=indigo, replaceable=emerald). Two primary actions: **+ New Accessory** (full modal) and **⚡ Quick-add RIC Receivers** (one-tap preset).
+- New-Accessory modal: kind dropdown auto-toggles serialisation default; when non-serialised, exposes a chip-based **variant editor** (Enter to add, X to remove) + reorder-level + branch-picker multi-select. On save, calls `POST /ha/products` then `POST /ha/products/{id}/init-accessory-stock`.
+- Batch Stock sub-tab: **4 KPI cards** (rose/amber/emerald/slate) + branch filter + low-stock-only toggle. Rows are color-tinted: `qty==0` → rose "OUT", `0<qty<=reorder` → amber "LOW", else emerald "OK". Adjust button per row opens the AdjustStockModal.
+- Adjust modal: 6 reasons (stock_in/stock_out/damaged/gifted/returned/adjustment) auto-sign the delta based on reason; optional note appended to reason string; qty sign hint (`+ / − / ±`) rendered in the label.
+- Serialised sub-tab: filters `/ha/serial-items` locally to units tied to serialised-accessory SKUs; renders empty-state banner when catalogue has no serialised accessories yet.
+
+**Design decisions to remember**
+- **Why 3 sub-tabs and not 3 pages?** Users think in one bucket "Accessories" — putting them under a single tab keeps navigation flat. The serialised-vs-batch split lives inside the tab where it belongs.
+- **Why `variant_labels` as a flat list of strings and not a nested variants array?** Keeps the query simple (`variants=['1M','2M','3M']`) and matches how audiologists literally speak the labels. Reorder-level lives on the `accessory_stock` row per-variant, not on the variant definition — so 1M and 2M can have different reorder thresholds.
+- **RIC preset variant order** — 1M/2M/3M · 10P/2P/3P · 1S/2S/3S — mirrors the audiologist's mental model (Moderate → Power → Standard).
+
+**Testing**
+- Backend: 14/14 pytest cases pass (`/app/backend/tests/test_accessories_inventory.py`) — covers hydrated KPIs, RIC preset, init-stock idempotency, serialised rejection, adjust +/−, below-zero 409, role gating on all 3 write endpoints.
+- Frontend: Playwright e2e — all 3 sub-tabs render, KPIs correct, New-Accessory modal e2e creates a battery SKU visible in Batch Stock, RIC preset opens.
+- Serialised sub-tab initially blocked by the pre-existing `serial-items 500`; unblocked by the per-row validate fix.
+
+**Follow-ups queued**
+- `/api/ha/amc/contracts` and `/api/ha/fittings` also 500 on the same tenant — same root cause. Apply the same per-row validate-and-skip pattern.
+- Split `AccessoriesPage.jsx` (1030 lines) into `/modules/ha/accessories/{...}.jsx` files (tester recommendation).
+- Add idempotency guard on `preset_ric_receiver` — currently a re-call creates duplicate SKUs.
+- `accessory-stock-hydrated` hard-caps at 500 rows; add pagination/total-count for larger clinics.
+- Server-side `Literal` enum on `AccessoryAdjust.reason`.
+- Auto-decrement `accessory_stock` when an accessory line item hits a paid invoice (mentioned in original plan as Q4, deferred to MVP+1).
+
+---
+
+
 ## 🎨 Clinic Tagline + Report/Template Fonts — end-to-end propagation (2026-08-01)
 
 **User ask (previous session)**:
