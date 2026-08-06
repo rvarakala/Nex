@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from auth import get_current_user, require_roles
 from database import get_db
 from utils.numbering import next_number
-from utils.serde import serialize_datetime, deserialize_datetime
+from utils.serde import serialize_datetime, deserialize_datetime, safe_deserialize_rows
 from utils.tiers import require_tier
 
 
@@ -196,7 +196,11 @@ async def list_contracts(
         q["status"] = "active"
         q["amc_expiry_date"] = {"$gte": today_iso, "$lte": cutoff}
     rows = await db.ha_amc_contracts.find(q, {"_id": 0}).sort("amc_expiry_date", 1).to_list(limit)
-    return [deserialize_datetime(r) for r in rows]
+    # Tolerate legacy pre-schema-tighten rows — one bad row shouldn't 500
+    # the whole list (see safe_deserialize_rows docstring).
+    return safe_deserialize_rows(
+        rows, AMCContract, collection="ha_amc_contracts", clinic_id=user.get("clinic_id", ""),
+    )
 
 
 @router.get("/contracts/{contract_no}", response_model=AMCContract)

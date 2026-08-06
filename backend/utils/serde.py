@@ -3,7 +3,13 @@
 Mongo stores datetimes as ISO strings (so we can compare with `$gte: '2026-...'`).
 Pydantic models round-trip them back to `datetime` objects.
 """
+import logging
 from datetime import datetime
+from typing import List, Type
+
+from pydantic import BaseModel, ValidationError
+
+log = logging.getLogger(__name__)
 
 
 def serialize_datetime(obj):
@@ -95,3 +101,52 @@ def deserialize_datetime(obj):
         except Exception:
             return obj
     return obj
+
+
+def safe_deserialize_rows(
+    rows: List[dict],
+    model: Type[BaseModel],
+    *,
+    collection: str = "unknown",
+    clinic_id: str = "",
+) -> List[dict]:
+    """Deserialise a batch of Mongo rows against a Pydantic `model`, but
+    tolerate legacy documents that fail strict validation.
+
+    Rows that validate cleanly are returned in the output list (with dates
+    coerced by `deserialize_datetime`). Rows that fail validation are
+    warn-logged (row id + first error line) and *skipped* so the whole
+    endpoint doesn't 500 for one bad legacy row. This is the standard fix
+    for tenants that have early-adopter data written before the schema was
+    tightened (e.g. rows with `product_id=None` from the pre-2026 imports).
+
+    Args:
+        rows: Raw dicts from `.find(...).to_list()`.
+        model: The Pydantic model that would normally be the `response_model`.
+        collection: Human name of the collection (for log context).
+        clinic_id: Tenant id (for log context).
+    """
+    out: List[dict] = []
+    skipped = 0
+    for r in rows:
+        cleaned = deserialize_datetime(r)
+        try:
+            model(**cleaned)          # validate; we discard the model, keep the dict
+            out.append(cleaned)
+        except ValidationError as e:
+            skipped += 1
+            # Grab any obvious primary key for the log line
+            row_key = (
+                r.get("id") or r.get("serial_id") or r.get("contract_no")
+                or r.get("fitting_id") or r.get("sku_id") or r.get("_id")
+            )
+            log.warning(
+                "safe_deserialize_rows[%s] skipping bad row key=%s err=%s",
+                collection, row_key, str(e).splitlines()[0][:200],
+            )
+    if skipped:
+        log.info(
+            "safe_deserialize_rows[%s] skipped %d legacy row(s) for clinic=%s",
+            collection, skipped, clinic_id,
+        )
+    return out

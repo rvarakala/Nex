@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
@@ -24,7 +24,7 @@ from models_ha import (
 
 log = logging.getLogger(__name__)
 from utils.ha_states import transition_serial
-from utils.serde import serialize_datetime, deserialize_datetime
+from utils.serde import serialize_datetime, deserialize_datetime, safe_deserialize_rows
 
 router = APIRouter(prefix="/api/ha")
 
@@ -84,23 +84,9 @@ async def list_serial_items(
     rows = await db.serial_items.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
     # Per-row deserialise so legacy pre-schema-tighten rows (e.g. missing
     # `product_id` from ~mid-2025 imports) don't 500 the whole endpoint.
-    # We warn-log skipped rows so bad data still surfaces in observability.
-    out = []
-    skipped = 0
-    for r in rows:
-        try:
-            r_clean = deserialize_datetime(r)
-            SerialItem(**r_clean)  # validate; discard the model, keep the dict
-            out.append(r_clean)
-        except ValidationError as e:
-            skipped += 1
-            log.warning(
-                "serial_items row failed validation — skipping. serial_id=%s serial_no=%s err=%s",
-                r.get("serial_id"), r.get("serial_no"), str(e)[:200],
-            )
-    if skipped:
-        log.info("list_serial_items skipped %d legacy row(s) for clinic %s", skipped, user.get("clinic_id"))
-    return out
+    return safe_deserialize_rows(
+        rows, SerialItem, collection="serial_items", clinic_id=user.get("clinic_id", ""),
+    )
 
 
 @router.get("/serial-items/by-branch-summary")
@@ -667,6 +653,41 @@ class _RicPresetPayload(BaseModel):
 
 RIC_RECEIVER_VARIANTS = ["1M", "2M", "3M", "10P", "2P", "3P", "1S", "2S", "3S"]
 
+# ---- Preset catalogue -------------------------------------------------
+# Each preset is a shortcut for the "+ New Accessory" modal — one tap
+# creates the SKU + seeds one zero-qty stock row per (branch × variant).
+# Adding a new preset is a 5-line dict below.
+_ACCESSORY_PRESETS = {
+    "ric_receiver": {
+        "default_model": "RIC Receiver",
+        "accessory_kind": "ric_receiver",
+        "accessory_category": "replaceable",
+        "variants": RIC_RECEIVER_VARIANTS,
+        "hsn": "9021", "gst_rate": 18.0,
+    },
+    "silicone_dome": {
+        "default_model": "Silicone Dome",
+        "accessory_kind": "tip",
+        "accessory_category": "consumable",
+        # Standard 4-size dome family sold by every major HA manufacturer:
+        # Small · Medium · Large · Power (closed, higher-vent-loss).
+        "variants": ["S", "M", "L", "Power"],
+        "hsn": "9021", "gst_rate": 18.0,
+    },
+}
+
+
+@router.get("/accessory-presets")
+async def list_accessory_presets(user=Depends(get_current_user)):  # noqa: ARG001
+    """Return every preset the UI can offer as a one-tap button.
+    Keeps the frontend in sync when new presets get added server-side."""
+    return {
+        "presets": [
+            {"key": k, "label": v["default_model"], **v}
+            for k, v in _ACCESSORY_PRESETS.items()
+        ]
+    }
+
 
 @router.post("/products/preset-ric-receiver")
 async def preset_ric_receiver(
@@ -674,44 +695,134 @@ async def preset_ric_receiver(
     user=Depends(require_roles("clinic_owner", "inventory_manager")),
     db=Depends(get_db),
 ):
-    """Create-and-seed a fully-set-up RIC Receiver SKU in one call."""
-    for bid in payload.branch_ids:
+    """Back-compat shim — kept so the earlier frontend build keeps working.
+    Internally delegates to the generic preset seeder."""
+    return await _seed_accessory_preset(
+        db, user, preset_key="ric_receiver",
+        brand=payload.brand, model=payload.model,
+        branch_ids=payload.branch_ids,
+        mrp=payload.mrp, gst_rate=payload.gst_rate,
+        hsn=payload.hsn, reorder_level=payload.reorder_level,
+    )
+
+
+class _PresetSeedPayload(BaseModel):
+    preset_key: str                    # "ric_receiver" | "silicone_dome" | …
+    brand: str
+    model: Optional[str] = None        # defaults to preset's default_model
+    branch_ids: List[str]
+    mrp: float = 0.0
+    gst_rate: Optional[float] = None
+    hsn: Optional[str] = None
+    reorder_level: int = 0
+
+
+@router.post("/products/preset-seed")
+async def preset_seed(
+    payload: _PresetSeedPayload,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Generic one-tap accessory preset seeder. Supports RIC receivers,
+    silicone domes (S/M/L/Power) — and any future preset registered in
+    `_ACCESSORY_PRESETS`. Idempotent: if the exact (brand, model,
+    accessory_kind) already exists for this clinic, we re-use that
+    product row and only seed missing stock rows (no duplicates)."""
+    return await _seed_accessory_preset(
+        db, user,
+        preset_key=payload.preset_key,
+        brand=payload.brand, model=payload.model,
+        branch_ids=payload.branch_ids,
+        mrp=payload.mrp, gst_rate=payload.gst_rate,
+        hsn=payload.hsn, reorder_level=payload.reorder_level,
+    )
+
+
+async def _seed_accessory_preset(
+    db, user, *,
+    preset_key: str,
+    brand: str,
+    model: Optional[str],
+    branch_ids: List[str],
+    mrp: float = 0.0,
+    gst_rate: Optional[float] = None,
+    hsn: Optional[str] = None,
+    reorder_level: int = 0,
+):
+    preset = _ACCESSORY_PRESETS.get(preset_key)
+    if not preset:
+        raise HTTPException(status_code=400, detail=f"Unknown preset '{preset_key}'")
+    for bid in branch_ids:
         if not user_can_see_branch(user, bid):
             raise HTTPException(status_code=403, detail=f"Branch {bid} not in your access")
 
-    # 1) Create the Product.
-    product = Product(
-        clinic_id=user["clinic_id"],
-        brand=payload.brand.strip(),
-        model=payload.model.strip() or "RIC Receiver",
-        form_factor="accessory",
-        is_serialised=False,
-        mrp=float(payload.mrp or 0),
-        gst_rate=float(payload.gst_rate or 18.0),
-        hsn=payload.hsn or "9021",
-        accessory_kind="ric_receiver",
-        accessory_category="replaceable",
-        variant_labels=list(RIC_RECEIVER_VARIANTS),
-    )
-    await db.ha_products.insert_one(serialize_datetime(product.model_dump()))
+    resolved_model = (model or "").strip() or preset["default_model"]
+    resolved_brand = brand.strip()
+    if not resolved_brand:
+        raise HTTPException(status_code=400, detail="Brand is required")
 
-    # 2) Seed 9 accessory_stock rows per branch at qty=0.
+    # ---- Idempotency: re-use an existing SKU that matches shape ----
+    # Prevents "Quick-add" from spawning duplicate catalogue rows when
+    # tapped twice.
+    existing = await db.ha_products.find_one({
+        "clinic_id": user["clinic_id"],
+        "brand": resolved_brand,
+        "model": resolved_model,
+        "accessory_kind": preset["accessory_kind"],
+        "active": True,
+    }, {"_id": 0})
+    reused = existing is not None
+    if reused:
+        product_dict = existing
+    else:
+        product = Product(
+            clinic_id=user["clinic_id"],
+            brand=resolved_brand,
+            model=resolved_model,
+            form_factor="accessory",
+            is_serialised=False,
+            mrp=float(mrp or 0),
+            gst_rate=float(gst_rate if gst_rate is not None else preset["gst_rate"]),
+            hsn=(hsn or preset["hsn"]),
+            accessory_kind=preset["accessory_kind"],
+            accessory_category=preset["accessory_category"],
+            variant_labels=list(preset["variants"]),
+        )
+        product_dict = product.model_dump()
+        await db.ha_products.insert_one(serialize_datetime(product_dict))
+
+    # ---- Seed / top-up stock rows (idempotent per row) ----
     now_iso = datetime.now(timezone.utc).isoformat()
     created = 0
-    for bid in payload.branch_ids:
-        for variant in RIC_RECEIVER_VARIANTS:
+    skipped = 0
+    for bid in branch_ids:
+        for variant in preset["variants"]:
+            match = {
+                "clinic_id": user["clinic_id"],
+                "product_id": product_dict["product_id"],
+                "branch_id": bid, "variant": variant,
+            }
+            already = await db.accessory_stock.find_one(match, {"_id": 0, "sku_id": 1})
+            if already:
+                skipped += 1
+                continue
             row = AccessoryStock(
                 clinic_id=user["clinic_id"],
                 branch_id=bid,
-                product_id=product.product_id,
+                product_id=product_dict["product_id"],
                 variant=variant,
                 qty_on_hand=0,
-                reorder_level=int(payload.reorder_level or 0),
+                reorder_level=int(reorder_level or 0),
                 updated_at=now_iso,
             )
             await db.accessory_stock.insert_one(serialize_datetime(row.model_dump()))
             created += 1
-    return {"product": deserialize_datetime(product.model_dump()), "stock_rows_created": created}
+    return {
+        "product": deserialize_datetime(product_dict),
+        "reused_existing_product": reused,
+        "stock_rows_created": created,
+        "stock_rows_skipped_existing": skipped,
+    }
 
 
 @router.post("/accessory-stock/{sku_id}/adjust")

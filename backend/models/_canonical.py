@@ -366,6 +366,19 @@ class InvoiceLine(BaseModel):
     model: Optional[str] = None                                  # Model name / SKU
     serial_numbers: List[str] = []                               # One entry per unit; len should equal quantity for HAs
     technology_tier: Optional[Literal["Basic", "Essential", "Standard", "Advanced", "Premium"]] = None
+    # Accessory stock plumbing — populated when the line is an Accessory.
+    # `accessory_product_id` points at `ha_products.product_id`;
+    # `accessory_variant` is the size/power label (e.g. "2M" for RIC
+    # receivers, "M" for silicone domes). Both optional so legacy service
+    # lines stay untouched. When set, they let the paid-invoice hook
+    # decrement `accessory_stock` deterministically instead of guessing
+    # from brand+model.
+    accessory_product_id: Optional[str] = None
+    accessory_variant: Optional[str] = None
+    # Idempotency: set to True once the paid-invoice hook has decremented
+    # stock for this line. Guards against re-decrement on subsequent
+    # payments (partial → paid) or on background reconciliation loops.
+    accessory_stock_decremented: bool = False
 
 
 class Payment(BaseModel):
@@ -496,6 +509,9 @@ class InvoiceLineCreate(BaseModel):
     model: Optional[str] = None
     serial_numbers: Optional[List[str]] = None
     technology_tier: Optional[Literal["Basic", "Essential", "Standard", "Advanced", "Premium"]] = None
+    # Accessory stock plumbing — see `InvoiceLine` for semantics.
+    accessory_product_id: Optional[str] = None
+    accessory_variant: Optional[str] = None
 
 
 class InvoiceCreate(BaseModel):

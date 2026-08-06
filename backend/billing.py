@@ -146,6 +146,10 @@ def _compute_line(line_in: InvoiceLineCreate, service: Optional[dict]) -> Invoic
         model=line_in.model,
         serial_numbers=serial_numbers,
         technology_tier=line_in.technology_tier,
+        # Accessory stock plumbing — passed through so the paid-invoice
+        # hook can find the matching `accessory_stock` row deterministically.
+        accessory_product_id=getattr(line_in, "accessory_product_id", None),
+        accessory_variant=getattr(line_in, "accessory_variant", None),
     )
 
 
@@ -372,6 +376,24 @@ async def create_invoice(payload: InvoiceCreate,
                 f"{payload.from_sale_no}: {exc.detail}",
             )
 
+    # Auto-decrement accessory stock when the invoice is created already
+    # fully paid (cash-in-hand at counter). Same guarantees as the
+    # mid-invoice add_payment path — never raises.
+    if inv.status == "paid":
+        try:
+            from utils.accessory_stock import auto_decrement_accessory_stock
+            fresh_inv_doc = await db.invoices.find_one({"invoice_id": inv.invoice_id}, {"_id": 0})
+            if fresh_inv_doc:
+                await auto_decrement_accessory_stock(
+                    db, fresh_inv_doc,
+                    actor_user_id=user["user_id"],
+                    branch_id=user.get("branch_id"),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                f"Accessory auto-decrement on invoice create failed for {inv.invoice_no}: {exc}",
+            )
+
     return inv
 
 
@@ -575,6 +597,25 @@ async def add_payment(invoice_id: str, payload: PaymentCreate,
         except HTTPException as exc:
             logging.getLogger(__name__).warning(
                 f"Auto-flip on payment skipped for sale {linked_sale_no}: {exc.detail}",
+            )
+
+    # ---- Auto-decrement accessory stock on paid transition -----------
+    # Fires exactly once per line, guarded by
+    # `InvoiceLine.accessory_stock_decremented`. Never raises — a stock
+    # mismatch must not block the clinic from taking money.
+    if inv.status == "paid" and not was_paid_before:
+        try:
+            from utils.accessory_stock import auto_decrement_accessory_stock
+            fresh_inv_doc = await db.invoices.find_one({"invoice_id": invoice_id}, {"_id": 0})
+            if fresh_inv_doc:
+                await auto_decrement_accessory_stock(
+                    db, fresh_inv_doc,
+                    actor_user_id=user["user_id"],
+                    branch_id=user.get("branch_id"),
+                )
+        except Exception as exc:  # noqa: BLE001 — defensive
+            logging.getLogger(__name__).warning(
+                f"Accessory auto-decrement failed for invoice {inv.invoice_no}: {exc}",
             )
     return inv
 

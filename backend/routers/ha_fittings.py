@@ -30,7 +30,7 @@ from models_ha import (
     FittingVisit, FittingVisitCreate,
     AidedAudiogram,
 )
-from utils.serde import serialize_datetime, deserialize_datetime
+from utils.serde import serialize_datetime, deserialize_datetime, safe_deserialize_rows
 
 
 router = APIRouter(prefix="/api/ha")
@@ -77,7 +77,11 @@ async def list_fittings(
     if sale_no:
         q["sale_no"] = sale_no
     rows = await db.ha_fittings.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    return [deserialize_datetime(r) for r in rows]
+    # Tolerate legacy pre-schema-tighten rows — one bad row shouldn't 500
+    # the whole list (see safe_deserialize_rows docstring).
+    return safe_deserialize_rows(
+        rows, Fitting, collection="ha_fittings", clinic_id=user.get("clinic_id", ""),
+    )
 
 
 @router.get("/fittings/{fitting_id}", response_model=Fitting)

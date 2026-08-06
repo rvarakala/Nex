@@ -127,7 +127,7 @@ function CatalogueTab({ branches }) {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [showRicPreset, setShowRicPreset] = useState(false);
+  const [presetKey, setPresetKey] = useState(null); // 'ric_receiver' | 'silicone_dome' | null
 
   const load = useCallback(async () => {
     // Every SKU with form_factor="accessory" (both serialised & batch).
@@ -159,8 +159,13 @@ function CatalogueTab({ branches }) {
         </div>
         <div className="flex items-center gap-2">
           <button
+            data-testid="acc-catalogue-preset-domes"
+            onClick={() => setPresetKey('silicone_dome')}
+            className="px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md"
+          >⚡ Quick-add Domes (S·M·L·Power)</button>
+          <button
             data-testid="acc-catalogue-preset-ric"
-            onClick={() => setShowRicPreset(true)}
+            onClick={() => setPresetKey('ric_receiver')}
             className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md"
           >⚡ Quick-add RIC Receivers</button>
           <button
@@ -241,11 +246,12 @@ function CatalogueTab({ branches }) {
           onSaved={() => { setShowForm(false); load(); }}
         />
       )}
-      {showRicPreset && (
-        <RicPresetModal
+      {presetKey && (
+        <PresetSeedModal
+          presetKey={presetKey}
           branches={branches}
-          onClose={() => setShowRicPreset(false)}
-          onSaved={() => { setShowRicPreset(false); load(); }}
+          onClose={() => setPresetKey(null)}
+          onSaved={() => { setPresetKey(null); load(); }}
         />
       )}
     </div>
@@ -508,13 +514,41 @@ function NewAccessoryModal({ branches, onClose, onSaved }) {
 }
 
 /* ============================================================
- *   RIC PRESET MODAL
+ *   PRESET SEED MODAL — generic (RIC receivers, silicone domes, …)
  * ============================================================ */
-function RicPresetModal({ branches, onClose, onSaved }) {
+const PRESET_CONFIG = {
+  ric_receiver: {
+    title: 'Quick-add RIC Receivers',
+    default_model: 'RIC Receiver',
+    variants: ['1M', '2M', '3M', '10P', '2P', '3P', '1S', '2S', '3S'],
+    default_mrp: 4500,
+    default_reorder: 2,
+    accent: 'indigo',
+    body_hint: 'Creates the SKU with 9 pre-loaded variants — one row per size × power. M = Moderate · P = Power · S = Standard.',
+    brand_placeholder: 'Phonak / Signia / GN Resound',
+    testid_prefix: 'acc-ric',
+    submit_label: 'Create + Seed 9 variants',
+  },
+  silicone_dome: {
+    title: 'Quick-add Silicone Domes',
+    default_model: 'Silicone Dome',
+    variants: ['S', 'M', 'L', 'Power'],
+    default_mrp: 60,
+    default_reorder: 20,
+    accent: 'teal',
+    body_hint: 'Creates the SKU with the 4 standard dome sizes — Small, Medium, Large, Power (closed).',
+    brand_placeholder: 'Phonak / Signia / Widex / GN Resound',
+    testid_prefix: 'acc-dome',
+    submit_label: 'Create + Seed 4 sizes',
+  },
+};
+
+function PresetSeedModal({ presetKey, branches, onClose, onSaved }) {
+  const cfg = PRESET_CONFIG[presetKey] || PRESET_CONFIG.ric_receiver;
   const [f, setF] = useState({
-    brand: '', model: 'RIC Receiver',
-    mrp: 4500, gst_rate: 18, hsn: '9021',
-    reorder_level: 2,
+    brand: '', model: cfg.default_model,
+    mrp: cfg.default_mrp, gst_rate: 18, hsn: '9021',
+    reorder_level: cfg.default_reorder,
     branch_ids: branches.map((b) => b.branch_id),
   });
   const [saving, setSaving] = useState(false);
@@ -526,9 +560,10 @@ function RicPresetModal({ branches, onClose, onSaved }) {
     if (f.branch_ids.length === 0) { setErr('Pick at least one branch'); return; }
     setSaving(true);
     try {
-      await axios.post(`${API}/ha/products/preset-ric-receiver`, {
+      await axios.post(`${API}/ha/products/preset-seed`, {
+        preset_key: presetKey,
         brand: f.brand.trim(),
-        model: f.model.trim() || 'RIC Receiver',
+        model: f.model.trim() || cfg.default_model,
         mrp: Number(f.mrp || 0),
         gst_rate: Number(f.gst_rate || 0),
         hsn: f.hsn,
@@ -544,13 +579,25 @@ function RicPresetModal({ branches, onClose, onSaved }) {
     }
   };
 
+  const banner =
+    cfg.accent === 'teal'
+      ? 'text-teal-800 bg-teal-50 border-teal-200'
+      : 'text-indigo-700 bg-indigo-50 border-indigo-200';
+  const btn =
+    cfg.accent === 'teal'
+      ? 'bg-teal-600 hover:bg-teal-700'
+      : 'bg-indigo-600 hover:bg-indigo-700';
+  const chipOn =
+    cfg.accent === 'teal'
+      ? 'bg-teal-600 text-white border-teal-600'
+      : 'bg-indigo-600 text-white border-indigo-600';
+
   return (
-    <ModalShell title="Quick-add RIC Receivers" onClose={onClose} maxWidth="max-w-lg">
-      <div className="space-y-4">
-        <div className="text-[12px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-3 py-2">
-          <b>One-tap setup.</b> Creates the SKU with 9 pre-loaded variants —
-          <span className="font-mono text-[11px] ml-1">1M · 2M · 3M · 10P · 2P · 3P · 1S · 2S · 3S</span>
-          — and initialises zero-qty stock rows in every selected branch.
+    <ModalShell title={cfg.title} onClose={onClose} maxWidth="max-w-lg">
+      <div className="space-y-4" data-testid={`${cfg.testid_prefix}-modal`}>
+        <div className={`text-[12px] border rounded px-3 py-2 ${banner}`}>
+          <b>One-tap setup.</b> {cfg.body_hint}
+          <div className="mt-1 font-mono text-[11px]">{cfg.variants.join(' · ')}</div>
         </div>
         {err && (
           <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2 flex items-center gap-2">
@@ -561,21 +608,22 @@ function RicPresetModal({ branches, onClose, onSaved }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Brand *">
             <input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })}
-                   data-testid="acc-ric-brand" placeholder="Phonak / Signia / GN Resound"
+                   data-testid={`${cfg.testid_prefix}-brand`}
+                   placeholder={cfg.brand_placeholder}
                    className={inp} />
           </Field>
           <Field label="Model / Line">
             <input value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })}
-                   data-testid="acc-ric-model" className={inp} />
+                   data-testid={`${cfg.testid_prefix}-model`} className={inp} />
           </Field>
-          <Field label="MRP (₹, per receiver)">
+          <Field label="MRP (₹)">
             <input type="number" value={f.mrp} onChange={(e) => setF({ ...f, mrp: e.target.value })}
-                   data-testid="acc-ric-mrp" className={inp} />
+                   data-testid={`${cfg.testid_prefix}-mrp`} className={inp} />
           </Field>
           <Field label="Reorder alert">
             <input type="number" value={f.reorder_level}
                    onChange={(e) => setF({ ...f, reorder_level: e.target.value })}
-                   data-testid="acc-ric-reorder" className={inp} />
+                   data-testid={`${cfg.testid_prefix}-reorder`} className={inp} />
           </Field>
         </div>
 
@@ -599,9 +647,7 @@ function RicPresetModal({ branches, onClose, onSaved }) {
                     }))
                   }
                   className={`text-[11.5px] px-2.5 py-1 rounded-full border ${
-                    on
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    on ? chipOn : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   {b.name}
@@ -616,9 +662,9 @@ function RicPresetModal({ branches, onClose, onSaved }) {
             Cancel
           </button>
           <button onClick={save} disabled={saving}
-                  data-testid="acc-ric-save"
-                  className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded shadow-sm">
-            {saving ? 'Seeding…' : 'Create + Seed 9 variants'}
+                  data-testid={`${cfg.testid_prefix}-save`}
+                  className={`px-4 py-1.5 text-xs font-semibold text-white rounded shadow-sm disabled:bg-slate-300 ${btn}`}>
+            {saving ? 'Seeding…' : cfg.submit_label}
           </button>
         </div>
       </div>

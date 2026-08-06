@@ -1,0 +1,31 @@
+{
+  "summary": "Full backend + frontend regression for the 3 next-action items on tenant-sound-clinic-blr: (1) 500 fix on /ha/serial-items + /ha/amc/contracts + /ha/fittings via safe_deserialize_rows, (2) generic accessory preset seeder + silicone_dome preset, (3) accessory auto-decrement on invoice paid transition. 18/18 pytest cases in test_accessories_preset_autodec.py pass covering: legacy 500 regression (4 endpoints), preset catalogue shape + auth gate (2), preset-seed happy path + idempotency + RIC back-compat + role gate on audiologist/front_desk + unknown preset 400 (6), and auto-decrement happy path + zero-payment idempotency + partial→paid transition + non-accessory no side effect + shortfall floor-to-zero + ambiguous brand+model graceful skip (6). Playwright e2e as owner@thesoundclinic.in confirms /ha/accessories renders BOTH quick-add buttons with correct labels ('⚡ Quick-add Domes (S·M·L·Power)' and '⚡ Quick-add RIC Receivers'), Domes modal opens with S/M/L/Power banner + 'Create + Seed 4 sizes' button, save creates the SKU, second click with same brand is idempotent (still 1 row in catalogue), and RIC modal opens with 'Create + Seed 9 variants' button. Regression sweep over 9 HA sub-tabs — all return 200 with no error banners.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_accessories_preset_autodec.py",
+    "/app/test_reports/pytest/accessories_preset_autodec.xml"
+  ],
+  "action_items": [
+    "(nice-to-have) The Escape keypress does not close the PresetSeedModal — only the Cancel button + backdrop click work. Not blocking, but adds accessibility polish. Modal keyboard-close pattern could be added to ModalShell.",
+    "(nice-to-have) Frontend console had 2 unrelated 500s during the initial dashboard load (unrelated to this feature — not the 3 endpoints fixed here, since those now return 200). Worth an unrelated follow-up hunt.",
+    "(nice-to-have) The InvoiceLine.accessory_stock_decremented + accessory_product_id are internal plumbing fields but they surface on the /billing/invoices/{id} response payload. Consider hiding them from the public API surface once the UI accessory-picker plumbing is done, or documenting them."
+  ],
+  "critical_code_review_comments": [
+    "utils/accessory_stock.py::_find_stock_row falls back to variant=None when the caller didn't pass a variant — but for variant-bearing products (like silicone_dome) the seeded rows all have concrete variants, so a None-variant query will never match and the code silently no-ops (skipped_no_row +=1). Consider warning louder OR falling back to 'first row with qty>=needed' when the product has variant_labels. Currently OK because the frontend accessory picker will set accessory_variant explicitly, but the graceful-skip behaviour is easy to miss.",
+    "utils/accessory_stock.py resolves the branch from the payment actor's branch_id. Multi-branch clinics where the accessory was invoiced from Branch A but the actor is stationed at Branch B will silently miss the stock row — could log an informational note in the future.",
+    "AccessoriesPage.jsx is now 1057 lines (grew from 1030). Still exceeds the 700-line guideline; splitting CatalogueTab / BatchStockTab / SerialisedTab / modals into separate files remains a good cleanup.",
+    "utils/serde.py::safe_deserialize_rows swallows Pydantic errors row-by-row — great for graceful degradation, but if the same row consistently fails, the log stream will pile up on every list request. Consider caching a 'known-bad-row-id' set per process to log once.",
+    "billing.py::_compute_line uses getattr(...) fallbacks for accessory_product_id/accessory_variant — the new InvoiceLineCreate has these declared, so getattr is defensive but slightly redundant. Direct attribute access would be cleaner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_accessories_preset_autodec.py (new)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (all preset UI + idempotency + regression checks pass)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123, aditi@thesoundclinic.in / demo123 (audiologist), meera@thesoundclinic.in / demo123 (front_desk)",
+  "seed_data_creation": "Pytest created several TEST_BRAND_*, TEST_RIC_*, TEST_AUTODEC_*, TEST_AMB_* accessory products in tenant-sound-clinic-blr along with their stock rows. Also 1 UITest<timestamp> silicone_dome SKU from the Playwright e2e. Also a few paid invoices (~10 units M dome, 5 units L dome, 10 units Power dome, 3 units ambiguous dome, 1 Phonak HA). Cleanup optional; all data prefixed 'TEST_' or 'UITest' for easy identification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regression test file is /app/backend/tests/test_accessories_preset_autodec.py — reusable for future changes to preset seeder, auto-decrement, or the 3 previously-500 list endpoints. Payment endpoint is /billing/invoices/{id}/payments (plural — legacy iteration 65 test used the wrong singular URL). Accessory auto-decrement is triggered from both create_invoice(initial_payment) AND add_payment (on the partial→paid transition). Idempotency guard = InvoiceLine.accessory_stock_decremented flag. Owner branch = BR-SOUNDCLINIC-HQ, single-branch tenant.",
+  "rca of the issue": "N/A — all 3 targeted features are working correctly per spec. No new bugs found."
+}
