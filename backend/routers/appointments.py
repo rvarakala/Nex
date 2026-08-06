@@ -225,6 +225,40 @@ def _overlap_query(clinic_id: str, staff_id: str, start: datetime, end: datetime
     return q
 
 
+def _reject_past_start(start: datetime, *, allow_grace_minutes: int = 2) -> None:
+    """Raise 400 if the requested appointment start time is in the past.
+
+    We compare in the clinic's local timezone (IST) because slot datetimes
+    are stored as naive wall-clock strings. A tiny grace window
+    (default 2 minutes) covers clock drift + the user-typing-then-clicking
+    latency — front desk can still submit a booking for the current slot
+    even if the clock ticked over between typing "10:00" and hitting Book.
+
+    The frontend's `min` attribute already guards against picking a
+    yesterday-or-earlier date; this backend check is the defence-in-depth
+    for any bypass (API scripts, stale forms, timezone tricks).
+    """
+    from routers.schedules import now_clinic_naive, IST  # local to avoid circular import
+    # If the client sent an offset-aware datetime, project it into the
+    # clinic's local wall-clock so we compare apples to apples. Otherwise
+    # treat the value as already-IST-wall-clock (which is what the modal
+    # sends via `${date}T${time}:00`).
+    if start.tzinfo is not None:
+        start_local = start.astimezone(IST).replace(tzinfo=None)
+    else:
+        start_local = start
+    now_wall = now_clinic_naive()
+    if start_local < now_wall - timedelta(minutes=allow_grace_minutes):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Cannot book an appointment for a time that has already passed",
+                "attempted_start": start_local.isoformat(),
+                "now": now_wall.isoformat(),
+            },
+        )
+
+
 async def _resolve_staff(db, clinic_id: str, staff_id: str) -> dict:
     """Look up the staff resource by user_id within the clinic. Raises 404 otherwise."""
     u = await db.users.find_one(
@@ -330,9 +364,10 @@ async def create_appointment(payload: AppointmentCreate,
     #    typically don't need a clinical service code).
     service = payload.service or ("Consultation" if cp["counterparty_type"] == "patient" else "Meeting")
 
-    # 5. Time math + double-booking guard.
+    # 5. Time math + past-time guard + double-booking guard.
     start = payload.start_at
     end = start + timedelta(minutes=payload.duration_minutes)
+    _reject_past_start(start)
     overlap = await db.appointments.find_one(_overlap_query(clinic_id, staff_id, start, end))
     if overlap:
         raise HTTPException(status_code=409, detail={
@@ -548,6 +583,10 @@ async def update_appointment(appointment_id: str, payload: dict,
         update["audiologist_name"] = s.get("name", "")
 
     if impacts_schedule:
+        # If the caller is moving the slot forward in time, block a past
+        # move too. When only status/notes are being edited we skip this
+        # check so admins can still edit historical slots' metadata.
+        _reject_past_start(start)
         overlap = await db.appointments.find_one(
             _overlap_query(user["clinic_id"], effective_staff, start, end, exclude_id=appointment_id)
         )

@@ -26,12 +26,30 @@ Slot eligibility (applied by `/api/availability/slots`):
     machine-readable `reason` so the UI can grey them out with a tooltip.
   • A founder/super_admin can `?override=true` to render every slot
     bookable (still flags conflicts but lets the admin acknowledge).
+  • **Past-time slots** — when the requested date is today (in clinic
+    timezone), slots whose start time has already passed are marked
+    `available=False` with reason "Time has passed". `override=true`
+    does NOT bypass this — you can't time-travel.
 """
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone, time, timedelta
 from typing import List, Optional
+
+# ─────────────── Clinic timezone (IST) ───────────────
+# Every clinic on the platform today operates in India. Slot datetimes
+# are stored as naive wall-clock strings in IST, so past-time checks
+# need to compare against `now` computed in IST too. If we ever go
+# multi-country, switch this to a per-clinic setting.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_clinic_naive() -> datetime:
+    """`datetime.now()` cast to a naive wall-clock in the clinic's
+    timezone (IST). Naive so it compares directly against the naive
+    slot datetimes we build from `date + 'HH:MM'` strings."""
+    return datetime.now(IST).replace(tzinfo=None)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -313,6 +331,10 @@ async def availability_slots(
     # Walk every slot start from 06:00 to 22:00 at the requested granularity.
     DAY_START_MIN = 6 * 60     # 06:00
     DAY_END_MIN = 22 * 60      # 22:00
+    # Anchor for the "is this slot in the past?" check. Computed once
+    # before the loop so a slot's `available` flag doesn't drift while
+    # the request is in-flight.
+    now_wall = now_clinic_naive()
     slots: list[dict] = []
     cur = DAY_START_MIN
     while cur + duration_minutes <= DAY_END_MIN:
@@ -321,45 +343,52 @@ async def availability_slots(
         slot_end_dt = day_start.replace(hour=slot_end_min // 60,
                                         minute=slot_end_min % 60)
 
-        if not clinic_open:
-            reason, label = "Clinic closed today", None
+        # Past-time check runs FIRST — even override=true can't
+        # resurrect a slot whose start time has already come and gone.
+        if slot_start_dt <= now_wall:
+            reason, label = "Time has passed", None
             available = False
-        elif not staff_open:
-            reason, label = "Audiologist off today", None
-            available = False
-        elif not _slot_inside_any_window(cur, slot_end_min, clinic_windows):
-            reason, label = "Outside clinic hours / lunch break", None
-            available = False
-        elif not inherit and not _slot_inside_any_window(cur, slot_end_min, staff_windows):
-            reason, label = "Audiologist not on shift", None
-            available = False
+            past = True
         else:
-            # Inside both windows — last check is appointment conflict.
-            conflict = any(not (slot_end_dt <= bs or slot_start_dt >= be)
-                           for (bs, be) in busy_ranges)
-            if conflict:
-                reason, label = "Already booked", None
+            past = False
+            if not clinic_open:
+                reason, label = "Clinic closed today", None
+                available = False
+            elif not staff_open:
+                reason, label = "Audiologist off today", None
+                available = False
+            elif not _slot_inside_any_window(cur, slot_end_min, clinic_windows):
+                reason, label = "Outside clinic hours / lunch break", None
+                available = False
+            elif not inherit and not _slot_inside_any_window(cur, slot_end_min, staff_windows):
+                reason, label = "Audiologist not on shift", None
                 available = False
             else:
-                # Find which window label to show
-                lbl = None
-                for w in (staff_windows if not inherit and staff_open else clinic_windows):
-                    ws = _hhmm_to_minutes(w["start"])
-                    we = _hhmm_to_minutes(w["end"])
-                    if cur >= ws and slot_end_min <= we:
-                        lbl = w.get("label")
-                        break
-                reason, label, available = None, lbl, True
+                # Inside both windows — last check is appointment conflict.
+                conflict = any(not (slot_end_dt <= bs or slot_start_dt >= be)
+                               for (bs, be) in busy_ranges)
+                if conflict:
+                    reason, label = "Already booked", None
+                    available = False
+                else:
+                    # Find which window label to show
+                    lbl = None
+                    for w in (staff_windows if not inherit and staff_open else clinic_windows):
+                        ws = _hhmm_to_minutes(w["start"])
+                        we = _hhmm_to_minutes(w["end"])
+                        if cur >= ws and slot_end_min <= we:
+                            lbl = w.get("label")
+                            break
+                    reason, label, available = None, lbl, True
 
         slots.append({
             "start_at": slot_start_dt.isoformat(),
             "end_at": slot_end_dt.isoformat(),
-            # Override flag: when admin/owner ticks "book anyway", we expose
-            # every slot as `available=True` so the UI no longer disables them.
-            # The original `reason` is still returned so the tooltip continues
-            # to communicate WHAT is being overridden (lunch / off-shift /
-            # already-booked) — UI shows the warning, admin acknowledges.
-            "available": available or override,
+            # `override=true` re-opens slots blocked by lunch/off-shift/
+            # already-booked so admins can knowingly double-book. It
+            # explicitly does NOT re-open past-time slots — those are
+            # physical facts, not policy decisions.
+            "available": (available or override) and not past,
             "reason": reason,
             "label": label,
         })

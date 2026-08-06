@@ -96,7 +96,31 @@ const HA_BY_KEY = Object.fromEntries(HA_SERVICE_OPTIONS.map((t) => [t.key, t]));
 
 export default function BookAppointmentModal({ audiologists, initialDate, initialTime, existing, onClose, onSaved }) {
   const isEdit = !!existing?.appointment_id;
-  const today = useMemo(() => (initialDate ? initialDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)), [initialDate]);
+  // "Today" as YYYY-MM-DD in the clinic's wall-clock (India / IST). Using
+  // `.toISOString()` here would collapse to UTC, which is 5h30m earlier —
+  // meaning between 00:00-05:30 IST the app would think it's still
+  // yesterday. Locale-aware sv-SE format is deterministic YYYY-MM-DD.
+  const today = useMemo(
+    () => (initialDate
+      ? initialDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Kolkata' })
+      : new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Kolkata' })),
+    [initialDate],
+  );
+
+  // Current HH:MM (IST wall-clock). Refreshed every 30s so a form left
+  // open across the top-of-the-hour doesn't stale-block a user who
+  // legitimately wants to book the next slot.
+  const [nowHHMM, setNowHHMM] = useState(() =>
+    new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+  );
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNowHHMM(new Date().toLocaleTimeString('en-GB', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+      }));
+    }, 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Patient search
   const [patientQuery, setPatientQuery] = useState(existing?.patient_name || '');
@@ -123,7 +147,28 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   const [duration, setDuration] = useState(existing?.duration_minutes || 30);
   const [durationManuallySet, setDurationManuallySet] = useState(!!existing);
   const [date, setDate] = useState(existing?.start_at ? existing.start_at.slice(0, 10) : today);
-  const [time, setTime] = useState(existing?.start_at ? existing.start_at.slice(11, 16) : (initialTime || '10:00'));
+  // Smarter default when opening the modal on today's date: pick the next
+  // upcoming quarter-hour instead of a hardcoded 10:00 that might be hours
+  // in the past (5 PM user opens form → default 5:15, not 10:00 which the
+  // backend now rejects with 400).
+  const initialTimeSmart = useMemo(() => {
+    if (existing?.start_at) return existing.start_at.slice(11, 16);
+    if (initialTime) return initialTime;
+    // Round up to next 15-min mark in IST wall-clock.
+    const nowStr = new Date().toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+    });
+    const [hh, mm] = nowStr.split(':').map(Number);
+    let totalMin = hh * 60 + mm;
+    // Bump forward by the granularity so the user never lands on
+    // "already passed" for the current minute.
+    totalMin = Math.ceil((totalMin + 1) / 15) * 15;
+    if (totalMin >= 22 * 60) return '10:00';  // past evening cut-off → next-day-like default
+    const h2 = String(Math.floor(totalMin / 60)).padStart(2, '0');
+    const m2 = String(totalMin % 60).padStart(2, '0');
+    return `${h2}:${m2}`;
+  }, [existing?.start_at, initialTime]);
+  const [time, setTime] = useState(initialTimeSmart);
   const [notes, setNotes] = useState(existing?.notes || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -450,6 +495,9 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
 
   const valid =
     selectedPatient && audiologistId && date && time &&
+    // Never allow booking in the past — the backend also enforces this,
+    // but disabling the CTA locally saves a network round-trip.
+    !(date < today || (date === today && time < nowHHMM)) &&
     // For new appointments, require ≥1 chip (or consultation). For edits we
     // accept the legacy single-`service` value the row was created with so
     // older appointments don't get blocked from being edited.
@@ -464,6 +512,8 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   if (!audiologistId) missing.push('audiologist');
   if (!date) missing.push('date');
   if (!time) missing.push('time');
+  if (date && date < today) missing.push('a future date (yesterday-or-earlier not allowed)');
+  else if (date === today && time && time < nowHHMM) missing.push(`a future time on today (now is ${nowHHMM})`);
   if (!isEdit && visitType !== 'consultation') {
     if (wing === 'hearing_aid' && hearingAidServices.length === 0) {
       missing.push('at least one HA service');
@@ -698,11 +748,13 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
             <div>
               <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">Date *</label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="bk-date"
+                min={isEdit ? undefined : today}
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white" />
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">Time *</label>
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} data-testid="bk-time"
+                min={(!isEdit && date === today) ? nowHHMM : undefined}
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white" />
             </div>
           </div>
