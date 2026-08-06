@@ -161,3 +161,101 @@ async def recent_payments(
         {"clinic_id": user["clinic_id"]}, {"_id": 0},
     ).sort("paid_at", -1).limit(limit).to_list(limit)
     return rows
+
+
+@router.get("/accessory-sales")
+async def accessory_sales(
+    range: RangeKey = Query("monthly"),  # noqa: A002
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Aggregated view of accessory-line revenue for the Revenue dashboard.
+
+    Only counts lines whose parent invoice is fully `paid` — i.e. money
+    actually landed. Aggregates from `invoices.lines[]` where
+    `product_type == 'Accessory'` and the invoice's `created_at` falls
+    inside the resolved window.
+
+    Response:
+        {
+          "range", "from", "to",
+          "unit_count":       total accessory units sold,
+          "revenue":          gross revenue (line_total, incl. discount excl. GST),
+          "invoice_count":    # of distinct paid invoices touched,
+          "top_skus":         top-5 SKUs by revenue,
+                              [{brand, model, kind, variant, unit_count, revenue}]
+        }
+    """
+    d_from, d_to = _resolve_range(range, from_, to)
+    iso_from, iso_to = _iso_window(d_from, d_to)
+
+    # Pull paid invoices in window with at least one accessory line.
+    # We keep the aggregation Python-side; volume is <10k paid invoices
+    # per range for even our biggest tenants (roughly ~30 sales/day).
+    q = {
+        "clinic_id": user["clinic_id"],
+        "status": "paid",
+        "created_at": {"$gte": iso_from, "$lte": iso_to},
+        "lines.product_type": "Accessory",
+    }
+    invoices = await db.invoices.find(
+        q, {"_id": 0, "invoice_id": 1, "lines": 1},
+    ).to_list(20000)
+
+    # Resolve product_id → kind for any lines that have `accessory_product_id`
+    prod_ids: set[str] = set()
+    for inv in invoices:
+        for ln in inv.get("lines") or []:
+            if ln.get("product_type") == "Accessory" and ln.get("accessory_product_id"):
+                prod_ids.add(ln["accessory_product_id"])
+    kind_by_pid: dict[str, str] = {}
+    if prod_ids:
+        async for p in db.ha_products.find(
+            {"clinic_id": user["clinic_id"], "product_id": {"$in": list(prod_ids)}},
+            {"_id": 0, "product_id": 1, "accessory_kind": 1, "brand": 1, "model": 1},
+        ):
+            kind_by_pid[p["product_id"]] = p.get("accessory_kind") or "other"
+
+    unit_count = 0
+    revenue = 0.0
+    invoice_ids: set[str] = set()
+    # Group SKUs by (brand, model, variant) so "Phonak Silicone Dome — M"
+    # doesn't merge with the L variant.
+    by_sku: dict[tuple, dict] = {}
+    for inv in invoices:
+        touched = False
+        for ln in inv.get("lines") or []:
+            if ln.get("product_type") != "Accessory":
+                continue
+            qty = float(ln.get("quantity") or 0)
+            line_total = float(ln.get("line_total") or 0)  # discount incl., GST excl.
+            unit_count += int(qty)
+            revenue += line_total
+            touched = True
+            brand = (ln.get("make") or "—").strip()
+            model = (ln.get("model") or "—").strip()
+            variant = ln.get("accessory_variant") or None
+            kind = kind_by_pid.get(ln.get("accessory_product_id") or "", "other")
+            key = (brand.lower(), model.lower(), variant or "")
+            slot = by_sku.setdefault(key, {
+                "brand": brand, "model": model, "variant": variant,
+                "kind": kind, "unit_count": 0, "revenue": 0.0,
+            })
+            slot["unit_count"] += int(qty)
+            slot["revenue"] = round(slot["revenue"] + line_total, 2)
+        if touched:
+            invoice_ids.add(inv.get("invoice_id"))
+
+    top_skus = sorted(by_sku.values(), key=lambda x: x["revenue"], reverse=True)[:5]
+
+    return {
+        "range": range,
+        "from": d_from.isoformat(),
+        "to": d_to.isoformat(),
+        "unit_count": unit_count,
+        "revenue": round(revenue, 2),
+        "invoice_count": len(invoice_ids),
+        "top_skus": top_skus,
+    }

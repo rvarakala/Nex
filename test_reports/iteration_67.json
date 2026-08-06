@@ -1,0 +1,36 @@
+{
+  "summary": "Full backend + frontend regression + feature testing for the 2 next-action items on tenant-sound-clinic-blr: (1) Invoice AccessoryPicker + (2) Sales Report AccessorySalesCard on /accounts. Created 17-case pytest suite (test_accessory_sales_rollup.py) — all 17 pass covering endpoint shape, arithmetic, 6 range keys + custom, empty-window safety, no-auth 401, tenant scoping via founder cross-check, InvoiceLineCreate persistence of accessory_product_id+accessory_variant, and regression on non-accessory lines. Also re-ran existing test_accessories_preset_autodec.py::TestAutoDecrement (6/6 pass). Playwright e2e as owner@thesoundclinic.in confirms: AccessorySalesCard renders on /accounts with acc-sales-revenue/units/invoices/top-N testids, range chips (daily/yearly/custom) re-fetch and update the card, empty custom window (2015-01-01..31) shows the friendly 'No accessory lines on any paid invoices in this window yet' text. On /billing/new the AccessoryPicker teal panel appears when Product Type=Accessory; SKU dropdown has 22 options; battery-SKU (Rayovac 312 Zinc-Air) correctly disables the variant dropdown; picking 'Phonak · Silicone Dome (tip)' auto-fills Make='Phonak' + Model='Silicone Dome' + unit=₹60, populates 4 variants (S/M/L/Power) with '· OUT' or '· 20 on hand' markers, L stock indicator shows 20 in emerald, M shows the red out-of-stock warning banner. FULL UI E2E: filled description, qty=3, unit=60, picked Silicone Dome + L, ticked Collect payment now (₹180 cash), Create Invoice → INV/2026/000024 saved as PAID, invoice line persisted with accessory_product_id=PRD-A2E2E3EB + accessory_variant=L + quantity=3, and accessory_stock for that (product,variant) row decremented from 20 → 17 (exactly qty=3). Feature working end-to-end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/billing/new AccessoryPicker <select>", "issues": ["React hydration warning in browser console: `<span> cannot be a child of <option>` from CreateInvoicePage.js line 431 (the SKU or variant <option> renders a <span> for the '· OUT' / '· N on hand' marker). Not visually broken but pollutes console and can cause SSR/hydration issues. Suggest concatenating the marker as a plain string inside the option label instead of using a <span>."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_accessory_sales_rollup.py",
+    "/app/backend/tests/test_accessories_preset_autodec.py",
+    "/app/test_reports/pytest/accessory_sales_rollup.xml"
+  ],
+  "action_items": [
+    "(nice-to-have) Fix the <span> inside <option> in AccessoryPicker to silence the React hydration warning (CreateInvoicePage.js line 431). Use string concatenation for the ' · N on hand' / ' · OUT' marker.",
+    "(nice-to-have) The initial monthly load on /accounts sometimes shows '…' placeholder for a few hundred ms before AccessorySalesCard populates. Consider a lightweight skeleton to avoid the ellipsis flash — cosmetic only."
+  ],
+  "critical_code_review_comments": [
+    "routers/accounts.py::accessory_sales uses `created_at` ISO-string lexicographic prefix matching to filter the window. This works because created_at is always stored as ISO-8601, but it silently mismatches if any legacy invoice row stored created_at as a datetime object. Consider a defensive branch that also handles datetime-typed created_at.",
+    "routers/accounts.py::accessory_sales groups top_skus by (brand.lower(), model.lower(), variant or ''), but the display uses the first-seen casing. If two invoices differ in casing ('Phonak' vs 'phonak'), the display casing is non-deterministic. Minor cosmetic.",
+    "routers/accounts.py — for tenants with tens of thousands of paid invoices per year, pulling all invoice docs then aggregating in Python may become slow. Fine for MVP (<20k invoices) but should be revisited when a tenant crosses that threshold — add a Mongo aggregation pipeline with $unwind+$group.",
+    "The accessory-sales `revenue` sum uses `line_total` directly. Since line_total already reflects line-level discount and excludes GST per the docstring, this is correct — but it also means invoice-level discounts (if any) are NOT reflected in accessory revenue. Should be documented explicitly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_accessory_sales_rollup.py (NEW — 17-case pytest suite)"
+  ],
+  "success_rate": {"backend": "100% (17/17 new + 6/6 auto-decrement regression)", "frontend": "100% (AccessorySalesCard + AccessoryPicker + full UI E2E happy-path all pass)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123, founder@audinexa.com / AudinexaFounder@2026",
+  "seed_data_creation": "Playwright e2e created 1 paid invoice INV/2026/000024 (₹180 cash, patient Vishnu Reddy ACS-2026-CFFCC3E8, 3× Phonak Silicone Dome L) — this permanently decremented BR-SOUNDCLINIC-HQ Silicone Dome L stock from 20 → 17. Also 1 draft invoice from pytest TestInvoiceLineAccessoryFields with a TEST_SALES_* description. Non-destructive; all data prefixed TEST_ where possible.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_accessory_sales_rollup.py is the reusable pytest for the new /accounts/accessory-sales endpoint. Silicone Dome L stock is now 17 (was 20 before this test session — the UI e2e consumed 3). If future auto-decrement tests want the classic 20-baseline, adjust the L variant stock first via /ha/accessory-stock/{sku_id}/adjust. Founder tenant scoping check passes because the platform-tenant has 0 accessory revenue in yearly window, distinguishing it from sound-clinic's ~₹6,880. AccessoryPicker line-key pattern: locate first ci-toggle-product-* attribute and strip prefix to get {line.key} — timestamp-based, changes every add.",
+  "rca of the issue": "N/A — both features work per spec. The lone code-review action is the harmless React hydration warning in CreateInvoicePage.js (<span> inside <option>) — non-blocking but should be fixed for SSR-safety and console cleanliness."
+}

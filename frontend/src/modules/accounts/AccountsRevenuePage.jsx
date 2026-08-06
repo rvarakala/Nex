@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
-import { Calendar, IndianRupee, Users, FileText, RefreshCw, Stethoscope, UserSquare2 } from 'lucide-react';
+import { Calendar, IndianRupee, Users, FileText, RefreshCw, Stethoscope, UserSquare2, Ear, Package } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Area, AreaChart,
 } from 'recharts';
@@ -32,6 +32,7 @@ export default function AccountsRevenuePage() {
   const [to, setTo] = useState('');
   const [data, setData] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [accSales, setAccSales] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -43,12 +44,16 @@ export default function AccountsRevenuePage() {
         if (!from || !to) { setError('Pick a from and to date'); setLoading(false); return; }
         params.from = from; params.to = to;
       }
-      const [r1, r2] = await Promise.all([
+      const [r1, r2, r3] = await Promise.all([
         axios.get(`${API}/accounts/revenue`, { params }),
         axios.get(`${API}/accounts/recent-payments`, { params: { limit: 30 } }),
+        // Accessories rollup — same range window. Best-effort: if it 5xx's
+        // we don't want to nuke the whole dashboard, so degrade gracefully.
+        axios.get(`${API}/accounts/accessory-sales`, { params }).catch(() => ({ data: null })),
       ]);
       setData(r1.data);
       setRecent(r2.data || []);
+      setAccSales(r3.data || null);
     } catch (e) {
       setError(e?.response?.data?.detail || e.message);
     } finally { setLoading(false); }
@@ -129,6 +134,12 @@ export default function AccountsRevenuePage() {
         <KPI label="Unique paying patients" value={data?.unique_patients ?? '—'} tone="fuchsia" testid="kpi-patients" loading={loading} />
         <KPI label="Invoices" value={data?.invoice_count ?? '—'} tone="amber" testid="kpi-invoices" loading={loading} />
       </div>
+
+      {/* Accessories rollup card — batteries, tips, RIC receivers etc.
+          revenue in the same date window as everything above.
+          Placed on its own row so the primary revenue KPIs above stay
+          the dominant visual. */}
+      <AccessorySalesCard data={accSales} loading={loading} rangeLabel={RANGES.find((r) => r.key === range)?.label || range} />
 
       {/* Timeseries chart */}
       <div className="bg-white rounded-2xl shadow-sm p-5 border border-slate-200" data-testid="revenue-chart">
@@ -262,6 +273,97 @@ function BreakdownCard({ title, icon: Icon, rows, getKey, getLabel, showCount = 
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+
+/* Accessories rollup — batteries, tips, tubes, RIC receivers, etc.
+   Compact card with the two headline numbers on the left (unit count +
+   revenue) and a top-5 SKU breakdown on the right so owners can see
+   *what* is selling, not just *how much*. Empty-state renders a
+   friendly nudge instead of dead cells. */
+function AccessorySalesCard({ data, loading, rangeLabel }) {
+  const units = Number(data?.unit_count || 0);
+  const revenue = Number(data?.revenue || 0);
+  const invCount = Number(data?.invoice_count || 0);
+  const top = (data?.top_skus || []).slice(0, 5);
+  const totalRev = top.reduce((s, x) => s + (Number(x.revenue) || 0), 0) || 1;
+
+  return (
+    <div
+      className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4"
+      data-testid="accessory-sales-card"
+    >
+      <div className="flex items-start gap-2 mb-3">
+        <Package size={16} className="text-teal-700 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-bold text-slate-900">
+            Accessories sold · <span className="text-teal-700">{rangeLabel}</span>
+          </h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Batteries, tips, tubes, RIC receivers, chargers &amp; FM. Only paid invoices counted.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
+        {/* Left: 2 headline stats */}
+        <div className="space-y-2">
+          <div className="rounded-lg bg-white border border-teal-200 px-3 py-2" data-testid="acc-sales-revenue">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Revenue</div>
+            <div className="text-2xl font-bold text-teal-800 tabular-nums truncate" title={fmtINR(revenue)}>
+              {loading ? '…' : fmtINR(revenue)}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-white border border-slate-200 px-2.5 py-1.5" data-testid="acc-sales-units">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">Units</div>
+              <div className="text-lg font-bold text-slate-800 tabular-nums">{loading ? '…' : units}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 px-2.5 py-1.5" data-testid="acc-sales-invoices">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">Invoices</div>
+              <div className="text-lg font-bold text-slate-800 tabular-nums">{loading ? '…' : invCount}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: top-5 SKU list */}
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Top sellers</div>
+          {top.length === 0 ? (
+            <div className="text-[11.5px] text-slate-500 italic bg-white rounded-lg border border-slate-200 px-3 py-3">
+              No accessory lines on any paid invoices in this window yet. Add an accessory line item on your next invoice to start tracking this revenue stream.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {top.map((r, i) => {
+                const pct = (Number(r.revenue) / totalRev) * 100;
+                return (
+                  <div key={i} data-testid={`acc-sales-top-${i}`} className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-2 text-[12px]">
+                      <span className="truncate font-semibold text-slate-800 flex-1 min-w-0">
+                        {r.brand} · {r.model}
+                        {r.variant && (
+                          <span className="ml-1 text-teal-700 font-mono text-[11px]">({r.variant})</span>
+                        )}
+                      </span>
+                      <span className="tabular-nums text-slate-900 font-mono text-[12px]">{fmtINR(r.revenue)}</span>
+                      <span className="text-[10px] text-slate-500 flex-shrink-0">×{r.unit_count}</span>
+                    </div>
+                    <div className="h-1 bg-slate-100 rounded overflow-hidden">
+                      <div
+                        className="h-1 bg-gradient-to-r from-teal-400 to-teal-600"
+                        style={{ width: `${Math.max(3, pct)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

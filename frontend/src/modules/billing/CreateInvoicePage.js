@@ -281,6 +281,11 @@ export default function CreateInvoicePage() {
             model: (l.model || '').trim() || null,
             serial_numbers: serials.length ? serials : null,
             technology_tier: l.technology_tier || null,
+            // Accessory stock plumbing — set when the audiologist uses
+            // the Accessory Picker below. Enables the paid-invoice hook
+            // to auto-decrement the right (product, branch, variant) row.
+            accessory_product_id: l.accessory_product_id || null,
+            accessory_variant: l.accessory_variant || null,
           };
         }),
         notes: notes || null,
@@ -616,6 +621,7 @@ const POPULAR_MAKES   = ['Phonak', 'Signia', 'ReSound', 'Widex', 'Oticon', 'Star
 
 function ProductDetailsPanel({ line, onChange }) {
   const isHa = line.product_type === 'Hearing Aid';
+  const isAcc = line.product_type === 'Accessory';
   const qty  = Math.max(1, Math.floor(Number(line.quantity) || 1));
   // Ensure exactly `qty` slots when the panel is open so the UI matches sale qty.
   const serials = (() => {
@@ -634,6 +640,15 @@ function ProductDetailsPanel({ line, onChange }) {
   return (
     <div data-testid={`ci-product-panel-${line.key}`} className="space-y-2">
       <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Product details (optional)</div>
+
+      {/* Accessory Picker — appears above the free-text fields when the
+          line is tagged as an Accessory. Picking auto-fills brand, model,
+          unit price, GST + attaches the accessory_product_id/variant so
+          the paid-invoice hook can auto-decrement stock. Users can still
+          hand-edit any field afterwards (e.g. one-off custom pricing). */}
+      {isAcc && (
+        <AccessoryPicker line={line} onChange={onChange} />
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         <FieldLabel label="Product Type">
@@ -718,5 +733,186 @@ function FieldLabel({ label, children, disabled, hint }) {
       </span>
       {children}
     </label>
+  );
+}
+
+
+/* ============================================================================
+   AccessoryPicker — surfaces on a line whose product_type is "Accessory".
+
+   Lets the audiologist choose an accessory SKU (batteries, tips, RIC
+   receivers, etc.) from the clinic catalogue instead of hand-typing brand
+   and model. When a SKU with variants (e.g., a RIC Receiver with 1M/2M/3M/…)
+   is picked, a Variant dropdown appears so the user can pick the exact size.
+
+   Picking auto-fills the free-text fields below (make, model, MRP, GST) so
+   the layout below renders coherent data even after the picker is used.
+   Also attaches accessory_product_id + accessory_variant to the line so the
+   paid-invoice hook can decrement stock deterministically.
+   ========================================================================== */
+function AccessoryPicker({ line, onChange }) {
+  const [products, setProducts] = React.useState([]);
+  const [stock, setStock] = React.useState([]);       // stock rows for the picked SKU
+  const [loading, setLoading] = React.useState(true);
+
+  // Load accessory catalogue once per panel mount. Cheap: <50 SKUs typical.
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    axios.get(`${API}/ha/products`, {
+      params: { form_factor: 'accessory', active: true },
+    }).then((r) => {
+      if (!cancelled) setProducts(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => {
+      if (!cancelled) setProducts([]);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // When a product is picked, pull its stock rows across variants.
+  React.useEffect(() => {
+    if (!line.accessory_product_id) { setStock([]); return; }
+    let cancelled = false;
+    axios.get(`${API}/ha/accessory-stock`, {
+      params: { product_id: line.accessory_product_id },
+    }).then((r) => {
+      if (!cancelled) setStock(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => {
+      if (!cancelled) setStock([]);
+    });
+    return () => { cancelled = true; };
+  }, [line.accessory_product_id]);
+
+  const pickedProduct = products.find((p) => p.product_id === line.accessory_product_id) || null;
+  const variantLabels = pickedProduct?.variant_labels || [];
+  // Aggregate stock qty per variant across branches (audiologists can sell
+  // from any branch they have visibility into; the paid-invoice hook decrements
+  // the actor's branch row specifically at payment time).
+  const stockByVariant = React.useMemo(() => {
+    const m = new Map();
+    for (const s of stock) {
+      const v = s.variant || '';
+      m.set(v, (m.get(v) || 0) + Number(s.qty_on_hand || 0));
+    }
+    return m;
+  }, [stock]);
+
+  const onPickProduct = (product_id) => {
+    if (!product_id) {
+      onChange({ accessory_product_id: null, accessory_variant: null });
+      return;
+    }
+    const p = products.find((x) => x.product_id === product_id);
+    if (!p) return;
+    // Auto-fill display fields; the user can still edit them for one-off pricing.
+    const nextVariant = (p.variant_labels || []).length === 1 ? p.variant_labels[0] : null;
+    onChange({
+      accessory_product_id: p.product_id,
+      accessory_variant: nextVariant,
+      make: p.brand || '',
+      model: p.model || '',
+      unit_price: Number(p.mrp || 0) || Number(line.unit_price || 0),
+      gst_rate: Number(p.gst_rate ?? line.gst_rate ?? 18),
+    });
+  };
+
+  const onPickVariant = (variant) => onChange({ accessory_variant: variant || null });
+
+  const pickedVariantStock = line.accessory_variant
+    ? stockByVariant.get(line.accessory_variant)
+    : (pickedProduct && variantLabels.length === 0 ? stockByVariant.get('') : undefined);
+
+  const invoiceQty = Math.max(1, Math.floor(Number(line.quantity) || 1));
+
+  return (
+    <div
+      className="rounded border border-teal-200 bg-teal-50/60 px-2 py-2 space-y-2"
+      data-testid={`ci-accessory-picker-${line.key}`}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700">
+          Accessory picker
+        </span>
+        <span className="text-[10px] text-slate-500 italic">
+          Optional — attaches the exact SKU + variant so stock decrements automatically on payment
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_180px_120px] gap-2">
+        <FieldLabel label="Accessory SKU">
+          <select
+            value={line.accessory_product_id || ''}
+            onChange={(e) => onPickProduct(e.target.value)}
+            disabled={loading || products.length === 0}
+            data-testid={`ci-accessory-sku-${line.key}`}
+            className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white disabled:bg-slate-100"
+          >
+            <option value="">
+              {loading ? 'Loading catalogue…' : products.length === 0 ? 'No accessory SKUs in catalogue' : '— pick from catalogue —'}
+            </option>
+            {products.map((p) => (
+              <option key={p.product_id} value={p.product_id}>
+                {p.brand} · {p.model}{p.accessory_kind ? ` (${p.accessory_kind.replace('_', ' ')})` : ''}
+              </option>
+            ))}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel
+          label="Variant / Size"
+          disabled={!pickedProduct || variantLabels.length === 0}
+          hint={pickedProduct && variantLabels.length === 0 ? 'No sizes' : undefined}
+        >
+          <select
+            value={line.accessory_variant || ''}
+            onChange={(e) => onPickVariant(e.target.value)}
+            disabled={!pickedProduct || variantLabels.length === 0}
+            data-testid={`ci-accessory-variant-${line.key}`}
+            className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            <option value="">— pick —</option>
+            {variantLabels.map((v) => {
+              const q = stockByVariant.get(v);
+              const marker = q == null ? '' : q === 0 ? ' · OUT' : ` · ${q} on hand`;
+              return <option key={v} value={v}>{v}{marker}</option>;
+            })}
+          </select>
+        </FieldLabel>
+
+        <FieldLabel label="In stock" hint="Across branches">
+          <div
+            data-testid={`ci-accessory-stock-${line.key}`}
+            className={`w-full px-2 py-1 text-xs border rounded text-center font-bold tabular-nums ${
+              pickedVariantStock == null
+                ? 'border-slate-200 bg-slate-50 text-slate-400'
+                : pickedVariantStock === 0
+                  ? 'border-rose-300 bg-rose-50 text-rose-700'
+                  : pickedVariantStock < invoiceQty
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {pickedVariantStock == null ? '—' : pickedVariantStock}
+          </div>
+        </FieldLabel>
+      </div>
+
+      {/* Advisory warnings — never block save (audiologist may have stock in transit). */}
+      {pickedProduct && line.accessory_variant && pickedVariantStock === 0 && (
+        <div className="text-[11px] text-rose-700 bg-white border border-rose-200 rounded px-2 py-1"
+             data-testid={`ci-accessory-warn-out-${line.key}`}>
+          <b>Heads up:</b> this variant is out of stock in the catalogue. The invoice will still save, but the auto-decrement will floor to zero (a shortfall gets logged).
+        </div>
+      )}
+      {pickedProduct && line.accessory_variant && pickedVariantStock != null &&
+        pickedVariantStock > 0 && pickedVariantStock < invoiceQty && (
+        <div className="text-[11px] text-amber-800 bg-white border border-amber-200 rounded px-2 py-1"
+             data-testid={`ci-accessory-warn-low-${line.key}`}>
+          <b>Low stock:</b> only {pickedVariantStock} on hand, invoice asks for {invoiceQty}.
+        </div>
+      )}
+    </div>
   );
 }
