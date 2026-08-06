@@ -4,6 +4,7 @@ import ProductCataloguePage from './ProductCataloguePage';
 import InventoryBoardPage from './InventoryBoardPage';
 import DemoStockPage from './DemoStockPage';
 import SaleableStockPage from './SaleableStockPage';
+import AccessoriesPage from './AccessoriesPage';
 import ProcurementPage from './ProcurementPage';
 import VendorsPage from './VendorsPage';
 import QuotationStudioPage from './QuotationStudioPage';
@@ -24,7 +25,8 @@ import StockTransfersPage from './transfers/StockTransfersPage';
 // the user clicked. Routes the user reaches via direct URL still resolve.
 const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups']);
 const INVENTORY_PATHS = new Set([
-  'inventory', 'demo-stock', 'amc', 'procurement', 'products', 'transfers', 'vendors',
+  'inventory', 'demo-stock', 'saleable-stock', 'accessories', 'amc',
+  'procurement', 'products', 'transfers', 'vendors',
 ]);
 
 const SALES_TABS = [
@@ -38,6 +40,7 @@ const INVENTORY_TABS = [
   { to: '/ha/inventory',      label: 'Inventory Board', testid: 'ha-tab-inventory' },
   { to: '/ha/demo-stock',     label: 'Demo Stock',      testid: 'ha-tab-demo-stock' },
   { to: '/ha/saleable-stock', label: 'Saleable Stock',  testid: 'ha-tab-saleable-stock' },
+  { to: '/ha/accessories',    label: 'Accessories',     testid: 'ha-tab-accessories' },
   { to: '/ha/amc',            label: 'AMC',             testid: 'ha-tab-amc' },
   { to: '/ha/procurement',    label: 'Procurement',     testid: 'ha-tab-procurement' },
   { to: '/ha/products',       label: 'Catalogue',       testid: 'ha-tab-products' },
@@ -81,6 +84,7 @@ export default function HAModule() {
           <Route path="transfers" element={<StockTransfersPage />} />
           <Route path="demo-stock" element={<DemoStockPage />} />
           <Route path="saleable-stock" element={<SaleableStockPage />} />
+          <Route path="accessories" element={<AccessoriesPage />} />
           <Route path="quotations/*" element={<QuotationStudioPage />} />
           <Route path="trials" element={<TrialsPage />} />
           <Route path="fittings" element={<FittingLedgerPage />} />

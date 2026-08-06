@@ -120,6 +120,18 @@ class Product(BaseModel):
     is_serialised: bool = True
     active: bool = True
     notes: Optional[str] = None
+    # ---- Accessory-specific taxonomy (Feb 2026) ----
+    # Only meaningful when `form_factor == "accessory"`. Absent/None on
+    # regular HA SKUs so the existing catalogue rows keep working
+    # unchanged. `accessory_kind` gives the fine-grained bucket the UI
+    # groups by; `accessory_category` gives the commercial classification
+    # audiologists use in day-to-day speech; `variant_labels` is a flat
+    # list of size/power labels (e.g. ["1M","2M","3M","10P","2P","3P",
+    # "1S","2S","3S"] for RIC receivers). One `accessory_stock` row
+    # tracks qty per (product, branch, variant).
+    accessory_kind: Optional[str] = None
+    accessory_category: Optional[Literal["consumable", "addon", "replaceable"]] = None
+    variant_labels: List[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -138,6 +150,10 @@ class ProductCreate(BaseModel):
     gst_rate: float = 18.0
     is_serialised: bool = True
     notes: Optional[str] = None
+    # Accessory-specific — see `Product` for semantics.
+    accessory_kind: Optional[str] = None
+    accessory_category: Optional[Literal["consumable", "addon", "replaceable"]] = None
+    variant_labels: List[str] = Field(default_factory=list)
 
 
 # ==================== SERIAL ITEM ====================

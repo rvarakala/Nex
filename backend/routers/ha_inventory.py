@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from auth import (
     get_current_user, require_roles, user_can_see_branch,
@@ -16,7 +17,7 @@ from auth import (
 )
 from database import get_db
 from models_ha import (
-    SerialItem, SerialItemUpdate,
+    Product, SerialItem, SerialItemUpdate,
     AccessoryStock, AccessoryAdjust,
 )
 from utils.ha_states import transition_serial
@@ -486,6 +487,210 @@ async def list_accessory_stock(
         q["$expr"] = {"$lte": ["$qty_on_hand", "$reorder_level"]}
     rows = await db.accessory_stock.find(q, {"_id": 0}).sort("updated_at", -1).to_list(500)
     return [deserialize_datetime(r) for r in rows]
+
+
+@router.get("/accessory-stock-hydrated")
+async def list_accessory_stock_hydrated(
+    branch_id: Optional[str] = None,
+    product_id: Optional[str] = None,
+    low_stock_only: bool = False,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Same rows as `/accessory-stock` but with the product SKU + branch
+    name joined in — saves the frontend a batch fetch. Also returns a
+    KPI strip (total_skus, zero_stock, low_stock, ok_stock) so the tab
+    header lights up in one round-trip.
+    """
+    q = _branch_scope(user)
+    if branch_id:
+        if not user_can_see_branch(user, branch_id):
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        q["branch_id"] = branch_id
+    if product_id:
+        q["product_id"] = product_id
+    if low_stock_only:
+        q["$expr"] = {"$lte": ["$qty_on_hand", "$reorder_level"]}
+    rows = await db.accessory_stock.find(q, {"_id": 0}).sort("updated_at", -1).to_list(500)
+
+    # Hydrate product + branch names
+    product_ids = list({r["product_id"] for r in rows if r.get("product_id")})
+    branch_ids = list({r["branch_id"] for r in rows if r.get("branch_id")})
+    pmap: dict = {}
+    if product_ids:
+        async for p in db.ha_products.find(
+            {"clinic_id": user["clinic_id"], "product_id": {"$in": product_ids}},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1, "form_factor": 1,
+             "accessory_kind": 1, "accessory_category": 1, "mrp": 1, "gst_rate": 1},
+        ):
+            pmap[p["product_id"]] = p
+    bmap: dict = {}
+    if branch_ids:
+        async for b in db.branches.find(
+            {"clinic_id": user["clinic_id"], "branch_id": {"$in": branch_ids}},
+            {"_id": 0, "branch_id": 1, "name": 1, "city": 1},
+        ):
+            bmap[b["branch_id"]] = b
+
+    # Full unfiltered KPI totals (independent of low_stock_only)
+    kpi_q = _branch_scope(user)
+    total_skus = await db.accessory_stock.count_documents(kpi_q)
+    zero_stock = await db.accessory_stock.count_documents({**kpi_q, "qty_on_hand": 0})
+    low_stock = await db.accessory_stock.count_documents({
+        **kpi_q,
+        "$expr": {"$and": [
+            {"$gt": ["$qty_on_hand", 0]},
+            {"$lte": ["$qty_on_hand", "$reorder_level"]},
+        ]},
+    })
+    ok_stock = max(0, total_skus - zero_stock - low_stock)
+
+    out = []
+    for r in rows:
+        r = deserialize_datetime(r)
+        r["product"] = pmap.get(r.get("product_id"))
+        r["branch"] = bmap.get(r.get("branch_id"))
+        out.append(r)
+    return {
+        "kpis": {
+            "total_skus": total_skus, "zero_stock": zero_stock,
+            "low_stock": low_stock, "ok_stock": ok_stock,
+        },
+        "items": out,
+    }
+
+
+class InitAccessoryStockPayload(BaseModel):
+    """Bulk-create `accessory_stock` rows for a product across variants × branches.
+
+    Idempotent: if a row already exists for (product, branch, variant) the
+    existing row is left untouched. Newly created rows start at qty=0.
+    Pass an empty `variants` list to init a single row per branch (for
+    accessories that have no size/power variants — e.g. wax guards).
+    """
+    branch_ids: List[str]
+    variants: List[str] = []                # empty means "no variant" (single row)
+    reorder_level: int = 0
+
+
+@router.post("/products/{product_id}/init-accessory-stock")
+async def init_accessory_stock(
+    product_id: str,
+    payload: InitAccessoryStockPayload,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Create the zero-qty `accessory_stock` rows so the Batch Stock tab
+    lights up immediately after the SKU is added to the catalogue."""
+    product = await db.ha_products.find_one(
+        {"product_id": product_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product.get("is_serialised", True):
+        raise HTTPException(
+            status_code=400,
+            detail="Init-stock only applies to non-serialised (batch) accessories",
+        )
+    for bid in payload.branch_ids:
+        if not user_can_see_branch(user, bid):
+            raise HTTPException(status_code=403, detail=f"Branch {bid} not in your access")
+
+    variants = payload.variants or [None]  # None = a single unified row
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created = 0
+    skipped = 0
+    for bid in payload.branch_ids:
+        for variant in variants:
+            match = {"clinic_id": user["clinic_id"], "product_id": product_id,
+                     "branch_id": bid, "variant": variant}
+            exists = await db.accessory_stock.find_one(match, {"_id": 0, "sku_id": 1})
+            if exists:
+                skipped += 1
+                continue
+            row = AccessoryStock(
+                clinic_id=user["clinic_id"],
+                branch_id=bid,
+                product_id=product_id,
+                variant=variant,
+                qty_on_hand=0,
+                reorder_level=int(payload.reorder_level or 0),
+                updated_at=now_iso,
+            )
+            await db.accessory_stock.insert_one(serialize_datetime(row.model_dump()))
+            created += 1
+    return {"created": created, "skipped_existing": skipped}
+
+
+class _RicPresetPayload(BaseModel):
+    """One-tap create-and-seed for RIC Receivers.
+
+    Creates a catalogue Product with `form_factor="accessory"`,
+    `is_serialised=false`, and the 9-variant preset labels populated:
+
+        1M · 2M · 3M · 10P · 2P · 3P · 1S · 2S · 3S
+
+        (M = Medium/Moderate; P = Power; S = Standard)
+
+    Also seeds the 9 `accessory_stock` rows per branch at qty=0. Owner
+    or inventory manager only.
+    """
+    brand: str
+    model: str = "RIC Receiver"
+    branch_ids: List[str]
+    mrp: float = 0.0
+    gst_rate: float = 18.0
+    hsn: str = "9021"
+    reorder_level: int = 0
+
+
+RIC_RECEIVER_VARIANTS = ["1M", "2M", "3M", "10P", "2P", "3P", "1S", "2S", "3S"]
+
+
+@router.post("/products/preset-ric-receiver")
+async def preset_ric_receiver(
+    payload: _RicPresetPayload,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    """Create-and-seed a fully-set-up RIC Receiver SKU in one call."""
+    for bid in payload.branch_ids:
+        if not user_can_see_branch(user, bid):
+            raise HTTPException(status_code=403, detail=f"Branch {bid} not in your access")
+
+    # 1) Create the Product.
+    product = Product(
+        clinic_id=user["clinic_id"],
+        brand=payload.brand.strip(),
+        model=payload.model.strip() or "RIC Receiver",
+        form_factor="accessory",
+        is_serialised=False,
+        mrp=float(payload.mrp or 0),
+        gst_rate=float(payload.gst_rate or 18.0),
+        hsn=payload.hsn or "9021",
+        accessory_kind="ric_receiver",
+        accessory_category="replaceable",
+        variant_labels=list(RIC_RECEIVER_VARIANTS),
+    )
+    await db.ha_products.insert_one(serialize_datetime(product.model_dump()))
+
+    # 2) Seed 9 accessory_stock rows per branch at qty=0.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created = 0
+    for bid in payload.branch_ids:
+        for variant in RIC_RECEIVER_VARIANTS:
+            row = AccessoryStock(
+                clinic_id=user["clinic_id"],
+                branch_id=bid,
+                product_id=product.product_id,
+                variant=variant,
+                qty_on_hand=0,
+                reorder_level=int(payload.reorder_level or 0),
+                updated_at=now_iso,
+            )
+            await db.accessory_stock.insert_one(serialize_datetime(row.model_dump()))
+            created += 1
+    return {"product": deserialize_datetime(product.model_dump()), "stock_rows_created": created}
 
 
 @router.post("/accessory-stock/{sku_id}/adjust")

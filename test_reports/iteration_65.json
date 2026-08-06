@@ -1,0 +1,41 @@
+{
+  "summary": "Full backend + frontend test of the new Accessories inventory feature on tenant tenant-sound-clinic-blr. All 14 pytest cases (hydrated KPIs/filters, RIC preset create-and-seed, init-accessory-stock idempotency + serialised rejection, adjust +/-, 409 below-zero, and role gating on all three write endpoints) pass. Playwright e2e on owner@thesoundclinic.in confirms the /ha/accessories page loads, HA nav shows 7 tabs, all 3 sub-tabs render, 4 KPI cards + 20 stock rows display, low-stock filter works, Adjust modal opens+saves, New-Accessory modal e2e creates a battery SKU that appears in Batch Stock, and RIC preset modal opens. One pre-existing (NOT introduced by this feature) backend bug found: GET /api/ha/serial-items returns 500 whenever any SOLD serial item is in-scope, which breaks the Serialised sub-tab.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/ha/serial-items", "issue": "Returns 500 on unfiltered list AND on state=SOLD filter (state=IN_STOCK/DEMO/RETIRED work). The response_model=List[SerialItem] pydantic validation is failing on at least one legacy SOLD row in tenant-sound-clinic-blr. Backend swallows the traceback so no stacktrace in /var/log/supervisor/backend.out.log — only 'Internal server error'. This breaks the Serialised Accessories sub-tab (it fetches /api/ha/serial-items unfiltered). Also breaks /api/ha/amc/contracts and /api/ha/fittings which 500 for the same tenant.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Serialised sub-tab", "issue": "Depends on GET /api/ha/serial-items which currently 500s — sub-tab renders the search input + branch dropdown but the row list stays empty (network error silently swallowed). Not caused by this feature — see backend critical bug above. Once serial-items is fixed, feature-test coverage should also add a serialised accessory + one serial unit to exercise the actual filter logic.", "affected_selectors": ["acc-subtab-serialised", "acc-serial-search"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_accessories_inventory.py",
+    "/app/test_reports/pytest/accessories.xml"
+  ],
+  "action_items": [
+    "Fix /api/ha/serial-items 500 — most likely a SerialItem pydantic model field became stricter and a legacy SOLD row fails validation. Add try/except-per-row deserialization OR relax the model. Same fix probably resolves the 500s on /api/ha/amc/contracts and /api/ha/fittings for this tenant.",
+    "(nice-to-have) Add a proper backend error logger / 500-handler that dumps the traceback + request_id so future 500s aren't silent.",
+    "(nice-to-have) Once serial-items is fixed, seed one serialised accessory product + serial unit into tenant-sound-clinic-blr so the Serialised sub-tab has visible content for demo/screenshots."
+  ],
+  "critical_code_review_comments": [
+    "AccessoriesPage.jsx is 1030+ lines and hosts 6 sub-components — consider splitting into /modules/ha/accessories/{CatalogueTab.jsx, BatchStockTab.jsx, SerialisedTab.jsx, NewAccessoryModal.jsx, RicPresetModal.jsx, AdjustStockModal.jsx}. Exceeds the 700-line guideline.",
+    "preset_ric_receiver has no idempotency guard — repeated calls with the same brand create duplicate SKUs with 9 duplicate stock rows each. Consider a uniqueness check on (clinic_id, brand, model, accessory_kind='ric_receiver') or accept idempotency-key.",
+    "GET /accessory-stock-hydrated is hard-capped to 500 rows via .to_list(500) but there is no cursor / pagination — mid-size clinics with many SKUs × branches × variants will silently truncate. Add total count in response or paginate.",
+    "AccessoryAdjust endpoint accepts arbitrary 'reason' strings — no server-side enum enforcement. Frontend sends {stock_in, stock_out, damaged, gifted, returned, adjustment}; consider a Literal[...] on the pydantic model so bogus reasons can't slip in via curl.",
+    "init_accessory_stock loops sequentially with await find_one → insert_one per (branch × variant). For a 9-variant RIC across 5 branches that's 90 round-trips. Acceptable at MVP scale but a bulk_write / $setOnInsert upsert would be cleaner.",
+    "New-Accessory modal in AccessoriesPage.jsx uses browser default <select> for kind/category/branch — consider aligning with the rest of the app's shadcn Select components for consistency."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (14/14 accessories tests)", "frontend": "~90% (all core flows pass; Serialised sub-tab blocked by pre-existing serial-items 500)"},
+  "test_credentials": "owner@thesoundclinic.in / demo123 (owner), aditi@thesoundclinic.in / demo123 (audiologist — used for role-gate 403 assertions), meera@thesoundclinic.in / demo123 (front_desk — used for role-gate)",
+  "seed_data_creation": "Pytest run created a handful of TEST_-prefixed accessory products (TEST_RIC_*, TEST_BAT_*, TEST_CHRG_*) plus their stock rows on tenant-sound-clinic-blr. Also one UITest_<ts> battery SKU created via Playwright New-Accessory modal e2e. These are harmless leftovers; consider a manual cleanup or add a fixture teardown in a future iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test file is /app/backend/tests/test_accessories_inventory.py — pytest-native, reusable for regression. Frontend accessories e2e was executed via Playwright directly (not saved as a persistent script). If the serial-items 500 gets fixed by main agent, re-run this file + browse to /ha/accessories → Serialised tab to confirm the list populates. The 500 also affects /api/ha/amc/contracts and /api/ha/fittings for the same tenant — likely same root cause (strict pydantic model + a legacy row missing required field).",
+  "rca of the issue": "GET /api/ha/serial-items?state=SOLD returns 500 while state=IN_STOCK / DEMO / RETIRED return 200. The endpoint uses response_model=List[SerialItem] which forces pydantic to validate every row. At least one SOLD row in tenant-sound-clinic-blr's serial_items collection is missing / has a wrong-typed field that the SerialItem model now requires. Reproduction: login as owner@thesoundclinic.in → curl /api/ha/serial-items?state=SOLD → 500. Mitigation options: (a) drop response_model and manually deserialize with per-row try/except, (b) make the offending SerialItem field Optional, or (c) run a one-off migration to backfill the missing field on legacy SOLD rows. Backend also currently swallows the traceback (no stack in backend.out.log) — worth adding a proper exception logger while fixing this."
+}
