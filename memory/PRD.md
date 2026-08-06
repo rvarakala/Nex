@@ -1,5 +1,39 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🐛 Appointment Past-Time & Double-Booking Bug Fix (2026-08-06)
+
+**User report (production)**:
+> "When I choose an appointment, and give the time schedule it is still booking appointments on time for the same day in the morning even though I book appointments in the evening. It is even taking bookings on the completed time. Sometimes it may be left unnoticed."
+
+**Diagnosis**:
+1. `POST /api/appointments` had a double-booking overlap guard but **no past-time guard**. At 5 PM the system happily accepted `start_at=today 10:00:00`.
+2. `GET /api/availability/slots` never marked past-time slots as unavailable — the eligibility ladder only checked clinic-open / staff-open / lunch-break / already-booked, missing the "is this slot in the past?" case entirely.
+3. Frontend `BookAppointmentModal.js` computed `today` via `.toISOString().slice(0,10)` (UTC-based). Between 00:00-05:30 IST the app thought it was still yesterday. Default time was hardcoded `10:00` regardless of the current hour. No `min` attributes on the date/time inputs.
+
+**Fix**:
+- **`backend/routers/schedules.py`** — new `now_clinic_naive()` helper + `IST` constant (single source of truth for the clinic's wall-clock). `/availability/slots` now runs the past-time check as the FIRST eligibility criterion. Past slots return `available=false, reason="Time has passed"`. `override=true` explicitly does NOT resurrect past slots (`(available or override) and not past`).
+- **`backend/routers/appointments.py`** — new `_reject_past_start()` helper (uses the shared IST helper). Called from both `create_appointment` and `update_appointment` (the latter only when `impacts_schedule=True` — metadata-only edits on historical appointments must still succeed). 2-minute grace window for clock-tick between "type time" and "click Book".
+- **`frontend/BookAppointmentModal.js`** — `today` now via `toLocaleDateString('sv-SE', {timeZone:'Asia/Kolkata'})` (deterministic YYYY-MM-DD in IST). New `nowHHMM` state refreshed every 30s. Smart `initialTimeSmart` default — rounds up to the next 15-min mark in IST (not hardcoded 10:00). `min` attribute on the date input = today. `min` attribute on the time input = current IST HH:MM (only when date=today). `valid` and the human-readable `missing[]` array include the past-time reasons.
+
+**Testing**:
+- New `/app/backend/tests/test_appointment_past_time_guard.py` — 10/11 cases pass, 1 env-dependent skip covered transitively.
+  - Yesterday 10:00 → 400.
+  - Now minus 3 min → 400.
+  - Current-minute (within 2-min grace) → 200.
+  - Future booking → 200 (+ 409 on duplicate — double-booking guard intact).
+  - Moving an appointment backward via PUT → 400.
+  - Metadata-only edit on a past appointment → 200 (regression-safe for status updates).
+  - `/availability/slots` yesterday → every slot flagged; tomorrow → 0 flagged; override=true does NOT bypass past.
+- Playwright: 8/8 checks — IST-aware default, min attributes on both inputs, smart default time, Book button disable on past-time, hint text visible.
+
+**Design decisions**:
+- 2-minute grace is deliberate: front desk typing "10:00" and clicking Book at 09:59:35 should not fail. Anything further back is rejected.
+- Multi-timezone future: if we ever go non-India, replace the module-level `IST` constant with a per-clinic setting fetched on request.
+- The frontend `nowHHMM` refresh interval (30 s) prevents the CTA from freezing across the top-of-the-hour boundary if the user leaves the form open.
+
+---
+
+
 ## 💳 Invoice Accessory Picker + Sales Report Card (2026-08-06)
 
 **Two shipped features from the user's next-action list.**
