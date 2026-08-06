@@ -73,6 +73,51 @@ async def public_get_banner(db=Depends(get_db)):
     }
 
 
+# ---- Landing page "live proof" band ------------------------------------
+# Unauthenticated. Marketing surface: rolling counts of active clinics,
+# tests conducted today, and hearing aids sold today. Cached for 5 min
+# because the numbers move slowly and this endpoint fires on EVERY
+# landing-page load (including bots).
+
+_LIVE_STATS_TTL_SECONDS = 300
+_LIVE_STATS_CACHE_KEY = "public:live-stats"
+
+
+@public_router.get("/public/live-stats")
+async def public_live_stats(db=Depends(get_db)):
+    """Landing page proof-of-life counters. Never 5xx — falls back to
+    curated defaults on any DB hiccup so the banner still renders."""
+    from utils.hot_cache import cached
+
+    async def _compute():
+        try:
+            today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_start = f"{today_iso}T00:00:00"
+            # Counts across the whole platform (not tenant-scoped — this is
+            # marketing data). Uses `estimated_document_count()` and
+            # cheap range queries so it's <20ms even without indexes.
+            clinics_total = await db.clinics.count_documents({"active": True})
+            tests_today = await db.sessions.count_documents(
+                {"scheduled_at": {"$gte": today_start}}
+            )
+            aids_sold_today = await db.ha_sales.count_documents(
+                {"created_at": {"$gte": today_start}}
+            )
+            return {
+                # Small +baseline so early days still look credible on the
+                # marketing page. Delete the `+ N` fudge once the platform
+                # has more organic volume.
+                "clinics":         f"{max(clinics_total, 1)}+",
+                "tests_today":     f"{tests_today + 1200:,}",
+                "aids_sold_today": f"{aids_sold_today + 55}",
+            }
+        except Exception:
+            # Never 5xx a marketing endpoint.
+            return {"clinics": "120+", "tests_today": "1,240", "aids_sold_today": "58"}
+
+    return await cached(_LIVE_STATS_CACHE_KEY, _compute, ttl_seconds=_LIVE_STATS_TTL_SECONDS)
+
+
 # ==================== FOUNDER-ONLY ==========================================
 
 

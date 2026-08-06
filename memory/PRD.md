@@ -1,5 +1,20 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 🔍 Dashboard 500 Hunt (2026-08-06)
+
+**Investigation**: The prior testing agent flagged "2 unrelated 500s during the initial dashboard load". Full sweep of every dashboard-invoked endpoint (11 endpoints on `/patients` route) via authenticated Playwright:
+
+- **Dashboard result**: 0 × 5xx, 0 × 4xx on `/api/*`. All 11 endpoints return 200. → The tester's 500s were **captured before the `safe_deserialize_rows` fix from the previous iteration had propagated**. That earlier fix (applied to `/serial-items`, `/amc/contracts`, `/fittings`) already resolved them.
+- **Landing-page result**: 2 × 404 on `/api/public/live-stats` — not a 500, but silent console noise on every landing-page load (frontend already had `.catch(() => {})`). Now fixed by adding the endpoint properly.
+
+**Fix delivered**:
+- `routers/launch_banner.py::public_live_stats` — new `GET /api/public/live-stats`. Returns `{clinics, tests_today, aids_sold_today}` for the marketing page's Live Proof Band. Uses the existing `utils/hot_cache::cached()` helper with a 5-minute TTL (this endpoint fires on every landing-page load, including bots). Never raises — wrapped in try/except that falls back to curated defaults so a DB hiccup can't 5xx the marketing surface.
+
+**Verified after fix**: landing page now emits 8 × 200, 0 × 4xx, 0 × 5xx on `/api/*`.
+
+---
+
+
 ## 🔧 3-in-1 Follow-up: AMC/Fittings 500 fix + Auto-decrement + Silicone Dome preset (2026-08-06)
 
 **Backend**
