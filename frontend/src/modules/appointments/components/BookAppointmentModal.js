@@ -174,6 +174,10 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   const [err, setErr] = useState(null);
   const [slots, setSlots] = useState([]);
   const [nextAvailable, setNextAvailable] = useState(null);
+  // When today's day has < 3 future openings, we prefetch tomorrow's first
+  // few available slots so the suggestion panel can spill over cleanly.
+  // Keyed by date-string so we don't re-fetch on every render.
+  const [nextDaySlots, setNextDaySlots] = useState(null);  // { date, slots:[…] } | null
   const [override, setOverride] = useState(false);
   const [showAllSlots, setShowAllSlots] = useState(false);
 
@@ -493,6 +497,86 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   }, [audiologistId, date, duration, override]);
   useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
+  // ── Slot Suggestion Panel data ────────────────────────────────────
+  // Users kept picking blocked slots (past-time / lunch / off-shift /
+  // already-booked) and had to guess what was open next. We surface the
+  // next 3 valid slots as click-to-fill pills. When today has fewer than
+  // 3 openings, we spill over to tomorrow — fetched on demand so we
+  // don't pay for the extra round-trip unless it's actually needed.
+  const pickedTimeIso = date && time ? `${date}T${time}:00` : null;
+  const pickedSlot = React.useMemo(
+    () => (pickedTimeIso ? slots.find((s) => s.start_at === pickedTimeIso) || null : null),
+    [slots, pickedTimeIso],
+  );
+  const pickedIsUnavailable = !!(
+    pickedTimeIso && slots.length > 0
+    && (
+      // Case 1: an exact slot exists in the grid but is blocked.
+      (pickedSlot && !pickedSlot.available)
+      // Case 2: the time doesn't fall on a slot boundary at all (typed
+      // freely) — we can't confirm availability, but we CAN help if the
+      // user is targeting a past date / past hour.
+      || (!pickedSlot && (date < today || (date === today && time < nowHHMM)))
+    )
+  );
+
+  // Same-day suggestions: next 3 available slots AT or AFTER the picked time.
+  const sameDaySuggestions = React.useMemo(() => {
+    if (!pickedIsUnavailable) return [];
+    const anchor = pickedTimeIso || '';
+    return slots.filter((s) => s.available && s.start_at > anchor).slice(0, 3);
+  }, [slots, pickedIsUnavailable, pickedTimeIso]);
+
+  // Spill to tomorrow when today can't fully cover the 3-slot ask.
+  const needsTomorrow = pickedIsUnavailable && sameDaySuggestions.length < 3;
+  const tomorrowISO = React.useMemo(() => {
+    if (!date) return null;
+    const d = new Date(`${date}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    // sv-SE → YYYY-MM-DD (deterministic regardless of locale).
+    return d.toLocaleDateString('sv-SE');
+  }, [date]);
+
+  useEffect(() => {
+    if (!needsTomorrow || !audiologistId || !tomorrowISO) return;
+    if (nextDaySlots?.date === tomorrowISO) return;   // already have it
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/availability/slots`, {
+          params: {
+            staff_id: audiologistId,
+            date: tomorrowISO,
+            duration_minutes: duration,
+          },
+        });
+        if (!cancelled) {
+          setNextDaySlots({ date: tomorrowISO, slots: r.data?.slots || [] });
+        }
+      } catch {
+        if (!cancelled) setNextDaySlots({ date: tomorrowISO, slots: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [needsTomorrow, audiologistId, tomorrowISO, duration, nextDaySlots?.date]);
+
+  const suggestions = React.useMemo(() => {
+    if (!pickedIsUnavailable) return [];
+    const merged = [...sameDaySuggestions];
+    if (needsTomorrow && nextDaySlots?.slots?.length) {
+      for (const s of nextDaySlots.slots) {
+        if (merged.length >= 3) break;
+        if (s.available) merged.push(s);
+      }
+    }
+    return merged;
+  }, [pickedIsUnavailable, sameDaySuggestions, needsTomorrow, nextDaySlots]);
+
+  const applySuggestion = React.useCallback((s) => {
+    setDate(s.start_at.slice(0, 10));
+    setTime(s.start_at.slice(11, 16));
+  }, []);
+
   const valid =
     selectedPatient && audiologistId && date && time &&
     // Never allow booking in the past — the backend also enforces this,
@@ -758,6 +842,74 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
                 className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white" />
             </div>
           </div>
+
+          {/* Slot-Suggestion Panel — proactive nudge when the picked date/time
+              is unbookable. Shows up to 3 clickable pills; falls through to
+              tomorrow when today is fully past / booked. Users came to us
+              tired of "let me scroll through 60 slot chips" so this is the
+              zero-scroll fast-path. Hidden when the pick is fine. */}
+          {pickedIsUnavailable && (
+            <div
+              className="bg-amber-50 border border-amber-300 rounded-md px-3 py-2"
+              data-testid="bk-slot-suggestion"
+            >
+              <div className="flex items-start gap-2">
+                <span className="text-amber-600 flex-shrink-0 text-sm leading-none mt-0.5">⚠</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11.5px] font-semibold text-amber-900">
+                    {pickedSlot?.reason
+                      ? <><span className="font-mono">{time}</span> — {pickedSlot.reason}</>
+                      : (date < today
+                          ? <>That date is in the past</>
+                          : <>That time has already passed</>)}
+                  </div>
+                  {suggestions.length > 0 ? (
+                    <>
+                      <div className="text-[10.5px] text-amber-800 mt-1 mb-1.5">
+                        Try one of these instead:
+                      </div>
+                      <div className="flex flex-wrap gap-1.5" data-testid="bk-suggestion-pills">
+                        {suggestions.map((s) => {
+                          const sDate = s.start_at.slice(0, 10);
+                          const sTime = s.start_at.slice(11, 16);
+                          const dayHint =
+                            sDate === date
+                              ? null
+                              : sDate === tomorrowISO
+                                ? 'tomorrow'
+                                // Fallback for far-future spillover (not currently reachable but
+                                // future-proof).
+                                : new Date(`${sDate}T00:00:00`).toLocaleDateString('en-IN', {
+                                    weekday: 'short', day: 'numeric', month: 'short',
+                                  });
+                          return (
+                            <button
+                              key={s.start_at}
+                              type="button"
+                              onClick={() => applySuggestion(s)}
+                              data-testid={`bk-suggestion-${sDate}-${sTime}`}
+                              className="text-[11px] font-semibold px-2.5 py-1 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-full shadow-sm transition"
+                            >
+                              <span className="font-mono">{sTime}</span>
+                              {dayHint && (
+                                <span className="ml-1 text-[10px] font-normal text-slate-500">
+                                  · {dayHint}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[10.5px] text-amber-800 mt-1 italic">
+                      No open slots on this day. Try a later date or tick <b>Override</b> below.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Suggested slots — full day grid with availability metadata.
               Available slots are highlighted; unavailable ones (lunch, off-shift,

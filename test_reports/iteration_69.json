@@ -1,0 +1,64 @@
+{
+  "summary": "Verified the new BookAppointmentModal Slot-Suggestion Panel end-to-end. Backend past-time / double-booking / availability regression suite (11 tests, iter68) re-ran clean (10 passed, 1 env-skipped). Frontend: happy path, past-time trigger, pill click-to-fill, empty state, testid format, and no-unnecessary-tomorrow-prefetch all verified. Found 2 real bugs: (1) EDIT-mode past appointment SHOWS the amber panel (spec says it must not); (2) off-clinic-hours times with no matching slot in the grid (e.g. 21:45 when clinic closes 21:00) don't trigger the panel because pickedIsUnavailable only fires when a slot row exists OR date/time is past. Spill-over-to-tomorrow with ' · tomorrow' suffix could NOT be reproduced in the environment due to bug #2 blocking the late-time scenario — code path exists and looks correct on review.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BookAppointmentModal — Slot Suggestion Panel",
+        "issue": "EDIT mode on a PAST appointment shows the amber suggestion panel (data-testid='bk-slot-suggestion') with 'HH:MM — Time has passed'. Spec explicitly requires the panel to be HIDDEN when editing metadata on a past appointment (impacts_schedule=false path). Reproduce: click any past calendar card (e.g. 10:00-10:30 on Mon 3 Aug) → Edit modal opens → panel visible immediately.",
+        "selector": "[data-testid='bk-slot-suggestion']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "BookAppointmentModal — pickedIsUnavailable logic",
+        "issue": "Off-clinic-hours times that have NO matching slot in the fetched grid don't trigger the panel. Repro: set time to 21:45 on today (clinic closes 21:00, no 21:45 slot exists) → panel is NOT shown even though the slot is unbookable. Root cause: pickedIsUnavailable requires either (a) matching slot in grid marked !available, or (b) date/time strictly in the past. Third case (typed time falls outside the day's slot grid entirely) is not covered — so the promised 'when the picked slot is out of clinic hours, suggest the next 3 valid slots' UX fails for that flow. As a side-effect the tomorrow-spillover (' · tomorrow' pill suffix) could not be exercised because the natural scenario (all today slots gone) can't be reached without this trigger firing.",
+        "selector": "BookAppointmentModal.js lines 511-521 (pickedIsUnavailable useMemo)",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviours": [
+    "PASS Happy path: default date+time (IST-now-rounded-up) yields panel HIDDEN (count=0).",
+    "PASS Past-time 00:01 today: panel visible; header text 'That time has already passed'; 3 pills rendered (09:00, 09:15, 09:30) — strictly after picked time.",
+    "PASS Panel picks up the exact 'reason' string from /availability/slots response ('Time has passed'; also 'Already booked' verified for a taken slot in a later screenshot).",
+    "PASS Pill data-testid format matches spec: bk-suggestion-2026-08-07-09:00 etc.",
+    "PASS Clicking a pill sets bk-date + bk-time to the pill's slot; panel hides; Book button becomes enabled.",
+    "PASS Empty state fallback text 'No open slots on this day. Try a later date or tick Override below.' rendered when 0 pills.",
+    "PASS Past DATE (yesterday) shows 'That date is in the past' header. Book button disabled.",
+    "PASS Network trace confirms /api/availability/slots?date=<tomorrow> is issued when spill is needed (2nd call observed) and NOT issued on the happy path (only 1 call for the picked date).",
+    "PASS Backend regression suite (test_appointment_past_time_guard.py): 10 passed, 1 skipped (test_today_past_slots_marked skipped because run time 01:21 IST is before 06:00 slot-walk window — same env-skip as iter68).",
+    "UNVERIFIED Spill-over-to-tomorrow with ' · tomorrow' pill suffix — see bug #2. Code path (BookAppointmentModal.js lines 540-573) reads correct: needsTomorrow gate + prefetch effect + merged suggestions with dayHint='tomorrow' render logic all present."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_appointment_past_time_guard.py",
+    "/app/test_reports/pytest/iter69_past_time.xml"
+  ],
+  "action_items": [
+    "Fix EDIT-mode past-appointment bug: gate the panel with `!isEdit` OR require impacts_schedule semantics (skip past-time trigger when only metadata is being edited). Simplest patch: change line 851 `{pickedIsUnavailable && (` to `{pickedIsUnavailable && !isEdit && (` — matches the backend's soft-check philosophy.",
+    "Extend pickedIsUnavailable (lines 511-521) to fire when the typed time falls OUTSIDE any slot boundary on a day that DOES have a slot grid — e.g. `(!pickedSlot && slots.length > 0 && slots.every(s => s.start_at !== pickedTimeIso))` should also count as unavailable so the panel proactively surfaces next slots for off-shift picks like 21:45. This is the ONLY unfixed gap in the promised 'out of clinic hours' UX from the review request.",
+    "Optional: pass `override` param to the tomorrow prefetch axios call (line 546-552) for consistency with the same-day fetch — currently omitted."
+  ],
+  "critical_code_review_comments": [
+    "Panel gating is missing an isEdit check — see action_items #1.",
+    "pickedIsUnavailable doesn't cover the 'no matching slot in grid AND time not in past' case (off-clinic-hours typed times). Small logic gap; easy fix.",
+    "The tomorrow-prefetch effect uses `nextDaySlots?.date === tomorrowISO` as its guard — good caching. Cleanup happens implicitly on modal unmount so no leak.",
+    "Container `<div data-testid='bk-suggestion-pills'>` shares the `bk-suggestion-` prefix with real pill testids `bk-suggestion-<date>-<time>`. Any tester using `[data-testid^='bk-suggestion-']` will pick up the container too. Suggest renaming container to `bk-suggestion-pill-container` OR filtering pill selectors to `bk-suggestion-2` (year prefix) as we did in our tests.",
+    "applySuggestion (line 575-578) doesn't reset `durationManuallySet` — harmless but if a user picks a suggested slot after manually overriding duration, that override survives. Probably desired, but worth confirming."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (10/10 executed, 1 env-skip — same as iter68)",
+    "frontend": "80% (8/10 spec bullets — 2 legitimate bugs found above)"
+  },
+  "test_credentials": "owner@thesoundclinic.in / demo123 (used); pytest.admin@audinexa.test / Pytest@123 (backend pytest via _helpers.py)",
+  "seed_data_creation": "None. Used bootstrap patient (Ramachandra Hegde, TSC-2026-000005) from The Sound Clinic seed. One test appointment for TSC-2026-000005 at 2026-08-07 09:00 with Dr. Aditi Krishnan may have been created by the pill-apply flow; if it causes noise for the next iteration, delete via /api/appointments filter patient_id=TSC-2026-000005.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Focus retest on: (a) confirm !isEdit gate is added to the panel; (b) confirm off-shift-time trigger (typed 21:45 on today when clinic closes 21:00) now fires the panel and spills to tomorrow with ' · tomorrow' suffix on pills. All other flows already pass. Regression suite: pytest tests/test_appointment_past_time_guard.py.",
+  "rca of the issue": "Bug 1 (edit-mode panel): the render conditional on line 851 (`{pickedIsUnavailable && (`) does not consider `isEdit`. The past-time computation happens against any current-time slot regardless of whether the modal is opened for a NEW booking or to EDIT an existing (past) row. Since past appointments carry a past start_at, the picked slot immediately matches a `Time has passed` reason (or falls in the date<today branch). Backend already treats metadata-only edits softly (impacts_schedule=false in schedules.py PUT flow); the frontend needs the same asymmetry. Bug 2 (off-shift no-slot): pickedIsUnavailable's second branch only considers past date/time; when the typed time doesn't intersect the day's slot grid (e.g. 21:45 for a 09:00-21:00 clinic), pickedSlot is null AND the time is NOT past (nowHHMM ~01:59, so 21:45 > now), so pickedIsUnavailable evaluates to false. Downstream: the panel never renders, and the whole tomorrow-spillover path is unreachable via that natural scenario."
+}
