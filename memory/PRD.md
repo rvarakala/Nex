@@ -1,5 +1,36 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📱 Accessories Tab — Mobile / Tablet Responsive (2026-08-06)
+
+**User report**:
+> "The Accessories Tab that we built under the Inventory Section is Not mobile Responsive. It should Be Responsive UI for Desktop, Tab & Mobile."
+
+**Diagnosis**:
+Confirmed via Playwright — at 375px the Catalogue table was `scrollWidth=815` (2.2x viewport), so 5 of 7 columns were clipped by `overflow-hidden`. Preset buttons had verbose labels like `⚡ Quick-add Domes (S·M·L·Power)` that broke rows awkwardly. Modal grids were locked at `grid-cols-2` even on mobile. The HAModule top tab strip (7 tabs) also overflowed.
+
+**Fix**:
+- **`AccessoriesPage.jsx`** — dual-layout pattern (`hidden sm:table` + `sm:hidden` card list) for all 3 sub-tab tables (Catalogue, Batch Stock, Serialised). On mobile the rows become tap-friendly cards with brand·model + badges + key stat. On tablet (≥sm) the table renders with progressive column-hiding (`hidden md:table-cell`, `hidden lg:table-cell`) so Category/Tracking/Variants/Reorder/GST columns drop out gracefully as the viewport narrows.
+- **Sub-tab strip** wraps in `overflow-x-auto no-scrollbar` with `whitespace-nowrap flex-shrink-0` on each tab so all 3 stay a single row that scrolls horizontally when the phone is portrait.
+- **Preset buttons shortened** on labels (⚡ Domes / ⚡ RIC Receivers) + `flex-wrap` + `whitespace-nowrap` + `ml-auto sm:ml-0` on the primary CTA so it right-aligns on mobile.
+- **Both preset modal + new-accessory modal** — `grid-cols-1 sm:grid-cols-2` on every 2-col field row so labels stack full-width on phones. Adjust modal was already 1-col.
+- **Padding** — `p-3 sm:p-5` on the page root so mobile gains 8px of real estate.
+- **`HAModule.js`** — parent Inventory tab strip also gets `overflow-x-auto no-scrollbar` + `whitespace-nowrap flex-shrink-0` on `<Tab>` so 7 sub-tabs (Inventory Board / Demo / Saleable / Accessories / AMC / Procurement / Catalogue) scroll horizontally on phones.
+- **New CSS utility** `.no-scrollbar` added to `index.css` (hides scrollbar chrome across browsers while keeping scroll behaviour intact).
+
+**Verified via Playwright**:
+- **Mobile (375×812)** — 3 sub-tabs each rendered `document.scrollWidth === 375` (no horizontal page overflow), sub-tab strip scrolls internally, catalogue shows compact cards with brand·model + MRP right-aligned + badges (Kind, Category, Serialised/Batch, GST) wrapped underneath.
+- **Tablet (768×1024)** — table renders in-line with hidden narrow-only columns; KPI grid stretches 4-col; filter chips render inline.
+- **Desktop (1440×900)** — unchanged; all columns visible.
+- **Preset modal on mobile** — fields stack 1-col cleanly, primary CTA fits, seed-branch chip visible.
+
+**Files changed**:
+- `frontend/src/modules/ha/AccessoriesPage.jsx`
+- `frontend/src/modules/ha/HAModule.js`
+- `frontend/src/index.css` (+`.no-scrollbar` utility)
+
+---
+
+
 ## 💡 Slot Suggestion Panel (2026-08-06)
 
 **User ask (verbatim)**:

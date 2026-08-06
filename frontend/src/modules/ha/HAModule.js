@@ -52,7 +52,7 @@ const Tab = ({ to, label, testid }) => (
     end
     data-testid={testid}
     className={({ isActive }) =>
-      `px-4 py-2 text-[12px] font-semibold uppercase tracking-wider border-b-2 transition-colors ${
+      `px-4 py-2 text-[12px] font-semibold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
         isActive
           ? 'border-indigo-600 text-indigo-700 bg-white'
           : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -73,7 +73,7 @@ export default function HAModule() {
 
   return (
     <div className="h-full flex flex-col" data-testid="ha-module">
-      <div className="border-b border-slate-200 bg-slate-50 flex items-center gap-1 px-4 flex-shrink-0">
+      <div className="border-b border-slate-200 bg-slate-50 flex items-center gap-1 px-4 flex-shrink-0 overflow-x-auto no-scrollbar">
         {tabs.map((t) => <Tab key={t.to} {...t} />)}
       </div>
 

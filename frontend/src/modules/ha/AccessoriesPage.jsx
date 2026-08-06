@@ -73,9 +73,9 @@ export default function AccessoriesPage() {
   }, []);
 
   return (
-    <div className="p-5 space-y-4" data-testid="ha-accessories-page">
+    <div className="p-3 sm:p-5 space-y-4" data-testid="ha-accessories-page">
       <header>
-        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+        <h1 className="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2">
           <Package size={20} className="text-indigo-600" />
           Accessories
         </h1>
@@ -85,8 +85,9 @@ export default function AccessoriesPage() {
         </p>
       </header>
 
-      {/* Sub-tab strip */}
-      <div className="border-b border-slate-200 flex items-center gap-1">
+      {/* Sub-tab strip — horizontally scrollable on tight viewports so 3
+          tabs stay tappable without wrapping into an awkward stack. */}
+      <div className="border-b border-slate-200 flex items-center gap-1 overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 no-scrollbar">
         {[
           { id: 'catalogue',  label: 'Catalogue',      testid: 'acc-subtab-catalogue' },
           { id: 'batch',      label: 'Batch Stock',    testid: 'acc-subtab-batch' },
@@ -96,7 +97,7 @@ export default function AccessoriesPage() {
             key={t.id}
             onClick={() => setTab(t.id)}
             data-testid={t.testid}
-            className={`px-4 py-2 text-[12px] font-semibold uppercase tracking-wider border-b-2 transition-colors ${
+            className={`px-4 py-2 text-[12px] font-semibold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
               tab === t.id
                 ? 'border-indigo-600 text-indigo-700 bg-white'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -146,8 +147,8 @@ function CatalogueTab({ branches }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex-1 min-w-[220px] max-w-md relative">
+      <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
+        <div className="flex-1 min-w-[180px] sm:min-w-[220px] max-w-md relative w-full sm:w-auto">
           <Search size={14} className="absolute top-2.5 left-2.5 text-slate-400" />
           <input
             placeholder="Search brand or model…"
@@ -157,36 +158,38 @@ function CatalogueTab({ branches }) {
             className="w-full bg-white border border-slate-300 rounded-md pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <button
             data-testid="acc-catalogue-preset-domes"
             onClick={() => setPresetKey('silicone_dome')}
-            className="px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md"
-          >⚡ Quick-add Domes (S·M·L·Power)</button>
+            className="px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md whitespace-nowrap"
+          >⚡ Domes</button>
           <button
             data-testid="acc-catalogue-preset-ric"
             onClick={() => setPresetKey('ric_receiver')}
-            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md"
-          >⚡ Quick-add RIC Receivers</button>
+            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md whitespace-nowrap"
+          >⚡ RIC Receivers</button>
           <button
             data-testid="acc-catalogue-new"
             onClick={() => setShowForm(true)}
-            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm"
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm whitespace-nowrap ml-auto sm:ml-0"
           >+ New Accessory</button>
         </div>
       </div>
 
+      {/* Catalogue list — TABLE on ≥sm, CARD list on mobile. */}
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-        <table className="w-full text-sm">
+        {/* Desktop table (hidden on <sm) */}
+        <table className="w-full text-sm hidden sm:table">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="text-left px-3 py-2 font-semibold">Brand · Model</th>
               <th className="text-left px-3 py-2 font-semibold">Kind</th>
-              <th className="text-left px-3 py-2 font-semibold">Category</th>
-              <th className="text-left px-3 py-2 font-semibold">Tracking</th>
-              <th className="text-left px-3 py-2 font-semibold">Variants</th>
+              <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Category</th>
+              <th className="text-left px-3 py-2 font-semibold hidden lg:table-cell">Tracking</th>
+              <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Variants</th>
               <th className="text-right px-3 py-2 font-semibold">MRP</th>
-              <th className="text-right px-3 py-2 font-semibold">GST</th>
+              <th className="text-right px-3 py-2 font-semibold hidden lg:table-cell">GST</th>
             </tr>
           </thead>
           <tbody>
@@ -207,14 +210,14 @@ function CatalogueTab({ branches }) {
                     <div className="text-[11.5px] text-slate-500">{p.model}</div>
                   </td>
                   <td className="px-3 py-2 text-slate-700 text-[13px]">{kindLabel(p.accessory_kind)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 hidden md:table-cell">
                     {cat && (
                       <span className={`inline-block text-[10.5px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${cat.color}`}>
                         {cat.label}
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[12px]">
+                  <td className="px-3 py-2 text-[12px] hidden lg:table-cell">
                     {p.is_serialised ? (
                       <span className="inline-flex items-center gap-1 text-indigo-700 font-semibold">
                         <Boxes size={11} /> Serialised
@@ -225,18 +228,72 @@ function CatalogueTab({ branches }) {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[11.5px] text-slate-600">
+                  <td className="px-3 py-2 text-[11.5px] text-slate-600 hidden md:table-cell">
                     {(p.variant_labels || []).length === 0
                       ? <span className="italic text-slate-400">—</span>
                       : (p.variant_labels || []).join(' · ')}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-800">{fmtINR(p.mrp)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-600">{p.gst_rate}%</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-600 hidden lg:table-cell">{p.gst_rate}%</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+
+        {/* Mobile card list (< sm). Denser, tap-friendly. */}
+        <div className="sm:hidden divide-y divide-slate-100">
+          {rows.length === 0 && (
+            <div className="text-center py-10 text-slate-400 italic text-sm px-3">
+              No accessories yet. Tap <b>+ New Accessory</b> above, or use a Quick-add preset.
+            </div>
+          )}
+          {rows.map((p) => {
+            const cat = catBadge(p.accessory_category);
+            return (
+              <div key={p.product_id}
+                   data-testid={`acc-row-m-${p.product_id}`}
+                   className="p-3 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-slate-800 truncate">{p.brand}</div>
+                    <div className="text-[11.5px] text-slate-500 truncate">{p.model}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">MRP</div>
+                    <div className="text-[13px] font-bold tabular-nums text-slate-800">{fmtINR(p.mrp)}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-block text-[10.5px] font-semibold bg-slate-100 text-slate-700 rounded px-1.5 py-0.5">
+                    {kindLabel(p.accessory_kind)}
+                  </span>
+                  {cat && (
+                    <span className={`inline-block text-[10.5px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${cat.color}`}>
+                      {cat.label}
+                    </span>
+                  )}
+                  {p.is_serialised ? (
+                    <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5">
+                      <Boxes size={10} /> Serialised
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">
+                      <Package size={10} /> Batch
+                    </span>
+                  )}
+                  <span className="text-[10.5px] text-slate-500 ml-auto">GST {p.gst_rate}%</span>
+                </div>
+                {(p.variant_labels || []).length > 0 && (
+                  <div className="text-[11px] text-slate-500">
+                    <span className="text-slate-400">Variants: </span>
+                    <span className="font-mono">{p.variant_labels.join(' · ')}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {showForm && (
@@ -353,7 +410,7 @@ function NewAccessoryModal({ branches, onClose, onSaved }) {
             <AlertTriangle size={13} /> {err}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Brand *">
             <input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })}
                    data-testid="acc-new-brand" className={inp} placeholder="Phonak" />
@@ -452,7 +509,7 @@ function NewAccessoryModal({ branches, onClose, onSaved }) {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Reorder alert level">
                 <input type="number" value={f.reorder_level}
                        onChange={(e) => setF({ ...f, reorder_level: e.target.value })}
@@ -605,7 +662,7 @@ function PresetSeedModal({ presetKey, branches, onClose, onSaved }) {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Brand *">
             <input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })}
                    data-testid={`${cfg.testid_prefix}-brand`}
@@ -727,14 +784,15 @@ function BatchStockTab({ branches, selectedBranch, setSelectedBranch }) {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-        <table className="w-full text-sm">
+        {/* Desktop / tablet table (hidden on <sm) */}
+        <table className="w-full text-sm hidden sm:table">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="text-left px-3 py-2 font-semibold">Item</th>
               <th className="text-left px-3 py-2 font-semibold">Variant</th>
-              <th className="text-left px-3 py-2 font-semibold">Branch</th>
+              <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Branch</th>
               <th className="text-right px-3 py-2 font-semibold">On Hand</th>
-              <th className="text-right px-3 py-2 font-semibold">Reorder</th>
+              <th className="text-right px-3 py-2 font-semibold hidden lg:table-cell">Reorder</th>
               <th className="text-left px-3 py-2 font-semibold">Status</th>
               <th className="text-right px-3 py-2 font-semibold">Actions</th>
             </tr>
@@ -765,11 +823,11 @@ function BatchStockTab({ branches, selectedBranch, setSelectedBranch }) {
                   <td className="px-3 py-2 text-[13px] font-mono">
                     {row.variant || <span className="italic text-slate-400">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-[12px] text-slate-700">{row.branch?.name || row.branch_id}</td>
+                  <td className="px-3 py-2 text-[12px] text-slate-700 hidden md:table-cell">{row.branch?.name || row.branch_id}</td>
                   <td className={`px-3 py-2 text-right tabular-nums font-bold ${isZero ? 'text-rose-700' : isLow ? 'text-amber-700' : 'text-slate-800'}`}>
                     {qty}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{reorder}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500 hidden lg:table-cell">{reorder}</td>
                   <td className="px-3 py-2">
                     {isZero
                       ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700"><AlertTriangle size={11} /> OUT</span>
@@ -789,6 +847,57 @@ function BatchStockTab({ branches, selectedBranch, setSelectedBranch }) {
             })}
           </tbody>
         </table>
+
+        {/* Mobile card list (< sm). Tap-friendly, self-contained. */}
+        <div className="sm:hidden divide-y divide-slate-100">
+          {data.items.length === 0 && (
+            <div className="text-center py-10 text-slate-400 italic text-sm px-3">
+              No stock rows yet. Create an accessory in Catalogue and init stock, or use the RIC Receiver preset.
+            </div>
+          )}
+          {data.items.map((row) => {
+            const qty = Number(row.qty_on_hand || 0);
+            const reorder = Number(row.reorder_level || 0);
+            const isZero = qty === 0;
+            const isLow = !isZero && qty <= reorder;
+            const bg = isZero ? 'bg-rose-50/60' : isLow ? 'bg-amber-50/60' : '';
+            const qtyColor = isZero ? 'text-rose-700' : isLow ? 'text-amber-700' : 'text-slate-800';
+            return (
+              <div key={row.sku_id}
+                   data-testid={`acc-stock-row-m-${row.sku_id}`}
+                   className={`p-3 flex items-center gap-2 ${bg}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-slate-800 text-[13px] leading-tight">
+                    {row.product?.brand || '—'} <span className="text-slate-500 font-normal">·</span> {row.product?.model || ''}
+                    {row.variant && (
+                      <span className="ml-1.5 font-mono text-teal-700 text-[12px]">({row.variant})</span>
+                    )}
+                  </div>
+                  <div className="text-[10.5px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-1.5">
+                    <span>{kindLabel(row.product?.accessory_kind)}</span>
+                    <span>·</span>
+                    <span>{row.branch?.name || row.branch_id}</span>
+                    <span>·</span>
+                    <span>Reorder {reorder}</span>
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className={`text-lg font-bold tabular-nums ${qtyColor}`}>{qty}</div>
+                  {isZero
+                    ? <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-rose-700"><AlertTriangle size={10} /> OUT</span>
+                    : isLow
+                      ? <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700"><AlertTriangle size={10} /> LOW</span>
+                      : <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700"><CheckCircle2 size={10} /> OK</span>}
+                </div>
+                <button
+                  onClick={() => setAdjustSku(row)}
+                  data-testid={`acc-adjust-m-${row.sku_id}`}
+                  className="flex-shrink-0 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded"
+                >Adjust</button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {adjustSku && (
@@ -953,7 +1062,7 @@ function SerialisedTab({ branches }) {
   return (
     <div className="space-y-3">
       <div className="flex gap-2 items-center flex-wrap">
-        <div className="flex-1 min-w-[220px] max-w-md relative">
+        <div className="flex-1 min-w-[180px] sm:min-w-[220px] max-w-md relative w-full sm:w-auto">
           <Search size={14} className="absolute top-2.5 left-2.5 text-slate-400" />
           <input
             placeholder="Search serial number…"
@@ -985,47 +1094,85 @@ function SerialisedTab({ branches }) {
       )}
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
-            <tr>
-              <th className="text-left px-3 py-2 font-semibold">Serial No.</th>
-              <th className="text-left px-3 py-2 font-semibold">Item</th>
-              <th className="text-left px-3 py-2 font-semibold">Kind</th>
-              <th className="text-left px-3 py-2 font-semibold">State</th>
-              <th className="text-left px-3 py-2 font-semibold">Pool</th>
-              <th className="text-left px-3 py-2 font-semibold">Warranty Until</th>
-              <th className="text-left px-3 py-2 font-semibold">GRN</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 && (
+        {/* Desktop table (hidden on <sm). Horizontal-scrolls at sm/md when
+            some columns would otherwise crowd; hides less-important
+            columns progressively at md/lg breakpoints. */}
+        <div className="hidden sm:block overflow-x-auto">
+          <table className="w-full text-sm min-w-[600px]">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
-                <td colSpan={7} className="text-center py-10 text-slate-400 italic text-sm">
-                  No serialised accessory units on file. Add units via Catalogue → open a serialised product → Serial Numbers section.
-                </td>
+                <th className="text-left px-3 py-2 font-semibold">Serial No.</th>
+                <th className="text-left px-3 py-2 font-semibold">Item</th>
+                <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Kind</th>
+                <th className="text-left px-3 py-2 font-semibold">State</th>
+                <th className="text-left px-3 py-2 font-semibold hidden lg:table-cell">Pool</th>
+                <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Warranty Until</th>
+                <th className="text-left px-3 py-2 font-semibold hidden lg:table-cell">GRN</th>
               </tr>
-            )}
-            {items.map((r) => (
-              <tr key={r.serial_id} data-testid={`acc-serial-row-${r.serial_id}`}
-                  className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-2 font-mono text-[12.5px] font-semibold text-slate-800">{r.serial_no}</td>
-                <td className="px-3 py-2">
-                  <div className="font-semibold text-slate-800">{r.product?.brand}</div>
-                  <div className="text-[11px] text-slate-500">{r.product?.model}</div>
-                </td>
-                <td className="px-3 py-2 text-[12px] text-slate-700">{kindLabel(r.product?.accessory_kind)}</td>
-                <td className="px-3 py-2">
-                  <span className="inline-block text-[10.5px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 rounded px-2 py-0.5">
-                    {r.state}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-[12px] text-slate-600">{r.pool || '—'}</td>
-                <td className="px-3 py-2 text-[12px] text-slate-600">{r.warranty_end_date || '—'}</td>
-                <td className="px-3 py-2 text-[12px] text-slate-500 font-mono">{r.grn_no || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-slate-400 italic text-sm">
+                    No serialised accessory units on file. Add units via Catalogue → open a serialised product → Serial Numbers section.
+                  </td>
+                </tr>
+              )}
+              {items.map((r) => (
+                <tr key={r.serial_id} data-testid={`acc-serial-row-${r.serial_id}`}
+                    className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-2 font-mono text-[12.5px] font-semibold text-slate-800">{r.serial_no}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-semibold text-slate-800">{r.product?.brand}</div>
+                    <div className="text-[11px] text-slate-500">{r.product?.model}</div>
+                  </td>
+                  <td className="px-3 py-2 text-[12px] text-slate-700 hidden md:table-cell">{kindLabel(r.product?.accessory_kind)}</td>
+                  <td className="px-3 py-2">
+                    <span className="inline-block text-[10.5px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 rounded px-2 py-0.5">
+                      {r.state}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-[12px] text-slate-600 hidden lg:table-cell">{r.pool || '—'}</td>
+                  <td className="px-3 py-2 text-[12px] text-slate-600 hidden md:table-cell">{r.warranty_end_date || '—'}</td>
+                  <td className="px-3 py-2 text-[12px] text-slate-500 font-mono hidden lg:table-cell">{r.grn_no || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile card list (< sm) */}
+        <div className="sm:hidden divide-y divide-slate-100">
+          {items.length === 0 && (
+            <div className="text-center py-10 text-slate-400 italic text-sm px-3">
+              No serialised accessory units on file. Add units via Catalogue → open a serialised product → Serial Numbers section.
+            </div>
+          )}
+          {items.map((r) => (
+            <div key={r.serial_id}
+                 data-testid={`acc-serial-row-m-${r.serial_id}`}
+                 className="p-3 space-y-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-[12.5px] font-semibold text-slate-800 truncate">{r.serial_no}</div>
+                  <div className="text-[12px] text-slate-700 mt-0.5 truncate">
+                    <span className="font-semibold">{r.product?.brand}</span>
+                    <span className="text-slate-500"> · {r.product?.model}</span>
+                  </div>
+                </div>
+                <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 rounded px-2 py-0.5 flex-shrink-0">
+                  {r.state}
+                </span>
+              </div>
+              <div className="text-[10.5px] text-slate-500 flex flex-wrap gap-x-2">
+                <span>{kindLabel(r.product?.accessory_kind)}</span>
+                {r.pool && <span>· Pool: {r.pool}</span>}
+                {r.warranty_end_date && <span>· Warranty {r.warranty_end_date}</span>}
+                {r.grn_no && <span className="font-mono">· {r.grn_no}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

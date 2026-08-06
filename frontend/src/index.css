@@ -54,6 +54,13 @@
 .audinexa-hscroll::-webkit-scrollbar { display: none; }
 .audinexa-hscroll > * { scroll-snap-align: start; flex: 0 0 auto; }
 
+/* Utility to hide the horizontal-scrollbar chrome on horizontally-
+   scrollable strips (tab bars, chip rows). Content still scrolls
+   naturally via touch/wheel/trackpad. Used by the Inventory sub-tab
+   bar + Accessories sub-tab bar so they stay a single row on phones. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* Mobile bottom nav — safe-area aware. */
 .audinexa-bottomnav {
   padding-bottom: max(6px, env(safe-area-inset-bottom));
