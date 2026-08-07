@@ -603,6 +603,14 @@ class Patient(BaseModel):
     whatsapp_consent_at: Optional[str] = None           # ISO timestamp when granted
     whatsapp_consent_withdrawn_at: Optional[str] = None # ISO timestamp when revoked
 
+    # ── Merge bookkeeping (set only when this row was folded into another) ──
+    # When two accidentally-created rows are collapsed via POST /patients/merge,
+    # the secondary row is soft-marked with these fields so the audit chain
+    # stays intact. `merged_into` points to the surviving canonical patient_id.
+    merged_into: Optional[str] = None
+    merged_at: Optional[str] = None
+    merged_by: Optional[str] = None                     # user_id of the owner who ran the merge
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

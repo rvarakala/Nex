@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from auth import get_current_user
+from auth import get_current_user, require_roles
 from database import get_db
 from models import Patient, PatientCreate
 from utils.serde import serialize_datetime, deserialize_datetime
@@ -31,21 +32,27 @@ async def _next_mrd(db, clinic_id: str, mrd_prefix: str) -> str:
 async def create_patient(
     patient: PatientCreate,
     allow_duplicate_phone: bool = False,
+    allow_duplicate_email: bool = False,
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     """Create patient. Tenant-scoped. Auto-generates MRD.
 
-    Duplicate-phone guard (added 2026-08-07 from a production report):
-    if `patient.mobile` (last 10 digits) already exists on any live
-    patient in this clinic, we reject with **409** and return the
-    matching patient(s) in the response body so the frontend can offer
-    a friendly "Open existing" / "Create as new" choice. Front desk
-    that legitimately needs a duplicate row (e.g. a family sharing one
-    phone) can re-submit with `?allow_duplicate_phone=true` after
-    acknowledging the warning UI.
+    Duplicate-contact guards (2026-08-07):
+      • **Phone** — matches last 10 digits across `mobile`,
+        `alternate_mobile`, `phone`. Overridable via
+        `?allow_duplicate_phone=true` for legitimate family-shares-one-
+        phone cases.
+      • **Email** — case-insensitive exact match on the `email` field.
+        Overridable via `?allow_duplicate_email=true` (rare — usually
+        indicates a typo or an actual duplicate).
+
+    Both guards return **HTTP 409** with `{code, message, matches:[…]}` so
+    the frontend can offer a friendly "Open existing / Create anyway"
+    choice. Overrides are stamped on the activity log for forensic
+    traceability.
     """
-    # --- Duplicate-phone detection ---
+    # ── Duplicate-phone detection ──
     if not allow_duplicate_phone and patient.mobile:
         digits = re.sub(r"\D", "", str(patient.mobile))
         last10 = digits[-10:] if len(digits) >= 10 else digits
@@ -59,9 +66,13 @@ async def create_patient(
                         {"alternate_mobile": rx},
                         {"phone": rx},
                     ],
+                    # Never surface merged/soft-deleted rows as duplicates
+                    # (see `POST /patients/merge` below). This keeps the
+                    # UX clean after a clinic has cleaned up their data.
+                    "merged_into": {"$in": [None, False]},
                 },
                 {"_id": 0, "patient_id": 1, "mrd": 1, "name": 1,
-                 "mobile": 1, "age": 1, "gender": 1, "updated_at": 1},
+                 "mobile": 1, "email": 1, "age": 1, "gender": 1, "updated_at": 1},
             ).sort("updated_at", -1).limit(5).to_list(5)
             if existing:
                 raise HTTPException(
@@ -73,9 +84,35 @@ async def create_patient(
                             f"already exists in this clinic."
                         ),
                         "matches": existing,
-                        # Client can retry the same POST with ?allow_duplicate_phone=true
-                        # after showing the user the matches and getting explicit consent.
                         "hint": "Retry with ?allow_duplicate_phone=true if this is genuinely a new patient sharing the phone (e.g. a family member).",
+                    },
+                )
+
+    # ── Duplicate-email detection ──
+    # Case-insensitive exact match; emails don't have the "family shares
+    # one" pattern that phones do, so a hit is nearly always either a
+    # typo or a true duplicate. Kept overridable for the edge case where
+    # a household really does share a mailbox.
+    if not allow_duplicate_email and patient.email:
+        e = patient.email.strip()
+        if e:
+            existing_e = await db.patients.find(
+                {
+                    "clinic_id": user["clinic_id"],
+                    "email": {"$regex": f"^{re.escape(e)}$", "$options": "i"},
+                    "merged_into": {"$in": [None, False]},
+                },
+                {"_id": 0, "patient_id": 1, "mrd": 1, "name": 1,
+                 "mobile": 1, "email": 1, "age": 1, "gender": 1, "updated_at": 1},
+            ).sort("updated_at", -1).limit(5).to_list(5)
+            if existing_e:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "duplicate_email",
+                        "message": f"A patient with email {e} already exists in this clinic.",
+                        "matches": existing_e,
+                        "hint": "Retry with ?allow_duplicate_email=true if this is genuinely a new patient sharing the email (e.g. a family address).",
                     },
                 )
 
@@ -97,9 +134,8 @@ async def create_patient(
         "user_id": user["user_id"],
         "action": "patient.create",
         "patient_id": patient_obj.patient_id,
-        # Record when a duplicate-phone override happened so audits can
-        # trace how a shared-phone family entry came into the system.
         "duplicate_phone_override": bool(allow_duplicate_phone and patient.mobile),
+        "duplicate_email_override": bool(allow_duplicate_email and patient.email),
         "at": datetime.utcnow(),
     }))
     return patient_obj
@@ -344,3 +380,129 @@ async def delete_patient(patient_id: str, user=Depends(get_current_user), db=Dep
     await db.patients.delete_one({"patient_id": patient_id})
     await db.patient_notes.delete_many({"patient_id": patient_id})
     return {"message": "Patient deleted", "patient_id": patient_id}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#   Merge patients — collapse two accidentally-created duplicate records
+#   into one canonical patient. Owner-only. Discovered via a production
+#   report where front-desk had already created 3-4 rows for the same
+#   patient before the phone-guard shipped.
+# ═══════════════════════════════════════════════════════════════════════
+
+# Whitelisted collections that carry a `patient_id` foreign key. Kept
+# hand-maintained (rather than auto-discovered via listCollections) so a
+# stray dev-time collection can never accidentally get rewritten during
+# a merge. Enumerated by production count 2026-08-07. activity_logs and
+# greeting_log intentionally NOT rewritten — those are audit trails and
+# must retain the original patient_id for forensic accuracy. A new
+# activity_log entry is written at merge-time so the audit chain stays
+# intact.
+_MERGEABLE_COLLECTIONS = [
+    "appointments", "invoices", "service_tickets", "cancellation_logs",
+    "dpdpa_actions", "reminder_logs", "test_sessions", "ha_sales",
+    "ha_fittings", "waitlist", "referral_notifications", "quotations",
+    "hearing_report_versions", "tokens", "ha_trials", "patient_feedback",
+    "ha_amc_contracts", "report_deliveries", "ha_quotes", "ha_quick_sales",
+    "patient_notes",
+]
+
+
+class MergePayload(BaseModel):
+    primary_patient_id: str
+    secondary_patient_id: str
+    dry_run: bool = False
+
+
+@router.post("/patients/merge")
+async def merge_patients(
+    payload: MergePayload,
+    user=Depends(require_roles("clinic_owner")),
+    db=Depends(get_db),
+):
+    """Merge `secondary` into `primary`. All FK'd rows across whitelisted
+    collections get their `patient_id` rewritten to the primary. The
+    secondary row is soft-marked (`merged_into=<primary>, active=False`)
+    — never hard-deleted, so the audit chain stays intact.
+
+    Owner-only (`clinic_owner`). In `dry_run` mode we compute the
+    per-collection impact counts without touching a single document. The
+    frontend uses this for the merge preview screen ("This will move 8
+    appointments, 3 invoices…").
+    """
+    if payload.primary_patient_id == payload.secondary_patient_id:
+        raise HTTPException(status_code=400, detail="primary and secondary must differ")
+
+    clinic_id = user["clinic_id"]
+    primary = await db.patients.find_one(
+        {"patient_id": payload.primary_patient_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
+    secondary = await db.patients.find_one(
+        {"patient_id": payload.secondary_patient_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
+    if not primary:
+        raise HTTPException(status_code=404, detail="Primary patient not found in your clinic")
+    if not secondary:
+        raise HTTPException(status_code=404, detail="Secondary patient not found in your clinic")
+    if secondary.get("merged_into"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Secondary was already merged into {secondary['merged_into']}",
+        )
+
+    # Compute per-collection impact counts BEFORE any writes.
+    impact: dict = {}
+    for coll in _MERGEABLE_COLLECTIONS:
+        n = await db[coll].count_documents({
+            "clinic_id": clinic_id,
+            "patient_id": payload.secondary_patient_id,
+        })
+        if n:
+            impact[coll] = n
+
+    if payload.dry_run:
+        return {
+            "dry_run": True,
+            "primary": {"patient_id": primary["patient_id"], "name": primary.get("name"), "mrd": primary.get("mrd")},
+            "secondary": {"patient_id": secondary["patient_id"], "name": secondary.get("name"), "mrd": secondary.get("mrd")},
+            "preview": impact,
+            "total_rows_affected": sum(impact.values()),
+        }
+
+    # Wet-run: rewrite FKs in each whitelisted collection.
+    applied: dict = {}
+    now_iso = datetime.utcnow().isoformat()
+    for coll, _ in impact.items():
+        res = await db[coll].update_many(
+            {"clinic_id": clinic_id, "patient_id": payload.secondary_patient_id},
+            {"$set": {"patient_id": payload.primary_patient_id, "merged_from_patient_id": payload.secondary_patient_id}},
+        )
+        applied[coll] = int(res.modified_count or 0)
+
+    # Soft-mark the secondary. Never hard-delete: forensic trail.
+    await db.patients.update_one(
+        {"patient_id": payload.secondary_patient_id, "clinic_id": clinic_id},
+        {"$set": {
+            "merged_into": payload.primary_patient_id,
+            "merged_at": now_iso,
+            "merged_by": user["user_id"],
+            "active": False,
+        }},
+    )
+
+    await db.activity_logs.insert_one(serialize_datetime({
+        "clinic_id": clinic_id,
+        "user_id": user["user_id"],
+        "action": "patient.merge",
+        "primary_patient_id": payload.primary_patient_id,
+        "secondary_patient_id": payload.secondary_patient_id,
+        "rows_rewritten": applied,
+        "at": datetime.utcnow(),
+    }))
+
+    return {
+        "dry_run": False,
+        "primary": {"patient_id": primary["patient_id"], "name": primary.get("name"), "mrd": primary.get("mrd")},
+        "secondary": {"patient_id": secondary["patient_id"], "name": secondary.get("name"), "mrd": secondary.get("mrd")},
+        "applied": applied,
+        "total_rows_affected": sum(applied.values()),
+    }
