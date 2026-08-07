@@ -1,5 +1,26 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+
+## 🔗 Patient Merge Tool (2026-08-07)
+
+**Trigger**: Follow-up to the Duplicate-Phone/Email guards. Owner requested a way to collapse duplicates that were created BEFORE the guards shipped.
+
+**Scope**:
+- Backend `POST /api/patients/merge` (dry-run + wet-run) — re-parents every row across the whitelisted collections in `_MERGEABLE_COLLECTIONS` (invoices, appointments, service_tickets, patient_notes, ha_sales, ha_fittings, reminder_logs, dpdpa_actions, test_sessions, quotations, tokens, ha_trials, ha_amc_contracts, report_deliveries, ha_quotes, ha_quick_sales, referral_notifications, hearing_report_versions, waitlist, cancellation_logs, patient_feedback, and more). Adds `merged_from_patient_id` audit column to each rewritten row.
+- Soft-marks the secondary (`active=false, merged_into, merged_at, merged_by`) — never hard-deletes so forensic trail stays intact. Activity log `patient.merge` entry written.
+- Role gate: `require_roles('clinic_owner')` on the endpoint. `super_admin` / `founder` pass through the standard `require_roles` bypass.
+- `GET /api/patients`, `/patients/export.csv`, and `/patients/check-duplicate` all filter out `merged_into != null` by default. `?include_merged=true` escape hatch on the list endpoint for audit/forensic views.
+- **Frontend**: `MergePatientsModal.jsx` opens from a new owner-only **Merge** button in the Patient Profile header. Search → pick primary → auto dry-run preview (`{invoices: 5, appointments: 3, ...}`) → **Confirm merge** button enables only after preview loads → navigates to the surviving primary on success.
+- **Merged banner**: opening `/patients/{merged_id}?include_merged=true` (or a stale bookmark) surfaces a slate banner with an `Open surviving record →` link.
+- **Duplicate-Contact modal refactor**: The old `DuplicatePhoneModal` was renamed → `DuplicateContactModal` and now handles BOTH `duplicate_phone` and `duplicate_email` 409 responses with the same UX. The retry sends `?allow_duplicate_phone=true` or `?allow_duplicate_email=true` (or both) based on which override the user just confirmed.
+
+**Bug caught + fixed during this work**:
+- `utils/serde.py::deserialize_datetime` recursively converts ISO strings to `datetime` objects. `merged_at` is stored as an ISO string, and the `Patient` model declares it as `Optional[str]` — the coercion caused a `ResponseValidationError → HTTP 500` when GET-ing any already-merged patient. **Fix**: added `merged_at` to `STRING_DATE_KEYS` so it stays a string on the way out.
+
+**Test coverage**:
+- `iteration_71.json` — 5 backend pytest cases + full Playwright UI flow all green. Cross-clinic, primary==secondary, double-merge, non-owner role, and merged-record 200 fetch all explicitly verified.
+
+
 ## 👥 Patient Duplicate-Phone Guard (2026-08-07)
 
 **Production report (user — Prabhagaran's Puretone clinic)**:
