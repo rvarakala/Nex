@@ -69,6 +69,12 @@ export default function NewPatientPage() {
   const [err, setErr] = useState(null);
   const [dupMatches, setDupMatches] = useState([]);
   const [loadingPatient, setLoadingPatient] = useState(isEdit);
+  // Duplicate-phone confirm modal state. When the backend rejects a
+  // POST /patients with 409 { code: 'duplicate_phone', matches: […] },
+  // we stash the payload here and pop the choose-existing-or-override
+  // dialog. Retrying with `allow_duplicate_phone=true` records the
+  // audit trail so shared-family entries stay traceable.
+  const [dupBlock, setDupBlock] = useState(null); // { matches, action } | null
   const debounceRef = useRef(null);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -149,7 +155,7 @@ export default function NewPatientPage() {
 
   const valid = form.name.trim() && form.age !== '' && !isNaN(parseInt(form.age, 10));
 
-  const submit = async (action) => {
+  const submit = async (action, opts = {}) => {
     if (!valid) { setErr('Name and Age are required.'); return; }
     setBusy(true); setErr(null);
     try {
@@ -169,7 +175,30 @@ export default function NewPatientPage() {
         return;
       }
 
-      const r = await axios.post(`${API}/patients`, payload);
+      // NEW mode. Attach the override flag if the user just confirmed the
+      // duplicate-phone dialog (opts.allowDuplicatePhone=true).
+      const config = opts.allowDuplicatePhone
+        ? { params: { allow_duplicate_phone: 'true' } }
+        : undefined;
+      let r;
+      try {
+        r = await axios.post(`${API}/patients`, payload, config);
+      } catch (e) {
+        // Backend duplicate-phone guard fires as 409. Surface a friendly
+        // modal instead of a generic toast so front-desk can either
+        // pick the existing patient or (rare) create a legitimate
+        // duplicate for a family sharing one phone.
+        if (e?.response?.status === 409 && e?.response?.data?.detail?.code === 'duplicate_phone') {
+          setBusy(false);
+          setDupBlock({
+            matches: e.response.data.detail.matches || [],
+            action,
+            message: e.response.data.detail.message,
+          });
+          return;
+        }
+        throw e;
+      }
       const patient = r.data;
 
       // NEW: skip the token/session dance for the "book appointment"
@@ -221,6 +250,19 @@ export default function NewPatientPage() {
 
   return (
     <div className="p-4 max-w-6xl mx-auto" data-testid={isEdit ? 'edit-patient-page' : 'new-patient-page'}>
+      {dupBlock && (
+        <DuplicatePhoneModal
+          matches={dupBlock.matches}
+          message={dupBlock.message}
+          onOpenExisting={(pid) => { setDupBlock(null); navigate(`/patients/${pid}`); }}
+          onCreateAnyway={async () => {
+            const act = dupBlock.action;
+            setDupBlock(null);
+            await submit(act, { allowDuplicatePhone: true });
+          }}
+          onCancel={() => setDupBlock(null)}
+        />
+      )}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200">
         <div className="px-4 py-2.5 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-center justify-between">
           <div>
@@ -457,6 +499,96 @@ export default function NewPatientPage() {
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ============================================================================
+   DuplicatePhoneModal — surfaces when the backend rejects a POST /patients
+   with 409 { code: 'duplicate_phone', matches }. Reported by a production
+   user (2026-08-07): "when I create a registration, it is accepting
+   multiple times when I give the same phone number and it is not showing
+   as the patient with the same phone number already exists".
+
+   UX: 3 explicit outcomes, no ambiguity.
+     • "Open patient <name>"  → route to the matching profile
+     • "Create as new anyway" → allow the duplicate (family sharing phone).
+       Retried POST includes ?allow_duplicate_phone=true so the backend
+       accepts it AND stamps duplicate_phone_override=true on the audit
+       log for future forensic tracing.
+     • "Cancel"               → close the modal and let the user edit
+       the phone.
+   ========================================================================== */
+function DuplicatePhoneModal({ matches, message, onOpenExisting, onCreateAnyway, onCancel }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 pb-24 md:pb-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel?.(); }}
+      data-testid="dup-phone-modal"
+    >
+      <div className="bg-white rounded-lg shadow-2xl w-[520px] max-w-full max-h-[calc(100dvh-96px)] sm:max-h-[85vh] flex flex-col">
+        <header className="px-4 py-3 border-b border-slate-200 flex-shrink-0">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <span className="text-amber-600 text-base leading-none">⚠</span>
+            Duplicate phone number detected
+          </h3>
+          <p className="text-[11.5px] text-slate-500 mt-0.5">
+            {message || 'A patient with this phone already exists in your clinic.'}
+          </p>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+          {matches.map((m) => (
+            <button
+              key={m.patient_id}
+              type="button"
+              onClick={() => onOpenExisting(m.patient_id)}
+              data-testid={`dup-match-${m.patient_id}`}
+              className="w-full text-left border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 rounded-md p-3 transition-colors group"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-slate-900 truncate">{m.name}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                    MRD <span className="font-mono">{m.mrd}</span>
+                    {m.mobile && <> · 📱 {m.mobile}</>}
+                    {m.age && <> · {m.age}y</>}
+                    {m.gender && <> · {m.gender}</>}
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                  Open →
+                </span>
+              </div>
+            </button>
+          ))}
+          {matches.length === 0 && (
+            <div className="text-[11.5px] text-slate-500 italic py-4 text-center">
+              No matching patient details available.
+            </div>
+          )}
+        </div>
+
+        <footer className="px-4 py-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 flex-wrap flex-shrink-0">
+          <button
+            type="button"
+            onClick={onCancel}
+            data-testid="dup-cancel"
+            className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded"
+          >
+            Cancel & edit
+          </button>
+          <button
+            type="button"
+            onClick={onCreateAnyway}
+            data-testid="dup-create-anyway"
+            className="px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded"
+          >
+            Create as new anyway
+          </button>
+        </footer>
       </div>
     </div>
   );

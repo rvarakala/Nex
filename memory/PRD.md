@@ -1,5 +1,37 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 👥 Patient Duplicate-Phone Guard (2026-08-07)
+
+**Production report (user — Prabhagaran's Puretone clinic)**:
+> "When I create a registration, it is accepting multiple times when I give the same ph no and it is not showing as the patient with the same ph. no already exists"
+
+**Root cause**:
+`POST /api/patients` had **no server-side duplicate detection at all**. The frontend had a passive `dupMatches[]` banner (from `/patients/check-duplicate` debounced query) but the front-desk could just ignore it and submit — nothing on the backend stopped the duplicate row from being inserted. Multiple patients quietly piled up with the same phone.
+
+**Fix**:
+- **`routers/patients.py::create_patient`** — new duplicate-phone guard: strip non-digits from `patient.mobile`, take last 10 digits, query patients in the same clinic with `$or: [mobile, alternate_mobile, phone]` regex-matching those 10 digits. If ≥1 match found → **HTTP 409** with `{code: 'duplicate_phone', message, matches: [top-5 sorted by updated_at]}`. Response body carries enough context (name, mrd, mobile, age, gender) for the UI to render meaningful choices.
+- Endpoint accepts `?allow_duplicate_phone=true` for the genuine "family sharing one phone" case. When set, the guard is skipped AND the activity log stamps `duplicate_phone_override=true` for forensic traceability.
+- **`frontend/NewPatientPage.js`** — the submit handler catches 409 and pops a proper `DuplicatePhoneModal` (new component at bottom of file) with 3 explicit outcomes:
+  1. **Open patient <name>** → `navigate('/patients/<id>')` — 90% case (front desk didn't realise the patient was already registered).
+  2. **Create as new anyway** → retries the POST with `allow_duplicate_phone=true`. Amber warning styling so nobody clicks by accident.
+  3. **Cancel & edit** → close the modal, let the user edit the phone.
+- Modal follows the same mobile-safe pattern shipped yesterday (`max-h-[calc(100dvh-96px)]`, `pb-24 md:pb-4`) so it never sits under the mobile bottom-nav.
+
+**Backend curl verification (all pass)**:
+1. First registration → 200 (`DupTest Kumar · TSC-2026-000011`).
+2. Same phone retry → **409** with `code=duplicate_phone` + 1 match returned.
+3. Retry with `?allow_duplicate_phone=true` → 200 (`DupTest Wife · TSC-2026-000012`).
+4. `/patients/check-duplicate?mobile=9876500001` → 2 rows (both correctly saved as separate patients when the family override was invoked).
+
+**Design decisions**:
+- Match on the LAST 10 digits so `+91 9876543210` and `9876543210` collapse to the same key. Handles international-prefix / leading-zero variance.
+- 409 (not 400) because it's a state conflict, not a malformed request.
+- Top-5 matches only — keeps the payload tight and 5 candidates is more than enough for a human to recognise.
+- Override flag is a query param (not body) so it can't be accidentally sent by an old frontend.
+
+---
+
+
 ## 📱 Mobile Modal Scroll Fix — Appointment popup (& all modals) (2026-08-07)
 
 **User report (production, https://audinexa.com/patients/appointments)**:

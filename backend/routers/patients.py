@@ -28,8 +28,57 @@ async def _next_mrd(db, clinic_id: str, mrd_prefix: str) -> str:
 
 
 @router.post("/patients", response_model=Patient)
-async def create_patient(patient: PatientCreate, user=Depends(get_current_user), db=Depends(get_db)):
-    """Create patient. Tenant-scoped. Auto-generates MRD."""
+async def create_patient(
+    patient: PatientCreate,
+    allow_duplicate_phone: bool = False,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Create patient. Tenant-scoped. Auto-generates MRD.
+
+    Duplicate-phone guard (added 2026-08-07 from a production report):
+    if `patient.mobile` (last 10 digits) already exists on any live
+    patient in this clinic, we reject with **409** and return the
+    matching patient(s) in the response body so the frontend can offer
+    a friendly "Open existing" / "Create as new" choice. Front desk
+    that legitimately needs a duplicate row (e.g. a family sharing one
+    phone) can re-submit with `?allow_duplicate_phone=true` after
+    acknowledging the warning UI.
+    """
+    # --- Duplicate-phone detection ---
+    if not allow_duplicate_phone and patient.mobile:
+        digits = re.sub(r"\D", "", str(patient.mobile))
+        last10 = digits[-10:] if len(digits) >= 10 else digits
+        if last10:
+            rx = {"$regex": re.escape(last10), "$options": "i"}
+            existing = await db.patients.find(
+                {
+                    "clinic_id": user["clinic_id"],
+                    "$or": [
+                        {"mobile": rx},
+                        {"alternate_mobile": rx},
+                        {"phone": rx},
+                    ],
+                },
+                {"_id": 0, "patient_id": 1, "mrd": 1, "name": 1,
+                 "mobile": 1, "age": 1, "gender": 1, "updated_at": 1},
+            ).sort("updated_at", -1).limit(5).to_list(5)
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "duplicate_phone",
+                        "message": (
+                            f"A patient with phone ending {last10[-4:] if len(last10) >= 4 else last10} "
+                            f"already exists in this clinic."
+                        ),
+                        "matches": existing,
+                        # Client can retry the same POST with ?allow_duplicate_phone=true
+                        # after showing the user the matches and getting explicit consent.
+                        "hint": "Retry with ?allow_duplicate_phone=true if this is genuinely a new patient sharing the phone (e.g. a family member).",
+                    },
+                )
+
     clinic = await db.clinics.find_one({"clinic_id": user["clinic_id"]}, {"_id": 0}) or {}
     mrd = await _next_mrd(db, user["clinic_id"], clinic.get("mrd_prefix", "ACS"))
     payload = patient.model_dump()
@@ -48,6 +97,9 @@ async def create_patient(patient: PatientCreate, user=Depends(get_current_user),
         "user_id": user["user_id"],
         "action": "patient.create",
         "patient_id": patient_obj.patient_id,
+        # Record when a duplicate-phone override happened so audits can
+        # trace how a shared-phone family entry came into the system.
+        "duplicate_phone_override": bool(allow_duplicate_phone and patient.mobile),
         "at": datetime.utcnow(),
     }))
     return patient_obj
