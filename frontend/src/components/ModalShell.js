@@ -29,13 +29,22 @@ export default function ModalShell({
 
   return (
     <div
-      className={`fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 ${className}`}
+      // pb-24 on mobile reserves ~96px at the bottom so the modal card
+      // never sits under the fixed mobile bottom-nav (z-40, ~72px tall
+      // + safe-area). Every modal in the app benefits from this shell,
+      // keeping "buttons hidden below bottom-nav" bugs from recurring.
+      className={`fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 pb-24 md:pb-4 ${className}`}
       onMouseDown={onBackdropDown}
       onMouseUp={onBackdropUp}
       data-testid={testid}
     >
       <div
-        className={`bg-white rounded-lg shadow-2xl ${cardClassName}`}
+        // `max-h` + `overflow-y-auto` guarantee the card content is
+        // scrollable when it's taller than the visible viewport. `dvh`
+        // reflects the browser's real visible height (accounts for
+        // auto-hiding URL bars). `sm:max-h-[90vh]` restores the roomier
+        // desktop cap where the bottom-nav doesn't exist.
+        className={`bg-white rounded-lg shadow-2xl overflow-y-auto max-h-[calc(100dvh-96px)] sm:max-h-[90vh] ${cardClassName}`}
         onMouseDown={(e) => e.stopPropagation()}
         onMouseUp={(e) => e.stopPropagation()}
       >

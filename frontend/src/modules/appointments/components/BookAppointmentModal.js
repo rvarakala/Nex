@@ -698,10 +698,16 @@ export default function BookAppointmentModal({ audiologists, initialDate, initia
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 pb-24 md:pb-4"
          onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
          data-testid="book-apt-modal">
-      <div className="bg-white rounded-lg shadow-2xl w-[560px] max-w-full max-h-[90vh] flex flex-col">
+      {/* max-h caps the card so the fixed mobile bottom-nav (~72px, z-40)
+          doesn't cover the sticky footer with the Book/Cancel buttons.
+          `dvh` reflects the browser's actual visible viewport (excludes
+          hidden URL bar); `calc(100dvh - 96px)` = full mobile viewport
+          minus bottom-nav + 24px breathing room. `sm:max-h-[90vh]`
+          restores the desktop cap where no bottom-nav exists. */}
+      <div className="bg-white rounded-lg shadow-2xl w-[560px] max-w-full max-h-[calc(100dvh-96px)] sm:max-h-[90vh] flex flex-col">
         <div className="px-4 py-2.5 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-800">{isEdit ? 'Edit Appointment' : 'Book Appointment'}</h3>
           <button onClick={onClose} className="w-6 h-6 text-slate-500 hover:text-red-600 text-lg">×</button>

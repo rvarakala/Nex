@@ -1,5 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
+## 📱 Mobile Modal Scroll Fix — Appointment popup (& all modals) (2026-08-07)
+
+**User report (production, https://audinexa.com/patients/appointments)**:
+> "Appointment popup window is not completely scrollable on mobile - please fix"
+> [screenshot showing bottom of modal cut off — Book/Cancel buttons hidden behind the fixed mobile bottom-nav]
+
+**Diagnosis**:
+The `BookAppointmentModal` (and its shared cousin `ModalShell`) sized the modal card via `max-h-[90vh]` and vertically-centered inside `p-4`. On mobile the app has a fixed bottom-nav (`z-40`, `~72px + safe-area`, `md:hidden`). At `90vh` the card's bottom edge lands ~5vh above the viewport bottom — but the bottom-nav occupies ~9vh. Net result: **the sticky footer with "Book appointment" was consistently obscured** by the nav. Inner `overflow-auto` scrolled fine, it's just the LAST ~30-60px of the card that sat under the nav.
+
+**Fix**:
+- **`BookAppointmentModal.js`** — backdrop now `p-4 pb-24 md:pb-4` (reserves 96px on mobile). Card `max-h-[calc(100dvh-96px)] sm:max-h-[90vh]`. Using `dvh` (dynamic viewport height) so the calc correctly follows the browser's actual visible area even as URL bars auto-hide.
+- **`components/ModalShell.js`** — same treatment applied to the shared shell so every other modal in the app (Accessory Adjust, Preset seed, PatientQuickAdd, generic confirms, etc.) inherits the correct behaviour. Also added `overflow-y-auto` to the card so shell-based modals scroll when content exceeds the cap (previously they didn't — content was clipped).
+
+**Verified via Playwright at 390×844 (iPhone 14)**:
+- Card top `y=32`, bottom `~660` — sits **above** the bottom-nav (`y=728`).
+- Sticky footer with "Cancel" + "Book appointment" fully visible; no overlap.
+- Inner scroll container reachable — scrolls all body content.
+- Full-page `document.scrollWidth === viewport_width` (no horizontal overflow either).
+
+**Files changed**:
+- `frontend/src/modules/appointments/components/BookAppointmentModal.js` (backdrop + card class-list)
+- `frontend/src/components/ModalShell.js` (backdrop + card class-list)
+
+---
+
+
 ## 📱 Accessories Tab — Mobile / Tablet Responsive (2026-08-06)
 
 **User report**:
