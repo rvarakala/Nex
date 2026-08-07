@@ -1,0 +1,54 @@
+{
+  "summary": "End-to-end verification of the Patient Merge Tool (backend + frontend). All 5 pytest cases in the new test_patient_merge.py pass. Playwright covers the full owner UI flow: profile-merge button → MergePatientsModal → debounced search → candidate pick → dry-run preview → confirm merge → navigation to primary → merged-banner + hidden Merge button on the merged secondary.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_behaviours": [
+    "PASS POST /api/patients/merge dry_run=true → returns {preview:{}, total_rows_affected:0, primary, secondary}; secondary still visible in list (no writes).",
+    "PASS POST /api/patients/merge dry_run=false → soft-marks secondary (merged_into, merged_at, merged_by populated); response has applied{} + dry_run:false.",
+    "PASS GET /api/patients hides merged rows by default; ?include_merged=true surfaces them.",
+    "PASS GET /api/patients/export.csv excludes merged rows (search=merged_id returns 200 with no matching row).",
+    "PASS GET /api/patients/{merged_id} → 200 (not 500). merged_at populated as ISO string — utils/serde.py STRING_DATE_KEYS fix confirmed working.",
+    "PASS GET /api/patients/check-duplicate?mobile=... does NOT return merged rows.",
+    "PASS primary==secondary → 400.",
+    "PASS Cross-clinic merge (owner clinic × founder platform clinic) → 404 (secondary not found in caller's clinic) — spec accepts 400/403/404, backend chose 404 which is semantically fine.",
+    "PASS Double-merge attempt on already-merged secondary → 400 with 'already merged' message.",
+    "PASS Role gate: pytest.frontdesk (front_desk role) → 403 'Requires one of: (\\'clinic_owner\\',)'. Note require_roles bypass for super_admin/founder is baked into auth.require_roles.",
+    "PASS Frontend: profile-merge button visible for owner (Dr. Rajesh Iyer / clinic_owner) on non-merged patient.",
+    "PASS Frontend: merge-modal opens; secondary card shows current patient; merge-confirm disabled until preview loads.",
+    "PASS Frontend: search input debounced (300ms); merge-candidate-{id} rendered; picking primary triggers dry-run and merge-preview-table renders with per-collection counts (0-row preview also renders 'No linked records' correctly).",
+    "PASS Frontend: merge-confirm POSTs wet-run then navigates to /patients/{primary}.",
+    "PASS Frontend: opening /patients/{merged_id}?include_merged=true renders merged-banner with 'Merged on 07 Aug 2026' + merged-open-survivor link. profile-merge button is correctly hidden on already-merged patient.",
+    "PASS DuplicateContactModal (NewPatientPage.js) wiring — code inspection: handles both duplicate_phone (dup-phone-modal) and duplicate_email (dup-email-modal); dup-create-anyway retries with allow_duplicate_phone or allow_duplicate_email based on kind. Retries verified indirectly via test_patient_merge fixture using ?allow_duplicate_phone=true."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_patient_merge.py",
+    "/app/test_reports/pytest/patient_merge.xml"
+  ],
+  "action_items": [
+    "LOW: Investigate a pre-existing ErrorBoundary crash 'Cannot read properties of null (reading split)' seen when navigating to /patients (list) with the owner account — the initials() helper in PatientProfilePage / a list card explodes when patient.name is null. Not related to Merge, but degrades the /patients experience. Root cause is likely a legacy row with name=null on the tenant-sound-clinic-blr clinic. Add a null-guard: (patient?.name || '?').split(' ')..."
+  ],
+  "critical_code_review_comments": [
+    "routers/patients.py:426 — merge endpoint uses require_roles('clinic_owner'). Because auth.require_roles auto-adds {super_admin, founder} to the allow-set, founder & super_admin can also merge. Matches spec.",
+    "routers/patients.py:456 — double-merge guard checks `secondary.get('merged_into')` (truthy). Good.",
+    "routers/patients.py:484 — wet-run loop rewrites FKs then soft-marks the secondary. No transaction guard: if the process dies between the FK-rewrite loop and the soft-mark, the secondary retains no children but is still 'active'. Acceptable for MVP; future hardening = wrap in a Mongo session.transaction() (needs replica set).",
+    "utils/serde.py:78 — 'merged_at' added to STRING_DATE_KEYS. Also inherits the existing hour==0 heuristic which is fine because ISO datetimes with time components will fall into the else-branch and emit full ISO.",
+    "MergePatientsModal.jsx — axios calls do not pass credentials/CSRF explicitly, but the app's global axios interceptor handles that (verified: wet-run merge succeeded via UI).",
+    "MergePatientsModal.jsx — merge-confirm correctly gated on (!primary || !preview || busy || loadingPreview) — matches spec.",
+    "PatientProfilePage.jsx:245 — 'canMerge && !patient.merged_into' guard on the button. Both branches verified live.",
+    "Backend tests migrated cleanly to pytest, JUnit XML emitted. All 5 tests green."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_patient_merge.py (new)"
+  ],
+  "success_rate": { "backend": "100% (5/5)", "frontend": "100% (all merge-related testids and flows verified)" },
+  "test_credentials": "owner@thesoundclinic.in / demo123 (clinic_owner, tenant-sound-clinic-blr); founder@audinexa.com / AudinexaFounder@2026",
+  "seed_data_creation": "Two UITEST patients created on tenant-sound-clinic-blr (PRIM=ACS-2026-6E3863A1, SEC=ACS-2026-AD743A0A). SEC has been merged into PRIM. Additional TEST_* pairs are created per pytest run and left behind (they self-clean on future merge tests via unique mobile numbers).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Patient Merge Tool is fully working end-to-end (backend + UI). Only follow-up worth flagging is the unrelated ErrorBoundary crash on /patients list (initials() null-guard). If retesting later, use owner@thesoundclinic.in and skip creating patients on tenant-sound-clinic-blr if the null-name row is still there.",
+  "rca of the issue": "N/A — no new bugs. Serde fix (merged_at → STRING_DATE_KEYS) is confirmed preventing the previously-reported 500 on GET merged patient."
+}

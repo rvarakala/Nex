@@ -175,25 +175,32 @@ export default function NewPatientPage() {
         return;
       }
 
-      // NEW mode. Attach the override flag if the user just confirmed the
-      // duplicate-phone dialog (opts.allowDuplicatePhone=true).
-      const config = opts.allowDuplicatePhone
-        ? { params: { allow_duplicate_phone: 'true' } }
-        : undefined;
+      // NEW mode. Attach the override flag(s) if the user just confirmed
+      // the duplicate-contact dialog.
+      const params = {};
+      if (opts.allowDuplicatePhone) params.allow_duplicate_phone = 'true';
+      if (opts.allowDuplicateEmail) params.allow_duplicate_email = 'true';
+      const config = Object.keys(params).length ? { params } : undefined;
       let r;
       try {
         r = await axios.post(`${API}/patients`, payload, config);
       } catch (e) {
-        // Backend duplicate-phone guard fires as 409. Surface a friendly
-        // modal instead of a generic toast so front-desk can either
-        // pick the existing patient or (rare) create a legitimate
-        // duplicate for a family sharing one phone.
-        if (e?.response?.status === 409 && e?.response?.data?.detail?.code === 'duplicate_phone') {
+        // Backend duplicate-phone/email guards fire as 409. Surface a
+        // friendly modal so front-desk can either open the existing
+        // patient or (rare) create a legitimate duplicate for a family
+        // sharing one phone / email address.
+        const code = e?.response?.data?.detail?.code;
+        if (e?.response?.status === 409 && (code === 'duplicate_phone' || code === 'duplicate_email')) {
           setBusy(false);
           setDupBlock({
+            kind: code === 'duplicate_email' ? 'email' : 'phone',
             matches: e.response.data.detail.matches || [],
             action,
             message: e.response.data.detail.message,
+            // Preserve any earlier override so the "create anyway" click
+            // for email doesn't blow past a still-unresolved phone dupe.
+            allowPhone: !!opts.allowDuplicatePhone,
+            allowEmail: !!opts.allowDuplicateEmail,
           });
           return;
         }
@@ -251,14 +258,21 @@ export default function NewPatientPage() {
   return (
     <div className="p-4 max-w-6xl mx-auto" data-testid={isEdit ? 'edit-patient-page' : 'new-patient-page'}>
       {dupBlock && (
-        <DuplicatePhoneModal
+        <DuplicateContactModal
+          kind={dupBlock.kind}
           matches={dupBlock.matches}
           message={dupBlock.message}
           onOpenExisting={(pid) => { setDupBlock(null); navigate(`/patients/${pid}`); }}
           onCreateAnyway={async () => {
             const act = dupBlock.action;
+            const prevPhone = dupBlock.allowPhone;
+            const prevEmail = dupBlock.allowEmail;
+            const opts = {
+              allowDuplicatePhone: prevPhone || dupBlock.kind === 'phone',
+              allowDuplicateEmail: prevEmail || dupBlock.kind === 'email',
+            };
             setDupBlock(null);
-            await submit(act, { allowDuplicatePhone: true });
+            await submit(act, opts);
           }}
           onCancel={() => setDupBlock(null)}
         />
@@ -506,36 +520,45 @@ export default function NewPatientPage() {
 
 
 /* ============================================================================
-   DuplicatePhoneModal — surfaces when the backend rejects a POST /patients
-   with 409 { code: 'duplicate_phone', matches }. Reported by a production
-   user (2026-08-07): "when I create a registration, it is accepting
-   multiple times when I give the same phone number and it is not showing
-   as the patient with the same phone number already exists".
+   DuplicateContactModal — surfaces when the backend rejects a POST /patients
+   with 409 { code: 'duplicate_phone' | 'duplicate_email', matches }.
+   Reported by a production user (2026-08-07): "when I create a
+   registration, it is accepting multiple times when I give the same
+   phone number and it is not showing as the patient with the same
+   phone number already exists".
 
    UX: 3 explicit outcomes, no ambiguity.
      • "Open patient <name>"  → route to the matching profile
      • "Create as new anyway" → allow the duplicate (family sharing phone).
-       Retried POST includes ?allow_duplicate_phone=true so the backend
-       accepts it AND stamps duplicate_phone_override=true on the audit
+       Retried POST includes ?allow_duplicate_phone=true (or email) so
+       the backend accepts it AND stamps the override flag on the audit
        log for future forensic tracing.
      • "Cancel"               → close the modal and let the user edit
-       the phone.
+       the phone / email.
+
+   The `kind` prop switches copy between phone and email variants while
+   sharing the same match-card + footer treatment.
    ========================================================================== */
-function DuplicatePhoneModal({ matches, message, onOpenExisting, onCreateAnyway, onCancel }) {
+function DuplicateContactModal({ kind, matches, message, onOpenExisting, onCreateAnyway, onCancel }) {
+  const isEmail = kind === 'email';
+  const heading = isEmail ? 'Duplicate email detected' : 'Duplicate phone number detected';
+  const fallbackMsg = isEmail
+    ? 'A patient with this email already exists in your clinic.'
+    : 'A patient with this phone already exists in your clinic.';
   return (
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 pb-24 md:pb-4"
       onClick={(e) => { if (e.target === e.currentTarget) onCancel?.(); }}
-      data-testid="dup-phone-modal"
+      data-testid={isEmail ? 'dup-email-modal' : 'dup-phone-modal'}
     >
       <div className="bg-white rounded-lg shadow-2xl w-[520px] max-w-full max-h-[calc(100dvh-96px)] sm:max-h-[85vh] flex flex-col">
         <header className="px-4 py-3 border-b border-slate-200 flex-shrink-0">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <span className="text-amber-600 text-base leading-none">⚠</span>
-            Duplicate phone number detected
+            {heading}
           </h3>
           <p className="text-[11.5px] text-slate-500 mt-0.5">
-            {message || 'A patient with this phone already exists in your clinic.'}
+            {message || fallbackMsg}
           </p>
         </header>
 
@@ -554,6 +577,7 @@ function DuplicatePhoneModal({ matches, message, onOpenExisting, onCreateAnyway,
                   <div className="text-[11px] text-slate-500 mt-0.5 truncate">
                     MRD <span className="font-mono">{m.mrd}</span>
                     {m.mobile && <> · 📱 {m.mobile}</>}
+                    {m.email && <> · ✉ {m.email}</>}
                     {m.age && <> · {m.age}y</>}
                     {m.gender && <> · {m.gender}</>}
                   </div>
@@ -569,6 +593,10 @@ function DuplicatePhoneModal({ matches, message, onOpenExisting, onCreateAnyway,
               No matching patient details available.
             </div>
           )}
+          <div className="text-[10.5px] text-slate-500 italic pt-2">
+            💡 Tip — clinic owners can also open a matching record and use
+            the <b>Merge</b> button to combine two already-created duplicates.
+          </div>
         </div>
 
         <footer className="px-4 py-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 flex-wrap flex-shrink-0">

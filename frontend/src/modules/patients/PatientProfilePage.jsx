@@ -14,9 +14,11 @@ import axios from 'axios';
 import {
   ArrowLeft, ArrowRight, Phone, Calendar, Edit, Plus, Activity,
   CalendarDays, StickyNote, Repeat, Receipt, FileText, Wrench,
-  Cake, Heart, Send,
+  Cake, Heart, Send, GitMerge,
 } from 'lucide-react';
 import DpdpaActions from './DpdpaActions';
+import MergePatientsModal from './MergePatientsModal';
+import { useAuth } from '../../AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -45,7 +47,10 @@ const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map(s =
 export default function PatientProfilePage() {
   const { patientId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tab, setTab] = useState('history');
+  const [showMerge, setShowMerge] = useState(false);
+  const canMerge = !!user && ['clinic_owner', 'super_admin', 'founder'].includes(user.role);
 
   const [patient, setPatient]           = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -162,8 +167,35 @@ export default function PatientProfilePage() {
     </div>
   );
 
+  // Merged-record banner. When an owner opens `/patients/:id?include_merged=true`
+  // (or an old link kept in a bookmark), surface a clear "this record was
+  // merged into X" strip so they can jump to the surviving canonical row.
+  const mergedBanner = patient.merged_into ? (
+    <div className="px-4 sm:px-6 pt-3" data-testid="merged-banner">
+      <div className="flex flex-wrap items-center gap-3 border border-slate-300 bg-slate-100 rounded-lg px-3 py-2">
+        <GitMerge size={14} className="text-slate-500 flex-shrink-0" />
+        <div className="text-[12px] text-slate-700 flex-1 min-w-0">
+          This record has been merged into another patient.
+          {patient.merged_at && <> Merged on <b>{fmtDate(patient.merged_at)}</b>.</>}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate(`/patients/${patient.merged_into}`)}
+          data-testid="merged-open-survivor"
+          className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 underline"
+        >Open surviving record →</button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="bg-slate-50 min-h-full" data-testid={`patient-profile-${patientId}`}>
+      {showMerge && (
+        <MergePatientsModal
+          secondary={patient}
+          onClose={() => setShowMerge(false)}
+        />
+      )}
       {/* Top bar */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
         <button
@@ -210,8 +242,20 @@ export default function PatientProfilePage() {
             className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 border border-slate-200 hover:border-slate-300 bg-white rounded-lg text-slate-700 font-semibold">
             <Edit size={13} /> Edit
           </Link>
+          {canMerge && !patient.merged_into && (
+            <button
+              type="button"
+              onClick={() => setShowMerge(true)}
+              data-testid="profile-merge"
+              title="Merge this record into another patient"
+              className="inline-flex items-center gap-1.5 text-[12px] px-3 py-2 border border-slate-200 hover:border-indigo-300 hover:text-indigo-700 bg-white rounded-lg text-slate-700 font-semibold">
+              <GitMerge size={13} /> Merge
+            </button>
+          )}
         </div>
       </header>
+
+      {mergedBanner}
 
       {/* Birthday / Anniversary banner — only when there's a pending occasion */}
       {greetings.length > 0 && (

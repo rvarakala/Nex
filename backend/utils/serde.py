@@ -70,6 +70,12 @@ def deserialize_datetime(obj):
         # HA borrow lifecycle (Inventory Phase B) — model declares these
         # as Optional[str] so they must stay strings on the way out.
         "borrowed_at", "returned_at",
+        # Patient merge bookkeeping — Optional[str] on the Patient model.
+        # Without this, the ISO string is coerced to datetime by the
+        # recursive walker below and ResponseValidationError fires,
+        # returning HTTP 500 on `GET /api/patients/:id` for any
+        # already-merged secondary record.
+        "merged_at",
     }
     if isinstance(obj, dict):
         # For string-typed date keys, coerce native datetime values back to

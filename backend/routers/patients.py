@@ -204,7 +204,11 @@ async def check_duplicate_patient(
     if not ors:
         return {"matches": []}
     matches = await db.patients.find(
-        {"clinic_id": user["clinic_id"], "$or": ors},
+        {
+            "clinic_id": user["clinic_id"],
+            "$or": ors,
+            "merged_into": {"$in": [None, False]},
+        },
         {"_id": 0, "patient_id": 1, "mrd": 1, "name": 1, "mobile": 1, "age": 1, "gender": 1, "updated_at": 1},
     ).sort("updated_at", -1).limit(10).to_list(10)
     return {"matches": matches}
@@ -215,6 +219,7 @@ async def get_patients(
     search: Optional[str] = None,
     limit: int = 100,
     cursor: Optional[str] = None,
+    include_merged: bool = False,
     user=Depends(get_current_user),
     db=Depends(get_db),
 ):
@@ -226,10 +231,15 @@ async def get_patients(
       that haven't migrated yet.
     - **Cursor mode** (`?cursor=…` present, even if empty) — returns
       `{items, next_cursor, has_more}`. Use this for paginated UIs.
+
+    Merged rows are hidden by default (post-merge cleanup). Pass
+    `?include_merged=true` to surface them for forensic/audit views.
     """
     from utils.pagination import cursor_clause, next_cursor_for
 
     query: dict = {"clinic_id": user["clinic_id"]}
+    if not include_merged:
+        query["merged_into"] = {"$in": [None, False]}
     if search:
         safe = re.escape(search.strip())
         if safe:
@@ -291,7 +301,7 @@ async def export_patients_csv(
     """
     from utils.csv_export import stream_csv
 
-    query: dict = {"clinic_id": user["clinic_id"]}
+    query: dict = {"clinic_id": user["clinic_id"], "merged_into": {"$in": [None, False]}}
     if search:
         safe = re.escape(search.strip())
         if safe:
