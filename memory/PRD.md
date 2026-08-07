@@ -1,6 +1,39 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 👨‍👩‍👧 Family Group Linking (2026-08-07)
+
+**User ask**: "Let two records that legitimately share a phone stay linked as family so history opens from either profile without merging."
+
+**Backend** — new module `/app/backend/routers/family_groups.py`:
+- `family_groups` collection: `{group_id, clinic_id, name, members: [{patient_id, relationship}], created_by, created_at, updated_at}`
+- Each `patients` row gets a denormalised `family_group_id` for O(1) lookup on the profile.
+- `GET /api/patients/{id}/family` → `{group: null}` or `{group: {name, members:[hydrated]}}` (member snippets exclude merged rows).
+- `POST /api/patients/{id}/family/link` — 4 branches: neither has group (create), one has (extend), both have SAME (idempotent + relationship update), both have DIFFERENT (409 `already_in_different_families`). Relationship label attaches to whichever member is being newly added.
+- `POST /api/patients/{id}/family/unlink` — removes the caller; if group drops <2 members, dissolves it and unsets the remaining patient's pointer too (clean audit tail).
+- Cross-clinic guard (both patients must be in caller's clinic).
+- Activity log entries: `family.link`, `family.unlink`.
+
+**Frontend** — new `/app/frontend/src/modules/patients/FamilyChipStrip.jsx`:
+- Renders a horizontal strip under the profile header. Colour-hashed chips (indigo / emerald / amber / sky / fuchsia — stable per patient_id).
+- Each chip = "Name · relationship". Click navigates to that member.
+- Trailing `+ Add member` and `Leave family` controls (all roles — linking family is workflow, not admin).
+- `LinkFamilyModal` — same debounced-search pattern as `MergePatientsModal` for consistency. Relationship pill row (spouse / parent / child / sibling / other).
+- Family strip is skipped for merged-secondary records (already-suppressed via `!patient.merged_into`).
+
+**DuplicateContactModal wired to auto-link**:
+- The registration-time duplicate warning modal now includes a "Link as family member" checkbox (default ON when matches exist). When on, clicking "Create + link as family" (button label auto-switches) does the two-step: (1) POST /patients with the phone/email override, then (2) POST /family/link connecting to the picked match. Best-effort — if link fails, patient still gets created.
+
+**Bugs caught + fixed during dev**:
+- Mongo projection `{_id: 0, family_group_id: 1}` on an unset field returns `{}` (falsy) — the endpoint 404'd valid patients. Fixed by also projecting `patient_id: 1` in all three endpoints.
+- `link_family_member` was silently losing the relationship label when the URL patient was the one being added into an existing group (both members-add code paths now mirror the label).
+- Pre-existing `ModernDashboard.jsx:822` — `a.name.split(' ')` crashed for staff rows with null name. Guarded to `(a.name || 'Unnamed')`.
+
+**Test coverage**:
+- `iteration_72.json` — 11/11 backend pytest cases (create/extend/self-link/conflict/unlink-dissolve/cross-clinic/merged-filter) green. Playwright verified chip strip renders + navigates + Leave-family confirm dialog fires. Manual curl end-to-end reconfirmed post-fix.
+
+
+
 ## ↶ Patient Merge Undo Window (2026-08-07)
 
 **User ask**: "Give owners a 10-minute grace period after a merge to reverse it in one click if they picked the wrong primary."

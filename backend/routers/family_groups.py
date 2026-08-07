@@ -181,11 +181,18 @@ async def link_family_member(
         # Add whichever side is missing. `$addToSet` alone won't work
         # because dict equality includes relationship — use manual
         # existence check.
+        #
+        # The relationship label is attached to whichever member is
+        # being *added* to the existing group. Front-desk always types
+        # the relationship from the current-patient's perspective, and
+        # spouse/sibling roles are symmetric — so mirroring the label
+        # onto the new member is the correct semantic. Parent/child
+        # asymmetry can be corrected inline after the link fires.
         group = await _load_group(db, clinic_id, gid)
         member_ids = {m["patient_id"] for m in (group.get("members") or [])}
         adds = []
         if patient_id not in member_ids:
-            adds.append({"patient_id": patient_id, "relationship": None})
+            adds.append({"patient_id": patient_id, "relationship": payload.relationship})
         if payload.other_patient_id not in member_ids:
             adds.append({"patient_id": payload.other_patient_id, "relationship": payload.relationship})
         if adds:

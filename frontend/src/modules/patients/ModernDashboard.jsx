@@ -819,7 +819,7 @@ export default function ModernDashboard() {
                 title="Doctor Schedule"
                 value={<span>{audiologists.length} <span className="text-[13px] text-slate-500 font-semibold tracking-normal ml-0.5">on duty</span></span>}
                 hint={audiologists.length
-                  ? `Includes ${audiologists.slice(0, 2).map((a) => a.name.split(' ')[0]).join(' · ')}${audiologists.length > 2 ? ` +${audiologists.length - 2}` : ''}`
+                  ? `Includes ${audiologists.slice(0, 2).map((a) => (a.name || 'Unnamed').split(' ')[0]).join(' · ')}${audiologists.length > 2 ? ` +${audiologists.length - 2}` : ''}`
                   : 'No audiologist marked on duty today'}
                 onClick={() => navigate('/settings/staff-schedule')}
                 testid="pulse-doctor-schedule"
