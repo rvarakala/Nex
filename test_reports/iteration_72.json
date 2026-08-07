@@ -1,0 +1,42 @@
+{
+  "summary": "Family Group Linking — full backend + frontend regression. 11/11 pytest cases pass (create/extend/self-link/conflict/unlink-dissolve/scoping/merged-filter). Frontend UI verified: chip strip renders on linked Ramesh Kumar with 2 other-member chips (Sita·spouse, Ravi·child), Add-member and Leave-family buttons present, chip click navigates to member profile, LinkFamilyModal opens with debounced search + relationship pills. Duplicate-phone modal auto-link flow works E2E: creating a new patient with phone 9876123456 → dup-phone-modal shows family-link-block panel, toggle defaults ON, all 5 rel pills present, dup-create-anyway label switches to 'Create + link as family'. After confirm, new patient is created AND POST /family/link runs automatically — new profile shows chip strip with all 3 pre-existing Kumar members.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Duplicate-modal auto-link → relationship label lost when picked patient is already in group",
+        "issue": "In the family_groups.link_family_member router, `relationship` is written to `payload.other_patient_id` side. During the duplicate-flow the *new* patient is the URL-`patient_id` and the picked existing patient (already in the group) is `other_patient_id`. So `adds=[{patient_id: <new>, relationship: None}]` and the user-selected relationship (e.g. 'sibling') is silently discarded. Verified: TestFam A3E0E0 (new) was added with relationship=None despite 'sibling' being clicked. Consider: if `other_patient_id` is already a member and `patient_id` is being added, apply `payload.relationship` to the newly-added member instead.",
+        "affected_selectors": ["family-link-block", "family-rel-sibling"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_family_groups.py",
+    "/app/test_reports/pytest/family_groups.xml"
+  ],
+  "action_items": [
+    "OPTIONAL / MINOR: fix relationship-side handling in link_family_member so that when the URL patient (`patient_id`) is the one being added into an existing group, the payload.relationship gets attached to that newly-added member (currently it silently attaches only to `other_patient_id`, which may already be present → label lost). This matters primarily for the duplicate-modal auto-link path.",
+    "PRE-EXISTING (unrelated to this feature): ModernDashboard crashes with `Cannot read properties of null (reading 'split')` at initials() during render; observed as a red error page on redirect after create. Not caused by family-groups but worth flagging."
+  ],
+  "critical_code_review_comments": [
+    "family_groups.py `updated_at` is stored as ISO string on updates but as a datetime on insert (via serialize_datetime). Inconsistent — will make future date-range queries brittle.",
+    "family_groups.py has no explicit clinic-scoped index; add `{clinic_id:1, group_id:1}` (unique) and `{clinic_id:1, 'members.patient_id':1}` for O(1) reverse lookups.",
+    "link_family_member: when both patients already members of the same group and no relationship supplied, the endpoint is a silent no-op — consider returning the current group anyway (currently it does — good).",
+    "The router lacks any role guard — any authenticated clinic user can link/unlink. Confirm this matches product intent (docstring says 'front-desk gets this too'). OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_family_groups.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% of testable flows"},
+  "test_credentials": "owner@thesoundclinic.in / demo123",
+  "seed_data_creation": "Created TestFam A3E0E0 (ACS-2026-74F9D365) linked into Kumar family (FAM-C7F61781A4F9) via the duplicate-modal auto-link E2E test. Safe to leave or unlink.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend router at /app/backend/routers/family_groups.py; test file /app/backend/tests/test_family_groups.py runs standalone (uses owner@thesoundclinic.in). Kumar family test fixtures: ACS-2026-EAA18A49 (Ramesh), 6D77B35A (Sita·spouse), 3CCAF183 (Ravi·child), 74F9D365 (TestFam, added by this run, relationship=None).",
+  "rca of the issue": "Duplicate-modal auto-link relationship-loss RCA: `link_family_member` treats `payload.relationship` as the label for `payload.other_patient_id`. When the URL patient is being added into an existing group that already contains the other patient, `adds` becomes `[{patient_id: <new>, relationship: None}]` — the relationship never attaches. Fix: track which side is new; assign `payload.relationship` to that side."
+}

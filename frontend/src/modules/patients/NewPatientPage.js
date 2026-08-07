@@ -208,6 +208,23 @@ export default function NewPatientPage() {
       }
       const patient = r.data;
 
+      // If the user chose to link the new patient as a family member
+      // (via the DuplicateContactModal's "Also link as family" toggle),
+      // wire the link right after creation. Best-effort — even if the
+      // link call errors we don't roll back the patient creation because
+      // the user can always link later from the Profile page.
+      if (opts.linkFamilyTo) {
+        try {
+          await axios.post(`${API}/patients/${patient.patient_id}/family/link`, {
+            other_patient_id: opts.linkFamilyTo,
+            relationship: opts.linkFamilyRelationship || null,
+          });
+        } catch {
+          /* soft-fail — profile page will show empty family strip and
+             owner can retry from there. */
+        }
+      }
+
       // NEW: skip the token/session dance for the "book appointment"
       // action — instead, hand off to the Appointments calendar with the
       // freshly-created patient pre-selected in the modal (Phase B #2).
@@ -263,13 +280,15 @@ export default function NewPatientPage() {
           matches={dupBlock.matches}
           message={dupBlock.message}
           onOpenExisting={(pid) => { setDupBlock(null); navigate(`/patients/${pid}`); }}
-          onCreateAnyway={async () => {
+          onCreateAnyway={async ({ linkFamilyTo, linkFamilyRelationship } = {}) => {
             const act = dupBlock.action;
             const prevPhone = dupBlock.allowPhone;
             const prevEmail = dupBlock.allowEmail;
             const opts = {
               allowDuplicatePhone: prevPhone || dupBlock.kind === 'phone',
               allowDuplicateEmail: prevEmail || dupBlock.kind === 'email',
+              linkFamilyTo,
+              linkFamilyRelationship,
             };
             setDupBlock(null);
             await submit(act, opts);
@@ -545,6 +564,14 @@ function DuplicateContactModal({ kind, matches, message, onOpenExisting, onCreat
   const fallbackMsg = isEmail
     ? 'A patient with this email already exists in your clinic.'
     : 'A patient with this phone already exists in your clinic.';
+  // Auto-link-as-family state — the checkbox is only useful when the
+  // user KNOWS the new person is a family member of one of the matches
+  // (spouse / parent / child sharing a phone). Front-desk picks the
+  // relationship from a small pill row.
+  const [linkTo, setLinkTo] = React.useState(matches?.[0]?.patient_id || '');
+  const [relationship, setRelationship] = React.useState('spouse');
+  const [linkFamily, setLinkFamily] = React.useState(true);
+  const relOptions = ['spouse', 'parent', 'child', 'sibling', 'other'];
   return (
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 pb-24 md:pb-4"
@@ -597,6 +624,60 @@ function DuplicateContactModal({ kind, matches, message, onOpenExisting, onCreat
             💡 Tip — clinic owners can also open a matching record and use
             the <b>Merge</b> button to combine two already-created duplicates.
           </div>
+
+          {/* Auto-link-as-family — only show when we have a match to
+              link to. Common flow for spouses/parents/children who
+              legitimately share a phone. Front-desk toggles this off
+              only if the collision was genuinely unrelated. */}
+          {matches.length > 0 && (
+            <div className="border border-emerald-200 bg-emerald-50/60 rounded-md p-3" data-testid="family-link-block">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={linkFamily}
+                  onChange={(e) => setLinkFamily(e.target.checked)}
+                  data-testid="family-link-toggle"
+                  className="mt-0.5 accent-emerald-600"
+                />
+                <div className="text-[11.5px] text-slate-800">
+                  <b>Link as family member</b> — keep both records separate but connected so history opens from either profile without merging.
+                </div>
+              </label>
+              {linkFamily && (
+                <div className="mt-2 space-y-1.5 pl-6">
+                  {matches.length > 1 && (
+                    <select
+                      value={linkTo}
+                      onChange={(e) => setLinkTo(e.target.value)}
+                      data-testid="family-link-target"
+                      className="w-full text-[11.5px] border border-slate-300 rounded-md px-2 py-1.5"
+                    >
+                      {matches.map((m) => (
+                        <option key={m.patient_id} value={m.patient_id}>
+                          Link to {m.name} (MRD {m.mrd})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {relOptions.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRelationship(r)}
+                        data-testid={`family-rel-${r}`}
+                        className={`px-2.5 py-0.5 rounded-full border text-[10.5px] font-semibold capitalize transition ${
+                          relationship === r
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white text-slate-700 border-slate-300 hover:border-emerald-400'
+                        }`}
+                      >{r}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <footer className="px-4 py-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2 flex-wrap flex-shrink-0">
@@ -610,11 +691,15 @@ function DuplicateContactModal({ kind, matches, message, onOpenExisting, onCreat
           </button>
           <button
             type="button"
-            onClick={onCreateAnyway}
+            onClick={() => onCreateAnyway(
+              linkFamily && matches.length > 0
+                ? { linkFamilyTo: linkTo || matches[0].patient_id, linkFamilyRelationship: relationship }
+                : {}
+            )}
             data-testid="dup-create-anyway"
             className="px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded"
           >
-            Create as new anyway
+            {linkFamily && matches.length > 0 ? 'Create + link as family' : 'Create as new anyway'}
           </button>
         </footer>
       </div>

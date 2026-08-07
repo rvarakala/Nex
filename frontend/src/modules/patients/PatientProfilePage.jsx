@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import DpdpaActions from './DpdpaActions';
 import MergePatientsModal from './MergePatientsModal';
+import FamilyChipStrip from './FamilyChipStrip';
 import { useAuth } from '../../AuthContext';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -294,6 +295,11 @@ export default function PatientProfilePage() {
       </header>
 
       {mergedBanner}
+      {/* Family group chips — visible to all roles. Only renders once
+          the patient is loaded so we don't fetch /family for null. */}
+      {patient && !patient.merged_into && (
+        <FamilyChipStrip patient={patient} />
+      )}
 
       {/* Birthday / Anniversary banner — only when there's a pending occasion */}
       {greetings.length > 0 && (

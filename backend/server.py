@@ -1011,6 +1011,8 @@ from routers import launch_banner as launch_banner_router  # noqa: E402
 app.include_router(closeouts_router.router)
 app.include_router(reports_router.router)
 app.include_router(patients_router.router)
+from routers import family_groups as family_groups_router  # noqa: E402
+app.include_router(family_groups_router.router)
 app.include_router(vault_router.router)
 app.include_router(care_support_router.router)
 # Invitations router mounts at /api (paths inside the router include /settings/*
