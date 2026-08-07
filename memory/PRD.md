@@ -1,6 +1,37 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## ↶ Patient Merge Undo Window (2026-08-07)
+
+**User ask**: "Give owners a 10-minute grace period after a merge to reverse it in one click if they picked the wrong primary."
+
+**Backend**:
+- New collection `patient_merge_events` — one doc per wet-run merge. Fields:
+  - `merge_id`, `clinic_id`, `primary_patient_id`, `secondary_patient_id`
+  - `primary_name`, `secondary_name` (denormalised for banner UX)
+  - `merged_at`, `merged_by`, `expires_at` (= merged_at + 10min)
+  - `rewrites: [{coll, id: str(_id)}]` — the exact ObjectIds we rewrote, so undo can be surgical (no false positives if a chained merge touched the same rows).
+  - `applied: {coll: n}` — count summary for the banner.
+  - `secondary_snapshot: {active: bool}` — restore-state for the un-soft-mark.
+  - `undone_at`, `undone_by` (nullable)
+- `POST /api/patients/merge` wet-run now snapshots `_id`s BEFORE rewriting, persists the event, and returns `merge_id` + `expires_at` in the response.
+- `GET /api/patients/{id}/undoable-merges` — returns active events where this patient is either primary or secondary (banner powers both sides).
+- `POST /api/patients/merge-events/{merge_id}/undo` — owner-only. Reverses every rewrite (by ObjectId), restores the secondary (unsets `merged_into`, `merged_at`, `merged_by`, restores `active`), marks the event undone, writes `patient.merge_undo` activity log. Returns 404 unknown / 409 already-undone / 410 expired.
+
+**Frontend**:
+- `PatientProfilePage.jsx` — new `undoables` state, fetched on mount + refreshed every 30s. Owner-only (receptionists never see it).
+- `MergeUndoBanner` component renders one amber banner per active event. Copy switches automatically based on which side (primary vs secondary) the user is viewing. Includes live `mm:ss` countdown that ticks every second. One-click Undo POSTs the endpoint and refreshes profile + undoables list on success.
+- After a fresh merge in `MergePatientsModal`, `navigate()` bounces to the primary → banner appears automatically because `loadUndoables()` runs on mount.
+
+**Bug caught during dev**:
+- `utils/serde.py::serialize_datetime` stores datetimes as ISO strings. My initial `expires_at: {$gt: datetime}` Mongo query silently returned `[]` because string-vs-datetime comparison across BSON types never matches. **Fix**: compare against `datetime.utcnow().isoformat()` in both the list and undo endpoints.
+
+**Test coverage**:
+- Backend curl round-trip: create dupes → merge → verify undoable-merges on both sides → undo → verify rewrites reversed and secondary restored → verify 409 on double-undo → force-expire → verify 410.
+- Frontend Playwright: banner renders, countdown updates, undo button click → banner disappears + profile refreshes.
+
+
+
 ## 🔗 Patient Merge Tool (2026-08-07)
 
 **Trigger**: Follow-up to the Duplicate-Phone/Email guards. Owner requested a way to collapse duplicates that were created BEFORE the guards shipped.

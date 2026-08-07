@@ -1,8 +1,10 @@
 """Patient CRUD + duplicate detection + MRD counter."""
 import re
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from typing import List, Optional
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -479,14 +481,38 @@ async def merge_patients(
         }
 
     # Wet-run: rewrite FKs in each whitelisted collection.
+    # We snapshot the exact `_id`s BEFORE mutating so a 10-minute
+    # undo window can precisely reverse just those rows — no relying
+    # on `merged_from_patient_id` sentinels (which could be shared
+    # across chained merges of the same row).
     applied: dict = {}
-    now_iso = datetime.utcnow().isoformat()
+    rewrites: list = []  # [{coll, id: str(_id)}, ...] — for undo
+    now = datetime.utcnow()
+    now_iso = now.isoformat()
+    expires_at = now + timedelta(minutes=10)
+    merge_id = f"MRG-{uuid.uuid4().hex[:12].upper()}"
     for coll, _ in impact.items():
-        res = await db[coll].update_many(
+        # Snapshot the ids we're about to rewrite.
+        cursor = db[coll].find(
             {"clinic_id": clinic_id, "patient_id": payload.secondary_patient_id},
+            {"_id": 1},
+        )
+        ids = [d["_id"] async for d in cursor]
+        if not ids:
+            continue
+        res = await db[coll].update_many(
+            {"_id": {"$in": ids}},
             {"$set": {"patient_id": payload.primary_patient_id, "merged_from_patient_id": payload.secondary_patient_id}},
         )
         applied[coll] = int(res.modified_count or 0)
+        rewrites.extend([{"coll": coll, "id": str(_id)} for _id in ids])
+
+    # Capture the secondary's pre-merge state so undo can restore it
+    # cleanly. Only fields the merge itself touches — everything else
+    # is left as-is.
+    secondary_snapshot = {
+        "active": secondary.get("active", True),
+    }
 
     # Soft-mark the secondary. Never hard-delete: forensic trail.
     await db.patients.update_one(
@@ -499,20 +525,171 @@ async def merge_patients(
         }},
     )
 
+    # Persist the merge event so the 10-minute undo window has
+    # everything it needs (rewrite list + secondary snapshot + expiry).
+    await db.patient_merge_events.insert_one(serialize_datetime({
+        "merge_id": merge_id,
+        "clinic_id": clinic_id,
+        "primary_patient_id": payload.primary_patient_id,
+        "secondary_patient_id": payload.secondary_patient_id,
+        "primary_name": primary.get("name"),
+        "secondary_name": secondary.get("name"),
+        "merged_at": now,
+        "merged_by": user["user_id"],
+        "expires_at": expires_at,
+        "rewrites": rewrites,
+        "applied": applied,
+        "secondary_snapshot": secondary_snapshot,
+        "undone_at": None,
+        "undone_by": None,
+    }))
+
     await db.activity_logs.insert_one(serialize_datetime({
         "clinic_id": clinic_id,
         "user_id": user["user_id"],
         "action": "patient.merge",
+        "merge_id": merge_id,
         "primary_patient_id": payload.primary_patient_id,
         "secondary_patient_id": payload.secondary_patient_id,
         "rows_rewritten": applied,
-        "at": datetime.utcnow(),
+        "at": now,
     }))
 
     return {
         "dry_run": False,
+        "merge_id": merge_id,
+        "expires_at": expires_at.isoformat(),
         "primary": {"patient_id": primary["patient_id"], "name": primary.get("name"), "mrd": primary.get("mrd")},
         "secondary": {"patient_id": secondary["patient_id"], "name": secondary.get("name"), "mrd": secondary.get("mrd")},
         "applied": applied,
         "total_rows_affected": sum(applied.values()),
+    }
+
+
+@router.get("/patients/{patient_id}/undoable-merges")
+async def get_undoable_merges(
+    patient_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Return every merge event within its 10-minute undo window
+    where `patient_id` is either the surviving primary OR the merged
+    secondary. Powers the amber "Merged just now — Undo" banner on
+    both sides of the profile page.
+    """
+    # Mongo stores our datetimes as ISO strings (see utils/serde.py) so
+    # the range comparison must be ISO-vs-ISO — not datetime-vs-string
+    # (that silently returns [] because Mongo can't order across types).
+    now_iso = datetime.utcnow().isoformat()
+    cursor = db.patient_merge_events.find({
+        "clinic_id": user["clinic_id"],
+        "$or": [
+            {"primary_patient_id": patient_id},
+            {"secondary_patient_id": patient_id},
+        ],
+        "undone_at": None,
+        "expires_at": {"$gt": now_iso},
+    }).sort("merged_at", -1)
+    out = []
+    async for ev in cursor:
+        out.append({
+            "merge_id": ev["merge_id"],
+            "primary_patient_id": ev["primary_patient_id"],
+            "secondary_patient_id": ev["secondary_patient_id"],
+            "primary_name": ev.get("primary_name"),
+            "secondary_name": ev.get("secondary_name"),
+            "merged_at": (ev["merged_at"].isoformat() if isinstance(ev["merged_at"], datetime) else ev["merged_at"]),
+            "expires_at": (ev["expires_at"].isoformat() if isinstance(ev["expires_at"], datetime) else ev["expires_at"]),
+            "merged_by": ev.get("merged_by"),
+            "total_rows_affected": sum((ev.get("applied") or {}).values()),
+            "role": "primary" if ev["primary_patient_id"] == patient_id else "secondary",
+        })
+    return out
+
+
+@router.post("/patients/merge-events/{merge_id}/undo")
+async def undo_merge(
+    merge_id: str,
+    user=Depends(require_roles("clinic_owner")),
+    db=Depends(get_db),
+):
+    """Reverse a merge inside its 10-minute grace window.
+
+    Rewrites every previously-rewritten row's `patient_id` back to the
+    secondary, unsets `merged_from_patient_id`, un-soft-marks the
+    secondary (restores `active` from snapshot, clears `merged_into`
+    / `merged_at` / `merged_by`), and stamps the event as undone so
+    it can't be re-run.
+
+    Fails 404 if the event doesn't exist in this clinic, 410 if the
+    window already expired, 409 if it was already undone.
+    """
+    clinic_id = user["clinic_id"]
+    ev = await db.patient_merge_events.find_one({"merge_id": merge_id, "clinic_id": clinic_id})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Merge event not found")
+    if ev.get("undone_at"):
+        raise HTTPException(status_code=409, detail="Merge already undone")
+
+    expires_at = ev.get("expires_at")
+    now = datetime.utcnow()
+    # Mongo stores as ISO string (see utils/serde.py). Coerce both back
+    # to naive datetime for the range check.
+    if isinstance(expires_at, str):
+        try:
+            expires_at = datetime.fromisoformat(expires_at)
+        except Exception:
+            expires_at = None
+    if not expires_at or now >= expires_at:
+        raise HTTPException(status_code=410, detail="Undo window (10 minutes) has expired")
+
+    # Reverse every recorded rewrite. Update by `_id` so a subsequent
+    # merge that touched the same rows can't accidentally get reverted
+    # here — we only touch the specific ObjectIds we snapshotted.
+    reverted: dict = {}
+    for r in ev.get("rewrites", []):
+        coll = r["coll"]
+        try:
+            oid = ObjectId(r["id"])
+        except Exception:
+            continue
+        res = await db[coll].update_one(
+            {"_id": oid, "clinic_id": clinic_id},
+            {"$set": {"patient_id": ev["secondary_patient_id"]}, "$unset": {"merged_from_patient_id": ""}},
+        )
+        if res.modified_count:
+            reverted[coll] = reverted.get(coll, 0) + 1
+
+    # Restore the secondary patient.
+    snap = ev.get("secondary_snapshot") or {}
+    await db.patients.update_one(
+        {"patient_id": ev["secondary_patient_id"], "clinic_id": clinic_id},
+        {
+            "$set": {"active": snap.get("active", True)},
+            "$unset": {"merged_into": "", "merged_at": "", "merged_by": ""},
+        },
+    )
+
+    await db.patient_merge_events.update_one(
+        {"merge_id": merge_id, "clinic_id": clinic_id},
+        {"$set": {"undone_at": now, "undone_by": user["user_id"]}},
+    )
+
+    await db.activity_logs.insert_one(serialize_datetime({
+        "clinic_id": clinic_id,
+        "user_id": user["user_id"],
+        "action": "patient.merge_undo",
+        "merge_id": merge_id,
+        "primary_patient_id": ev["primary_patient_id"],
+        "secondary_patient_id": ev["secondary_patient_id"],
+        "rows_reverted": reverted,
+        "at": now,
+    }))
+
+    return {
+        "merge_id": merge_id,
+        "reverted": reverted,
+        "total_rows_reverted": sum(reverted.values()),
+        "primary_patient_id": ev["primary_patient_id"],
+        "secondary_patient_id": ev["secondary_patient_id"],
     }

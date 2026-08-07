@@ -59,7 +59,29 @@ export default function PatientProfilePage() {
   const [tickets, setTickets]           = useState([]);
   const [notes, setNotes]               = useState([]);
   const [greetings, setGreetings]       = useState([]); // pending birthday/anniversary
+  const [undoables, setUndoables]       = useState([]); // active merge events in their 10-min window
   const [loading, setLoading]           = useState(true);
+
+  // Undoable merges are fetched separately (and refreshed on 30s tick)
+  // so a stale banner clears itself when the window expires without a
+  // full profile reload. Owner-only feature — receptionists can't undo.
+  const loadUndoables = useCallback(async () => {
+    if (!canMerge) { setUndoables([]); return; }
+    try {
+      const r = await axios.get(`${API}/patients/${patientId}/undoable-merges`);
+      setUndoables(Array.isArray(r.data) ? r.data : []);
+    } catch {
+      setUndoables([]);
+    }
+  }, [patientId, canMerge]);
+  useEffect(() => {
+    loadUndoables();
+    // Refresh every 30s so the banner disappears when the window expires
+    // even if the user leaves the tab open. Cheap query — indexed by
+    // clinic_id + patient_id + undone_at + expires_at.
+    const t = setInterval(loadUndoables, 30_000);
+    return () => clearInterval(t);
+  }, [loadUndoables]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,6 +218,22 @@ export default function PatientProfilePage() {
           onClose={() => setShowMerge(false)}
         />
       )}
+      {/* Undo banners — one per active merge event in the 10-min grace
+          window. Both the surviving primary and the merged secondary
+          see this: owners can reverse from either side. */}
+      {undoables.map((ev) => (
+        <MergeUndoBanner
+          key={ev.merge_id}
+          event={ev}
+          currentPatientId={patientId}
+          onUndone={async () => {
+            // On successful undo, refresh EVERYTHING — the secondary is
+            // now active again, the primary's history shrinks by the
+            // rows that got reverted, and the banner should disappear.
+            await Promise.all([load(), loadUndoables()]);
+          }}
+        />
+      ))}
       {/* Top bar */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
         <button
@@ -572,3 +610,73 @@ const StatusPill = ({ v }) => {
     </span>
   );
 };
+
+
+/* ============================================================================
+   MergeUndoBanner — persistent amber strip shown on both the surviving
+   primary AND the merged secondary while a merge is inside its 10-min
+   undo grace window. One-click reverses everything (row-level rewrites +
+   secondary un-soft-mark). Live countdown so the user knows exactly how
+   much time is left before the window closes.
+   ========================================================================== */
+function MergeUndoBanner({ event, currentPatientId, onUndone }) {
+  const [now, setNow] = React.useState(() => Date.now());
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  // Tick every second for the countdown. Cheap and only running while
+  // the banner is mounted (which is bounded to the 10-min window).
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const expiresMs = new Date(event.expires_at).getTime();
+  const secondsLeft = Math.max(0, Math.floor((expiresMs - now) / 1000));
+  const mm = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+  const ss = (secondsLeft % 60).toString().padStart(2, '0');
+
+  // The event lives on both sides — the copy differs based on which
+  // side of the merge we're currently viewing so the sentence stays
+  // grammatical either way.
+  const isSecondary = event.role === 'secondary' || currentPatientId === event.secondary_patient_id;
+  const otherName = isSecondary ? event.primary_name : event.secondary_name;
+  const label = isSecondary
+    ? <>This record was <b>merged into {otherName}</b> a moment ago.</>
+    : <><b>{otherName}</b> was merged into this record a moment ago.</>;
+
+  const doUndo = async () => {
+    setBusy(true); setErr('');
+    try {
+      await axios.post(`${API}/patients/merge-events/${event.merge_id}/undo`);
+      onUndone?.();
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Undo failed');
+      setBusy(false);
+    }
+  };
+
+  if (secondsLeft <= 0) return null;
+
+  return (
+    <div className="px-4 sm:px-6 pt-3" data-testid={`merge-undo-banner-${event.merge_id}`}>
+      <div className="flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 rounded-lg px-3 py-2">
+        <span className="text-amber-600 text-base leading-none" aria-hidden>↶</span>
+        <div className="text-[12px] text-amber-900 flex-1 min-w-0">
+          {label} Moved <b>{event.total_rows_affected}</b> linked row{event.total_rows_affected === 1 ? '' : 's'}.
+          <span className="text-amber-700 ml-1">Undo available for <b data-testid={`merge-undo-countdown-${event.merge_id}`}>{mm}:{ss}</b></span>
+          {err && <span className="ml-2 text-rose-700">· {err}</span>}
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={doUndo}
+          data-testid={`merge-undo-btn-${event.merge_id}`}
+          className="inline-flex items-center gap-1 text-[11.5px] font-bold text-white bg-amber-700 hover:bg-amber-800 rounded px-3 py-1.5 disabled:opacity-50"
+        >
+          {busy ? 'Undoing…' : 'Undo merge'}
+        </button>
+      </div>
+    </div>
+  );
+}
