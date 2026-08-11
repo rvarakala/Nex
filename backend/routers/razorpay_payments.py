@@ -30,7 +30,7 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import razorpay
@@ -134,6 +134,93 @@ async def get_config(_=Depends(get_current_user)):
     if not kid:
         raise HTTPException(412, "Razorpay not configured on this server.")
     return RzpConfigOut(key_id=kid, is_live=kid.startswith("rzp_live_"))
+
+
+
+@router.get("/razorpay/webhook-health")
+async def webhook_health(
+    _=Depends(require_roles("founder", "super_admin")),
+    db=Depends(get_db),
+):
+    """Founder-panel health check for the Razorpay webhook pipeline.
+
+    Reports:
+      - configured  — is `RAZORPAY_KEY_ID` set on this server?
+      - last_event_at / last_processed_at — most recent webhook receipts
+      - counts: 1h / 24h / 7d
+      - status: healthy | stale | never_received | misconfigured
+      - a rolling `expected_url` string the founder can copy-paste into
+        the Razorpay dashboard so the webhook target never drifts.
+
+    Definition of "stale": no webhook received in the last 7 days AND
+    at least one Razorpay order was created in that window (meaning
+    payments are flowing but their notifications are not).
+    """
+    kid = os.environ.get("RAZORPAY_KEY_ID", "").strip()
+    if not kid:
+        return {
+            "status": "misconfigured",
+            "configured": False,
+            "message": "RAZORPAY_KEY_ID is not set on this server.",
+        }
+
+    now = datetime.now(timezone.utc)
+    h1_cut = (now - timedelta(hours=1)).isoformat()
+    h24_cut = (now - timedelta(hours=24)).isoformat()
+    d7_cut = (now - timedelta(days=7)).isoformat()
+
+    # Latest webhook received of any kind.
+    last_any = await db.razorpay_webhook_log.find_one(
+        {}, {"_id": 0, "received_at": 1, "event": 1, "processed": 1},
+        sort=[("received_at", -1)],
+    )
+    # Latest successfully-processed webhook (handled=True).
+    last_ok = await db.razorpay_webhook_log.find_one(
+        {"processed": True}, {"_id": 0, "received_at": 1, "event": 1},
+        sort=[("received_at", -1)],
+    )
+
+    # Rolling counts.
+    c1h = await db.razorpay_webhook_log.count_documents({"received_at": {"$gte": h1_cut}})
+    c24h = await db.razorpay_webhook_log.count_documents({"received_at": {"$gte": h24_cut}})
+    c7d = await db.razorpay_webhook_log.count_documents({"received_at": {"$gte": d7_cut}})
+    # Orders in the same 7d window — used to detect "payments happening
+    # but webhooks silent" i.e. the dashboard-side webhook is pointed at
+    # the wrong URL or disabled.
+    orders_7d = await db.razorpay_orders.count_documents({"created_at": {"$gte": d7_cut}})
+
+    # Recent events preview (last 5) — the founder can eyeball what's
+    # actually being received without opening Razorpay dashboard.
+    recent_cursor = db.razorpay_webhook_log.find(
+        {}, {"_id": 0, "event": 1, "received_at": 1, "processed": 1, "payment_id": 1},
+    ).sort("received_at", -1).limit(5)
+    recent = [r async for r in recent_cursor]
+
+    # Compute status.
+    if not last_any:
+        status = "never_received"
+    else:
+        # If any webhook came in the last 7 days → healthy.
+        if last_any["received_at"] >= d7_cut:
+            status = "healthy"
+        else:
+            # No webhook in 7 days. Are payments happening? If so,
+            # this is a real problem — mark stale.
+            status = "stale" if orders_7d > 0 else "quiet"
+
+    return {
+        "status": status,
+        "configured": True,
+        "is_live": kid.startswith("rzp_live_"),
+        "expected_webhook_url": "https://audinexa.com/api/billing/razorpay/webhook",
+        "last_event_at": last_any and last_any.get("received_at"),
+        "last_event_type": last_any and last_any.get("event"),
+        "last_processed_at": last_ok and last_ok.get("received_at"),
+        "counts": {"last_1h": c1h, "last_24h": c24h, "last_7d": c7d},
+        "orders_last_7d": orders_7d,
+        "recent": recent,
+    }
+
 
 
 @router.post("/tenant-invoices/{invoice_id}/razorpay/order", response_model=RzpOrderOut)

@@ -6,6 +6,7 @@ import { AlertTriangle } from 'lucide-react';
 import { PageHeader, Card, KPITile, Pill, tierTone, fmtINR, fmtInt, fmtDate, Empty } from './shared';
 import LiveSignupPulse from './LiveSignupPulse';
 import EmailHealthBanner from './EmailHealthBanner';
+import WebhookHealthBanner from './WebhookHealthBanner';
 import SignupFunnel from './SignupFunnel';
 import LatencySpeedometer from './LatencySpeedometer';
 import FounderResetModal from './FounderResetModal';
@@ -60,6 +61,7 @@ export default function DashboardPage() {
       )}
 
       <EmailHealthBanner />
+      <WebhookHealthBanner />
 
       {/* KPI row — 8 tiles only at 2xl (1536px+) so currency values don't ellipsis-truncate on 1280-1440 desktops */}
       <div className="grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-8 gap-3">

@@ -1,6 +1,38 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🩺 Razorpay Webhook Health Banner (2026-08-11)
+
+**User ask**: "Add a small Webhook Health banner in the Founder admin panel that periodically checks the last webhook received timestamp and warns if none in the last N days." — surfaced after discovering the live Razorpay webhook is pointed at the old preview URL, disabled, and has never delivered to audinexa.com.
+
+**Backend** — `/app/backend/routers/razorpay_payments.py`:
+- New endpoint `GET /api/billing/razorpay/webhook-health` (founder/super_admin only).
+- Reads from the pre-existing `razorpay_webhook_log` collection (every webhook receipt already writes there with `received_at`, `event`, `processed`, `outcome`).
+- Returns:
+  - `status` — `healthy` / `stale` / `never_received` / `misconfigured` / `quiet`
+  - `configured`, `is_live`, `expected_webhook_url` (canonical audinexa.com URL, copy-pasteable)
+  - `last_event_at`, `last_processed_at`, `last_event_type`
+  - Rolling counts: `last_1h`, `last_24h`, `last_7d`
+  - `orders_last_7d` — used to distinguish "quiet" (no traffic, don't alarm) from "stale" (orders happening but webhooks silent → real problem)
+  - `recent[]` — last 5 events for quick eyeball diagnostics
+
+**Frontend** — `/app/frontend/src/modules/admin/panel/WebhookHealthBanner.jsx`:
+- Polls the health endpoint every 5 minutes.
+- Renders NOTHING when status is `healthy` or `quiet` — the executive dashboard stays quiet on normal days (same pattern as EmailHealthBanner).
+- On `stale` or `misconfigured` → **rose** critical banner. On `never_received` → **amber** warning banner.
+- Copy button for the canonical URL + Open Razorpay Dashboard link + collapsible "last 5 events" details.
+- LIVE MODE badge so founder knows they're operating on the live key.
+- Wired into `/app/frontend/src/modules/admin/panel/DashboardPage.jsx` right below `EmailHealthBanner`.
+
+**Test coverage**:
+- Curl verified: preview server correctly reports `never_received` (no webhook has landed) and transitions to `healthy` when a fresh entry lands. Endpoint responds ~150ms.
+- Playwright screenshot confirmed banner renders with correct copy, KPI strip, copy-url control, and LIVE MODE chip.
+
+**Production diagnostic value**:
+- The banner currently shows on audinexa.com's founder panel as `never_received` — a clear signal to the founder that the Razorpay Dashboard webhook URL is misconfigured (still pointing at the old preview URL and disabled). The banner provides the exact URL to paste into Razorpay Dashboard → Settings → Webhooks.
+
+
+
 ## 🏢 Clinic Groups + Stock Requests (2026-08-11)
 
 **User ask**: "Owner runs 2+ clinics. Head Clinic procures in bulk and moves stock to branches. Branches should be able to request stock from Head; Head fulfils from own stock OR routes from another branch OR raises a Purchase Order with the vendor if nothing available in the group."
