@@ -11,11 +11,12 @@ import { NavLink, Route, Routes, Navigate, useLocation } from 'react-router-dom'
 import {
   Settings, Building2, Users, MapPin, Pen, ListChecks, ShieldCheck,
   MessageCircle, Clock, CalendarClock, Upload, User, Printer, Stamp,
-  Stethoscope, Menu, X, ChevronDown,
+  Stethoscope, Menu, X, ChevronDown, Crown,
 } from 'lucide-react';
 import ClinicDetailsTab from './ClinicDetailsTab';
 import StaffSettingsTab from './StaffSettingsTab';
 import BranchesTab from './BranchesTab';
+import ClinicGroupTab from './ClinicGroupTab';
 import MySignatureTab from './MySignatureTab';
 import MySealTab from './MySealTab';
 import MyProfileTab from './MyProfileTab';
@@ -54,6 +55,7 @@ export default function SettingsModule() {
         { to: '/settings/staff-schedule',   icon: CalendarClock, label: 'Doctor Schedule',   testid: 'settings-nav-staff-schedule' },
         { to: '/settings/referral-doctors', icon: Stethoscope,   label: 'Referral Doctors',  testid: 'settings-nav-referral-doctors' },
         { to: '/settings/branches',         icon: MapPin,        label: 'Branches',          testid: 'settings-nav-branches' },
+        { to: '/settings/clinic-group',     icon: Crown,         label: 'Clinic Group',      testid: 'settings-nav-clinic-group' },
         { to: '/settings/security',         icon: ShieldCheck,   label: 'Security & Privacy',testid: 'settings-nav-security' },
         { to: '/settings/connect',          icon: MessageCircle, label: 'Connect (WhatsApp)',testid: 'settings-nav-connect' },
         { to: '/settings/import',           icon: Upload,        label: 'Data Import',       testid: 'settings-nav-import' },
@@ -144,6 +146,7 @@ export default function SettingsModule() {
           {isAdmin && <Route path="staff-schedule" element={<StaffScheduleTab />} />}
           {isAdmin && <Route path="referral-doctors" element={<ReferralDoctorsTab />} />}
           {isAdmin && <Route path="branches" element={<BranchesTab />} />}
+          {isAdmin && <Route path="clinic-group" element={<ClinicGroupTab />} />}
           {isAdmin && <Route path="security" element={<SecurityPrivacyTab />} />}
           {isAdmin && <Route path="connect"  element={<ConnectWhatsAppTab />} />}
           {isAdmin && <Route path="import"   element={<DataImportTab />} />}

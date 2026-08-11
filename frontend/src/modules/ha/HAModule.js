@@ -16,6 +16,7 @@ import OwnerAnalyticsPage from './OwnerAnalyticsPage';
 import UpgradeFunnelPage from './UpgradeFunnelPage';
 import AMCPage from './AMCPage';
 import StockTransfersPage from './transfers/StockTransfersPage';
+import StockRequestsPage from './StockRequestsPage';
 
 // Sub-tabs grouped by section. Sidebar shows two top-level links:
 //   • "Hearing Aids" → /ha/trials (sales lifecycle)
@@ -26,7 +27,7 @@ import StockTransfersPage from './transfers/StockTransfersPage';
 const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups']);
 const INVENTORY_PATHS = new Set([
   'inventory', 'demo-stock', 'saleable-stock', 'accessories', 'amc',
-  'procurement', 'products', 'transfers', 'vendors',
+  'procurement', 'products', 'transfers', 'requests', 'vendors',
 ]);
 
 const SALES_TABS = [
@@ -43,6 +44,8 @@ const INVENTORY_TABS = [
   { to: '/ha/accessories',    label: 'Accessories',     testid: 'ha-tab-accessories' },
   { to: '/ha/amc',            label: 'AMC',             testid: 'ha-tab-amc' },
   { to: '/ha/procurement',    label: 'Procurement',     testid: 'ha-tab-procurement' },
+  { to: '/ha/transfers',      label: 'Transfers',       testid: 'ha-tab-transfers' },
+  { to: '/ha/requests',       label: 'Stock Requests',  testid: 'ha-tab-requests' },
   { to: '/ha/products',       label: 'Catalogue',       testid: 'ha-tab-products' },
 ];
 
@@ -82,6 +85,7 @@ export default function HAModule() {
           <Route path="/" element={<Navigate to="inventory" replace />} />
           <Route path="inventory" element={<InventoryBoardPage />} />
           <Route path="transfers" element={<StockTransfersPage />} />
+          <Route path="requests" element={<StockRequestsPage />} />
           <Route path="demo-stock" element={<DemoStockPage />} />
           <Route path="saleable-stock" element={<SaleableStockPage />} />
           <Route path="accessories" element={<AccessoriesPage />} />

@@ -1,6 +1,49 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🏢 Clinic Groups + Stock Requests (2026-08-11)
+
+**User ask**: "Owner runs 2+ clinics. Head Clinic procures in bulk and moves stock to branches. Branches should be able to request stock from Head; Head fulfils from own stock OR routes from another branch OR raises a Purchase Order with the vendor if nothing available in the group."
+
+**Architecture — Option A (Clinic Groups)**:
+- New `clinic_groups` collection ties Head clinic + N branch clinics.
+- Each clinic doc gets denormalised `clinic_group_id` + `is_head_of_group` + `parent_clinic_id`.
+- Head owner (and any user with role `clinic_owner`/`clinic_manager`/`super_admin` at head) gets each branch's `clinic_id` appended to their `additional_clinic_ids` so the existing `/api/auth/switch-clinic` mechanism just works — no need to invent switching.
+- Each branch stays fully data-isolated: own patients, staff, appointments, invoices, stock. Only shared: branding + service catalog (opt-in on creation).
+
+**Backend — new router `/app/backend/routers/clinic_groups.py`**:
+- `POST /api/clinic-groups` — promote current clinic to Head (idempotent, 409 if already a branch of another group)
+- `POST /api/clinic-groups/mine/branches` — spin up branch tenant. Inherits logo_url / letterhead_url / signature_url / tagline / website / registration_no when `inherit_branding=true`; clones services catalog when `inherit_services=true`. Auto-creates physical branch record + primary MRD prefix.
+- `GET /api/clinic-groups/mine` — head sees head card + branch cards each with `{ha_units, low_stock_skus, patients}` stock summary.
+- `POST /api/clinic-groups/mine/branches/{id}/deactivate` — soft-remove: `status=inactive`, revokes switcher access, pulls from group members.
+
+**Backend — new router `/app/backend/routers/stock_requests.py`**:
+- Full lifecycle: `pending → fulfilled | declined | awaiting_po | cancelled`
+- `POST /api/stock-requests` — branch (or head) raises multi-line request with urgency + reason
+- `GET /api/stock-requests` — head sees all in group; branch sees only its own
+- `POST /api/stock-requests/{id}/fulfill` — head only. Picks source clinic (own or another branch), auto-creates a `stock_transfers` DRAFT doc with `linked_request_id`, seeds accessory_lines from request. Head finishes on the Transfers page (pick serials, courier, dispatch → signature capture on receive → auto-decrement source stock).
+- `POST /api/stock-requests/{id}/mark-po` — no clinic has stock; head captures vendor + PO number + expected date. Request stays open; head fulfils once PO arrives.
+- `POST /api/stock-requests/{id}/decline` — with mandatory reason.
+- `POST /api/stock-requests/{id}/cancel` — branch cancels own; head cancels any in group.
+- Every mutation writes an `activity_logs` entry.
+
+**Frontend**:
+- **Settings → Clinic Group** (`/settings/clinic-group`) — onboarding CTA if no group; console with head card (crown icon, amber tint) + branch cards + Add Branch modal (inherit toggles for branding + services). Owner-only.
+- **Inventory → Stock Requests** (`/ha/requests`) — 5 tabs (Pending / Awaiting PO / Fulfilled / Declined / All). Request card shows lines, urgency, reason, and linked transfer for fulfilled ones. Modals: Create Request, Fulfil (source picker), Mark for PO.
+- Clinic switcher in top-left sidebar (pre-existing) automatically surfaces new branches.
+- New "TRANSFERS" and "STOCK REQUESTS" tabs added to Inventory tab strip.
+
+**Uses pre-existing infra**:
+- `/api/auth/switch-clinic` mechanism was already built — Head owner switches into a branch context via cookie/JWT swap.
+- `/api/stock-transfers` (create/dispatch/receive/cancel + signature capture + delivery challan PDF) was already built — Fulfil hooks into it.
+- `additional_clinic_ids` access model was already built — new branches auto-appended to Head admins.
+
+**Test coverage**:
+- `iteration_73.json` — 15/15 backend pytest cases pass. Covers group creation idempotency, branch inheritance, head-admin switcher grant, stock request CRUD, fulfil→auto-transfer-draft, mark-po lifecycle, cancellation, and full role-separation (403 branch fulfill / 409 branch create-branch / 400 same-clinic source).
+- Frontend Playwright verified: settings/clinic-group renders head + Mysore branch cards with stock KPIs; /ha/requests shows all 5 tabs; New Request + Fulfil + Mark PO modals functional; clinic switcher shows both clinics.
+
+
+
 ## 👨‍👩‍👧 Family Group Linking (2026-08-07)
 
 **User ask**: "Let two records that legitimately share a phone stay linked as family so history opens from either profile without merging."
