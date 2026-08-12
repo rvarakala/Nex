@@ -7565,3 +7565,45 @@ Modal for ASX123 (Vishnu, reserved HA-Sale) → amber "invoice pending" notice �
 
 **Deploy note:** Ships in preview. Deploy to production so beta users get the click-to-print invoice trace on the live tenant.
 
+
+### [Feb 2026] Bug Fix — Quick-Sale Invoice Math (Discount Not Applied to Grand Total)
+
+**Reported by user:** Invoice popup showed *Subtotal ₹1,65,000 − Discount ₹10,000 = Grand Total ₹1,65,000* — the discount was displayed but not deducted from the total.
+
+**Root cause:** In `/app/backend/routers/ha_quick_sale.py` (invoice writer), the invoice's `subtotal` field was being populated with `inv_taxable` (the **post-discount** amount, ₹1,65,000). But `discount_total` was ALSO being written (₹10,000). So the invoice document double-represented the discount:
+- `subtotal = post_discount_amount` (already discount-reduced)
+- `discount_total = discount_amount` (shown again in popup)
+- `grand_total = post_discount_amount` (correct final amount)
+
+The invoice popup then rendered `Subtotal → Discount → Grand Total`, breaking Indian GST invoice convention (`subtotal − discount + tax = grand_total`).
+
+**Fix:** `subtotal` and each line's `unit_price` now write **qty × MRP** (pre-discount) so the standard identity holds. The math in the modal now correctly reads:
+```
+Subtotal      ₹1,75,000.00     (qty × MRP, pre-discount)
+Discount    − ₹10,000.00
+Grand Total   ₹1,65,000.00
+Paid          ₹1,65,000.00
+Balance Due   ₹0.00
+```
+
+**Data backfill:** One-off audit script rewrote `subtotal` on every Quick-Sale-linked invoice on the tenant where the identity was violated. **1 invoice** (INV/2026/000004) was corrected on preview. Same script must be run against production once deploy lands (see below).
+
+**Regression coverage:** `test_quick_sale_invoice_math_is_consistent` in `/app/backend/tests/test_serial_invoice_link.py`. Sweeps every Quick-Sale invoice on the tenant and asserts (a) `subtotal − discount + tax == grand_total`, and (b) when discount > 0, `subtotal > grand_total`. Full suite: **15/15 pass**.
+
+**Files touched:**
+- `/app/backend/routers/ha_quick_sale.py` — invoice writer now emits pre-discount `subtotal` & `unit_price`
+- `/app/backend/tests/test_serial_invoice_link.py` — new math-integrity test
+
+**Deploy note for the user:**
+1. Deploy preview → production.
+2. Run the one-off backfill on production so any pre-fix invoices repair themselves:
+   ```py
+   # In backend/tests/scripts/repair_ha_quick_sale_invoice_math.py (or ad-hoc):
+   async for inv in db.invoices.find({"notes": {"$regex": "HA Quick Sale"}}):
+       sub, disc, tax, gt = (float(inv.get(k) or 0) for k in ("subtotal","discount_total","tax_total","grand_total"))
+       if abs((sub - disc + tax) - gt) > 0.5:
+           new_sub = round(gt + disc - tax, 2)
+           await db.invoices.update_one({"invoice_id": inv["invoice_id"]},
+                                        {"$set": {"subtotal": new_sub}})
+   ```
+

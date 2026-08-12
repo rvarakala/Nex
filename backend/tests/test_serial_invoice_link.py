@@ -89,3 +89,43 @@ def test_timeline_no_invoice_for_in_stock_serial():
     r = s.get(f"{BASE_URL}/api/ha/serial-items/{sid}/timeline", timeout=15)
     assert r.status_code == 200
     assert r.json().get("invoice") is None
+
+
+def test_quick_sale_invoice_math_is_consistent():
+    """Regression: Feb 2026 the Quick-Sale invoice writer was setting
+    `subtotal = taxable` (post-discount) but also emitting `discount_total`
+    separately — so the invoice popup showed
+        Subtotal ₹1.65L − Discount ₹10k = Grand Total ₹1.65L
+    which the audiologist correctly flagged as broken math. Fix: subtotal
+    now writes qty × MRP (pre-discount) so the standard
+        subtotal − discount + tax == grand_total
+    identity holds. Sweeps every Quick-Sale-linked invoice on the tenant
+    to make sure no drift has crept back in."""
+    s = _sess()
+    r = s.get(f"{BASE_URL}/api/billing/invoices?limit=200", timeout=20)
+    assert r.status_code == 200, r.text
+    invoices = r.json()
+    invoices = invoices.get("items", invoices) if isinstance(invoices, dict) else invoices
+    quick_sale_invs = [
+        inv for inv in invoices
+        if isinstance(inv, dict)
+        and inv.get("notes")
+        and "HA Quick Sale" in (inv.get("notes") or "")
+    ]
+    assert quick_sale_invs, "seeded tenant must have at least one Quick-Sale invoice"
+    for inv in quick_sale_invs:
+        sub = float(inv.get("subtotal") or 0)
+        disc = float(inv.get("discount_total") or 0)
+        tax = float(inv.get("tax_total") or 0)
+        gt = float(inv.get("grand_total") or 0)
+        expected_gt = round(sub - disc + tax, 2)
+        assert abs(expected_gt - gt) < 0.5, (
+            f"Invoice {inv['invoice_no']}: subtotal({sub}) − discount({disc})"
+            f" + tax({tax}) = {expected_gt}, but grand_total = {gt}"
+        )
+        # When a discount is present, subtotal MUST be greater than grand_total
+        if disc > 0:
+            assert sub > gt, (
+                f"Invoice {inv['invoice_no']}: has discount ₹{disc} but subtotal ({sub})"
+                f" is not greater than grand_total ({gt}) — the popup will mislead."
+            )

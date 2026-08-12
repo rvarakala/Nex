@@ -527,9 +527,22 @@ async def create_quick_sale(
 
     # ── Invoice doc (slot into existing Billing module) ──
     # NOTE: shape must match Pydantic `Invoice` in models/_canonical.py.
+    #
+    # Money math (Indian GST convention):
+    #   subtotal      = qty × MRP        (pre-discount, pre-tax)
+    #   discount      = payload discount (or MRP − sale_price if not given)
+    #   taxable_value = subtotal − discount   (== _calc_totals["taxable"] when gst=0)
+    #   tax           = GST on taxable_value  (extracted from GST-inclusive sale_price)
+    #   grand_total   = taxable_value + tax   (== sale_price when gst-inclusive)
+    #
+    # Prior bug: `subtotal` was set to `inv_taxable` (post-discount), then the
+    # Discount line was rendered separately in the invoice popup — the math
+    # visually didn't add up (Subtotal 1.65L − Discount 10k = Grand Total 1.65L?).
+    # Fixed by writing MRP × qty as the subtotal and unit_price.
     inv_qty = 1
-    inv_unit_price = totals["taxable"]                # qty=1, so unit_price == taxable_value
-    inv_taxable = totals["taxable"]
+    inv_unit_price = totals["mrp"]                    # qty=1, unit_price == pre-discount MRP
+    inv_subtotal = round(totals["mrp"] * inv_qty, 2)  # gross line value before discount
+    inv_taxable = totals["taxable"]                   # post-discount, pre-tax
     inv_total_tax = totals["gst_amount"]
     # Simple intra-state split: 50/50 CGST+SGST. Quick-sale skips inter-state IGST detection.
     inv_cgst = round(inv_total_tax / 2.0, 2)
@@ -571,7 +584,7 @@ async def create_quick_sale(
             "serial_numbers": [s for s in (serials_by_side.get("left"), serials_by_side.get("right")) if s],
         }],
 
-        "subtotal": inv_taxable,
+        "subtotal": inv_subtotal,
         "discount_total": totals["discount_amount"],
         "cgst_total": inv_cgst,
         "sgst_total": inv_sgst,
