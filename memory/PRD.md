@@ -7478,3 +7478,42 @@ Delete (qty=0):                   {"message":"Deactivated"}     ✅
 
 **Deploy note for the user:** Fix ships in preview. Deploy to production so the beta user can convert their mis-typed L Bend 1 SKU from Serialised → Batch qty without deleting and re-creating.
 
+
+### [Feb 2026] Feature — Inventory Board Shows Invoice / Patient per SOLD & RESERVED Unit (beta user ask)
+
+**Reported by user:** "For a SOLD or RESERVED serial hearing-aid, I need to see the invoice in the table so I can trace which patient it went to. RESERVED units may be full or partial-payment invoices. Show the same in the Serial Lifecycle drawer."
+
+**What shipped:**
+- **New "Sold / Reserved To" column** in the Inventory Board table. For every SOLD/RESERVED serial row it renders a compact 2-line block:
+  - Line 1: `INV/2026/000004 · [PAID/PARTIAL/UNPAID/RESERVED/COMPLETED]` badge
+  - Line 2: `Kavitha Subramanian · ₹1.6L`
+  - Non-linked rows (IN_STOCK, LOANER, etc.) render `—` so the grid stays tidy.
+- **Timeline Drawer enrichment** — when the audiologist clicks "Timeline →" on a SOLD/RESERVED row, a new "LINKED QUICK SALE" (or "LINKED SALE") card sits right below the header showing:
+  - Invoice / sale reference number in monospace + payment badge
+  - "Sold to <patient_name>" with patient_id in muted mono
+  - Total · Paid · Due (Due only rendered when > 0)
+  - Sale-ref cross-reference when quick_sale + invoice both exist
+- **Payment status colour-coding** — PAID/COMPLETED = emerald, PARTIAL/RESERVED = amber, UNPAID = rose. Mirrors the state-chip palette already used across the app.
+
+**Backend endpoints:**
+- `POST /api/ha/serial-items/invoice-lookup` (NEW) — accepts `{serial_ids: [...]}`, returns `{serial_id: {source, sale_no, invoice_no, patient_id, patient_name, total, amount_paid, balance_due, payment_status, status, created_at}}`. Single DB round-trip per collection (`ha_quick_sales` + `ha_sales`). Quick Sale wins the priority tie because it always carries `invoice_no`.
+- `GET /api/ha/serial-items/{id}/timeline` (ENRICHED) — response now carries an optional `invoice` field at top level. Null for IN_STOCK/LOANER/etc; populated for SOLD/RESERVED.
+
+**Design decision — why a separate lookup endpoint vs. embedding in `/serial-items` list?**
+Embedding would have required amending the `SerialItem` Pydantic model + widening every list-endpoint response. The Inventory Board only needs invoice hydration for 2 out of 9 possible states, so a targeted 2nd call keeps the primary list-endpoint's contract stable for other consumers (Sales module, Trials module, AMC module) that don't need this metadata.
+
+**Regression coverage** (`/app/backend/tests/test_serial_invoice_link.py`, 4 tests, all pass):
+1. `test_invoice_lookup_returns_data_for_sold_serials` — bulk-lookup returns patient + invoice for every SOLD/RESERVED serial
+2. `test_invoice_lookup_empty_body_returns_empty_map` — empty request body → `{}` (no 500)
+3. `test_timeline_carries_invoice_for_sold_serial` — timeline response includes top-level `invoice`
+4. `test_timeline_no_invoice_for_in_stock_serial` — IN_STOCK rows explicitly return `invoice: null`
+
+**Playwright-verified on preview:** Filtered Inventory Board to SOLD, saw 16 invoice cells populated with patient/₹total; clicked ASD1235 → drawer opened with "LINKED QUICK SALE · INV/2026/000004 · PAID · Sold to Kavitha Subramanian · Total ₹1,65,000 · Paid ₹1,65,000". Screenshot in job log.
+
+**Files touched:**
+- `/app/backend/routers/ha_inventory.py` — new POST endpoint + `_resolve_serial_invoices()` helper (~90 LoC)
+- `/app/frontend/src/modules/ha/InventoryBoardPage.js` — new column + drawer section + `InvoiceCell`/`InvoiceBlock`/`InvoicePaymentBadge` helpers (~120 LoC)
+- `/app/backend/tests/test_serial_invoice_link.py` — NEW, 4 regression tests
+
+**Deploy note:** Ships in preview. Deploy to production so the audiologist can trace any sold/reserved serial back to its patient + invoice with one glance.
+

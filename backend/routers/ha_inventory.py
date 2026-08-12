@@ -155,7 +155,104 @@ async def serial_timeline(serial_id: str, user=Depends(get_current_user), db=Dep
     events = await db.serial_events.find(
         {"serial_id": serial_id}, {"_id": 0},
     ).sort("at", -1).to_list(500)
-    return {"serial": deserialize_datetime(si), "events": events}
+    # Attach the linked invoice(s), if any — so the drawer can render
+    # "Sold to Kavitha · INV/2026/000004 · ₹165k paid" without a second
+    # round-trip. Both SOLD & RESERVED serials can carry an invoice link.
+    inv_map = await _resolve_serial_invoices(db, user["clinic_id"], [serial_id])
+    return {
+        "serial": deserialize_datetime(si),
+        "events": events,
+        "invoice": inv_map.get(serial_id),
+    }
+
+
+class SerialInvoiceLookupIn(BaseModel):
+    """Bulk-resolve serial → invoice map. POST so the id list can be long
+    without hitting URL length limits. Used by the Inventory Board table
+    to hydrate the SOLD / RESERVED rows with `INV/…` numbers in one call."""
+    serial_ids: List[str]
+
+
+@router.post("/serial-items/invoice-lookup")
+async def serial_invoice_lookup(
+    payload: SerialInvoiceLookupIn,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Returns `{serial_id: {invoice_no, invoice_id, total, paid, due,
+    payment_status, sale_no, patient_id, patient_name, source}}` for
+    every serial that's linked to a Quick Sale or full HA Sale."""
+    if not payload.serial_ids:
+        return {}
+    # De-dupe + cap for safety (Inventory Board pages at 200 rows).
+    ids = list({s for s in payload.serial_ids if s})[:500]
+    return await _resolve_serial_invoices(db, user["clinic_id"], ids)
+
+
+async def _resolve_serial_invoices(db, clinic_id: str, serial_ids: List[str]) -> dict:
+    """One trip each to `ha_quick_sales` and `ha_sales`, then merged into
+    a flat `{serial_id: {…invoice fields…}}` dict.
+
+    Priority: if a serial is referenced by BOTH a Quick Sale and a full
+    HA Sale (rare — usually a data migration artefact), the Quick Sale
+    wins because it always has an `invoice_no`. Reserved full HA Sales
+    without an invoice yet still surface (`invoice_no=None`, status
+    `reserved`) so the audiologist can trace the reservation trail.
+    """
+    if not serial_ids:
+        return {}
+    out: dict[str, dict] = {}
+
+    # 1) Quick Sales — serials live in `consumed_serial_ids` array
+    async for qs in db.ha_quick_sales.find(
+        {"clinic_id": clinic_id, "consumed_serial_ids": {"$in": serial_ids}},
+        {
+            "_id": 0, "consumed_serial_ids": 1, "sale_no": 1, "invoice_id": 1,
+            "invoice_no": 1, "patient_id": 1, "patient_name": 1,
+            "total": 1, "amount_paid": 1, "balance_due": 1,
+            "payment_status": 1, "created_at": 1, "quick_sale_id": 1,
+        },
+    ):
+        for sid in (qs.get("consumed_serial_ids") or []):
+            if sid in serial_ids and sid not in out:
+                out[sid] = {
+                    "source": "quick_sale",
+                    "sale_no": qs.get("sale_no"),
+                    "invoice_id": qs.get("invoice_id"),
+                    "invoice_no": qs.get("invoice_no"),
+                    "quick_sale_id": qs.get("quick_sale_id"),
+                    "patient_id": qs.get("patient_id"),
+                    "patient_name": qs.get("patient_name"),
+                    "total": qs.get("total"),
+                    "amount_paid": qs.get("amount_paid"),
+                    "balance_due": qs.get("balance_due"),
+                    "payment_status": qs.get("payment_status"),
+                    "created_at": qs.get("created_at"),
+                }
+
+    # 2) Full HA Sales — serials live inside `lines[].serial_id`.
+    async for sl in db.ha_sales.find(
+        {"clinic_id": clinic_id, "lines.serial_id": {"$in": serial_ids}},
+        {
+            "_id": 0, "sale_no": 1, "invoice_no": 1, "patient_id": 1,
+            "patient_name": 1, "total": 1, "status": 1, "created_at": 1,
+            "lines": 1,
+        },
+    ):
+        line_serials = [ln.get("serial_id") for ln in (sl.get("lines") or []) if ln.get("serial_id")]
+        for sid in line_serials:
+            if sid in serial_ids and sid not in out:
+                out[sid] = {
+                    "source": "ha_sale",
+                    "sale_no": sl.get("sale_no"),
+                    "invoice_no": sl.get("invoice_no"),
+                    "patient_id": sl.get("patient_id"),
+                    "patient_name": sl.get("patient_name"),
+                    "total": sl.get("total"),
+                    "status": sl.get("status"),  # "reserved" | "completed"
+                    "created_at": sl.get("created_at"),
+                }
+    return out
 
 
 @router.put("/serial-items/{serial_id}", response_model=SerialItem)
