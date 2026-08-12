@@ -7607,3 +7607,27 @@ Balance Due   ₹0.00
                                         {"$set": {"subtotal": new_sub}})
    ```
 
+
+### [Feb 2026] Feature — Invoice Popup: Print Polish (Tax-Invoice Grade Print Layout)
+
+**Reported by user:** "Add clinic logo, address, GSTIN, patient GSTIN (if any), and terms footer to the print scope so the printed receipt looks like a proper tax invoice."
+
+**What shipped:**
+- **Letterhead** — clinic logo (left), then clinic name / tagline / address / phone / email / **GSTIN / PAN** — pulled from `GET /api/settings/clinic`. Logo fetched via `axios({responseType: 'blob'}) → URL.createObjectURL()` so the Bearer-token auth on `/api/settings/clinic/logo` still works inside an `<img>` tag. Object URL is revoked on modal unmount to free memory. Layout gracefully hides the logo when the tenant hasn't uploaded one.
+- **"TAX INVOICE" title** (print-only) + invoice number + sale-ref + Date (formatted `31 Jul 2026`) on the right.
+- **Bill To block** — patient name, phone, patient GSTIN (rendered only when present), MRD/patient_id. Side-by-side with a **Payment block** showing badge + Place of supply (from clinic state) + Payment mode (from first payment record).
+- **Amount in words** — "INR One Lakh Sixty Five Thousand Rupees Only" using a small client-side `numToWordsIN` helper that handles up to 99 crore with lakh/crore Indian numbering. No i18n library pulled in.
+- **Terms &amp; Conditions** — 6 numbered clauses covering returns, warranty, trial-period, grievance window, jurisdiction (auto-quotes clinic city), and E.&O.E.
+- **Authorised Signatory** block — right-aligned "For <Clinic Name>" + underline + label.
+- **Computer-generated footer** — "This is a computer-generated invoice and does not require a physical signature." (print-only.)
+- **`.print-avoid-break`** class applied to bill-to, line-items table, totals, amount-in-words, and terms so those blocks stay together across page breaks.
+- **`.print-only` / `.no-print`** helper classes so the Print/Close action buttons never appear on paper, and the "TAX INVOICE" label + computer-generated notice never appear on screen.
+
+**Files touched:**
+- `/app/frontend/src/modules/ha/InventoryBoardPage.js` — full rewrite of `InvoiceDetailModal` letterhead + terms + signature + amount-in-words; added `amountInWordsIndian` + `numToWordsIN` helpers (~200 LoC total change)
+- Uses existing `GET /api/settings/clinic` + `GET /api/settings/clinic/logo` — no backend changes required.
+
+**Verified on preview:** Playwright emulated `@media print` and captured the printed layout — all sections rendered exactly as expected (see `/tmp/print_polish_print.png`). Regression suite still **15/15 pass** — no test changes needed since this is UI-only.
+
+**Deploy note:** Ships in preview. Deploy to production so beta users get the proper tax-invoice printout on their receipt printer.
+

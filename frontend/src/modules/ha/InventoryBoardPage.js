@@ -433,32 +433,45 @@ function InvoiceBlock({ inv, onOpen }) {
  * ============================================================ */
 function InvoiceDetailModal({ inv, onClose }) {
   const [full, setFull] = useState(null);
+  const [clinic, setClinic] = useState(null);
+  const [logoUrl, setLogoUrl] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
+    let objectUrl = '';
     setLoading(true);
     setErr('');
     (async () => {
-      // Quick Sale rows carry an `invoice_id` — use the billing endpoint
-      // which returns lines + payments in one shot.
-      if (inv.invoice_id) {
-        try {
-          const r = await axios.get(`${API}/billing/invoices/${inv.invoice_id}`);
-          if (alive) setFull(r.data || null);
-        } catch (e) {
-          if (alive) setErr(e?.response?.data?.detail || 'Could not fetch invoice');
-        } finally {
-          if (alive) setLoading(false);
-        }
-      } else {
-        // HA-Sale in `reserved` status has no invoice yet — the popup
-        // still renders the sale header + the "no invoice yet" note.
-        setLoading(false);
+      // Fire all three fetches in parallel — full invoice, clinic profile,
+      // clinic logo. Logo is auth-gated so it goes through axios (Bearer
+      // header) and lands as a blob → object URL that <img> can render
+      // safely inside the print scope.
+      const jobs = [];
+      jobs.push(inv.invoice_id
+        ? axios.get(`${API}/billing/invoices/${inv.invoice_id}`).then(r => r.data).catch(() => null)
+        : Promise.resolve(null));
+      jobs.push(axios.get(`${API}/settings/clinic`).then(r => r.data).catch(() => null));
+      jobs.push(axios.get(`${API}/settings/clinic/logo`, { responseType: 'blob' })
+        .then(r => URL.createObjectURL(r.data)).catch(() => ''));
+      try {
+        const [fullInv, clinicRow, logo] = await Promise.all(jobs);
+        if (!alive) return;
+        if (inv.invoice_id && !fullInv) setErr('Could not fetch invoice');
+        setFull(fullInv);
+        setClinic(clinicRow);
+        setLogoUrl(logo || '');
+        objectUrl = logo || '';
+      } finally {
+        if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+      // Revoke the blob URL when the modal unmounts to free memory.
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [inv]);
 
   const doPrint = () => {
@@ -476,57 +489,127 @@ function InvoiceDetailModal({ inv, onClose }) {
       cardClassName="max-w-3xl w-full p-0"
       testid="ha-inv-detail-modal"
     >
-      {/* Print-scope styles: hide app chrome, keep the modal card only. */}
+      {/* Print-scope styles: hide app chrome, keep the modal card only. Extra
+          print-only tweaks apply the letterhead layout on paper without
+          disturbing the on-screen preview. */}
       <style>{`
         @media print {
           body * { visibility: hidden !important; }
           #inv-modal-print-area, #inv-modal-print-area * { visibility: visible !important; }
-          #inv-modal-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 24px; }
+          #inv-modal-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; font-size: 11pt; }
           .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          .print-avoid-break { page-break-inside: avoid; }
         }
+        .print-only { display: none; }
       `}</style>
 
       <div id="inv-modal-print-area" className="p-6">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-3 mb-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Invoice / Sale</div>
+        {/* ── Letterhead: logo + clinic identity block ───────────────── */}
+        <div className="flex items-start justify-between gap-4 border-b-2 border-slate-800 pb-3 mb-3">
+          <div className="flex items-start gap-3 min-w-0">
+            {logoUrl && (
+              <img
+                src={logoUrl}
+                alt="Clinic logo"
+                className="w-16 h-16 object-contain flex-shrink-0"
+                data-testid="ha-inv-modal-logo"
+              />
+            )}
+            <div className="min-w-0">
+              <div className="text-lg font-bold text-slate-900 leading-tight" data-testid="ha-inv-modal-clinic-name">
+                {clinic?.name || 'Clinic'}
+              </div>
+              {clinic?.tagline && (
+                <div className="text-[10.5px] italic text-slate-500 mt-0.5">{clinic.tagline}</div>
+              )}
+              {clinic?.address && (
+                <div className="text-[11px] text-slate-700 mt-1 leading-snug">
+                  {clinic.address}
+                  {clinic.city && <>, {clinic.city}</>}
+                  {clinic.state && <>, {clinic.state}</>}
+                  {clinic.pincode && <> — {clinic.pincode}</>}
+                </div>
+              )}
+              <div className="text-[11px] text-slate-600 mt-0.5 flex flex-wrap gap-x-3">
+                {clinic?.phone && <span>Tel: {clinic.phone}</span>}
+                {clinic?.email && <span>{clinic.email}</span>}
+                {clinic?.website && <span className="hidden print:inline">{clinic.website}</span>}
+              </div>
+              {clinic?.gstin && (
+                <div className="text-[11px] font-semibold text-slate-800 mt-0.5">
+                  GSTIN: <span className="font-mono">{clinic.gstin}</span>
+                  {clinic.pan && <span className="ml-3 text-slate-500 font-normal">PAN: <span className="font-mono">{clinic.pan}</span></span>}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="print-only text-[9px] uppercase tracking-widest text-slate-500 font-bold">Tax Invoice</div>
             <div className="text-2xl font-bold font-mono text-slate-800 mt-0.5" data-testid="ha-inv-modal-ref">
               {inv.invoice_no || inv.sale_no || '—'}
             </div>
             {inv.sale_no && inv.invoice_no && inv.sale_no !== inv.invoice_no && (
-              <div className="text-[11px] text-slate-500 mt-0.5">Sale ref: <span className="font-mono">{inv.sale_no}</span></div>
+              <div className="text-[10.5px] text-slate-500 mt-0.5">
+                Sale ref: <span className="font-mono">{inv.sale_no}</span>
+              </div>
             )}
-          </div>
-          <div className="flex items-center gap-2 no-print">
-            <button
-              onClick={doPrint}
-              data-testid="ha-inv-modal-print"
-              className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded shadow-sm"
-            >Print</button>
-            <button
-              onClick={onClose}
-              data-testid="ha-inv-modal-close"
-              className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded"
-            >Close</button>
+            {(full?.invoice_date || inv.created_at) && (
+              <div className="text-[11px] text-slate-600 mt-1 tabular-nums">
+                {new Date(full?.invoice_date || inv.created_at).toLocaleDateString('en-IN', {
+                  day: '2-digit', month: 'short', year: 'numeric',
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Patient header (always available from the lookup payload) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Patient</div>
-            <div className="text-sm font-semibold text-slate-800">{inv.patient_name || full?.patient_name || '—'}</div>
-            {(inv.patient_id || full?.patient_id) && (
-              <div className="text-[11px] text-slate-500 font-mono">{inv.patient_id || full?.patient_id}</div>
+        {/* ── Action bar (screen only) ─────────────────────────────── */}
+        <div className="flex items-center gap-2 no-print mb-4">
+          <button
+            onClick={doPrint}
+            data-testid="ha-inv-modal-print"
+            className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded shadow-sm"
+          >Print</button>
+          <button
+            onClick={onClose}
+            data-testid="ha-inv-modal-close"
+            className="ml-auto px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded"
+          >Close</button>
+          <div className="text-[10.5px]"><InvoicePaymentBadge inv={inv} /></div>
+        </div>
+
+        {/* ── Bill To / patient block ──────────────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 print-avoid-break">
+          <div className="border border-slate-200 rounded p-2.5">
+            <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1">Bill To</div>
+            <div className="text-[13px] font-semibold text-slate-900">{inv.patient_name || full?.patient_name || '—'}</div>
+            {(full?.patient_mobile || inv.patient_phone) && (
+              <div className="text-[11px] text-slate-700 mt-0.5">Tel: {full?.patient_mobile || inv.patient_phone}</div>
             )}
-            {full?.patient_mobile && <div className="text-[11px] text-slate-600 mt-0.5">{full.patient_mobile}</div>}
+            {full?.patient_gstin && (
+              <div className="text-[11px] text-slate-800 mt-0.5">
+                GSTIN: <span className="font-mono">{full.patient_gstin}</span>
+              </div>
+            )}
+            {full?.mrd && (
+              <div className="text-[10.5px] text-slate-500 mt-0.5 font-mono">MRD: {full.mrd}</div>
+            )}
+            {(inv.patient_id || full?.patient_id) && !full?.mrd && (
+              <div className="text-[10.5px] text-slate-500 mt-0.5 font-mono">{inv.patient_id || full?.patient_id}</div>
+            )}
           </div>
-          <div className="sm:text-right">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Status</div>
-            <div className="mt-0.5"><InvoicePaymentBadge inv={inv} /></div>
-            {(inv.created_at || full?.invoice_date) && (
-              <div className="text-[11px] text-slate-500 mt-1 tabular-nums">
-                {new Date(full?.invoice_date || inv.created_at).toLocaleString('en-IN')}
+          <div className="border border-slate-200 rounded p-2.5">
+            <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1">Payment</div>
+            <div className="text-[13px] font-semibold text-slate-900">
+              <InvoicePaymentBadge inv={inv} />
+            </div>
+            <div className="text-[11px] text-slate-600 mt-1">
+              Place of supply: <span className="font-semibold">{clinic?.state || '—'}</span>
+            </div>
+            {full?.payments?.[0]?.method && (
+              <div className="text-[11px] text-slate-600 mt-0.5 capitalize">
+                Mode: {full.payments[0].method}
               </div>
             )}
           </div>
@@ -538,7 +621,7 @@ function InvoiceDetailModal({ inv, onClose }) {
         {/* Line items table — from the full invoice fetch. When we can't
             fetch full detail (reserved HA-Sale), skip this block. */}
         {full?.lines?.length > 0 && (
-          <div className="mb-4 border border-slate-200 rounded overflow-hidden">
+          <div className="mb-4 border border-slate-200 rounded overflow-hidden print-avoid-break">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
                 <tr>
@@ -649,7 +732,85 @@ function InvoiceDetailModal({ inv, onClose }) {
             {full.notes}
           </div>
         )}
+
+        {/* ── Amount in words (Indian tax-invoice convention) ─────── */}
+        {(full || inv.total != null) && (
+          <div className="text-[11.5px] mt-3 border-t border-slate-200 pt-2 print-avoid-break">
+            <span className="text-slate-500">Amount chargeable (in words):</span>{' '}
+            <span className="font-semibold text-slate-800">
+              INR {amountInWordsIndian(full?.rounded_total ?? full?.grand_total ?? inv.total ?? 0)} Only
+            </span>
+          </div>
+        )}
+
+        {/* ── Terms + signature block. All laid out for the printer;
+              on-screen version stays compact. ─────────────────────── */}
+        <div className="mt-4 pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 print-avoid-break">
+          <div className="sm:col-span-2">
+            <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1">Terms &amp; Conditions</div>
+            <ol className="text-[10px] text-slate-600 leading-snug list-decimal ml-4 space-y-0.5">
+              <li>Goods once sold cannot be taken back or exchanged.</li>
+              <li>Hearing aids carry the manufacturer&apos;s warranty as declared above; batteries &amp; consumables are excluded.</li>
+              <li>Trial period charges (if applicable) are non-refundable once the trial has commenced.</li>
+              <li>Any grievance regarding this invoice must be raised in writing within 7 days of issue.</li>
+              <li>All disputes are subject to the jurisdiction of {clinic?.city || clinic?.state || 'the clinic city'} courts only.</li>
+              <li>E. &amp; O. E.</li>
+            </ol>
+          </div>
+          <div className="text-right flex flex-col justify-between min-h-[80px]">
+            <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">
+              For {clinic?.name || 'Clinic'}
+            </div>
+            <div className="mt-8 border-t border-slate-400 pt-1 text-[10.5px] text-slate-700 font-semibold">
+              Authorised Signatory
+            </div>
+          </div>
+        </div>
+
+        {/* Computer-generated notice — printed only. */}
+        <div className="print-only text-center text-[9px] text-slate-500 italic mt-4">
+          This is a computer-generated invoice and does not require a physical signature.
+        </div>
       </div>
     </ModalShell>
   );
+}
+
+
+/* Convert a number to Indian rupee words (lakh / crore convention).
+ *
+ * Handles up to 99 crore, positive numbers, with paise as decimal. Rounded
+ * to 2 decimals internally. Deliberately kept small — no i18n lib pulled
+ * in for one invoice popup. Runs client-side so the printed line-length
+ * doesn't cost a backend round-trip. */
+function amountInWordsIndian(amt) {
+  const n = Math.max(0, Math.round(Number(amt) * 100) / 100);
+  const rupees = Math.floor(n);
+  const paise = Math.round((n - rupees) * 100);
+  const words = numToWordsIN(rupees);
+  const paiseWords = paise > 0 ? ` and ${numToWordsIN(paise)} Paise` : '';
+  return `${words} Rupees${paiseWords}`;
+}
+function numToWordsIN(num) {
+  if (num === 0) return 'Zero';
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const twoDig = (n) => n < 20 ? ones[n] : (tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : ''));
+  const threeDig = (n) => {
+    const h = Math.floor(n / 100), r = n % 100;
+    return (h ? ones[h] + ' Hundred' + (r ? ' and ' : '') : '') + (r ? twoDig(r) : '');
+  };
+  // Break into crore, lakh, thousand, hundred (Indian numbering)
+  const crore = Math.floor(num / 10000000);
+  const lakh  = Math.floor((num % 10000000) / 100000);
+  const thou  = Math.floor((num % 100000) / 1000);
+  const rest  = num % 1000;
+  const parts = [];
+  if (crore) parts.push(twoDig(crore) + ' Crore');
+  if (lakh)  parts.push(twoDig(lakh) + ' Lakh');
+  if (thou)  parts.push(twoDig(thou) + ' Thousand');
+  if (rest)  parts.push(threeDig(rest));
+  return parts.join(' ').trim();
 }
