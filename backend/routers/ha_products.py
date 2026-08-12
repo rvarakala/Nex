@@ -102,14 +102,178 @@ async def deactivate_product(
     user=Depends(require_roles("clinic_owner", "inventory_manager")),
     db=Depends(get_db),
 ):
-    """Soft-delete: preserves PO / serial history."""
-    res = await db.ha_products.update_one(
+    """Soft-delete: preserves PO / serial history.
+
+    Guard-rails to prevent a clinic-owner from silently orphaning live
+    inventory rows. The `active=false` flag hides the SKU from every
+    picker in the app, but the DB still carries its `serial_items` /
+    `accessory_stock` children — so we make sure those are empty first,
+    or explain what needs cleanup.
+    """
+    existing = await db.ha_products.find_one(
+        {"product_id": product_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Block if any physical unit still references this SKU. `state` filter
+    # keeps retired/sold rows from blocking cleanup of an old SKU that
+    # only lives in history.
+    live_serials = await db.serial_items.count_documents({
+        "clinic_id": user["clinic_id"],
+        "product_id": product_id,
+        "state": {"$nin": ["RETIRED", "RETURNED", "SOLD", "DAMAGED"]},
+    })
+    if live_serials > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete — {live_serials} live serial unit(s) reference this product. Move them to another SKU or retire them first.",
+        )
+    # Batch: block if any variant has qty > 0 in any branch
+    live_qty = await db.accessory_stock.aggregate([
+        {"$match": {"clinic_id": user["clinic_id"], "product_id": product_id}},
+        {"$group": {"_id": None, "total": {"$sum": "$qty_on_hand"}}},
+    ]).to_list(1)
+    if live_qty and (live_qty[0].get("total") or 0) > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete — {live_qty[0]['total']} unit(s) still on hand across branches. Adjust stock to zero first (Batch Stock tab).",
+        )
+
+    await db.ha_products.update_one(
         {"product_id": product_id, "clinic_id": user["clinic_id"]},
         {"$set": {"active": False, "updated_at": datetime.utcnow().isoformat()}},
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Product not found")
+    # Also archive any zero-qty accessory_stock rows so the Batch Stock
+    # grid stays clean after the SKU is gone.
+    await db.accessory_stock.delete_many({
+        "clinic_id": user["clinic_id"], "product_id": product_id,
+        "qty_on_hand": {"$lte": 0},
+    })
     return {"message": "Deactivated", "product_id": product_id}
+
+
+# ==================== TRACKING-TYPE CONVERSION ====================
+
+class ConvertTrackingIn(BaseModel):
+    """Flip a catalogue SKU between Serialised and Batch-qty tracking.
+
+    Real-world use: the audiologist created an "R G Hearing Aids · L Bend 1"
+    entry as Serialised, then realised they only track it by pack quantity.
+    Instead of deleting-and-recreating (which loses PO history and the
+    original catalogue link on old sales), we flip the `is_serialised`
+    bit in place — but only when it's safe to do so.
+
+    Safety gates:
+    - Serialised → Batch: rejected if ANY `serial_items` row still exists
+      for this product (regardless of state). The audit trail matters.
+    - Batch → Serialised: rejected if ANY `accessory_stock` row has qty>0.
+      On success, zero-qty stock rows are archived.
+    """
+    to: Literal["serialised", "batch"]
+    # For batch: which branches to init 0-qty stock in, plus optional variants.
+    branch_ids: List[str] = []
+    variants: List[str] = []
+    reorder_level: int = 0
+
+
+@router.patch("/products/{product_id}/convert-tracking")
+async def convert_product_tracking(
+    product_id: str,
+    payload: ConvertTrackingIn,
+    user=Depends(require_roles("clinic_owner", "inventory_manager")),
+    db=Depends(get_db),
+):
+    product = await db.ha_products.find_one(
+        {"product_id": product_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    currently_serialised = bool(product.get("is_serialised", True))
+    want_serialised = payload.to == "serialised"
+    if currently_serialised == want_serialised:
+        return {"message": "No change — already " + payload.to, "product_id": product_id}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if want_serialised:
+        # Batch → Serialised. Block if any stock qty > 0.
+        agg = await db.accessory_stock.aggregate([
+            {"$match": {"clinic_id": user["clinic_id"], "product_id": product_id}},
+            {"$group": {"_id": None, "total": {"$sum": "$qty_on_hand"}}},
+        ]).to_list(1)
+        live = agg[0].get("total", 0) if agg else 0
+        if live > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot switch to Serialised — {live} unit(s) still on hand as batch stock. Adjust stock to zero first (Batch Stock tab), then convert.",
+            )
+        # Safe to convert — flip flag, drop zero-qty accessory_stock rows,
+        # clear variant_labels (they don't apply to serialised SKUs).
+        await db.ha_products.update_one(
+            {"product_id": product_id, "clinic_id": user["clinic_id"]},
+            {"$set": {"is_serialised": True, "variant_labels": [], "updated_at": now_iso}},
+        )
+        deleted = await db.accessory_stock.delete_many({
+            "clinic_id": user["clinic_id"], "product_id": product_id,
+        })
+        return {
+            "message": "Converted to Serialised. Add serial-numbered units from the Serialised tab.",
+            "product_id": product_id,
+            "stock_rows_removed": deleted.deleted_count,
+        }
+
+    # Serialised → Batch. Block if any serial_item row still exists for
+    # this product — even RETIRED ones, since converting would leave
+    # them dangling with a mismatched product.is_serialised flag.
+    live_serials = await db.serial_items.count_documents({
+        "clinic_id": user["clinic_id"], "product_id": product_id,
+    })
+    if live_serials > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot switch to Batch — {live_serials} serial unit(s) are linked to this product. Retire them or move them to a different SKU first.",
+        )
+    # Validate branch access before we init stock rows.
+    for bid in payload.branch_ids:
+        if not user_can_see_branch(user, bid):
+            raise HTTPException(status_code=403, detail=f"Branch {bid} not in your access")
+
+    await db.ha_products.update_one(
+        {"product_id": product_id, "clinic_id": user["clinic_id"]},
+        {"$set": {
+            "is_serialised": False,
+            "variant_labels": payload.variants or [],
+            "updated_at": now_iso,
+        }},
+    )
+    # Seed zero-qty accessory_stock rows for each (branch × variant).
+    from models_ha import AccessoryStock  # local import to avoid top-line churn
+    variants = payload.variants or [None]
+    created = 0
+    for bid in (payload.branch_ids or []):
+        for variant in variants:
+            match = {"clinic_id": user["clinic_id"], "product_id": product_id,
+                     "branch_id": bid, "variant": variant}
+            if await db.accessory_stock.find_one(match, {"_id": 0, "sku_id": 1}):
+                continue
+            row = AccessoryStock(
+                clinic_id=user["clinic_id"],
+                branch_id=bid,
+                product_id=product_id,
+                variant=variant,
+                qty_on_hand=0,
+                reorder_level=int(payload.reorder_level or 0),
+                updated_at=now_iso,
+            )
+            await db.accessory_stock.insert_one(serialize_datetime(row.model_dump()))
+            created += 1
+    return {
+        "message": "Converted to Batch qty. Stock rows initialised at zero — top-up via Batch Stock tab.",
+        "product_id": product_id,
+        "stock_rows_created": created,
+    }
 
 
 # ==================== INLINE SERIAL-NUMBER ADD ====================

@@ -23,6 +23,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Package, Boxes, AlertTriangle, CheckCircle2, Search, X,
+  Pencil, Trash2, RefreshCw,
 } from 'lucide-react';
 import ModalShell from '../../components/ModalShell';
 
@@ -129,6 +130,10 @@ function CatalogueTab({ branches }) {
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [presetKey, setPresetKey] = useState(null); // 'ric_receiver' | 'silicone_dome' | null
+  // Row-action modals — only one is open at a time.
+  const [editing, setEditing] = useState(null);   // product row to edit
+  const [deleting, setDeleting] = useState(null); // product row to soft-delete
+  const [converting, setConverting] = useState(null); // product row to flip serialised↔batch
 
   const load = useCallback(async () => {
     // Every SKU with form_factor="accessory" (both serialised & batch).
@@ -190,12 +195,13 @@ function CatalogueTab({ branches }) {
               <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Variants</th>
               <th className="text-right px-3 py-2 font-semibold">MRP</th>
               <th className="text-right px-3 py-2 font-semibold hidden lg:table-cell">GST</th>
+              <th className="text-right px-3 py-2 font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-10 text-slate-400 italic text-sm">
+                <td colSpan={8} className="text-center py-10 text-slate-400 italic text-sm">
                   No accessories yet. Click <b>+ New Accessory</b> above, or use the quick-add RIC Receivers preset.
                 </td>
               </tr>
@@ -235,6 +241,34 @@ function CatalogueTab({ branches }) {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-800">{fmtINR(p.mrp)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-600 hidden lg:table-cell">{p.gst_rate}%</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        title="Edit"
+                        onClick={() => setEditing(p)}
+                        data-testid={`acc-row-edit-${p.product_id}`}
+                        className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        title={p.is_serialised ? 'Convert to Batch qty' : 'Convert to Serialised'}
+                        onClick={() => setConverting(p)}
+                        data-testid={`acc-row-convert-${p.product_id}`}
+                        className="p-1.5 text-slate-500 hover:text-teal-700 hover:bg-teal-50 rounded"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                      <button
+                        title="Delete"
+                        onClick={() => setDeleting(p)}
+                        data-testid={`acc-row-delete-${p.product_id}`}
+                        className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -290,6 +324,32 @@ function CatalogueTab({ branches }) {
                     <span className="font-mono">{p.variant_labels.join(' · ')}</span>
                   </div>
                 )}
+                {/* Row actions — same three affordances as desktop, laid out
+                    in a compact right-aligned strip so a fat thumb can hit
+                    each one without a mis-tap. */}
+                <div className="flex items-center gap-1 pt-1">
+                  <button
+                    onClick={() => setEditing(p)}
+                    data-testid={`acc-row-edit-m-${p.product_id}`}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 rounded"
+                  >
+                    <Pencil size={11} /> Edit
+                  </button>
+                  <button
+                    onClick={() => setConverting(p)}
+                    data-testid={`acc-row-convert-m-${p.product_id}`}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-teal-700 bg-teal-50 rounded"
+                  >
+                    <RefreshCw size={11} /> {p.is_serialised ? 'To Batch' : 'To Serial'}
+                  </button>
+                  <button
+                    onClick={() => setDeleting(p)}
+                    data-testid={`acc-row-delete-m-${p.product_id}`}
+                    className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 rounded"
+                  >
+                    <Trash2 size={11} /> Delete
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -309,6 +369,28 @@ function CatalogueTab({ branches }) {
           branches={branches}
           onClose={() => setPresetKey(null)}
           onSaved={() => { setPresetKey(null); load(); }}
+        />
+      )}
+      {editing && (
+        <EditAccessoryModal
+          product={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+      {deleting && (
+        <DeleteAccessoryModal
+          product={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => { setDeleting(null); load(); }}
+        />
+      )}
+      {converting && (
+        <ConvertTrackingModal
+          product={converting}
+          branches={branches}
+          onClose={() => setConverting(null)}
+          onSaved={() => { setConverting(null); load(); }}
         />
       )}
     </div>
@@ -569,6 +651,408 @@ function NewAccessoryModal({ branches, onClose, onSaved }) {
     </ModalShell>
   );
 }
+
+/* ============================================================
+ *   EDIT ACCESSORY MODAL  (brand/model/kind/category/MRP/GST/variants)
+ * ============================================================ */
+function EditAccessoryModal({ product, onClose, onSaved }) {
+  const [f, setF] = useState({
+    brand: product.brand || '',
+    model: product.model || '',
+    accessory_kind: product.accessory_kind || 'battery',
+    accessory_category: product.accessory_category || 'consumable',
+    mrp: product.mrp ?? '',
+    gst_rate: product.gst_rate ?? 18,
+    hsn: product.hsn || '9021',
+    variant_labels: product.variant_labels || [],
+  });
+  const [variantInput, setVariantInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const addVariant = () => {
+    const v = variantInput.trim();
+    if (!v || f.variant_labels.includes(v)) return;
+    setF((prev) => ({ ...prev, variant_labels: [...prev.variant_labels, v] }));
+    setVariantInput('');
+  };
+  const removeVariant = (v) =>
+    setF((prev) => ({ ...prev, variant_labels: prev.variant_labels.filter((x) => x !== v) }));
+
+  const save = async () => {
+    setErr('');
+    if (!f.brand.trim() || !f.model.trim()) { setErr('Brand and Model are required'); return; }
+    setSaving(true);
+    try {
+      // PUT expects the ProductCreate shape — carry over the immutable
+      // form_factor + is_serialised bits from the loaded product so the
+      // catalogue row keeps its identity (tracking type is flipped via
+      // the separate Convert modal so we don't accidentally flip it
+      // through a plain Edit).
+      const payload = {
+        brand: f.brand.trim(),
+        model: f.model.trim(),
+        form_factor: product.form_factor || 'accessory',
+        is_serialised: !!product.is_serialised,
+        mrp: Number(f.mrp || 0),
+        gst_rate: Number(f.gst_rate || 0),
+        hsn: f.hsn || '9021',
+        accessory_kind: f.accessory_kind,
+        accessory_category: f.accessory_category,
+        variant_labels: product.is_serialised ? [] : f.variant_labels,
+        // Preserve fields not exposed in the modal (audiologist doesn't
+        // usually think about these day-to-day).
+        tech_tier: product.tech_tier || null,
+        connectivity: product.connectivity || [],
+        warranty_months: product.warranty_months ?? 24,
+        cost: product.cost ?? 0,
+        min_sell_price: product.min_sell_price ?? 0,
+        sale_unit: product.sale_unit || 'single',
+        notes: product.notes || null,
+      };
+      await axios.put(`${API}/ha/products/${product.product_id}`, payload);
+      onSaved();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === 'string' ? d : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Edit Accessory" onClose={onClose} maxWidth="max-w-2xl">
+      <div className="space-y-4" data-testid="acc-edit-modal">
+        <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded px-3 py-1.5">
+          Tracking type: <b className="text-slate-700">{product.is_serialised ? 'Serialised' : 'Batch qty'}</b>
+          <span className="ml-1 italic">— to change this, close and use the ↻ Convert button.</span>
+        </div>
+        {err && (
+          <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2 flex items-center gap-2">
+            <AlertTriangle size={13} /> {err}
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Brand *">
+            <input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })}
+                   data-testid="acc-edit-brand" className={inp} />
+          </Field>
+          <Field label="Model / Name *">
+            <input value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })}
+                   data-testid="acc-edit-model" className={inp} />
+          </Field>
+          <Field label="Kind">
+            <select value={f.accessory_kind}
+                    onChange={(e) => setF({ ...f, accessory_kind: e.target.value })}
+                    data-testid="acc-edit-kind" className={inp}>
+              {ACCESSORY_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>{k.label}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Category">
+            <select value={f.accessory_category}
+                    onChange={(e) => setF({ ...f, accessory_category: e.target.value })}
+                    data-testid="acc-edit-category" className={inp}>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="MRP (₹)">
+            <input type="number" value={f.mrp}
+                   onChange={(e) => setF({ ...f, mrp: e.target.value })}
+                   data-testid="acc-edit-mrp" className={inp} />
+          </Field>
+          <Field label="GST %">
+            <input type="number" value={f.gst_rate}
+                   onChange={(e) => setF({ ...f, gst_rate: e.target.value })}
+                   data-testid="acc-edit-gst" className={inp} />
+          </Field>
+          <Field label="HSN">
+            <input value={f.hsn} onChange={(e) => setF({ ...f, hsn: e.target.value })}
+                   data-testid="acc-edit-hsn" className={inp} />
+          </Field>
+        </div>
+
+        {!product.is_serialised && (
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+              Variants
+            </div>
+            <div className="flex gap-2 mb-2">
+              <input value={variantInput}
+                     onChange={(e) => setVariantInput(e.target.value)}
+                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVariant(); } }}
+                     placeholder="Type a variant and press Enter"
+                     data-testid="acc-edit-variant-input"
+                     className={inp} />
+              <button type="button" onClick={addVariant}
+                      data-testid="acc-edit-variant-add"
+                      className="px-3 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded">
+                Add
+              </button>
+            </div>
+            {f.variant_labels.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {f.variant_labels.map((v) => (
+                  <span key={v}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold bg-indigo-100 text-indigo-800 rounded-full px-2 py-0.5">
+                    {v}
+                    <button type="button" onClick={() => removeVariant(v)}
+                            className="hover:text-rose-600" aria-label={`Remove ${v}`}>
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-500 mt-1 italic">
+              Adding a variant here doesn&apos;t automatically create stock rows — do that from Batch Stock → Adjust once ready.
+            </p>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded">
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving}
+                  data-testid="acc-edit-save"
+                  className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded shadow-sm">
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ============================================================
+ *   DELETE (soft-delete) CONFIRMATION MODAL
+ * ============================================================ */
+function DeleteAccessoryModal({ product, onClose, onDeleted }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const doDelete = async () => {
+    setErr('');
+    setBusy(true);
+    try {
+      await axios.delete(`${API}/ha/products/${product.product_id}`);
+      onDeleted();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === 'string' ? d : 'Delete failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Delete accessory?" onClose={onClose} maxWidth="max-w-md">
+      <div className="space-y-3" data-testid="acc-delete-modal">
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded text-[13px]">
+          <div className="font-semibold text-slate-800">{product.brand} · {product.model}</div>
+          <div className="text-[11.5px] text-slate-500 mt-0.5">
+            {kindLabel(product.accessory_kind)} · {product.is_serialised ? 'Serialised' : 'Batch qty'}
+          </div>
+        </div>
+        <p className="text-[12.5px] text-slate-600 leading-relaxed">
+          The SKU will be <b>hidden</b> from every picker in the app but kept in the database for
+          historical invoices &amp; PO reports. Zero-qty stock rows will be cleaned up automatically.
+          Delete is <b>blocked</b> if any live serial unit or non-zero stock still references this SKU —
+          adjust or retire those first.
+        </p>
+        {err && (
+          <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2 flex items-center gap-2">
+            <AlertTriangle size={13} /> {err}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded">
+            Cancel
+          </button>
+          <button onClick={doDelete} disabled={busy}
+                  data-testid="acc-delete-confirm"
+                  className="px-4 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white rounded shadow-sm">
+            {busy ? 'Deleting…' : 'Delete Accessory'}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ============================================================
+ *   CONVERT TRACKING TYPE MODAL  (Serialised ↔ Batch qty)
+ * ============================================================ */
+function ConvertTrackingModal({ product, branches, onClose, onSaved }) {
+  // Direction the user wants to move in.
+  const currentlySerialised = !!product.is_serialised;
+  const targetType = currentlySerialised ? 'batch' : 'serialised';
+
+  // Only relevant when going serialised → batch: which branches to init
+  // zero-qty stock rows for, plus a fresh variant list + reorder level.
+  const [branchIds, setBranchIds] = useState(branches.map((b) => b.branch_id));
+  const [variants, setVariants] = useState(product.variant_labels || []);
+  const [variantInput, setVariantInput] = useState('');
+  const [reorder, setReorder] = useState(5);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const addVariant = () => {
+    const v = variantInput.trim();
+    if (!v || variants.includes(v)) return;
+    setVariants([...variants, v]);
+    setVariantInput('');
+  };
+
+  const doConvert = async () => {
+    setErr('');
+    if (targetType === 'batch' && branchIds.length === 0) {
+      setErr('Pick at least one branch to seed 0-qty stock rows.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await axios.patch(`${API}/ha/products/${product.product_id}/convert-tracking`, {
+        to: targetType,
+        branch_ids: targetType === 'batch' ? branchIds : [],
+        variants: targetType === 'batch' ? variants : [],
+        reorder_level: targetType === 'batch' ? Number(reorder || 0) : 0,
+      });
+      onSaved();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === 'string' ? d : 'Convert failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Change tracking type" onClose={onClose} maxWidth="max-w-lg">
+      <div className="space-y-4" data-testid="acc-convert-modal">
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded text-[13px]">
+          <div className="font-semibold text-slate-800">{product.brand} · {product.model}</div>
+          <div className="text-[11.5px] text-slate-500 mt-0.5">
+            {kindLabel(product.accessory_kind)}
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-[12.5px]">
+            <span className={`inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded ${currentlySerialised ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'}`}>
+              {currentlySerialised ? <Boxes size={11} /> : <Package size={11} />}
+              {currentlySerialised ? 'Serialised' : 'Batch qty'}
+            </span>
+            <span className="text-slate-400">→</span>
+            <span className={`inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded ${targetType === 'serialised' ? 'bg-indigo-100 text-indigo-800' : 'bg-teal-100 text-teal-800'}`}>
+              {targetType === 'serialised' ? <Boxes size={11} /> : <Package size={11} />}
+              {targetType === 'serialised' ? 'Serialised' : 'Batch qty'}
+            </span>
+          </div>
+        </div>
+
+        <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 leading-relaxed">
+          {targetType === 'batch' ? (
+            <>Switching from Serialised to Batch is <b>blocked</b> if any serial number is still linked to this SKU (any state). Retire or reassign them first — then come back.</>
+          ) : (
+            <>Switching from Batch to Serialised is <b>blocked</b> if any variant still has qty &gt; 0. Zero all stock via <b>Batch Stock → Adjust</b> first — variant rows will be removed and you&apos;ll add individual serial numbers next.</>
+          )}
+        </div>
+
+        {targetType === 'batch' && (
+          <>
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+                Variants (optional — e.g., S · M · L for domes)
+              </div>
+              <div className="flex gap-2 mb-2">
+                <input value={variantInput}
+                       onChange={(e) => setVariantInput(e.target.value)}
+                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVariant(); } }}
+                       placeholder="Type a variant and press Enter"
+                       data-testid="acc-convert-variant-input"
+                       className={inp} />
+                <button type="button" onClick={addVariant}
+                        data-testid="acc-convert-variant-add"
+                        className="px-3 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded">
+                  Add
+                </button>
+              </div>
+              {variants.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {variants.map((v) => (
+                    <span key={v}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold bg-teal-100 text-teal-800 rounded-full px-2 py-0.5">
+                      {v}
+                      <button type="button"
+                              onClick={() => setVariants(variants.filter((x) => x !== v))}
+                              className="hover:text-rose-600" aria-label={`Remove ${v}`}>
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Field label="Reorder alert level">
+              <input type="number" value={reorder}
+                     onChange={(e) => setReorder(e.target.value)}
+                     data-testid="acc-convert-reorder" className={inp} />
+            </Field>
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+                Seed 0-qty stock rows in
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {branches.map((b) => {
+                  const on = branchIds.includes(b.branch_id);
+                  return (
+                    <button
+                      type="button"
+                      key={b.branch_id}
+                      onClick={() => setBranchIds((prev) => on
+                        ? prev.filter((x) => x !== b.branch_id)
+                        : [...prev, b.branch_id])}
+                      className={`text-[11.5px] px-2.5 py-1 rounded-full border ${
+                        on ? 'bg-teal-600 text-white border-teal-600'
+                           : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {b.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        {err && (
+          <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2 flex items-center gap-2">
+            <AlertTriangle size={13} /> {err}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded">
+            Cancel
+          </button>
+          <button onClick={doConvert} disabled={busy}
+                  data-testid="acc-convert-confirm"
+                  className={`px-4 py-1.5 text-xs font-semibold disabled:bg-slate-300 text-white rounded shadow-sm ${
+                    targetType === 'batch' ? 'bg-teal-600 hover:bg-teal-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}>
+            {busy ? 'Converting…' : `Convert to ${targetType === 'batch' ? 'Batch qty' : 'Serialised'}`}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
 
 /* ============================================================
  *   PRESET SEED MODAL — generic (RIC receivers, silicone domes, …)

@@ -7438,3 +7438,43 @@ GET /api/ha/serial-items → 200, 47 rows (was 45 pre-fix — legacy rows now re
 
 **User action:** Deploy to production. The one-off backfill on production data will also need to run once — otherwise the 2 legacy Quick-Sale rows on production will keep bucketing under "unknown". Or simply visit the Inventory Board once (it won't fix data but the endpoint will no longer 500 thanks to the `$ifNull` guard).
 
+
+### [Feb 2026] Feature — Accessory Edit / Delete / Convert Tracking Type (beta user ask)
+
+**Reported by user:** "If I want to make any changes in any category, do we have any option to edit or delete the created one? I have created the accessory with serial number, but if I want to change it to batch stock, how do we do that sir?"
+
+**What shipped:**
+- **Actions column** added to the Accessories → Catalogue table (desktop) + inline action strip on the mobile card. Three affordances per row: ✏️ Edit · ↻ Convert · 🗑️ Delete. Each with a `data-testid` (`acc-row-edit-{id}` / `acc-row-convert-{id}` / `acc-row-delete-{id}` and `-m-` variants for mobile).
+- **Edit modal** — reuses NewAccessoryModal field layout: brand, model, kind, category, MRP, GST, HSN, variant labels (variant editor hidden for serialised SKUs). Explicitly does NOT expose the `is_serialised` toggle — that lives in the dedicated Convert modal so a plain edit can't silently flip tracking and orphan child rows.
+- **Delete modal** — soft-deletes (`active=false`) but with two safety rails on the backend:
+  - Blocked (`409`) if any non-retired `serial_items` still reference the SKU
+  - Blocked (`409`) if any `accessory_stock` row has qty > 0
+  - On success also purges the SKU's zero-qty stock rows so the Batch Stock grid stays clean.
+- **Convert Tracking modal** — the answer to the user's exact ask. Directional visual (`Batch qty → Serialised` or vice versa), amber warning callout explaining the safety gate, and (for serialised→batch) inputs for fresh variant list + reorder level + branches to seed with 0-qty stock rows. Colour-coded submit button (indigo for → serialised, teal for → batch) mirrors the pool badges used elsewhere.
+
+**Backend endpoints:**
+- `PUT  /api/ha/products/{id}` (existing) — used by Edit modal
+- `DELETE /api/ha/products/{id}` (existing, HARDENED) — now blocks with 409 when live inventory references the SKU
+- `PATCH /api/ha/products/{id}/convert-tracking` (NEW) — atomically flips `is_serialised` with the safety gates and (in batch direction) seeds 0-qty accessory_stock rows. Payload: `{to: "serialised"|"batch", branch_ids: [], variants: [], reorder_level: 0}`
+
+**Safety gates locked in by tests** (`/app/backend/tests/test_accessory_lifecycle.py`, 3 tests, all pass):
+1. `test_convert_serialised_to_batch_then_back` — happy path both directions, verifies stock rows are created/dropped
+2. `test_convert_batch_to_serialised_blocked_when_qty_present` — 409 when qty>0, delete also 409, both succeed after zero-out
+3. `test_edit_accessory_preserves_tracking_type` — a plain PUT never silently flips `is_serialised`
+
+**Curl-verified on preview** with `owner@thesoundclinic.in`:
+```
+Serialised → Batch (3 variants):  {"stock_rows_created": 3}     ✅
+Batch      → Serialised (qty=0):  {"stock_rows_removed": 3}     ✅
+Batch      → Serialised (qty=10): 409 "10 unit(s) still on hand"⛔
+Delete (qty=10):                  409 "10 unit(s) still on hand"⛔
+Delete (qty=0):                   {"message":"Deactivated"}     ✅
+```
+
+**Files touched:**
+- `/app/backend/routers/ha_products.py` — DELETE hardened + new PATCH convert-tracking (+ ~140 LoC)
+- `/app/frontend/src/modules/ha/AccessoriesPage.jsx` — Actions column + 3 new modal components (+ ~400 LoC)
+- `/app/backend/tests/test_accessory_lifecycle.py` — NEW, 3 regression tests
+
+**Deploy note for the user:** Fix ships in preview. Deploy to production so the beta user can convert their mis-typed L Bend 1 SKU from Serialised → Batch qty without deleting and re-creating.
+
