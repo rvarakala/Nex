@@ -20,6 +20,9 @@ import DpdpaActions from './DpdpaActions';
 import MergePatientsModal from './MergePatientsModal';
 import FamilyChipStrip from './FamilyChipStrip';
 import { useAuth } from '../../AuthContext';
+// Naive-UTC-aware datetime helpers — backend stores `datetime.utcnow()`
+// without a `Z` marker, so we MUST convert here to render local time.
+import { parseUtcIso, fmtDate as fmtDateShared, fmtDateTime as fmtDateTimeShared } from '../../utils/datetime';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -33,16 +36,8 @@ const TABS = [
   { id: 'service',      label: 'Service',      icon: Wrench },
 ];
 
-const fmtDate = (iso) => {
-  if (!iso) return '—';
-  try { return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
-  catch { return iso; }
-};
-const fmtDateTime = (iso) => {
-  if (!iso) return '—';
-  try { return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }); }
-  catch { return iso; }
-};
+const fmtDate = (iso) => fmtDateShared(iso);
+const fmtDateTime = (iso) => fmtDateTimeShared(iso);
 const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
 
 export default function PatientProfilePage() {

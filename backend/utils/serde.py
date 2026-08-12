@@ -2,9 +2,18 @@
 
 Mongo stores datetimes as ISO strings (so we can compare with `$gte: '2026-...'`).
 Pydantic models round-trip them back to `datetime` objects.
+
+**UTC-awareness contract** (added 2026-08-12 after bug report from Sound
+Clinic — patient timeline was showing 09:04 instead of 14:34 IST):
+- `serialize_datetime` stamps a `+00:00` suffix on naive datetimes so
+  frontend `new Date(...)` parses them as UTC (browsers otherwise treat
+  naive ISO as local, causing a 5:30 hr offset in India).
+- `deserialize_datetime` marks naive ISO strings as `tzinfo=timezone.utc`
+  when parsing back to `datetime`, so FastAPI's JSON response emits
+  `+00:00` on the way out — no need to touch 72+ frontend call sites.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Type
 
 from pydantic import BaseModel, ValidationError
@@ -13,12 +22,19 @@ log = logging.getLogger(__name__)
 
 
 def serialize_datetime(obj):
-    """Convert datetime objects to ISO format strings for MongoDB storage."""
+    """Convert datetime objects to ISO format strings for MongoDB storage.
+
+    Naive datetimes are interpreted as UTC (matches our
+    `datetime.utcnow()` convention) and emitted with a `+00:00`
+    suffix so downstream JS clients parse them as UTC, not local.
+    """
     if isinstance(obj, dict):
         return {k: serialize_datetime(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [serialize_datetime(item) for item in obj]
     if isinstance(obj, datetime):
+        if obj.tzinfo is None:
+            obj = obj.replace(tzinfo=timezone.utc)
         return obj.isoformat()
     return obj
 
@@ -103,7 +119,15 @@ def deserialize_datetime(obj):
         return [deserialize_datetime(item) for item in obj]
     if isinstance(obj, str):
         try:
-            return datetime.fromisoformat(obj)
+            parsed = datetime.fromisoformat(obj)
+            # Naive strings (no `Z` or `+HH:MM`) come from legacy
+            # `datetime.utcnow()` writes. Mark them UTC-aware so
+            # FastAPI's JSON response emits `+00:00` and JS clients
+            # convert to local time correctly. Without this, IST users
+            # see UTC times (5:30 hr behind reality).
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
         except Exception:
             return obj
     return obj

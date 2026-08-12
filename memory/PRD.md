@@ -1,6 +1,44 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🐛 Two production bugs fixed (2026-08-12)
+
+### Bug 1 · Timeline showing UTC instead of local time
+**Report**: Production user registered a patient at 14:35 IST, but the patient timeline showed "9:04 am". Exact 5:30 hour offset = IST vs UTC.
+
+**Root cause**: Backend saved `datetime.utcnow()` → serialized to naive ISO string (no `Z` marker). Browsers `new Date("2026-08-12T09:04:00.123456")` interpret naive ISO strings as **local** time, not UTC. So an IST user's browser read the UTC timestamp as if it were already IST — showing 09:04 instead of 14:34.
+
+**Root fix** in `/app/backend/utils/serde.py`:
+- `serialize_datetime` now stamps naive datetime objects with `tzinfo=timezone.utc` before `.isoformat()` → emits `2026-08-12T09:04:00+00:00` instead of naive `2026-08-12T09:04:00`.
+- `deserialize_datetime` now marks naive parsed strings as `tzinfo=timezone.utc` → FastAPI's Pydantic response emits `+00:00` suffix for legacy records that were saved without the marker before this fix.
+
+**Impact**: Every one of the 72 frontend spots using `new Date(iso).toLocaleString(...)` now converts correctly to the browser's local timezone. No changes needed in individual components. **Zero data migration required** — the read-path fix handles all pre-existing naive strings in Mongo.
+
+**Bonus**: Added `/app/frontend/src/utils/datetime.js` with `parseUtcIso`, `fmtDateTime`, `fmtDate`, `fmtRelative` helpers as the canonical way to format backend timestamps going forward. `PatientProfilePage.jsx` migrated as reference implementation.
+
+### Bug 2 · Purchase Order "Approve" button hanging
+**Report**: Clicking Approve on a Draft PO appeared to hang forever.
+
+**Root cause**: The `transition()` handler in `ProcurementPage.js` had no `busy`/`loading` state. Button stayed enabled during the pending request, providing zero visual feedback. Users assumed it wasn't working and clicked repeatedly → multiple concurrent API calls to the same endpoint. Backend endpoint itself was fast (single `update_one` call).
+
+**Fix**: Added `pending` state that tracks which transition is in-flight:
+- Button disabled while any request is pending.
+- Shows a spinner and "Approving…" / "Cancelling…" / "Marking…" / "Closing…" label based on the current action.
+- Second click while pending is ignored (guard at top of `transition()`).
+- Related buttons (Receive GRN) also disabled to prevent cross-action conflicts.
+
+**Files changed**:
+- `/app/backend/utils/serde.py` (timezone fix)
+- `/app/frontend/src/utils/datetime.js` (new)
+- `/app/frontend/src/modules/patients/PatientProfilePage.jsx` (uses shared utility)
+- `/app/frontend/src/modules/ha/ProcurementPage.js` (pending state + spinner)
+
+**Verified**: Curl-tested backend now emits `+00:00`. JS eval in browser confirms `2026-08-12T12:35 UTC` → renders as `2026-08-12, 6:05 pm` when browser TZ is Asia/Kolkata (correct IST conversion). Lint clean.
+
+**User needs to redeploy** to push these fixes from preview to audinexa.com production.
+
+
+
 ## 📌 BACKLOG · AI Support Copilot (POSTPONED, 2026-08-12)
 
 **Status**: Postponed by user — pick up later. All planning captured; do not restart from scratch.

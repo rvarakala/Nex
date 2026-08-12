@@ -414,6 +414,10 @@ function PODetailDrawer({ poNo, onClose, onChanged }) {
   const [products, setProducts] = useState({});
   const [grnOpen, setGrnOpen] = useState(false);
   const [err, setErr] = useState('');
+  // `pending` holds the target status currently being POSTed so we can
+  // both disable the button *and* show a spinner label like "Approving…".
+  // Without this the click looked like a no-op and users hammered it.
+  const [pending, setPending] = useState(null);
 
   const load = useCallback(async () => {
     const [poData, prods] = await Promise.all([
@@ -427,23 +431,30 @@ function PODetailDrawer({ poNo, onClose, onChanged }) {
   useEffect(() => { load(); }, [load]);
 
   const transition = async (to_status) => {
+    // Prevent double-fire: if a request is already in flight, ignore
+    // subsequent clicks completely. The double-fire pattern was
+    // causing hangs and duplicate mongo writes.
+    if (pending) return;
     setErr('');
+    setPending(to_status);
     try {
       await axios.post(`${API}/ha/purchase-orders/${poNo}/status`, { to_status });
       await load();
       onChanged && onChanged();
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Action failed');
+    } finally {
+      setPending(null);
     }
   };
 
   if (!po) return null;
   const NEXT_ACTIONS = {
-    draft: [{ to: 'approved', label: 'Approve', style: 'bg-amber-500' }, { to: 'cancelled', label: 'Cancel', style: 'bg-slate-500' }],
-    approved: [{ to: 'ordered', label: 'Mark Ordered', style: 'bg-blue-600' }, { to: 'cancelled', label: 'Cancel', style: 'bg-slate-500' }],
+    draft: [{ to: 'approved', label: 'Approve', pendingLabel: 'Approving…', style: 'bg-amber-500' }, { to: 'cancelled', label: 'Cancel', pendingLabel: 'Cancelling…', style: 'bg-slate-500' }],
+    approved: [{ to: 'ordered', label: 'Mark Ordered', pendingLabel: 'Marking…', style: 'bg-blue-600' }, { to: 'cancelled', label: 'Cancel', pendingLabel: 'Cancelling…', style: 'bg-slate-500' }],
     ordered: [],
-    partial_received: [{ to: 'closed', label: 'Close (waive remainder)', style: 'bg-slate-700' }],
-    received: [{ to: 'closed', label: 'Close PO', style: 'bg-emerald-600' }],
+    partial_received: [{ to: 'closed', label: 'Close (waive remainder)', pendingLabel: 'Closing…', style: 'bg-slate-700' }],
+    received: [{ to: 'closed', label: 'Close PO', pendingLabel: 'Closing…', style: 'bg-emerald-600' }],
     closed: [],
     cancelled: [],
   };
@@ -491,16 +502,29 @@ function PODetailDrawer({ poNo, onClose, onChanged }) {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {(NEXT_ACTIONS[po.status] || []).map(a => (
-              <button
-                key={a.to}
-                onClick={() => transition(a.to)}
-                data-testid={`ha-po-trans-${a.to}`}
-                className={`px-3 py-1.5 text-xs font-semibold text-white rounded ${a.style} hover:opacity-90`}
-              >{a.label}</button>
-            ))}
+            {(NEXT_ACTIONS[po.status] || []).map(a => {
+              const isThisPending = pending === a.to;
+              const anyPending = !!pending;
+              return (
+                <button
+                  key={a.to}
+                  onClick={() => transition(a.to)}
+                  disabled={anyPending}
+                  data-testid={`ha-po-trans-${a.to}`}
+                  className={`px-3 py-1.5 text-xs font-semibold text-white rounded ${a.style} hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5`}
+                >
+                  {isThisPending && (
+                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                  )}
+                  {isThisPending ? a.pendingLabel : a.label}
+                </button>
+              );
+            })}
             {canReceive && (
-              <button onClick={() => setGrnOpen(true)} data-testid="ha-po-receive" className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow">Receive Goods (GRN)</button>
+              <button onClick={() => setGrnOpen(true)} disabled={!!pending} data-testid="ha-po-receive" className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded shadow">Receive Goods (GRN)</button>
             )}
           </div>
         </div>
