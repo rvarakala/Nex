@@ -1,6 +1,46 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 📌 BACKLOG · AI Support Copilot (POSTPONED, 2026-08-12)
+
+**Status**: Postponed by user — pick up later. All planning captured; do not restart from scratch.
+
+**Context**: Currently the user (Audinexa founder) handles ALL support manually — via email + platform `support_tickets`. They asked whether an AI agent could handle it. We agreed the existing `support_tickets` pipeline is the correct integration point (no new UI needed — enrich the existing flow).
+
+**Existing infrastructure to plug into**:
+- `POST /api/care/tickets` — clinic creates ticket
+- `GET /api/admin/tickets` — founder inbox (route in `/app/backend/routers/admin_panel_b.py`)
+- `support_tickets` collection — shared thread with `{ticket_id, clinic_id, category, priority, status, subject, body, diagnostic, contact_email, thread[], sla_due_at, ...}`
+- Frontend founder desk at `/admin/support` → `SupportDeskPage.jsx`
+
+**Proposed 4-phase build**:
+
+1. **Phase 1 · AI Ticket Enrichment + Reply Draft** (2-3 days) — on ticket create, AI auto-classifies category+priority, searches similar past tickets, drafts a suggested reply, flags critical categories (payment/data-loss/security) with a WhatsApp/email alert. Founder reviews the draft in the existing desk.
+2. **Phase 2 · Auto-Response for Safe Categories** (+2 days) — for how-to / feature-discovery / feature-request tickets ONLY, if AI confidence >90%, reply automatically with status `AI-Answered · Awaiting Confirmation`. NEVER auto-answers bug/billing/data/security.
+3. **Phase 3 · Email Intake Pipeline** (+2 days) — dedicated `support@audinexa.com` inbox polled every 2 min, incoming emails become tickets, replies go back via email thread. Zero manual email triage.
+4. **Phase 4 · Assisted Bug Fix Drafts** (+1 week) — for bug tickets, AI reads the ticket, identifies likely code files, drafts a code diff PR for founder review.
+
+**Guardrails** (must be in from day 1):
+- Category whitelist for auto-response (never bug/billing/data/security)
+- Confidence gating (>90%)
+- Escalation keywords: "urgent", "not working", "money", "lost data" → always skip AI → alert founder
+- "Retract & take over" button on every AI response
+- Full audit log of every AI decision + prompt + response
+- Weekly review dashboard (AI handled X, founder handled Y, escalations Z)
+
+**Cost estimate** (Claude Sonnet 4.6 via Emergent LLM key): ~₹1.50/ticket enrichment, ~₹3/ticket for full auto-response cycle. At 50 tickets/day → ~₹3-6k/month.
+
+**Open questions to ask user when resuming**:
+1. Model choice (Claude Sonnet 4.6 recommended)
+2. Knowledge base seed (Google Doc? PRD.md? codebase? YouTube videos?)
+3. Confidence threshold (90% recommended)
+4. Escalation channel (WhatsApp/email/both/in-app)
+5. Do they want to seed the AI with their top-10 most-asked questions before launch?
+
+**Do NOT rebuild the ticket infrastructure — it exists and works. This is purely an intelligence layer on top.**
+
+
+
 ## 🩺 Razorpay Webhook Health Banner (2026-08-11)
 
 **User ask**: "Add a small Webhook Health banner in the Founder admin panel that periodically checks the last webhook received timestamp and warns if none in the last N days." — surfaced after discovering the live Razorpay webhook is pointed at the old preview URL, disabled, and has never delivered to audinexa.com.
