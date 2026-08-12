@@ -7517,3 +7517,51 @@ Embedding would have required amending the `SerialItem` Pydantic model + widenin
 
 **Deploy note:** Ships in preview. Deploy to production so the audiologist can trace any sold/reserved serial back to its patient + invoice with one glance.
 
+
+### [Feb 2026] Feature — Inventory Board: Invoice Popup + Revenue Chips + Label Fix (beta user ask, 3-in-1)
+
+Beta user asked three overlapping things in one message and we shipped all three in the same iteration:
+
+1. **Invoice number → popup with Print** so the receptionist can cross-check + reprint without leaving the Inventory Board.
+2. **Revenue on filter chips** — e.g. "SOLD · 16 · ₹22.9L" — so the owner sees business value beside unit counts.
+3. **State/Sale label mismatch fix** — a serial with STATE=SOLD but linked to a `ha_sale.status=reserved` was showing a "RESERVED" badge in the invoice column, colliding visually with the serial's own state.
+
+**What shipped:**
+
+1. **Invoice Detail Modal (`InvoiceDetailModal`)** — clicking the invoice number in EITHER the table cell OR the timeline drawer opens a full popup that renders:
+   - Header: invoice / sale ref + Print + Close buttons
+   - Patient block (name, patient_id, mobile)
+   - Status block (payment badge + date/time)
+   - Line-items table (description, qty, rate, GST, line total) — fetched via existing `GET /api/billing/invoices/{invoice_id}`
+   - Totals block (subtotal · discount · GST · Grand Total · Paid · **Balance Due**) — the Balance Due glows rose when > 0 so the receptionist can copy the amount at a glance
+   - Payments Received table (date, mode, reference, amount) — refunds render in rose with a minus sign
+   - Notes footer with the "Auto-created from HA Quick Sale…" trail
+   - **Print** uses `window.print()` with a scoped `#inv-modal-print-area` style block that hides everything else. No PDF engine required client-side.
+   - **Graceful fallback**: for reserved HA-Sales without an invoice yet (e.g. SAL-2026-0001), popup shows the sale header + amber notice "invoice generated once the sale is finalised" instead of a frustrating empty modal.
+
+2. **Revenue on chips** — `by-branch-summary` now returns `revenue_by_state: {SOLD, RESERVED}` computed by joining `serial_items → ha_quick_sales.consumed_serial_ids` and `serial_items → ha_sales.lines.serial_id`, splitting each sale's `total` across its linked serials so a hearing-aid *pair* isn't double-counted. Frontend renders as a compact `₹22.9L` line under the count, only visible when `rev > 0`.
+
+3. **Badge relabelling** — `ha_sale.status="reserved"` now shows **"Payment Due"** (amber) instead of **"Reserved"**. `completed` still shows "Completed" (emerald). Removes the visual conflict where STATE=SOLD sat next to a RESERVED badge. Quick-Sale badges (`PAID` / `PARTIAL` / `UNPAID`) were already unambiguous, so no change there.
+
+**Backend:**
+- `GET /api/ha/serial-items/by-branch-summary` — extended response now includes `revenue_by_state: {SOLD: 2289084.96, ...}`. Only SOLD & RESERVED buckets ever appear here (other states have no monetary link).
+- Reuses existing `GET /api/billing/invoices/{invoice_id}` for the full line-item + payments hydration inside the modal.
+
+**Curl-verified on preview** (`owner@thesoundclinic.in`):
+```
+by-branch-summary → { revenue_by_state: {SOLD: 2289084.96} }  ✅
+Modal opens for ASD1234/ASD1235 → shows Kavitha's ₹1.65L PAID  ✅
+Modal for ASX123 (Vishnu, reserved HA-Sale) → amber "invoice pending" notice ✅
+```
+
+**Playwright-verified:** SOLD chip renders `16 · ₹22.9L`; clicking `INV/2026/000004` opens modal with Print button, line items, totals, and payments received table; ASX123 badge now reads "Payment Due" not "Reserved".
+
+**Regression coverage:** `test_serial_items_summary_200` (in `test_ha_inventory_500_regression.py`) now asserts `revenue_by_state` exists and only carries SOLD/RESERVED keys. Full 14/14 test suite passes.
+
+**Files touched:**
+- `/app/backend/routers/ha_inventory.py` — `by-branch-summary` revenue join (~60 LoC)
+- `/app/frontend/src/modules/ha/InventoryBoardPage.js` — clickable invoice cells + drawer link + `InvoiceDetailModal` component + chip ₹ line + badge relabel (~230 LoC)
+- `/app/backend/tests/test_ha_inventory_500_regression.py` — extended assertion on new revenue field
+
+**Deploy note:** Ships in preview. Deploy to production so beta users get the click-to-print invoice trace on the live tenant.
+

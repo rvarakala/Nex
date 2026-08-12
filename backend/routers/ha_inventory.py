@@ -127,7 +127,49 @@ async def serial_items_summary(
         by_state[state] = by_state.get(state, 0) + n
         by_pool[pool] = by_pool.get(pool, 0) + n
         total += n
-    return {"total": total, "by_state": by_state, "by_pool": by_pool}
+
+    # Revenue attached to SOLD & RESERVED serials — one Quick-Sale (or
+    # HA-Sale) can span multiple serials (a pair of hearing aids), so
+    # we split total across `consumed_serial_ids` / `lines.serial_id`
+    # so we don't double-count when the audiologist filters by SOLD.
+    revenue_by_state: dict[str, float] = {}
+    # Fetch the id → state map first (bounded to same filter, incl branch)
+    sid_state: dict[str, str] = {}
+    async for r in db.serial_items.find(match, {"_id": 0, "serial_id": 1, "state": 1}):
+        if r.get("state") in ("SOLD", "RESERVED"):
+            sid_state[r["serial_id"]] = r["state"]
+
+    if sid_state:
+        sids = list(sid_state.keys())
+        async for qs in db.ha_quick_sales.find(
+            {"clinic_id": user["clinic_id"], "consumed_serial_ids": {"$in": sids}},
+            {"_id": 0, "consumed_serial_ids": 1, "total": 1},
+        ):
+            linked = [s for s in (qs.get("consumed_serial_ids") or []) if s in sid_state]
+            if not linked:
+                continue
+            per = float(qs.get("total") or 0) / max(len(linked), 1)
+            for sid in linked:
+                st = sid_state[sid]
+                revenue_by_state[st] = revenue_by_state.get(st, 0.0) + per
+        async for sl in db.ha_sales.find(
+            {"clinic_id": user["clinic_id"], "lines.serial_id": {"$in": sids}},
+            {"_id": 0, "lines": 1, "total": 1},
+        ):
+            linked = [ln.get("serial_id") for ln in (sl.get("lines") or []) if ln.get("serial_id") in sid_state]
+            if not linked:
+                continue
+            per = float(sl.get("total") or 0) / max(len(linked), 1)
+            for sid in linked:
+                st = sid_state[sid]
+                revenue_by_state[st] = revenue_by_state.get(st, 0.0) + per
+
+    return {
+        "total": total,
+        "by_state": by_state,
+        "by_pool": by_pool,
+        "revenue_by_state": {k: round(v, 2) for k, v in revenue_by_state.items()},
+    }
 
 
 @router.get("/serial-items/{serial_id}", response_model=SerialItem)

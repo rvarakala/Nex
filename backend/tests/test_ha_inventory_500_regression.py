@@ -40,6 +40,13 @@ def test_serial_items_summary_200():
     # by_state and by_pool must be dicts, and total must equal sum of any of them
     assert sum(body["by_state"].values()) == body["total"], "by_state must sum to total"
     assert sum(body["by_pool"].values()) == body["total"], "by_pool must sum to total"
+    # revenue_by_state added Feb 2026 — must exist, must only hold SOLD/RESERVED
+    assert "revenue_by_state" in body, "revenue_by_state missing from summary"
+    assert isinstance(body["revenue_by_state"], dict)
+    for state_key in body["revenue_by_state"]:
+        assert state_key in ("SOLD", "RESERVED"), (
+            f"revenue only meaningful for SOLD/RESERVED, got '{state_key}'"
+        )
 
 
 def test_amc_contracts_200():

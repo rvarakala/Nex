@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
+import ModalShell from '../../components/ModalShell';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -31,6 +32,7 @@ export default function InventoryBoardPage() {
   const [pool, setPool] = useState('');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState(null); // serial_id for timeline
+  const [openInvoice, setOpenInvoice] = useState(null); // {invoice_id?, quick_sale_id?, sale_no?, ...} from lookup
 
   const load = useCallback(async () => {
     const p = {};
@@ -66,7 +68,14 @@ export default function InventoryBoardPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const kpiStates = useMemo(() => STATES.map(s => ({ s, n: summary.by_state[s] || 0 })), [summary]);
+  const kpiStates = useMemo(() => STATES.map(s => ({
+    s,
+    n: summary.by_state[s] || 0,
+    // Revenue is meaningful only for SOLD & RESERVED — other states never
+    // have a monetary link. `revenue_by_state` may be missing on legacy
+    // deploys → defaults to 0 so the chip degrades gracefully.
+    rev: (summary.revenue_by_state || {})[s] || 0,
+  })), [summary]);
 
   return (
     <div className="p-5" data-testid="ha-inventory-page">
@@ -83,7 +92,7 @@ export default function InventoryBoardPage() {
 
       {/* KPI chips by state */}
       <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2 mb-4" data-testid="ha-inventory-state-chips">
-        {kpiStates.map(({ s, n }) => (
+        {kpiStates.map(({ s, n, rev }) => (
           <button
             key={s}
             onClick={() => setState(state === s ? '' : s)}
@@ -92,6 +101,11 @@ export default function InventoryBoardPage() {
           >
             <div className="text-[9px] uppercase tracking-widest font-bold">{s.replace('_', ' ')}</div>
             <div className="text-lg font-bold tabular-nums">{n}</div>
+            {rev > 0 && (
+              <div className="text-[10px] font-semibold tabular-nums opacity-80 mt-0.5" data-testid={`ha-chip-rev-${s}`}>
+                {fmtINR(rev)}
+              </div>
+            )}
           </button>
         ))}
       </div>
@@ -147,7 +161,7 @@ export default function InventoryBoardPage() {
                   <td className="px-3 py-2 text-xs tabular-nums">{it.warranty_end_date || '—'}</td>
                   <td className="px-3 py-2 text-xs font-mono">{it.grn_no || '—'}</td>
                   <td className="px-3 py-2 text-xs" data-testid={`ha-serial-invoice-${it.serial_id}`}>
-                    <InvoiceCell inv={inv} />
+                    <InvoiceCell inv={inv} onOpen={() => setOpenInvoice(inv)} />
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button
@@ -163,13 +177,25 @@ export default function InventoryBoardPage() {
       </div>
 
       {drawer && (
-        <TimelineDrawer serialId={drawer} products={products} onClose={() => setDrawer(null)} onChanged={load} />
+        <TimelineDrawer
+          serialId={drawer}
+          products={products}
+          onClose={() => setDrawer(null)}
+          onChanged={load}
+          onOpenInvoice={(inv) => setOpenInvoice(inv)}
+        />
+      )}
+      {openInvoice && (
+        <InvoiceDetailModal
+          inv={openInvoice}
+          onClose={() => setOpenInvoice(null)}
+        />
       )}
     </div>
   );
 }
 
-function TimelineDrawer({ serialId, products, onClose, onChanged }) {
+function TimelineDrawer({ serialId, products, onClose, onChanged, onOpenInvoice }) {
   const [data, setData] = useState(null);
   const [targetState, setTargetState] = useState('');
   const [err, setErr] = useState('');
@@ -215,7 +241,7 @@ function TimelineDrawer({ serialId, products, onClose, onChanged }) {
             for SOLD/RESERVED serials; silently hides for everything else. */}
         {data.invoice && (
           <div className="border-b border-slate-200 p-4 bg-indigo-50/40" data-testid="ha-timeline-invoice">
-            <InvoiceBlock inv={data.invoice} />
+            <InvoiceBlock inv={data.invoice} onOpen={() => onOpenInvoice?.(data.invoice)} />
           </div>
         )}
 
@@ -303,21 +329,36 @@ function InvoicePaymentBadge({ inv }) {
     else label = ps || '—';
   } else if (src === 'ha_sale') {
     const st = String(inv.status || '').toLowerCase();
-    if (st === 'reserved')       { label = 'Reserved';  tone = 'bg-amber-100 text-amber-800 border-amber-300'; }
-    else if (st === 'completed') { label = 'Completed'; tone = 'bg-emerald-100 text-emerald-800 border-emerald-300'; }
+    // NOTE: `reserved` here is the *sale-record* status (payment pending)
+    // and has nothing to do with the serial-item state named RESERVED.
+    // The two words were colliding visually on the Inventory Board
+    // ("STATE = SOLD, badge = RESERVED") and confusing owners, so we
+    // relabel to the money-meaning: "PAYMENT DUE".
+    if (st === 'reserved')       { label = 'Payment Due'; tone = 'bg-amber-100 text-amber-800 border-amber-300'; }
+    else if (st === 'completed') { label = 'Completed';   tone = 'bg-emerald-100 text-emerald-800 border-emerald-300'; }
     else label = st || '—';
   }
   if (!label) return null;
   return <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${tone}`}>{label}</span>;
 }
 
-function InvoiceCell({ inv }) {
+function InvoiceCell({ inv, onOpen }) {
   if (!inv) return <span className="text-slate-400">—</span>;
   const ref = inv.invoice_no || inv.sale_no || '—';
+  // Clickable only when there's something meaningful to open. Reserved
+  // HA-Sales without an invoice_no yet still open the same popup —
+  // it just renders "invoice generated on payment completion".
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <span className="font-mono font-semibold text-slate-800 text-[11.5px]">{ref}</span>
+        <button
+          type="button"
+          onClick={onOpen}
+          data-testid="ha-inv-cell-open"
+          className="font-mono font-semibold text-indigo-700 hover:text-indigo-900 hover:underline text-[11.5px] text-left"
+        >
+          {ref}
+        </button>
         <InvoicePaymentBadge inv={inv} />
       </div>
       <div className="text-[10.5px] text-slate-600 mt-0.5 truncate">
@@ -330,7 +371,7 @@ function InvoiceCell({ inv }) {
   );
 }
 
-function InvoiceBlock({ inv }) {
+function InvoiceBlock({ inv, onOpen }) {
   if (!inv) return null;
   const isQuick = inv.source === 'quick_sale';
   return (
@@ -339,9 +380,14 @@ function InvoiceBlock({ inv }) {
         Linked {isQuick ? 'Quick Sale' : 'Sale'}
       </div>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="font-mono font-bold text-slate-800 text-[14px]">
+        <button
+          type="button"
+          onClick={onOpen}
+          data-testid="ha-inv-block-open"
+          className="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline text-[14px] text-left"
+        >
           {inv.invoice_no || inv.sale_no || '—'}
-        </span>
+        </button>
         <InvoicePaymentBadge inv={inv} />
       </div>
       <div className="text-[12px] text-slate-700 mt-1">
@@ -367,5 +413,243 @@ function InvoiceBlock({ inv }) {
         <div className="text-[10px] text-slate-500 mt-1">Sale ref: <span className="font-mono">{inv.sale_no}</span></div>
       )}
     </div>
+  );
+}
+
+
+/* ============================================================
+ *   INVOICE DETAIL MODAL  (click-through popup with print)
+ *
+ * Opens when the audiologist taps an invoice number in the table or
+ * timeline drawer. Fetches the FULL invoice via /api/billing/invoices/{id}
+ * so the modal can render every line item + payment received so far. When
+ * the linked sale is a reserved HA-Sale (no invoice generated yet), we
+ * degrade gracefully and just show the sale header + reserved notice.
+ *
+ * Print uses window.print() with a `#inv-modal-print-area` scope class in
+ * the print stylesheet — everything outside that block is hidden while
+ * printing (see the inline <style> at render time). This avoids pulling
+ * in a full PDF engine on the client just for a receipt printout.
+ * ============================================================ */
+function InvoiceDetailModal({ inv, onClose }) {
+  const [full, setFull] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setErr('');
+    (async () => {
+      // Quick Sale rows carry an `invoice_id` — use the billing endpoint
+      // which returns lines + payments in one shot.
+      if (inv.invoice_id) {
+        try {
+          const r = await axios.get(`${API}/billing/invoices/${inv.invoice_id}`);
+          if (alive) setFull(r.data || null);
+        } catch (e) {
+          if (alive) setErr(e?.response?.data?.detail || 'Could not fetch invoice');
+        } finally {
+          if (alive) setLoading(false);
+        }
+      } else {
+        // HA-Sale in `reserved` status has no invoice yet — the popup
+        // still renders the sale header + the "no invoice yet" note.
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [inv]);
+
+  const doPrint = () => {
+    // Scoped print: our <style> below hides everything except the
+    // `#inv-modal-print-area` subtree during print. The browser's own
+    // print dialog then produces a clean single-column receipt.
+    window.print();
+  };
+
+  const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return (
+    <ModalShell
+      onClose={onClose}
+      cardClassName="max-w-3xl w-full p-0"
+      testid="ha-inv-detail-modal"
+    >
+      {/* Print-scope styles: hide app chrome, keep the modal card only. */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #inv-modal-print-area, #inv-modal-print-area * { visibility: visible !important; }
+          #inv-modal-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 24px; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      <div id="inv-modal-print-area" className="p-6">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-3 mb-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Invoice / Sale</div>
+            <div className="text-2xl font-bold font-mono text-slate-800 mt-0.5" data-testid="ha-inv-modal-ref">
+              {inv.invoice_no || inv.sale_no || '—'}
+            </div>
+            {inv.sale_no && inv.invoice_no && inv.sale_no !== inv.invoice_no && (
+              <div className="text-[11px] text-slate-500 mt-0.5">Sale ref: <span className="font-mono">{inv.sale_no}</span></div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 no-print">
+            <button
+              onClick={doPrint}
+              data-testid="ha-inv-modal-print"
+              className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded shadow-sm"
+            >Print</button>
+            <button
+              onClick={onClose}
+              data-testid="ha-inv-modal-close"
+              className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded"
+            >Close</button>
+          </div>
+        </div>
+
+        {/* Patient header (always available from the lookup payload) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Patient</div>
+            <div className="text-sm font-semibold text-slate-800">{inv.patient_name || full?.patient_name || '—'}</div>
+            {(inv.patient_id || full?.patient_id) && (
+              <div className="text-[11px] text-slate-500 font-mono">{inv.patient_id || full?.patient_id}</div>
+            )}
+            {full?.patient_mobile && <div className="text-[11px] text-slate-600 mt-0.5">{full.patient_mobile}</div>}
+          </div>
+          <div className="sm:text-right">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Status</div>
+            <div className="mt-0.5"><InvoicePaymentBadge inv={inv} /></div>
+            {(inv.created_at || full?.invoice_date) && (
+              <div className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                {new Date(full?.invoice_date || inv.created_at).toLocaleString('en-IN')}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {loading && <div className="py-10 text-center text-sm text-slate-400 italic">Loading invoice…</div>}
+        {err && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2 mb-3">{err}</div>}
+
+        {/* Line items table — from the full invoice fetch. When we can't
+            fetch full detail (reserved HA-Sale), skip this block. */}
+        {full?.lines?.length > 0 && (
+          <div className="mb-4 border border-slate-200 rounded overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold">Description</th>
+                  <th className="text-right px-3 py-2 font-semibold">Qty</th>
+                  <th className="text-right px-3 py-2 font-semibold">Rate</th>
+                  <th className="text-right px-3 py-2 font-semibold">GST</th>
+                  <th className="text-right px-3 py-2 font-semibold">Line Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {full.lines.map((ln) => (
+                  <tr key={ln.line_id || `${ln.description}-${ln.rate}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2 text-slate-800">{ln.description || '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{ln.qty ?? 1}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{money(ln.rate)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{ln.gst_rate ?? 0}%</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{money(ln.line_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Totals block. Populated from `full` when available, else from
+            the lightweight `inv` lookup response so we still show the
+            headline numbers for reserved HA-Sales. */}
+        <div className="border border-slate-200 rounded p-3 bg-slate-50 mb-4">
+          <div className="grid grid-cols-2 gap-y-1 text-[13px] max-w-sm ml-auto">
+            {full && (
+              <>
+                <div className="text-slate-500">Subtotal</div>
+                <div className="text-right tabular-nums">{money(full.subtotal)}</div>
+                {full.discount_total > 0 && (<>
+                  <div className="text-slate-500">Discount</div>
+                  <div className="text-right tabular-nums text-rose-700">− {money(full.discount_total)}</div>
+                </>)}
+                {full.tax_total > 0 && (<>
+                  <div className="text-slate-500">GST</div>
+                  <div className="text-right tabular-nums">{money(full.tax_total)}</div>
+                </>)}
+              </>
+            )}
+            <div className="text-slate-800 font-bold">Grand Total</div>
+            <div className="text-right tabular-nums font-bold" data-testid="ha-inv-modal-total">
+              {money(full?.rounded_total ?? full?.grand_total ?? inv.total)}
+            </div>
+            <div className="text-emerald-700">Paid</div>
+            <div className="text-right tabular-nums text-emerald-700" data-testid="ha-inv-modal-paid">
+              {money(full?.paid_total ?? inv.amount_paid ?? 0)}
+            </div>
+            <div className={`font-bold ${((full?.due_total ?? inv.balance_due ?? 0) > 0) ? 'text-rose-700' : 'text-slate-500'}`}>Balance Due</div>
+            <div className={`text-right tabular-nums font-bold ${((full?.due_total ?? inv.balance_due ?? 0) > 0) ? 'text-rose-700' : 'text-slate-500'}`}
+                 data-testid="ha-inv-modal-due">
+              {money(full?.due_total ?? inv.balance_due ?? 0)}
+            </div>
+          </div>
+        </div>
+
+        {/* Payments received so far — the receptionist copies the
+            balance from here for the follow-up call. */}
+        {full?.payments?.length > 0 && (
+          <div className="mb-2">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1.5">Payments Received</div>
+            <div className="border border-slate-200 rounded overflow-hidden">
+              <table className="w-full text-[12.5px]">
+                <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="text-left px-3 py-1.5 font-semibold">Date</th>
+                    <th className="text-left px-3 py-1.5 font-semibold">Mode</th>
+                    <th className="text-left px-3 py-1.5 font-semibold">Reference</th>
+                    <th className="text-right px-3 py-1.5 font-semibold">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {full.payments.map((pm, i) => (
+                    <tr key={pm.payment_id || `${pm.paid_at}-${i}`} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5 tabular-nums text-slate-700">
+                        {pm.paid_at ? new Date(pm.paid_at).toLocaleDateString('en-IN') : '—'}
+                      </td>
+                      <td className="px-3 py-1.5 capitalize text-slate-700">{pm.method || '—'}</td>
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500">{pm.reference || '—'}</td>
+                      <td className={`px-3 py-1.5 text-right tabular-nums font-semibold ${
+                        pm.kind === 'refund' ? 'text-rose-700' : 'text-emerald-700'
+                      }`}>
+                        {pm.kind === 'refund' ? '− ' : ''}{money(pm.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Reserved HA-Sale path — the sale record has no invoice yet;
+            leave the receptionist a short guidance line instead of a
+            frustrating empty modal. */}
+        {!inv.invoice_id && (
+          <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            This unit is <b>reserved</b> against sale <span className="font-mono">{inv.sale_no}</span> — the invoice will be generated once the sale is finalised (final payment received). Total on the reservation: <b>{money(inv.total)}</b>.
+          </div>
+        )}
+
+        {full?.notes && (
+          <div className="text-[11px] text-slate-500 italic border-t border-slate-100 pt-2 mt-3">
+            {full.notes}
+          </div>
+        )}
+      </div>
+    </ModalShell>
   );
 }
