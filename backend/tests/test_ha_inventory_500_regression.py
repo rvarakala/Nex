@@ -26,6 +26,22 @@ def test_serial_items_200():
     assert isinstance(r.json(), list)
 
 
+def test_serial_items_summary_200():
+    """Regression: /serial-items/by-branch-summary was 500 when any row had
+    missing `pool` (Mongo $group drops missing sub-fields from _id → KeyError).
+    Fixed with $ifNull. Frontend's KPI chips depend on this — a 500 here
+    showed every state's counter as 0."""
+    s = _login()
+    r = s.get(f"{BASE_URL}/api/ha/serial-items/by-branch-summary", timeout=30)
+    assert r.status_code == 200, f"{r.status_code}: {r.text[:400]}"
+    body = r.json()
+    assert "total" in body and "by_state" in body and "by_pool" in body
+    assert isinstance(body["total"], int)
+    # by_state and by_pool must be dicts, and total must equal sum of any of them
+    assert sum(body["by_state"].values()) == body["total"], "by_state must sum to total"
+    assert sum(body["by_pool"].values()) == body["total"], "by_pool must sum to total"
+
+
 def test_amc_contracts_200():
     s = _login()
     r = s.get(f"{BASE_URL}/api/ha/amc/contracts", timeout=30)

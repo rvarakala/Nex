@@ -938,6 +938,9 @@ async def sync_inventory(
             "product_id": product_id,
             "serial_no": serial_no_n,
             "state": "SOLD",
+            # Default to `saleable` pool so the Inventory Board's group-by-pool
+            # aggregation doesn't bucket sync'd Quick-Sale units under "unknown".
+            "pool": "saleable",
             "current_patient_id": qs.get("patient_id"),
             "received_at": fitting_date,
             "created_at": now_iso,

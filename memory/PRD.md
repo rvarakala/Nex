@@ -7406,3 +7406,35 @@ Lint: clean on all touched files (Python + JS).
 **Verified (Playwright E2E on live preview):** Seeded a walk-in token → dragged "Drag Test" card from Waiting to Completed → confirmed Waiting=0, Completed=1 + backend token+session state flipped correctly. Screenshots show valid-target ring, "Drop here" placeholder, and final landed state.
 
 **Files touched:** `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` (+ ~85 LoC — drag state, handlers, column-level onDrop/onDragOver/onDragEnter/onDragLeave, card `draggable` switch). No backend change required — reuses existing `/queue/start` + `/queue/complete`.
+
+### [Feb 2026] Bug Fix — HA Inventory Board showing all zeros (P0)
+
+**Reported by user:** "Inventory Board shows all Zeros — in-stock, reserved, trial-out etc."
+
+**Root cause:** `GET /api/ha/serial-items/by-branch-summary` was returning **500 Internal Server Error** for every clinic that had at least one `serial_items` row with a missing `pool` field. The aggregation pipeline grouped by `_id: {state: "$state", pool: "$pool"}`, and when `pool` was absent from the source doc, Mongo's `$group` **omits** the sub-field entirely from `_id` — so `row["_id"]["pool"]` raised `KeyError: 'pool'`. Since the frontend fell back to its default `{ total: 0, by_state: {}, by_pool: {} }` on the failed request, every KPI chip (`IN_STOCK`, `RESERVED`, `TRIAL_OUT`, …) rendered `0`. The tenant `tenant-sound-clinic-blr` had 2 such legacy rows created by the Quick-Sale "Sync Inventory" back-fill path.
+
+**Fixes applied (backend-only):**
+1. **`routers/ha_inventory.py`** — aggregation hardened with `$ifNull` and defensive `.get()`:
+   ```py
+   "_id": {"state": {"$ifNull": ["$state", "unknown"]},
+           "pool":  {"$ifNull": ["$pool",  "unknown"]}}
+   ```
+   Missing state/pool now bucket under `"unknown"` instead of crashing the whole endpoint.
+2. **`models_ha.py`** — `SerialItem.product_id` is now `Optional[str] = None` (matches actual write path — Quick-Sale sync can create rows without a catalogue match). This also stops the `safe_deserialize_rows` warnings that were silently dropping 2 legacy rows from `/api/ha/serial-items` list responses.
+3. **`routers/ha_quick_sale.py`** — the "Sync Inventory on Quick Sale" back-fill now always writes `pool: "saleable"`, so new sync'd rows never land without a pool.
+4. **Data backfill** — one-off `update_many({pool: null/missing}, {$set: {pool: "saleable"}})` fixed the 2 pre-existing legacy rows.
+5. **`tests/test_ha_inventory_500_regression.py`** — added `test_serial_items_summary_200` that asserts 200 + `sum(by_state) == total == sum(by_pool)`. All 7 tests in the file pass.
+
+**Verified on preview (`tenant-sound-clinic-blr`):**
+```
+GET /api/ha/serial-items/by-branch-summary → 200
+{
+  "total": 47,
+  "by_state": {"IN_STOCK": 22, "RESERVED": 2, "TRIAL_OUT": 7, "SOLD": 15, "RETURNED": 1},
+  "by_pool":  {"saleable": 45, "demo": 2}
+}
+GET /api/ha/serial-items → 200, 47 rows (was 45 pre-fix — legacy rows now render too)
+```
+
+**User action:** Deploy to production. The one-off backfill on production data will also need to run once — otherwise the 2 legacy Quick-Sale rows on production will keep bucketing under "unknown". Or simply visit the Inventory Board once (it won't fix data but the endpoint will no longer 500 thanks to the `$ifNull` guard).
+

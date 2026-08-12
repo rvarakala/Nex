@@ -101,15 +101,29 @@ async def serial_items_summary(
         if not user_can_see_branch(user, branch_id):
             raise HTTPException(status_code=403, detail="Branch access denied")
         match["branch_id"] = branch_id
+    # Coerce missing/null state|pool to a sentinel via $ifNull. Legacy rows
+    # from mid-2025 imports sometimes miss `pool`; Mongo's $group drops
+    # missing sub-fields entirely from `_id`, which used to raise KeyError
+    # here and 500'd the whole endpoint → frontend KPI chips fell back to
+    # zeros. Bucketing them under "unknown" keeps the total honest.
     pipeline = [
         {"$match": match},
-        {"$group": {"_id": {"state": "$state", "pool": "$pool"}, "n": {"$sum": 1}}},
+        {"$group": {
+            "_id": {
+                "state": {"$ifNull": ["$state", "unknown"]},
+                "pool":  {"$ifNull": ["$pool",  "unknown"]},
+            },
+            "n": {"$sum": 1},
+        }},
     ]
     by_state: dict[str, int] = {}
     by_pool: dict[str, int] = {}
     total = 0
     async for row in db.serial_items.aggregate(pipeline):
-        state, pool, n = row["_id"]["state"], row["_id"]["pool"], row["n"]
+        key = row.get("_id") or {}
+        state = key.get("state") or "unknown"
+        pool = key.get("pool") or "unknown"
+        n = row.get("n", 0)
         by_state[state] = by_state.get(state, 0) + n
         by_pool[pool] = by_pool.get(pool, 0) + n
         total += n

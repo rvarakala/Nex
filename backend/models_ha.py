@@ -171,7 +171,10 @@ class SerialItem(BaseModel):
     serial_id: str = Field(default_factory=lambda: f"SI-{str(uuid4())[:10].upper()}")
     clinic_id: str
     branch_id: Optional[str] = None    # Legacy rows (pre branch enforcement) may be null
-    product_id: str
+    # Quick-Sale "sync inventory" back-fill can create rows without a catalogue
+    # match (unmapped brand/model) — we still want them tracked and visible on
+    # the Inventory Board, so we allow None here and just render as "unknown".
+    product_id: Optional[str] = None
     serial_no: str                                             # manufacturer sticker
     state: SerialState = "IN_STOCK"
     pool: SerialPool = "saleable"
