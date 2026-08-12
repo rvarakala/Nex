@@ -3,8 +3,14 @@ import axios from 'axios';
 import ModalShell from '../../components/ModalShell';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const FORM_FACTORS = ['RIC', 'BTE', 'ITE', 'ITC', 'CIC', 'IIC', 'accessory'];
-const TECH_TIERS = ['essential', 'standard', 'advanced', 'premium'];
+// Keep in sync with `FormFactor` / `TechTier` in `backend/models_ha.py`.
+// `POCKET` is the enum value; the UI shows it as "Pocket Aids" for clarity.
+const FORM_FACTORS = ['RIC', 'BTE', 'ITE', 'ITC', 'CIC', 'IIC', 'POCKET', 'accessory'];
+const FORM_FACTOR_LABELS = {
+  RIC: 'RIC', BTE: 'BTE', ITE: 'ITE', ITC: 'ITC', CIC: 'CIC', IIC: 'IIC',
+  POCKET: 'Pocket Aids', accessory: 'Accessory',
+};
+const TECH_TIERS = ['basic', 'essential', 'standard', 'advanced', 'premium'];
 const SERIAL_POOLS = ['saleable', 'demo', 'loaner', 'refurbished'];
 
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -54,7 +60,7 @@ export default function ProductCataloguePage() {
           className="bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm"
         >
           <option value="">All form factors</option>
-          {FORM_FACTORS.map(f => <option key={f} value={f}>{f}</option>)}
+          {FORM_FACTORS.map(f => <option key={f} value={f}>{FORM_FACTOR_LABELS[f] || f}</option>)}
         </select>
       </div>
 
@@ -82,7 +88,7 @@ export default function ProductCataloguePage() {
               <tr key={p.product_id} className={`border-t border-slate-100 ${!p.active ? 'opacity-50' : ''}`} data-testid={`ha-product-row-${p.product_id}`}>
                 <td className="px-3 py-2 font-semibold">{p.brand}</td>
                 <td className="px-3 py-2">{p.model}</td>
-                <td className="px-3 py-2 text-xs"><span className="bg-slate-100 rounded px-1.5 py-0.5">{p.form_factor}</span></td>
+                <td className="px-3 py-2 text-xs"><span className="bg-slate-100 rounded px-1.5 py-0.5">{FORM_FACTOR_LABELS[p.form_factor] || p.form_factor}</span></td>
                 <td className="px-3 py-2 text-xs capitalize">{p.tech_tier || '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtINR(p.mrp)}</td>
                 <td className="px-3 py-2 text-center text-[11px]">
@@ -204,7 +210,7 @@ function ProductForm({ productId, onClose, onSaved }) {
         <Field label="Model *"><input value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} data-testid="ha-pf-model" className="w-full border border-slate-300 rounded px-2 py-1" /></Field>
         <Field label="Form Factor">
           <select value={f.form_factor} onChange={(e) => setF({ ...f, form_factor: e.target.value })} data-testid="ha-pf-formfactor" className="w-full border border-slate-300 rounded px-2 py-1">
-            {FORM_FACTORS.map(ff => <option key={ff} value={ff}>{ff}</option>)}
+            {FORM_FACTORS.map(ff => <option key={ff} value={ff}>{FORM_FACTOR_LABELS[ff] || ff}</option>)}
           </select>
         </Field>
         <Field label="Tech Tier">

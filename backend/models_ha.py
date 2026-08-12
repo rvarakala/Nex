@@ -87,8 +87,8 @@ SerialPool = Literal[
 
 # ==================== PRODUCT MASTER ====================
 
-FormFactor = Literal["RIC", "BTE", "ITE", "ITC", "CIC", "IIC", "accessory"]
-TechTier = Literal["essential", "standard", "advanced", "premium"]
+FormFactor = Literal["RIC", "BTE", "ITE", "ITC", "CIC", "IIC", "POCKET", "accessory"]
+TechTier = Literal["basic", "essential", "standard", "advanced", "premium"]
 # `sale_unit` — how the manufacturer bills the SKU: as a single aid, as a
 # pair (2 aids), or as a Kit (boxed pair with accessories). "Kit" and
 # "pair" both represent 2 physical aids but usually have different price

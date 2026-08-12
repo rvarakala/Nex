@@ -1,6 +1,22 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎧 Catalogue enums extended (2026-08-12)
+
+**Ask**: Add `basic` to Tech Tier and `Pocket Aids` to Form Factor. Wire everywhere.
+
+**Files updated**:
+- `/app/backend/models_ha.py` — `FormFactor` now includes `"POCKET"`, `TechTier` now includes `"basic"` (first in the list, denotes entry-level).
+- `/app/backend/routers/ha_quick_sale.py` — `ha_type` Literal extended with `"POCKET"` so the quick-sale legacy path accepts pocket aids too.
+- `/app/frontend/src/modules/ha/ProductCataloguePage.js` — `FORM_FACTORS` array + a new `FORM_FACTOR_LABELS` map so `POCKET` displays as "Pocket Aids" in the dropdowns and product table. `TECH_TIERS` array now leads with `basic`. Filter dropdown, New/Edit modal dropdown, and product-row badge all use the label map.
+- `/app/frontend/src/modules/ha/QuickHASaleModal.jsx` — HA type dropdown now includes `POCKET` with "Pocket Aids" label.
+
+**Design choice**: Enum stored as `POCKET` (short, uppercase — matches BTE/RIC convention). Display label "Pocket Aids" is UI-only via `FORM_FACTOR_LABELS`. Keeps API contracts stable and matches how the rest of the form-factor enum is stored.
+
+**Verified**: Curl-created a product with `form_factor: "POCKET"` and `tech_tier: "basic"` — backend accepted, both stored correctly. Frontend dropdown screenshot confirms both new options appear with the right labels.
+
+
+
 ## 🐛 Two production bugs fixed (2026-08-12)
 
 ### Bug 1 · Timeline showing UTC instead of local time

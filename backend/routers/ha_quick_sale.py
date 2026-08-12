@@ -57,7 +57,7 @@ class QuickSaleIn(BaseModel):
     # Hearing aid details
     brand: str = Field(..., min_length=1, max_length=80)
     model: str = Field(..., min_length=1, max_length=120)
-    ha_type: Literal["BTE", "RIC", "ITE", "ITC", "CIC", "IIC", "OTHER"] = "BTE"
+    ha_type: Literal["BTE", "RIC", "ITE", "ITC", "CIC", "IIC", "POCKET", "OTHER"] = "BTE"
     # Side-specific serial numbers — one OR both must be provided based on `side`.
     # `serial_number` (legacy, single field) still accepted for backward compat
     # and mapped to whichever side the caller picked.

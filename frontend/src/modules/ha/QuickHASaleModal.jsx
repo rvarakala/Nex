@@ -9,7 +9,8 @@ import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const HA_TYPES = ['BTE', 'RIC', 'ITE', 'ITC', 'CIC', 'IIC', 'OTHER'];
+const HA_TYPES = ['BTE', 'RIC', 'ITE', 'ITC', 'CIC', 'IIC', 'POCKET', 'OTHER'];
+const HA_TYPE_LABELS = { BTE:'BTE', RIC:'RIC', ITE:'ITE', ITC:'ITC', CIC:'CIC', IIC:'IIC', POCKET:'Pocket Aids', OTHER:'Other' };
 const SIDES = [
   { value: 'both',  label: 'Both ears' },
   { value: 'left',  label: 'Left only' },
@@ -303,7 +304,7 @@ export default function QuickHASaleModal({
               <Field label="Type">
                 <select value={form.ha_type} onChange={u('ha_type')} data-testid="quick-ha-type"
                   className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                  {HA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {HA_TYPES.map((t) => <option key={t} value={t}>{HA_TYPE_LABELS[t] || t}</option>)}
                 </select>
               </Field>
               <Field label="Side fitted">
