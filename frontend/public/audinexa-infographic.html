@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AUDINEXA — Overview Infographic</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif; background:#e2e8f0; }
+  .canvas {
+    width: 1080px;
+    padding: 60px 56px 40px;
+    margin: 20px auto;
+    background: linear-gradient(180deg, #fefbf5 0%, #fff 30%, #f8fafc 100%);
+    color:#0f172a;
+    position: relative;
+    overflow: hidden;
+    border-radius: 18px;
+    box-shadow: 0 10px 40px rgba(15,23,42,.15);
+  }
+  /* Watermark accents */
+  .canvas::before, .canvas::after {
+    content:""; position:absolute; border-radius:50%; opacity:.06; z-index:0;
+  }
+  .canvas::before { width:520px; height:520px; background:#4f46e5; top:-160px; right:-160px; }
+  .canvas::after  { width:400px; height:400px; background:#f59e0b; bottom:-140px; left:-140px; }
+  .inner { position:relative; z-index:1; }
+
+  /* ── HERO ───────────────────────────────── */
+  .brand-row { display:flex; align-items:center; gap:14px; margin-bottom:8px; }
+  .logo-mark {
+    width:56px; height:56px; border-radius:14px;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:900; font-size:26px; letter-spacing:-1px;
+    box-shadow: 0 8px 24px rgba(79,70,229,.35);
+  }
+  .brand-name {
+    font-size:44px; font-weight:900; letter-spacing:-1.5px;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .brand-tld { font-size:19px; color:#64748b; font-weight:600; margin-top:6px; }
+
+  .headline {
+    font-size:52px; font-weight:900; line-height:1.05; letter-spacing:-2px;
+    margin-top:24px; color:#0f172a;
+  }
+  .headline .accent { color:#4f46e5; }
+  .sub {
+    font-size:19px; color:#475569; line-height:1.5;
+    margin-top:16px; max-width:820px;
+  }
+
+  /* ── CREDIBILITY STRIP ─────────────────── */
+  .cred {
+    margin-top:28px;
+    display:flex; align-items:center; gap:16px;
+    background: #fff; border: 2px solid #f59e0b;
+    padding: 16px 22px; border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(245,158,11,.12);
+  }
+  .cred-icon {
+    width:52px; height:52px; border-radius:12px; flex-shrink:0;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    display:flex; align-items:center; justify-content:center;
+    font-size:28px;
+  }
+  .cred-title { font-size:17px; font-weight:800; color:#78350f; letter-spacing:-.3px; }
+  .cred-body { font-size:14.5px; color:#78350f; margin-top:2px; line-height:1.35; }
+
+  /* ── SECTION HEADER ────────────────────── */
+  .section-title {
+    margin-top:42px;
+    font-size:12px; font-weight:800; text-transform: uppercase; letter-spacing: 3px;
+    color:#4f46e5;
+  }
+  .section-h2 {
+    font-size:32px; font-weight:900; letter-spacing:-1px; margin-top:8px;
+  }
+
+  /* ── FEATURE GRID ──────────────────────── */
+  .grid {
+    display:grid; grid-template-columns: repeat(3, 1fr);
+    gap: 14px; margin-top:22px;
+  }
+  .feat {
+    background:#fff; border:1.5px solid #e2e8f0;
+    border-radius:14px; padding: 18px 16px;
+    transition: transform .2s;
+    position:relative; overflow:hidden;
+  }
+  .feat::before {
+    content:""; position:absolute; top:0; left:0; width:100%; height:3px;
+    background: var(--accent, #4f46e5);
+  }
+  .feat-icon {
+    width:36px; height:36px; border-radius:9px; display:flex;
+    align-items:center; justify-content:center; font-size:19px;
+    background: var(--tint, #eef2ff); color: var(--accent, #4f46e5);
+    margin-bottom: 10px;
+  }
+  .feat-t { font-size:15px; font-weight:800; color:#0f172a; letter-spacing:-.3px; }
+  .feat-d { font-size:12.5px; color:#64748b; margin-top:5px; line-height:1.4; }
+
+  /* ── USP BAND ─────────────────────────── */
+  .usps {
+    margin-top:36px;
+    background:#0f172a; color:#f1f5f9;
+    padding: 28px 30px; border-radius: 18px;
+    background-image:
+      radial-gradient(circle at 90% 10%, rgba(99,102,241,.25), transparent 40%),
+      radial-gradient(circle at 10% 90%, rgba(245,158,11,.15), transparent 40%),
+      linear-gradient(180deg, #0f172a, #1e293b);
+  }
+  .usps h3 { font-size:22px; font-weight:900; letter-spacing:-.5px; }
+  .usp-row { display:grid; grid-template-columns: 1fr 1fr; gap: 14px 22px; margin-top: 18px; }
+  .usp { display:flex; gap:12px; align-items:flex-start; }
+  .usp-dot {
+    width:26px; height:26px; border-radius:8px; flex-shrink:0;
+    background: rgba(16,185,129,.15); color:#34d399;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:900; font-size:14px;
+  }
+  .usp-text { font-size:14px; color:#e2e8f0; line-height:1.4; }
+  .usp-text b { color:#fff; font-weight:800; }
+
+  /* ── CTA ─────────────────────────────── */
+  .cta {
+    margin-top:32px; text-align:center;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    color:#fff;
+    padding: 28px 30px;
+    border-radius: 18px;
+    box-shadow: 0 12px 30px rgba(79,70,229,.35);
+  }
+  .cta-eyebrow { font-size:11px; font-weight:700; text-transform: uppercase; letter-spacing:3px; color:#e0e7ff; }
+  .cta-url { font-size:44px; font-weight:900; letter-spacing:-1.5px; margin-top:6px; }
+  .cta-sub  { font-size:14px; color:#c7d2fe; margin-top:6px; }
+
+  /* ── WARNING FOOTER ──────────────────── */
+  .warn {
+    margin-top:26px;
+    background:#fef2f2; border: 2px dashed #f87171;
+    padding: 18px 22px; border-radius: 12px;
+    display:flex; gap:14px; align-items:flex-start;
+  }
+  .warn-icon {
+    width:44px; height:44px; border-radius:10px; background:#dc2626; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0;
+    font-weight:900;
+  }
+  .warn-t { font-size:15px; font-weight:800; color:#991b1b; }
+  .warn-b { font-size:13px; color:#7f1d1d; margin-top:4px; line-height:1.45; }
+  .warn-b .fake { text-decoration:line-through; color:#dc2626; font-weight:700; }
+  .warn-b .real { color:#166534; font-weight:800; background:#dcfce7; padding:2px 8px; border-radius:6px; }
+
+  /* Footer signature */
+  .foot {
+    margin-top:24px; text-align:center;
+    font-size:11px; color:#94a3b8; letter-spacing:1px; text-transform:uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <div class="inner">
+
+    <!-- Hero -->
+    <div class="brand-row">
+      <div class="logo-mark">A</div>
+      <div>
+        <div class="brand-name">AUDINEXA</div>
+        <div class="brand-tld">audinexa.com</div>
+      </div>
+    </div>
+
+    <div class="headline">The complete SaaS for <span class="accent">modern audiology clinics</span></div>
+    <div class="sub">Stop juggling paper registers, WhatsApp reminders, and Excel invoices. Audinexa unifies every workflow your clinic runs on — patients, hearing aids, appointments, billing, referrals, and multi-clinic operations — in one calm interface.</div>
+
+    <!-- Credibility -->
+    <div class="cred">
+      <div class="cred-icon">🎧</div>
+      <div>
+        <div class="cred-title">Built by an audiologist with 20+ years of clinical experience</div>
+        <div class="cred-body">Every feature exists because a real clinic asked for it — not because a product manager guessed.</div>
+      </div>
+    </div>
+
+    <!-- Feature grid -->
+    <div class="section-title">What&apos;s Inside</div>
+    <h2 class="section-h2">One platform. Every workflow.</h2>
+
+    <div class="grid">
+      <div class="feat" style="--accent:#4f46e5; --tint:#eef2ff;">
+        <div class="feat-icon">👥</div>
+        <div class="feat-t">Patient Records</div>
+        <div class="feat-d">MRD tracking, duplicate guards, family linking, merge tools.</div>
+      </div>
+      <div class="feat" style="--accent:#0891b2; --tint:#cffafe;">
+        <div class="feat-icon">📅</div>
+        <div class="feat-t">Smart Appointments</div>
+        <div class="feat-d">Blocks double bookings, past-time slots, suggests next available.</div>
+      </div>
+      <div class="feat" style="--accent:#059669; --tint:#d1fae5;">
+        <div class="feat-icon">🦻</div>
+        <div class="feat-t">HA Inventory</div>
+        <div class="feat-d">Serialized units + accessories (domes, receivers, batteries).</div>
+      </div>
+      <div class="feat" style="--accent:#c026d3; --tint:#fae8ff;">
+        <div class="feat-icon">🧾</div>
+        <div class="feat-t">GST Invoicing</div>
+        <div class="feat-d">Razorpay-ready, auto-decrements stock, accessory revenue reports.</div>
+      </div>
+      <div class="feat" style="--accent:#d97706; --tint:#fef3c7;">
+        <div class="feat-icon">🔧</div>
+        <div class="feat-t">Fittings & AMC</div>
+        <div class="feat-d">Trials, fittings, service tickets, AMC contracts — full HA lifecycle.</div>
+      </div>
+      <div class="feat" style="--accent:#dc2626; --tint:#fee2e2;">
+        <div class="feat-icon">🤝</div>
+        <div class="feat-t">Referral Corner</div>
+        <div class="feat-d">Track referring doctors, auto-calculate payouts, weekly reports.</div>
+      </div>
+      <div class="feat" style="--accent:#7c3aed; --tint:#ede9fe;">
+        <div class="feat-icon">🏢</div>
+        <div class="feat-t">Multi-Clinic Groups</div>
+        <div class="feat-d">Head + branches, stock transfers, delivery challans, one login.</div>
+      </div>
+      <div class="feat" style="--accent:#0284c7; --tint:#e0f2fe;">
+        <div class="feat-icon">📊</div>
+        <div class="feat-t">Reports & Analytics</div>
+        <div class="feat-d">Revenue, patient trends, audiogram archives, PDF exports.</div>
+      </div>
+      <div class="feat" style="--accent:#65a30d; --tint:#ecfccb;">
+        <div class="feat-icon">📱</div>
+        <div class="feat-t">Mobile-First</div>
+        <div class="feat-d">Front-desk on a phone, owner on a laptop — same clean UI.</div>
+      </div>
+    </div>
+
+    <!-- USPs -->
+    <div class="usps">
+      <h3>What sets Audinexa apart</h3>
+      <div class="usp-row">
+        <div class="usp">
+          <div class="usp-dot">✓</div>
+          <div class="usp-text"><b>Audiologist-designed</b> — not built by generic clinic software vendors</div>
+        </div>
+        <div class="usp">
+          <div class="usp-dot">✓</div>
+          <div class="usp-text"><b>DPDPA-ready</b> — patient data handled per Indian privacy law</div>
+        </div>
+        <div class="usp">
+          <div class="usp-dot">✓</div>
+          <div class="usp-text"><b>GST-compliant</b> — proper tax invoices, delivery challans</div>
+        </div>
+        <div class="usp">
+          <div class="usp-dot">✓</div>
+          <div class="usp-text"><b>Bank-grade security</b> — every clinic&apos;s data fully isolated</div>
+        </div>
+        <div class="usp">
+          <div class="usp-dot">✓</div>
+          <div class="usp-text"><b>Cross-platform</b> — works on desktop, tablet & phone</div>
+        </div>
+        <div class="usp">
+          <div class="usp-dot">✓</div>
+          <div class="usp-text"><b>Continuously updated</b> — new features shipped every week</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta">
+      <div class="cta-eyebrow">Start Today · Free Trial</div>
+      <div class="cta-url">audinexa.com</div>
+      <div class="cta-sub">No credit card required · Onboard your first patient in under 5 minutes</div>
+    </div>
+
+    <!-- Copycat warning -->
+    <div class="warn">
+      <div class="warn-icon">!</div>
+      <div>
+        <div class="warn-t">Beware of copycat websites</div>
+        <div class="warn-b">A fake site — <span class="fake">audinex.co.in</span> — has been imitating our product and content. It is NOT affiliated with us. Our only official domain is <span class="real">audinexa.com</span>. Please verify before signing up or sharing any patient data.</div>
+      </div>
+    </div>
+
+    <div class="foot">© 2026 AUDINEXA · Audiologist-built · Clinic-first · Made in India 🇮🇳</div>
+  </div>
+</div>
+</body>
+</html>
