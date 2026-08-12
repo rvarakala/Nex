@@ -4,6 +4,7 @@ Serialised inventory (HA units): browse by branch / state / pool / brand / searc
 Lifecycle timeline: append-only `serial_events` rows from `transition_serial()`.
 Accessory stock: qty-tracked, consume / replenish via +/- delta.
 """
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -197,14 +198,19 @@ async def serial_timeline(serial_id: str, user=Depends(get_current_user), db=Dep
     events = await db.serial_events.find(
         {"serial_id": serial_id}, {"_id": 0},
     ).sort("at", -1).to_list(500)
-    # Attach the linked invoice(s), if any — so the drawer can render
-    # "Sold to Kavitha · INV/2026/000004 · ₹165k paid" without a second
-    # round-trip. Both SOLD & RESERVED serials can carry an invoice link.
-    inv_map = await _resolve_serial_invoices(db, user["clinic_id"], [serial_id])
+    # Attach the linked invoice(s) or active trial, if any — so the drawer
+    # can render "Sold to Kavitha · INV/2026/000004" or "On trial with
+    # Ramesh · Ends 15 Aug" without a second round-trip. Both lookups
+    # run in parallel and only the ones with data are returned.
+    inv_map, trial_map = await asyncio.gather(
+        _resolve_serial_invoices(db, user["clinic_id"], [serial_id]),
+        _resolve_serial_trials(db, user["clinic_id"], [serial_id]),
+    )
     return {
         "serial": deserialize_datetime(si),
         "events": events,
         "invoice": inv_map.get(serial_id),
+        "trial": trial_map.get(serial_id),
     }
 
 
@@ -229,6 +235,94 @@ async def serial_invoice_lookup(
     # De-dupe + cap for safety (Inventory Board pages at 200 rows).
     ids = list({s for s in payload.serial_ids if s})[:500]
     return await _resolve_serial_invoices(db, user["clinic_id"], ids)
+
+
+@router.post("/serial-items/trial-lookup")
+async def serial_trial_lookup(
+    payload: SerialInvoiceLookupIn,   # same {serial_ids} shape
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Returns `{serial_id: {trial_no, patient_*, start_date, return_date,
+    status, days_active, days_overdue}}` for every serial currently on
+    trial (or with a completed/converted trial history). Used by the
+    Inventory Board to render a "On trial with X · Ends Y" mini-card
+    against TRIAL_OUT rows without another list-scoped join.
+    """
+    if not payload.serial_ids:
+        return {}
+    ids = list({s for s in payload.serial_ids if s})[:500]
+    return await _resolve_serial_trials(db, user["clinic_id"], ids)
+
+
+async def _resolve_serial_trials(db, clinic_id: str, serial_ids: List[str]) -> dict:
+    """One trip to `ha_trials`, prioritising active trials over historical
+    ones (a serial can have multiple trial rows across time — the "active"
+    one wins so the audiologist sees the CURRENT trial, not last year's).
+    """
+    if not serial_ids:
+        return {}
+    out: dict[str, dict] = {}
+    # Sort by start_date desc so the most-recent trial per serial wins.
+    # Then within that, still let "active" trump "converted"/"returned".
+    async for tr in db.ha_trials.find(
+        {"clinic_id": clinic_id, "serial_id": {"$in": serial_ids}},
+        {
+            "_id": 0, "trial_id": 1, "trial_no": 1, "serial_id": 1,
+            "patient_id": 1, "patient_name": 1, "patient_mobile": 1,
+            "start_date": 1, "return_date": 1, "status": 1,
+            "product_label": 1, "trial_fee": 1, "audiologist_id": 1,
+            "notes": 1, "created_at": 1,
+        },
+    ).sort("start_date", -1):
+        sid = tr.get("serial_id")
+        if not sid or sid not in serial_ids:
+            continue
+        # Prefer an active trial if we already saved a non-active one.
+        existing = out.get(sid)
+        st = (tr.get("status") or "").lower()
+        if existing and (existing.get("status") or "").lower() == "active" and st != "active":
+            continue
+
+        # Days math — client renders "Started X days ago · Ends in Y days"
+        days_active = None
+        days_overdue = None
+        try:
+            start = tr.get("start_date")
+            end = tr.get("return_date")
+            if start:
+                start_dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+                days_active = (datetime.now(timezone.utc) - start_dt).days
+            if end and st == "active":
+                end_dt = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+                delta = (datetime.now(timezone.utc) - end_dt).days
+                if delta > 0:
+                    days_overdue = delta
+        except Exception:
+            # Malformed date? Silently skip the delta rather than 500 the
+            # Inventory Board — the UI still renders the raw dates.
+            pass
+
+        out[sid] = {
+            "source": "trial",
+            "trial_id": tr.get("trial_id"),
+            "trial_no": tr.get("trial_no"),
+            "patient_id": tr.get("patient_id"),
+            "patient_name": tr.get("patient_name"),
+            "patient_mobile": tr.get("patient_mobile"),
+            "start_date": tr.get("start_date"),
+            "return_date": tr.get("return_date"),
+            "status": tr.get("status"),
+            "product_label": tr.get("product_label"),
+            "trial_fee": tr.get("trial_fee"),
+            "days_active": days_active,
+            "days_overdue": days_overdue,
+        }
+    return out
 
 
 async def _resolve_serial_invoices(db, clinic_id: str, serial_ids: List[str]) -> dict:

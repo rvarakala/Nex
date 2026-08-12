@@ -7631,3 +7631,44 @@ Balance Due   ₹0.00
 
 **Deploy note:** Ships in preview. Deploy to production so beta users get the proper tax-invoice printout on their receipt printer.
 
+
+### [Feb 2026] Feature — Ledger Deep-link + Trial Trace on Inventory Board
+
+Two adjacent asks shipped together in one iteration.
+
+**Ask 1 — Ledger Deep-link:** "Add a Ledger → button in the invoice popup that jumps into the patient's payment ledger, so partial-payment follow-ups take one more tap."
+
+**Ask 2 — Trial Trace:** "Show the same mini-card for TRIAL_OUT serials — Trial with · Started · Ends — so trial follow-ups surface right on the Inventory Board."
+
+**What shipped for #1 (Ledger deep-link):**
+- New **"Ledger →"** button in the invoice popup action bar (indigo, next to Print, screen only). Enabled only when `patient_id` is known.
+- Clicking closes the modal and navigates to `/patients/{patient_id}?tab=payments` via `useNavigate`.
+- `PatientProfilePage` now reads `?tab=<id>` from URL search params on mount and sets the active tab accordingly. Any invalid tab value silently falls back to `history` so a hand-crafted URL can't crash the profile.
+- **Result:** Playwright verified the click lands on the Payments tab with `Kavitha Subramanian` showing 2 invoices (INV/2026/000003, INV/2026/000004) with Total · Paid · Due · Status columns and an Open → link per row.
+
+**What shipped for #2 (Trial Trace):**
+- New backend endpoint `POST /api/ha/serial-items/trial-lookup` mirroring the invoice lookup. Returns `{serial_id: {source: "trial", trial_no, patient_*, start_date, return_date, status, days_active, days_overdue, trial_fee, product_label}}`. Server computes `days_active` and `days_overdue` server-side so the client doesn't have to reconcile timezones.
+- Renamed the Inventory Board column from **"Sold / Reserved To"** to **"Linked To"** since it now handles a third state.
+- New `TrialCell` component in the table — dense one-liner: `TR-2026-0003 · OVERDUE · 2D` (rose badge for overdue, amber for active, emerald for converted, slate for returned) · patient_name · `Ends 10 Aug`.
+- New `TrialBlock` component in the Timeline drawer — richer 5-line card: "TRIAL IN PROGRESS · TR-2026-0001 · OVERDUE · 6D · Trial with Asha Pillai (patient_id) · +919845001022 · Started 23 Jul 2026 · Ends 06 Aug 2026 (rose when overdue) · 20 days in trial · 6d overdue — chase return · Trial fee: ₹500".
+- Timeline endpoint now returns `trial` at the top level (alongside `invoice`), computed via `asyncio.gather` to keep the round-trip fast.
+- Priority rule: if a serial has both a linked invoice AND a historical trial (rare — trial that converted to sale), the **invoice wins** in the cell because it's the current-state fact.
+
+**Backend files touched:**
+- `/app/backend/routers/ha_inventory.py` — new `_resolve_serial_trials` helper (~65 LoC), new POST endpoint, timeline enriched via `asyncio.gather`
+
+**Frontend files touched:**
+- `/app/frontend/src/modules/ha/InventoryBoardPage.js` — parallel trial-lookup, `trials` state, `TrialCell`/`TrialBlock`/`TrialStatusBadge` components, Ledger button + `useNavigate`, timeline drawer renders trial block
+- `/app/frontend/src/modules/patients/PatientProfilePage.jsx` — reads `?tab=` from URL search params via `useSearchParams`
+
+**Regression coverage** (`test_serial_invoice_link.py`, 2 new tests, all pass — **17/17 total**):
+- `test_trial_lookup_returns_data_for_trial_out_serials` — asserts trial-lookup returns `trial_no + patient_name + start_date + non-negative days_active` for TRIAL_OUT serials with a linked ha_trials row.
+- `test_timeline_carries_trial_for_active_trial_serial` — asserts the `/timeline` endpoint includes `trial` at top level so the drawer renders it without a second call.
+
+**Playwright-verified on preview:**
+- Filter TRIAL_OUT → 3 of 7 rows show trial mini-cards with OVERDUE/TRIAL badges (rest have no ha_trials row — data gap in seed, not a bug).
+- Open Timeline for PHO-RIC-2026022 → amber TRIAL IN PROGRESS block shows Asha Pillai · 6d overdue · Trial fee ₹500 ✅
+- Open INV/2026/000004 popup → click Ledger → → lands on `/patients/TSC-2026-8878B68D?tab=payments` with active Payments tab ✅
+
+**Deploy note:** Ships in preview. Deploy to production so the receptionist can chase overdue trials from the Inventory Board and jump straight to a patient's ledger from any invoice popup.
+

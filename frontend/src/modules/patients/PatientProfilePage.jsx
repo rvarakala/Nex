@@ -9,7 +9,7 @@
  * timeline dots, "Add Item ▾" CTA, prev/next arrows.
  */
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   ArrowLeft, ArrowRight, Phone, Calendar, Edit, Plus, Activity,
@@ -43,8 +43,15 @@ const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map(s =
 export default function PatientProfilePage() {
   const { patientId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const [tab, setTab] = useState('history');
+  // Read `?tab=payments` (or any other tab id) so deep-links from the
+  // Inventory Board's invoice popup land the receptionist directly on
+  // the Payments ledger without an extra click.
+  const initialTab = TABS.some(t => t.id === searchParams.get('tab'))
+    ? searchParams.get('tab')
+    : 'history';
+  const [tab, setTab] = useState(initialTab);
   const [showMerge, setShowMerge] = useState(false);
   const canMerge = !!user && ['clinic_owner', 'super_admin', 'founder'].includes(user.role);
 

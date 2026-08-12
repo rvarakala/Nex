@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import ModalShell from '../../components/ModalShell';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -28,6 +29,9 @@ export default function InventoryBoardPage() {
   // so SOLD & RESERVED rows show "who bought it + which bill" inline. Empty
   // dict is fine — non-SOLD/RESERVED serials never match this map.
   const [invoices, setInvoices] = useState({});
+  // Same idea for TRIAL_OUT rows — serial-id → active trial (trial_no,
+  // patient, start_date, return_date, days_active/overdue).
+  const [trials, setTrials] = useState({});
   const [state, setState] = useState('');
   const [pool, setPool] = useState('');
   const [search, setSearch] = useState('');
@@ -48,22 +52,23 @@ export default function InventoryBoardPage() {
     setSummary(sum.data);
     setProducts(Object.fromEntries(prods.data.map(pr => [pr.product_id, pr])));
 
-    // Second call: bulk-hydrate invoice/patient info for SOLD & RESERVED rows.
-    // Kept as a separate call so the table's primary render isn't blocked
-    // waiting on the join across ha_quick_sales + ha_sales.
-    const linkableIds = (si.data || [])
-      .filter(r => r.state === 'SOLD' || r.state === 'RESERVED')
-      .map(r => r.serial_id);
-    if (linkableIds.length > 0) {
-      try {
-        const lk = await axios.post(`${API}/ha/serial-items/invoice-lookup`, { serial_ids: linkableIds });
-        setInvoices(lk.data || {});
-      } catch {
-        setInvoices({});
-      }
-    } else {
-      setInvoices({});
-    }
+    // Second call: bulk-hydrate invoice + trial info for SOLD / RESERVED /
+    // TRIAL_OUT rows. Kept as separate calls so the table's primary render
+    // isn't blocked waiting on the joins across ha_quick_sales + ha_sales
+    // + ha_trials.
+    const rows = si.data || [];
+    const invoiceIds = rows.filter(r => r.state === 'SOLD' || r.state === 'RESERVED').map(r => r.serial_id);
+    const trialIds = rows.filter(r => r.state === 'TRIAL_OUT').map(r => r.serial_id);
+    const [invLookup, trialLookup] = await Promise.all([
+      invoiceIds.length
+        ? axios.post(`${API}/ha/serial-items/invoice-lookup`, { serial_ids: invoiceIds }).then(r => r.data).catch(() => ({}))
+        : Promise.resolve({}),
+      trialIds.length
+        ? axios.post(`${API}/ha/serial-items/trial-lookup`, { serial_ids: trialIds }).then(r => r.data).catch(() => ({}))
+        : Promise.resolve({}),
+    ]);
+    setInvoices(invLookup || {});
+    setTrials(trialLookup || {});
   }, [state, pool, search]);
 
   useEffect(() => { load(); }, [load]);
@@ -139,9 +144,9 @@ export default function InventoryBoardPage() {
               <th className="px-3 py-2 text-left">Pool</th>
               <th className="px-3 py-2 text-left">Warranty Until</th>
               <th className="px-3 py-2 text-left">GRN</th>
-              {/* Only meaningful for SOLD/RESERVED rows — non-linked serials
+              {/* Only meaningful for SOLD/RESERVED/TRIAL_OUT rows — non-linked serials
                   simply show an em-dash so the grid rhythm stays intact. */}
-              <th className="px-3 py-2 text-left">Sold / Reserved To</th>
+              <th className="px-3 py-2 text-left">Linked To</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -152,6 +157,7 @@ export default function InventoryBoardPage() {
             {items.map(it => {
               const p = products[it.product_id];
               const inv = invoices[it.serial_id];
+              const trial = trials[it.serial_id];
               return (
                 <tr key={it.serial_id} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`ha-serial-row-${it.serial_id}`}>
                   <td className="px-3 py-2 font-mono text-xs font-bold">{it.serial_no}</td>
@@ -161,7 +167,15 @@ export default function InventoryBoardPage() {
                   <td className="px-3 py-2 text-xs tabular-nums">{it.warranty_end_date || '—'}</td>
                   <td className="px-3 py-2 text-xs font-mono">{it.grn_no || '—'}</td>
                   <td className="px-3 py-2 text-xs" data-testid={`ha-serial-invoice-${it.serial_id}`}>
-                    <InvoiceCell inv={inv} onOpen={() => setOpenInvoice(inv)} />
+                    {/* Invoice takes precedence when both exist (rare) — a SOLD
+                        serial that had a prior trial should show the sale. */}
+                    {inv ? (
+                      <InvoiceCell inv={inv} onOpen={() => setOpenInvoice(inv)} />
+                    ) : trial ? (
+                      <TrialCell trial={trial} />
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button
@@ -236,12 +250,17 @@ function TimelineDrawer({ serialId, products, onClose, onChanged, onOpenInvoice 
           <button onClick={onClose} className="text-slate-400 hover:text-slate-800 text-2xl leading-none" data-testid="ha-timeline-close">×</button>
         </div>
 
-        {/* Invoice / patient link — the "who did this go to?" answer that
-            the audiologist is here to find. Rendered right below the header
-            for SOLD/RESERVED serials; silently hides for everything else. */}
+        {/* Invoice / trial / patient link — the "who did this go to?" answer
+            that the audiologist is here to find. Rendered right below the header;
+            silently hides for IN_STOCK / etc. rows with no link. */}
         {data.invoice && (
           <div className="border-b border-slate-200 p-4 bg-indigo-50/40" data-testid="ha-timeline-invoice">
             <InvoiceBlock inv={data.invoice} onOpen={() => onOpenInvoice?.(data.invoice)} />
+          </div>
+        )}
+        {data.trial && (
+          <div className="border-b border-slate-200 p-4 bg-amber-50/40" data-testid="ha-timeline-trial">
+            <TrialBlock trial={data.trial} />
           </div>
         )}
 
@@ -416,6 +435,88 @@ function InvoiceBlock({ inv, onOpen }) {
   );
 }
 
+/* ============================================================
+ *   TRIAL CELL / TRIAL BLOCK
+ *
+ * Mirror of InvoiceCell/InvoiceBlock but for TRIAL_OUT serials. Reads the
+ * shape returned by POST /serial-items/trial-lookup:
+ *   { source: "trial", trial_no, patient_name, patient_id, patient_mobile,
+ *     start_date, return_date, status, days_active, days_overdue }
+ *
+ * Overdue trials are visually flagged in rose so the receptionist can
+ * chase them without opening every row. Active-on-time = amber, returned
+ * or converted = slate (historical).
+ * ============================================================ */
+function TrialStatusBadge({ trial }) {
+  const st = String(trial?.status || '').toLowerCase();
+  const overdue = st === 'active' && (trial?.days_overdue || 0) > 0;
+  let label = 'Trial';
+  let tone = 'bg-slate-100 text-slate-700 border-slate-200';
+  if (overdue) { label = `Overdue · ${trial.days_overdue}d`; tone = 'bg-rose-100 text-rose-800 border-rose-300'; }
+  else if (st === 'active')    { label = 'Trial'; tone = 'bg-amber-100 text-amber-800 border-amber-300'; }
+  else if (st === 'converted') { label = 'Converted'; tone = 'bg-emerald-100 text-emerald-800 border-emerald-300'; }
+  else if (st === 'returned')  { label = 'Returned'; tone = 'bg-slate-100 text-slate-700 border-slate-300'; }
+  return <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${tone}`}>{label}</span>;
+}
+
+function TrialCell({ trial }) {
+  if (!trial) return <span className="text-slate-400">—</span>;
+  const ends = trial.return_date ? new Date(trial.return_date) : null;
+  const endsTxt = ends ? ends.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
+        <span className="font-mono font-semibold text-slate-800 text-[11.5px]">{trial.trial_no || '—'}</span>
+        <TrialStatusBadge trial={trial} />
+      </div>
+      <div className="text-[10.5px] text-slate-600 mt-0.5 truncate">
+        {trial.patient_name || '—'}
+        <span className="text-slate-400 ml-1.5">· Ends {endsTxt}</span>
+      </div>
+    </div>
+  );
+}
+
+function TrialBlock({ trial }) {
+  if (!trial) return null;
+  const fmtDay = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const overdue = (trial.days_overdue || 0) > 0;
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-amber-800 font-semibold mb-1.5">
+        Trial in Progress
+      </div>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-mono font-bold text-slate-800 text-[14px]">{trial.trial_no || '—'}</span>
+        <TrialStatusBadge trial={trial} />
+      </div>
+      <div className="text-[12px] text-slate-700 mt-1">
+        Trial with <span className="font-semibold">{trial.patient_name || '—'}</span>
+        {trial.patient_id && (
+          <span className="text-slate-400 ml-1.5 font-mono text-[10.5px]">({trial.patient_id})</span>
+        )}
+        {trial.patient_mobile && (
+          <span className="text-slate-500 ml-1.5 text-[11px]">· {trial.patient_mobile}</span>
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+        <span>Started <b className="text-slate-800">{fmtDay(trial.start_date)}</b></span>
+        <span>Ends <b className={overdue ? 'text-rose-700' : 'text-slate-800'}>{fmtDay(trial.return_date)}</b></span>
+        {trial.days_active != null && (
+          <span className="text-slate-500">· {trial.days_active} day{trial.days_active === 1 ? '' : 's'} in trial</span>
+        )}
+        {overdue && (
+          <span className="text-rose-700 font-semibold">· {trial.days_overdue}d overdue — chase return</span>
+        )}
+      </div>
+      {trial.trial_fee != null && trial.trial_fee > 0 && (
+        <div className="text-[10.5px] text-slate-500 mt-0.5">Trial fee: ₹{Number(trial.trial_fee).toLocaleString('en-IN')}</div>
+      )}
+    </div>
+  );
+}
+
+
 
 /* ============================================================
  *   INVOICE DETAIL MODAL  (click-through popup with print)
@@ -437,6 +538,17 @@ function InvoiceDetailModal({ inv, onClose }) {
   const [logoUrl, setLogoUrl] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  // The Ledger deep-link jumps the receptionist to the patient profile's
+  // Payments tab so partial-payment follow-ups take one more tap instead
+  // of a search. Only enabled when we know the patient_id.
+  const patientId = inv.patient_id || full?.patient_id;
+  const openLedger = () => {
+    if (!patientId) return;
+    onClose();
+    navigate(`/patients/${patientId}?tab=payments`);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -571,6 +683,14 @@ function InvoiceDetailModal({ inv, onClose }) {
             data-testid="ha-inv-modal-print"
             className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded shadow-sm"
           >Print</button>
+          {patientId && (
+            <button
+              onClick={openLedger}
+              data-testid="ha-inv-modal-ledger"
+              title="Open the patient's payment ledger"
+              className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm"
+            >Ledger →</button>
+          )}
           <button
             onClick={onClose}
             data-testid="ha-inv-modal-close"

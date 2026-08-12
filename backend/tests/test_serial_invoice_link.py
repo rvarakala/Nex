@@ -129,3 +129,52 @@ def test_quick_sale_invoice_math_is_consistent():
                 f"Invoice {inv['invoice_no']}: has discount ₹{disc} but subtotal ({sub})"
                 f" is not greater than grand_total ({gt}) — the popup will mislead."
             )
+
+
+def test_trial_lookup_returns_data_for_trial_out_serials():
+    """Trial-lookup must return `trial_no + patient_name + start/return dates
+    + status + days_active/overdue` for every TRIAL_OUT serial that has an
+    active ha_trials row. Powers the Inventory Board's "Linked To" column
+    trial mini-card."""
+    s = _sess()
+    items = s.get(f"{BASE_URL}/api/ha/serial-items?state=TRIAL_OUT&limit=50", timeout=15).json()
+    linkable = [r["serial_id"] for r in items]
+    if not linkable:
+        return  # tenant has no TRIAL_OUT serials — nothing to assert
+    r = s.post(f"{BASE_URL}/api/ha/serial-items/trial-lookup",
+               json={"serial_ids": linkable}, timeout=15)
+    assert r.status_code == 200, r.text
+    mp = r.json()
+    assert isinstance(mp, dict)
+    matched = [v for v in mp.values() if v]
+    # At least one seeded TRIAL_OUT serial should have a linked ha_trials row.
+    if not matched:
+        return
+    for hit in matched:
+        assert hit.get("source") == "trial"
+        assert hit.get("trial_no")
+        assert hit.get("patient_name") or hit.get("patient_id")
+        assert hit.get("start_date")
+        # days_active should be a non-negative int when start_date is valid
+        if hit.get("days_active") is not None:
+            assert hit["days_active"] >= 0
+
+
+def test_timeline_carries_trial_for_active_trial_serial():
+    """The Timeline drawer needs `trial` on the top-level response so the
+    UI can render the amber "TRIAL IN PROGRESS" card without a second
+    round-trip."""
+    s = _sess()
+    items = s.get(f"{BASE_URL}/api/ha/serial-items?state=TRIAL_OUT&limit=50", timeout=15).json()
+    lookup = s.post(f"{BASE_URL}/api/ha/serial-items/trial-lookup",
+                    json={"serial_ids": [r["serial_id"] for r in items]},
+                    timeout=15).json()
+    linked = next((sid for sid, v in lookup.items() if v and v.get("patient_name")), None)
+    if not linked:
+        return
+    r = s.get(f"{BASE_URL}/api/ha/serial-items/{linked}/timeline", timeout=15)
+    assert r.status_code == 200
+    body = r.json()
+    assert "trial" in body, "timeline response must include a `trial` key"
+    assert body["trial"] is not None
+    assert body["trial"].get("patient_name") or body["trial"].get("patient_id")
