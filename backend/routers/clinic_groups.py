@@ -372,3 +372,114 @@ async def deactivate_branch(
         "revoked_from_users": revoked, "at": now,
     }))
     return {"ok": True, "revoked_from_users": revoked}
+
+
+
+# ============================================================================
+# STOCK HEATMAP — head clinic view: unit counts across every branch
+# ============================================================================
+@router.get("/mine/stock-heatmap")
+async def stock_heatmap(
+    user=Depends(require_roles("clinic_owner")),
+    db=Depends(get_db),
+):
+    """Live matrix of stock levels across every branch in the head's group.
+
+    Rows  = HA products (only rows with at least one non-zero cell).
+    Cols  = branches (head + each active member clinic in the group).
+    Cell  = number of IN_STOCK serials of that product at that branch.
+
+    Purpose (user ask): a single-glance "which branch is running dry on
+    which model" — the head owner can spot imbalances instantly and
+    trigger a rebalancing stock-transfer from a well-stocked branch.
+
+    Head-clinic OWNER only. Branches shouldn't see other branches' stock.
+    """
+    head_clinic_id = user["clinic_id"]
+    group = await _load_group_for_head(db, head_clinic_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="No group under this clinic")
+
+    # Resolve all clinics in the group, ordered head-first for readability.
+    member_ids: list[str] = group.get("member_clinic_ids") or []
+    all_clinic_ids = [head_clinic_id, *member_ids]
+    clinics = {
+        c["clinic_id"]: c async for c in db.clinics.find(
+            {"clinic_id": {"$in": all_clinic_ids}, "status": {"$ne": "inactive"}},
+            {"_id": 0, "clinic_id": 1, "name": 1, "city": 1},
+        )
+    }
+
+    # Aggregate IN_STOCK counts by (clinic_id, product_id).
+    pipeline = [
+        {"$match": {
+            "clinic_id": {"$in": all_clinic_ids},
+            "state": "IN_STOCK",
+        }},
+        {"$group": {
+            "_id": {"clinic_id": "$clinic_id", "product_id": "$product_id"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    # cell_map[product_id][clinic_id] = count
+    cell_map: dict[str, dict[str, int]] = {}
+    async for row in db.serial_items.aggregate(pipeline):
+        pid = row["_id"].get("product_id") or "unknown"
+        cid = row["_id"].get("clinic_id")
+        cell_map.setdefault(pid, {})[cid] = row["count"]
+
+    # Enrich with product labels — one round-trip for the whole product set.
+    product_ids = [p for p in cell_map.keys() if p != "unknown"]
+    products = {
+        p["product_id"]: p async for p in db.ha_products.find(
+            {"product_id": {"$in": product_ids}},
+            {"_id": 0, "product_id": 1, "brand": 1, "model": 1,
+             "form_factor": 1, "tech_tier": 1},
+        )
+    }
+
+    branches_out = [
+        {
+            "clinic_id": cid,
+            "name": clinics.get(cid, {}).get("name") or cid,
+            "city": clinics.get(cid, {}).get("city"),
+            "is_head": cid == head_clinic_id,
+        }
+        for cid in all_clinic_ids if cid in clinics
+    ]
+    branch_ids_out = [b["clinic_id"] for b in branches_out]
+
+    # Build rows sorted by total desc so hottest-selling / most-stocked
+    # products bubble to the top.
+    rows = []
+    for pid, cells in cell_map.items():
+        pr = products.get(pid) or {}
+        total = sum(cells.get(cid, 0) for cid in branch_ids_out)
+        if total == 0:
+            continue
+        rows.append({
+            "product_id": pid,
+            "label": (
+                f"{pr.get('brand') or ''} {pr.get('model') or pid}".strip()
+                if pr else pid
+            ),
+            "form_factor": pr.get("form_factor"),
+            "tech_tier": pr.get("tech_tier"),
+            "cells": {cid: cells.get(cid, 0) for cid in branch_ids_out},
+            "total": total,
+        })
+    rows.sort(key=lambda r: (-r["total"], r["label"]))
+
+    # Per-branch totals for the footer.
+    branch_totals = {
+        cid: sum(r["cells"].get(cid, 0) for r in rows)
+        for cid in branch_ids_out
+    }
+
+    return {
+        "group_id": group["group_id"],
+        "branches": branches_out,
+        "rows": rows,
+        "branch_totals": branch_totals,
+        "grand_total": sum(branch_totals.values()),
+    }

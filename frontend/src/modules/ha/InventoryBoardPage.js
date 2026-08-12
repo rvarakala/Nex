@@ -32,6 +32,9 @@ export default function InventoryBoardPage() {
   // Same idea for TRIAL_OUT rows — serial-id → active trial (trial_no,
   // patient, start_date, return_date, days_active/overdue).
   const [trials, setTrials] = useState({});
+  // And for LOANER rows — loaner_id, patient, issued_on, expected return,
+  // days_overdue. Cross-tab consistency ask (Feb 2026).
+  const [loaners, setLoaners] = useState({});
   const [state, setState] = useState('');
   const [pool, setPool] = useState('');
   const [search, setSearch] = useState('');
@@ -52,23 +55,28 @@ export default function InventoryBoardPage() {
     setSummary(sum.data);
     setProducts(Object.fromEntries(prods.data.map(pr => [pr.product_id, pr])));
 
-    // Second call: bulk-hydrate invoice + trial info for SOLD / RESERVED /
-    // TRIAL_OUT rows. Kept as separate calls so the table's primary render
-    // isn't blocked waiting on the joins across ha_quick_sales + ha_sales
-    // + ha_trials.
+    // Second call: bulk-hydrate invoice + trial + loaner info for
+    // SOLD / RESERVED / TRIAL_OUT / LOANER rows. Kept as separate calls
+    // so the table's primary render isn't blocked waiting on joins across
+    // ha_quick_sales + ha_sales + ha_trials + ha_loaners.
     const rows = si.data || [];
     const invoiceIds = rows.filter(r => r.state === 'SOLD' || r.state === 'RESERVED').map(r => r.serial_id);
     const trialIds = rows.filter(r => r.state === 'TRIAL_OUT').map(r => r.serial_id);
-    const [invLookup, trialLookup] = await Promise.all([
+    const loanerIds = rows.filter(r => r.state === 'LOANER').map(r => r.serial_id);
+    const [invLookup, trialLookup, loanerLookup] = await Promise.all([
       invoiceIds.length
         ? axios.post(`${API}/ha/serial-items/invoice-lookup`, { serial_ids: invoiceIds }).then(r => r.data).catch(() => ({}))
         : Promise.resolve({}),
       trialIds.length
         ? axios.post(`${API}/ha/serial-items/trial-lookup`, { serial_ids: trialIds }).then(r => r.data).catch(() => ({}))
         : Promise.resolve({}),
+      loanerIds.length
+        ? axios.post(`${API}/ha/serial-items/loaner-lookup`, { serial_ids: loanerIds }).then(r => r.data).catch(() => ({}))
+        : Promise.resolve({}),
     ]);
     setInvoices(invLookup || {});
     setTrials(trialLookup || {});
+    setLoaners(loanerLookup || {});
   }, [state, pool, search]);
 
   useEffect(() => { load(); }, [load]);
@@ -158,6 +166,7 @@ export default function InventoryBoardPage() {
               const p = products[it.product_id];
               const inv = invoices[it.serial_id];
               const trial = trials[it.serial_id];
+              const loaner = loaners[it.serial_id];
               return (
                 <tr key={it.serial_id} className="border-t border-slate-100 hover:bg-slate-50/50" data-testid={`ha-serial-row-${it.serial_id}`}>
                   <td className="px-3 py-2 font-mono text-xs font-bold">{it.serial_no}</td>
@@ -167,12 +176,14 @@ export default function InventoryBoardPage() {
                   <td className="px-3 py-2 text-xs tabular-nums">{it.warranty_end_date || '—'}</td>
                   <td className="px-3 py-2 text-xs font-mono">{it.grn_no || '—'}</td>
                   <td className="px-3 py-2 text-xs" data-testid={`ha-serial-invoice-${it.serial_id}`}>
-                    {/* Invoice takes precedence when both exist (rare) — a SOLD
-                        serial that had a prior trial should show the sale. */}
+                    {/* Invoice → Trial → Loaner (in priority order). A
+                        SOLD serial with an old trial should show the sale. */}
                     {inv ? (
                       <InvoiceCell inv={inv} onOpen={() => setOpenInvoice(inv)} />
                     ) : trial ? (
                       <TrialCell trial={trial} />
+                    ) : loaner ? (
+                      <LoanerCell loaner={loaner} />
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}
@@ -261,6 +272,11 @@ function TimelineDrawer({ serialId, products, onClose, onChanged, onOpenInvoice 
         {data.trial && (
           <div className="border-b border-slate-200 p-4 bg-amber-50/40" data-testid="ha-timeline-trial">
             <TrialBlock trial={data.trial} />
+          </div>
+        )}
+        {data.loaner && (
+          <div className="border-b border-slate-200 p-4 bg-purple-50/40" data-testid="ha-timeline-loaner">
+            <LoanerBlock loaner={data.loaner} />
           </div>
         )}
 
@@ -511,6 +527,89 @@ function TrialBlock({ trial }) {
       </div>
       {trial.trial_fee != null && trial.trial_fee > 0 && (
         <div className="text-[10.5px] text-slate-500 mt-0.5">Trial fee: ₹{Number(trial.trial_fee).toLocaleString('en-IN')}</div>
+      )}
+    </div>
+  );
+}
+
+
+/* ============================================================
+ *   LOANER CELL / LOANER BLOCK
+ *
+ * Same visual grammar as the Trial cell — this time for LOANER state
+ * serials (temporary units issued while a patient's own aid is in
+ * service). Powers cross-tab consistency: LOANER rows on the Inventory
+ * Board now surface "Loaned to X · Return by Y" inline, matching the
+ * Sold / Trial / Reserved cells beside them.
+ * ============================================================ */
+function LoanerStatusBadge({ loaner }) {
+  const st = String(loaner?.status || '').toLowerCase();
+  const overdue = st === 'active' && (loaner?.days_overdue || 0) > 0;
+  let label = 'Loaner';
+  let tone = 'bg-slate-100 text-slate-700 border-slate-200';
+  if (overdue) { label = `Overdue · ${loaner.days_overdue}d`; tone = 'bg-rose-100 text-rose-800 border-rose-300'; }
+  else if (st === 'active')   { label = 'Loaner'; tone = 'bg-purple-100 text-purple-800 border-purple-300'; }
+  else if (st === 'returned') { label = 'Returned'; tone = 'bg-emerald-100 text-emerald-800 border-emerald-300'; }
+  else if (st === 'damaged')  { label = 'Damaged'; tone = 'bg-rose-100 text-rose-800 border-rose-300'; }
+  return <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${tone}`}>{label}</span>;
+}
+
+function LoanerCell({ loaner }) {
+  if (!loaner) return <span className="text-slate-400">—</span>;
+  const returnBy = loaner.expected_return_date
+    ? new Date(loaner.expected_return_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+    : '—';
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
+        <span className="font-mono font-semibold text-slate-800 text-[11.5px]">{loaner.loaner_no || '—'}</span>
+        <LoanerStatusBadge loaner={loaner} />
+      </div>
+      <div className="text-[10.5px] text-slate-600 mt-0.5 truncate">
+        {loaner.patient_name || '—'}
+        <span className="text-slate-400 ml-1.5">· Return by {returnBy}</span>
+      </div>
+    </div>
+  );
+}
+
+function LoanerBlock({ loaner }) {
+  if (!loaner) return null;
+  const fmtDay = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const overdue = (loaner.days_overdue || 0) > 0;
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-purple-800 font-semibold mb-1.5">
+        Loaner Out
+      </div>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-mono font-bold text-slate-800 text-[14px]">{loaner.loaner_no || '—'}</span>
+        <LoanerStatusBadge loaner={loaner} />
+      </div>
+      <div className="text-[12px] text-slate-700 mt-1">
+        Loaned to <span className="font-semibold">{loaner.patient_name || '—'}</span>
+        {loaner.patient_id && (
+          <span className="text-slate-400 ml-1.5 font-mono text-[10.5px]">({loaner.patient_id})</span>
+        )}
+        {loaner.patient_mobile && (
+          <span className="text-slate-500 ml-1.5 text-[11px]">· {loaner.patient_mobile}</span>
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+        <span>Issued <b className="text-slate-800">{fmtDay(loaner.issued_on)}</b></span>
+        <span>Return by <b className={overdue ? 'text-rose-700' : 'text-slate-800'}>{fmtDay(loaner.expected_return_date)}</b></span>
+        {loaner.days_active != null && (
+          <span className="text-slate-500">· {loaner.days_active} day{loaner.days_active === 1 ? '' : 's'} out</span>
+        )}
+        {overdue && (
+          <span className="text-rose-700 font-semibold">· {loaner.days_overdue}d overdue — chase return</span>
+        )}
+      </div>
+      {loaner.service_ticket_no && (
+        <div className="text-[10.5px] text-slate-500 mt-0.5">Service ticket: <span className="font-mono">{loaner.service_ticket_no}</span></div>
+      )}
+      {loaner.deposit_amount != null && loaner.deposit_amount > 0 && (
+        <div className="text-[10.5px] text-slate-500 mt-0.5">Deposit held: ₹{Number(loaner.deposit_amount).toLocaleString('en-IN')}</div>
       )}
     </div>
   );

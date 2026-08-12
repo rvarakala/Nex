@@ -202,15 +202,17 @@ async def serial_timeline(serial_id: str, user=Depends(get_current_user), db=Dep
     # can render "Sold to Kavitha · INV/2026/000004" or "On trial with
     # Ramesh · Ends 15 Aug" without a second round-trip. Both lookups
     # run in parallel and only the ones with data are returned.
-    inv_map, trial_map = await asyncio.gather(
+    inv_map, trial_map, loaner_map = await asyncio.gather(
         _resolve_serial_invoices(db, user["clinic_id"], [serial_id]),
         _resolve_serial_trials(db, user["clinic_id"], [serial_id]),
+        _resolve_serial_loaners(db, user["clinic_id"], [serial_id]),
     )
     return {
         "serial": deserialize_datetime(si),
         "events": events,
         "invoice": inv_map.get(serial_id),
         "trial": trial_map.get(serial_id),
+        "loaner": loaner_map.get(serial_id),
     }
 
 
@@ -253,6 +255,92 @@ async def serial_trial_lookup(
         return {}
     ids = list({s for s in payload.serial_ids if s})[:500]
     return await _resolve_serial_trials(db, user["clinic_id"], ids)
+
+
+@router.post("/serial-items/loaner-lookup")
+async def serial_loaner_lookup(
+    payload: SerialInvoiceLookupIn,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Returns `{serial_id: {loaner_no, patient_*, issued_on,
+    expected_return_date, status, days_active, days_overdue, deposit,
+    service_ticket_no}}` for every serial currently loaned out (or with
+    a returned/damaged loaner history). Cross-tab consistency ask: the
+    Inventory Board's "Linked To" column now hydrates LOANER serials too.
+    """
+    if not payload.serial_ids:
+        return {}
+    ids = list({s for s in payload.serial_ids if s})[:500]
+    return await _resolve_serial_loaners(db, user["clinic_id"], ids)
+
+
+async def _resolve_serial_loaners(db, clinic_id: str, serial_ids: List[str]) -> dict:
+    """One trip to `ha_loaners`, prioritising the ACTIVE loan over any
+    historical one (a serial can loop through multiple loans over time —
+    the current active one wins so the audiologist sees who has the unit
+    RIGHT NOW, not who had it last month).
+    """
+    if not serial_ids:
+        return {}
+    out: dict[str, dict] = {}
+    async for ln in db.ha_loaners.find(
+        {"clinic_id": clinic_id, "serial_id": {"$in": serial_ids}},
+        {
+            "_id": 0, "loaner_id": 1, "serial_id": 1,
+            "patient_id": 1, "patient_name": 1, "patient_mobile": 1,
+            "issued_on": 1, "expected_return_date": 1, "actual_return_date": 1,
+            "status": 1, "deposit_amount": 1, "service_ticket_no": 1,
+            "notes": 1, "created_at": 1,
+        },
+    ).sort("created_at", -1):
+        sid = ln.get("serial_id")
+        if not sid or sid not in serial_ids:
+            continue
+        existing = out.get(sid)
+        st = (ln.get("status") or "").lower()
+        # Prefer active over returned/damaged when we already have a hit.
+        if existing and (existing.get("status") or "").lower() == "active" and st != "active":
+            continue
+
+        days_active = None
+        days_overdue = None
+        try:
+            issued = ln.get("issued_on")
+            expected = ln.get("expected_return_date")
+            if issued:
+                d0 = datetime.fromisoformat(str(issued))
+                if d0.tzinfo is None:
+                    d0 = d0.replace(tzinfo=timezone.utc)
+                days_active = (datetime.now(timezone.utc) - d0).days
+            if expected and st == "active":
+                d1 = datetime.fromisoformat(str(expected))
+                if d1.tzinfo is None:
+                    d1 = d1.replace(tzinfo=timezone.utc)
+                delta = (datetime.now(timezone.utc) - d1).days
+                if delta > 0:
+                    days_overdue = delta
+        except Exception:
+            pass
+
+        out[sid] = {
+            "source": "loaner",
+            "loaner_id": ln.get("loaner_id"),
+            # Loaners don't have a customer-facing "no" — use the id as the display ref.
+            "loaner_no": ln.get("loaner_id"),
+            "patient_id": ln.get("patient_id"),
+            "patient_name": ln.get("patient_name"),
+            "patient_mobile": ln.get("patient_mobile"),
+            "issued_on": ln.get("issued_on"),
+            "expected_return_date": ln.get("expected_return_date"),
+            "actual_return_date": ln.get("actual_return_date"),
+            "status": ln.get("status"),
+            "deposit_amount": ln.get("deposit_amount"),
+            "service_ticket_no": ln.get("service_ticket_no"),
+            "days_active": days_active,
+            "days_overdue": days_overdue,
+        }
+    return out
 
 
 async def _resolve_serial_trials(db, clinic_id: str, serial_ids: List[str]) -> dict:

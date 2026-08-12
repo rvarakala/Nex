@@ -228,15 +228,46 @@ async def receive_transfer(transfer_id: str, payload: StockTransferReceive,
         if t["to_clinic_id"] not in accessible:
             raise HTTPException(status_code=403, detail="You can't receive at this clinic")
 
-    # Atomically flip every serial: RESERVED → IN_STOCK + rewrite clinic/branch.
+    # Build a `serial_id → condition` map from the payload. Missing entries
+    # default to "ok" for backwards compat with old receive callers.
+    disp = {r.serial_id: r for r in (payload.line_receipts or [])}
+    any_damaged = False
+    any_missing = False
+
+    # Atomically flip every serial per its condition. Damaged units land
+    # in DAMAGED state (still at the destination — they're physically here
+    # but unsellable). Missing units stay on the source clinic — the head
+    # investigates before the branch signs. OK is the historical path:
+    # RESERVED → IN_STOCK + rewrite clinic/branch.
+    damaged_serial_ids: list[str] = []
+    missing_serial_ids: list[str] = []
     for ln in t.get("lines", []):
+        sid = ln["serial_id"]
+        cond = disp.get(sid)
+        condition = cond.condition if cond else "ok"
+
+        if condition == "missing":
+            any_missing = True
+            missing_serial_ids.append(sid)
+            # Don't transition — the serial stays RESERVED to the source so
+            # the head sees the loss and can investigate. It'll be moved
+            # back manually or written off after the incident review.
+            continue
+        target_state = "DAMAGED" if condition == "damaged" else "IN_STOCK"
+        note_bits = [f"Received from {t['from_clinic_name']}"]
+        if condition == "damaged":
+            any_damaged = True
+            damaged_serial_ids.append(sid)
+            note_bits.append("Marked DAMAGED at receipt")
+            if cond and cond.damage_notes:
+                note_bits.append(cond.damage_notes)
         await transition_serial(
-            db, ln["serial_id"], "IN_STOCK", actor_user_id=user["user_id"],
+            db, sid, target_state, actor_user_id=user["user_id"],
             ref_doc={"kind": "stock_transfer_receive", "id": transfer_id, "challan_no": t["challan_no"]},
-            note=f"Received from {t['from_clinic_name']}",
+            note=" · ".join(note_bits),
         )
         await db.serial_items.update_one(
-            {"serial_id": ln["serial_id"]},
+            {"serial_id": sid},
             {"$set": {
                 "clinic_id": t["to_clinic_id"],
                 "branch_id": t.get("to_branch_id"),
@@ -244,14 +275,22 @@ async def receive_transfer(transfer_id: str, payload: StockTransferReceive,
         )
 
     now = datetime.now(timezone.utc)
+    # Terminal status reflects what actually happened.
+    status = "received"
+    if any_missing:
+        status = "received_partial"
+    elif any_damaged:
+        status = "received_with_damage"
     update = {
-        "status": "received",
+        "status": status,
         "received_at": now,
         "received_by_user_id": user["user_id"],
         "received_by_name": payload.received_by_name,
         "received_by_role": payload.received_by_role,
         "signature_image_fs_id": payload.signature_image_fs_id,
         "short_shipment_notes": payload.short_shipment_notes,
+        "damaged_serial_ids": damaged_serial_ids,
+        "missing_serial_ids": missing_serial_ids,
         "updated_at": now,
     }
     await db.stock_transfers.update_one(

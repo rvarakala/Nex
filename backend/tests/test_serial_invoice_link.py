@@ -178,3 +178,57 @@ def test_timeline_carries_trial_for_active_trial_serial():
     assert "trial" in body, "timeline response must include a `trial` key"
     assert body["trial"] is not None
     assert body["trial"].get("patient_name") or body["trial"].get("patient_id")
+
+
+def test_loaner_lookup_returns_200_and_empty_map_when_none():
+    """Cross-tab consistency (Feb 2026): loaner-lookup must always 200,
+    return a dict, and only carry keys for serials that actually have a
+    linked ha_loaners row. The current seeded tenant has no loaners,
+    so an empty dict is the correct behaviour."""
+    s = _sess()
+    items = s.get(f"{BASE_URL}/api/ha/serial-items?state=LOANER&limit=50", timeout=15).json()
+    ids = [r["serial_id"] for r in items] or ["SI-NONEXISTENT"]
+    r = s.post(f"{BASE_URL}/api/ha/serial-items/loaner-lookup",
+               json={"serial_ids": ids}, timeout=15)
+    assert r.status_code == 200, r.text
+    assert isinstance(r.json(), dict)
+
+
+def test_timeline_response_carries_loaner_key():
+    """Timeline shape guarantee: every timeline response includes a `loaner`
+    key so the frontend can render conditionally without an existence check.
+    Null is fine when the serial has no loaner history."""
+    s = _sess()
+    items = s.get(f"{BASE_URL}/api/ha/serial-items?limit=5", timeout=15).json()
+    assert items
+    r = s.get(f"{BASE_URL}/api/ha/serial-items/{items[0]['serial_id']}/timeline", timeout=15)
+    assert r.status_code == 200
+    body = r.json()
+    assert "loaner" in body
+
+
+def test_stock_heatmap_head_clinic_shape():
+    """Multi-Clinic Phase 2 (Feb 2026): the head-clinic heatmap must return
+    a 200 with the { group_id, branches[], rows[], branch_totals{}, grand_total }
+    shape. Branches list is head-first for readability. Every row's cells
+    must cover every branch (even when count = 0)."""
+    s = _sess()
+    r = s.get(f"{BASE_URL}/api/clinic-groups/mine/stock-heatmap", timeout=20)
+    if r.status_code == 404:
+        return  # not part of a group — skip
+    assert r.status_code == 200, r.text
+    body = r.json()
+    for k in ("group_id", "branches", "rows", "branch_totals", "grand_total"):
+        assert k in body, f"missing key {k!r}"
+    assert body["branches"], "at least one branch expected"
+    assert body["branches"][0].get("is_head") is True, "head clinic must be listed first"
+    branch_ids = {b["clinic_id"] for b in body["branches"]}
+    for row in body["rows"]:
+        assert set(row["cells"].keys()) == branch_ids, (
+            f"row {row['product_id']} cells {set(row['cells'].keys())} must cover every branch {branch_ids}"
+        )
+        assert row["total"] == sum(row["cells"].values()), "row total must match cell sum"
+    # branch_totals must equal per-column sums
+    for cid in branch_ids:
+        expected = sum(r["cells"].get(cid, 0) for r in body["rows"])
+        assert body["branch_totals"].get(cid, 0) == expected

@@ -26,7 +26,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 
-TransferStatus = Literal["draft", "dispatched", "received", "cancelled"]
+TransferStatus = Literal["draft", "dispatched", "received", "received_partial", "received_with_damage", "cancelled"]
 TransferPurpose = Literal["trial", "sale", "replenishment", "repair_loaner", "other"]
 
 
@@ -117,11 +117,33 @@ class StockTransferDispatch(BaseModel):
     notes: Optional[str] = None
 
 
+class LineReceiptCondition(BaseModel):
+    """Per-serial disposition recorded when a branch receives an inward
+    transfer. Phase 2 of the Multi-Clinic feature — the receiving branch
+    can flag a partial or damaged consignment inline instead of accepting
+    everything as OK and reconciling with head over email.
+
+    - `ok`      : serial arrived in good condition → IN_STOCK at destination
+    - `damaged` : arrived damaged → DAMAGED at destination + notes captured
+    - `missing` : line was not in the box → NOT transitioned (stays with
+                  origin clinic) so the head knows to investigate before
+                  the branch signs the challan
+    """
+    serial_id: str
+    condition: Literal["ok", "damaged", "missing"] = "ok"
+    damage_notes: Optional[str] = None
+
+
 class StockTransferReceive(BaseModel):
     received_by_name: str
     received_by_role: str          # 'front_desk' | 'audiologist' | 'technician' | 'clinic_owner' | 'other'
     signature_image_fs_id: Optional[str] = None
     short_shipment_notes: Optional[str] = None
+    # Optional per-line disposition. When present, drives condition-aware
+    # transitions on receive. When omitted (backwards compat with the
+    # existing "receive everything as OK" flow), the router falls back
+    # to treating all serials as `ok`.
+    line_receipts: List[LineReceiptCondition] = Field(default_factory=list)
 
 
 class StockTransferCancel(BaseModel):

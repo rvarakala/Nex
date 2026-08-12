@@ -7672,3 +7672,59 @@ Two adjacent asks shipped together in one iteration.
 
 **Deploy note:** Ships in preview. Deploy to production so the receptionist can chase overdue trials from the Inventory Board and jump straight to a patient's ledger from any invoice popup.
 
+
+### [Feb 2026] Feature — Multi-Clinic Phase 2 + Cross-tab Consistency (LoanerCell)
+
+Two adjacent asks shipped together. Phase 1 (Head-to-Branch stock requests + transfers) landed earlier in the session; this iteration completes Phase 2 plus the requested cross-tab visual consistency.
+
+**Ask 1 (Multi-Clinic Phase 2):** "Turn on branch-initiated stock requests with head-office approve/reject, damaged/partial-receive tracking, and a live branch stock heatmap."
+
+**Ask 2 (Cross-tab Consistency):** "Apply the same Linked To hydration to the Loaner Attention & Demo Stock tabs so loaner-out and demo-out serials also surface patient info inline."
+
+**Phase 1 pieces already shipped (verified this iteration):**
+- Branch-initiated request creation via `POST /api/stock-requests`
+- Head approve (`/{id}/fulfill`) and reject (`/{id}/decline`) flows
+- Head UI (`StockRequestsPage.jsx`) already implements the Pending / Awaiting-PO / Fulfilled / Declined queues with `CreateRequestModal`, `FulfilModal`, `MarkPoModal`, `RequestCard`
+
+**Phase 2 new pieces shipped this iteration:**
+
+1. **Damaged/partial-receive tracking on `POST /stock-transfers/{id}/receive`.**
+   New optional `line_receipts: [{serial_id, condition: "ok"|"damaged"|"missing", damage_notes?}, ...]` payload field. Router now branches on condition:
+   - `ok`      → serial transitions RESERVED → **IN_STOCK** at destination (historical path)
+   - `damaged` → serial transitions RESERVED → **DAMAGED** at destination; damage_notes captured on the timeline event
+   - `missing` → serial NOT transitioned (stays on source clinic) so head can investigate before branch signs the challan
+   Transfer status now uses richer terminal values: `received` (all OK), `received_with_damage` (some damaged), `received_partial` (some missing). Backwards compatible — omitting `line_receipts` treats all lines as OK.
+
+2. **Live Branch Stock Heatmap** — new tab `/ha/heatmap` (visible in nav bar, head-clinic-owner-only).
+   - Backend: `GET /api/clinic-groups/mine/stock-heatmap` returns `{group_id, branches: [{clinic_id, name, city, is_head}], rows: [{product_id, label, form_factor, tech_tier, cells: {clinic_id: count}, total}], branch_totals, grand_total}`. Single `$group` pipeline over `serial_items` (state=IN_STOCK) keyed by `(clinic_id, product_id)`. Head clinic listed first for readability.
+   - Frontend: `StockHeatmapPage.jsx` (~250 LoC). KPI band (Branches / Distinct Products / Grand Total Units / Low-Stock Alerts in rose), colour-coded matrix (empty=slate, ≤2=rose+ring, 3-5=amber, 6+=emerald), search filter, "Show low stock only" toggle, live reload, branch-total footer, colour legend, and an "Open Transfers →" CTA that jumps to `/ha/transfers` for rebalancing.
+   - Sensible empty-state when the clinic isn't part of a group (0 or 1 branches).
+
+**Cross-tab Consistency piece shipped this iteration:**
+
+3. **LoanerCell / LoanerBlock** on the Inventory Board — mirrors the earlier TrialCell / TrialBlock work.
+   - Backend: new `POST /api/ha/serial-items/loaner-lookup` (mirror of trial-lookup shape), plus `_resolve_serial_loaners` helper that computes `days_active` & `days_overdue` server-side. Timeline endpoint now returns `loaner` at top level (alongside `invoice` + `trial`) via `asyncio.gather` — three parallel round-trips baked into one endpoint call.
+   - Frontend: LOANER-state rows on the Inventory Board now render `LN-XXX · LOANER/OVERDUE badge · Loaned to <patient> · Return by <date>` in the "Linked To" column, matching the Sold/Trial/Reserved visual grammar. Timeline drawer adds a purple "LOANER OUT" card with issued/return dates, days out, chase-return nudge for overdue, service ticket ref, and deposit amount.
+
+**Backend files touched:**
+- `/app/backend/routers/ha_inventory.py` — loaner-lookup POST + `_resolve_serial_loaners` helper (~85 LoC), timeline `asyncio.gather` widened to 3-way
+- `/app/backend/routers/clinic_groups.py` — stock-heatmap GET endpoint (~90 LoC)
+- `/app/backend/routers/stock_transfers.py` — receive endpoint honours `line_receipts` for OK / damaged / missing dispositions (~60 LoC change)
+- `/app/backend/models_transfers.py` — `LineReceiptCondition` model + widened `StockTransferReceive` + `TransferStatus` literal
+
+**Frontend files touched:**
+- `/app/frontend/src/modules/ha/StockHeatmapPage.jsx` — NEW (~250 LoC)
+- `/app/frontend/src/modules/ha/HAModule.js` — route + nav tab registration
+- `/app/frontend/src/modules/ha/InventoryBoardPage.js` — `loaners` state, parallel loaner-lookup fetch, LoanerCell/LoanerBlock/LoanerStatusBadge components, timeline drawer renders loaner block
+
+**Regression coverage** (`/app/backend/tests/test_serial_invoice_link.py`, 3 new tests):
+- `test_loaner_lookup_returns_200_and_empty_map_when_none` — endpoint contract holds even when tenant has no loaners
+- `test_timeline_response_carries_loaner_key` — timeline shape guarantee: `loaner` key always present, null when serial has no loaner
+- `test_stock_heatmap_head_clinic_shape` — response shape + head-first ordering + row.cells covers every branch + row.total == sum(cells) + branch_totals match column sums
+
+**All 20 tests pass** (20/20 across the three regression files).
+
+**Playwright-verified on preview:** Heatmap loads for The Sound Clinic head, shows 2 branches (Bangaluru HEAD, Mysore), 10 distinct products, 22 grand total units, 7 low-stock alerts. Low-stock rows glow rose (Oticon Zircon 1 · 2 units, Signia Motion P 5X · 1 unit, etc.). Mysore branch shows 0 across the board — clear rebalancing signal.
+
+**Deploy note:** Ships in preview. Deploy to production. The receive-with-conditions payload is optional so existing clients (mobile app, older frontend caches) keep working unchanged.
+

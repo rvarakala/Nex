@@ -17,6 +17,7 @@ import UpgradeFunnelPage from './UpgradeFunnelPage';
 import AMCPage from './AMCPage';
 import StockTransfersPage from './transfers/StockTransfersPage';
 import StockRequestsPage from './StockRequestsPage';
+import StockHeatmapPage from './StockHeatmapPage';
 
 // Sub-tabs grouped by section. Sidebar shows two top-level links:
 //   • "Hearing Aids" → /ha/trials (sales lifecycle)
@@ -27,7 +28,7 @@ import StockRequestsPage from './StockRequestsPage';
 const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups']);
 const INVENTORY_PATHS = new Set([
   'inventory', 'demo-stock', 'saleable-stock', 'accessories', 'amc',
-  'procurement', 'products', 'transfers', 'requests', 'vendors',
+  'procurement', 'products', 'transfers', 'requests', 'heatmap', 'vendors',
 ]);
 
 const SALES_TABS = [
@@ -46,6 +47,7 @@ const INVENTORY_TABS = [
   { to: '/ha/procurement',    label: 'Procurement',     testid: 'ha-tab-procurement' },
   { to: '/ha/transfers',      label: 'Transfers',       testid: 'ha-tab-transfers' },
   { to: '/ha/requests',       label: 'Stock Requests',  testid: 'ha-tab-requests' },
+  { to: '/ha/heatmap',        label: 'Stock Heatmap',   testid: 'ha-tab-heatmap' },
   { to: '/ha/products',       label: 'Catalogue',       testid: 'ha-tab-products' },
 ];
 
@@ -86,6 +88,7 @@ export default function HAModule() {
           <Route path="inventory" element={<InventoryBoardPage />} />
           <Route path="transfers" element={<StockTransfersPage />} />
           <Route path="requests" element={<StockRequestsPage />} />
+          <Route path="heatmap" element={<StockHeatmapPage />} />
           <Route path="demo-stock" element={<DemoStockPage />} />
           <Route path="saleable-stock" element={<SaleableStockPage />} />
           <Route path="accessories" element={<AccessoriesPage />} />
