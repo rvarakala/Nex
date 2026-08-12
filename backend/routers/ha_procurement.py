@@ -158,7 +158,18 @@ async def transition_po_status(
         upd["approved_at"] = now
     if to_status == "closed":
         upd["closed_at"] = now
-    await db.purchase_orders.update_one({"po_no": po_no}, {"$set": upd})
+    # CRITICAL — filter by BOTH po_no AND clinic_id on the update.
+    # Without the clinic_id scope, this endpoint updates the FIRST
+    # matching doc in the collection — which could be another tenant's
+    # PO that happens to share the po_no counter (they're not globally
+    # unique). Symptom: Sound Clinic clicks Approve, POST returns 200,
+    # but the local drawer still shows DRAFT because the wrong tenant's
+    # PO got the state change. Confirmed via a duplicate-po_no scenario
+    # between `tenant-sound-clinic-blr` and `clinic-pytest-suite`.
+    await db.purchase_orders.update_one(
+        {"po_no": po_no, "clinic_id": user["clinic_id"]},
+        {"$set": upd},
+    )
     return {"po_no": po_no, "status": to_status}
 
 

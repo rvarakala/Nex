@@ -1,6 +1,40 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🔒 Critical tenant-isolation bug in PO status transition (2026-08-12)
+
+**Report from production**: "Approve button on Purchase Order is stuck / not going further". Reported twice after previous UI-only fix. Same symptom persisted.
+
+**Root cause** (was NOT a UI issue this time — deeper isolation bug):
+The `POST /api/ha/purchase-orders/{po_no}/status` endpoint's `update_one` filter was:
+```python
+await db.purchase_orders.update_one({"po_no": po_no}, {"$set": upd})
+```
+**Missing `clinic_id`.** Since `po_no` is a per-clinic counter (not globally unique), Mongo happily updated the FIRST document matching the po_no — potentially another tenant's PO. In our case, 251 ghost POs from earlier `clinic-pytest-suite` testing agent runs held the same `PO-2026-0002` identifier and were higher in Mongo's natural index order → they got approved instead of Sound Clinic's actual PO.
+
+**Symptom chain**:
+1. Sound Clinic owner clicks Approve → POST returns 200 (transition succeeded on some tenant's PO)
+2. Frontend reloads the PO detail → correctly filtered by `clinic_id` → returns Sound Clinic's still-`draft` PO
+3. Drawer re-renders with DRAFT badge → looks like the click did nothing
+
+**Fix** — `/app/backend/routers/ha_procurement.py` line 161:
+```python
+await db.purchase_orders.update_one(
+    {"po_no": po_no, "clinic_id": user["clinic_id"]},   # ← added clinic_id
+    {"$set": upd},
+)
+```
+
+**Side-effect cleanup**: Deleted 251 leftover POs from `clinic-pytest-suite` in the preview DB — earlier testing agent runs weren't cleaning up after themselves. Also reset Sound Clinic's PO-2026-0002 back to draft so the user can approve it fresh.
+
+**Verified**: Sound Clinic tenant → GET status=draft → POST approve → GET status=approved with correct `approved_at` timestamp. No cross-tenant leakage.
+
+**Regression concern**: The rest of `ha_procurement.py` was audited for the same pattern — no other `update_one` / `delete_one` missing `clinic_id`. The GRN endpoint at line 423 already included the scope.
+
+**Broader guidance**: Any `update_one` / `update_many` / `delete_one` in the codebase MUST include `clinic_id` in the filter when the target collection has per-clinic scoping. Otherwise cross-tenant writes are possible.
+
+
+
 ## 🎧 Catalogue enums extended (2026-08-12)
 
 **Ask**: Add `basic` to Tech Tier and `Pocket Aids` to Form Factor. Wire everywhere.
