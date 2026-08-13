@@ -441,3 +441,173 @@ def test_audiogram_delete_clears_stock_request_mirror():
     # The passthrough endpoint must now return 404.
     r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}/audiogram", timeout=15)
     assert r.status_code == 404
+
+
+
+# ── Trial-to-Order audiogram auto-attach ───────────────────────────────
+# When the audiologist finishes a hearing test → uploads the audiogram
+# to the session → then converts the trial into a Custom HA order, we
+# auto-clone the session's PDF into the Custom HA audiogram bucket. No
+# re-upload needed. If a trial was the trigger, we also close it as
+# CONVERTED so nothing dangles in Trials.
+
+def _seed_session_with_pdf(session, patient_id):
+    """Create a test session for a patient and upload a PDF to it."""
+    r = session.post(f"{BASE_URL}/api/sessions", json={
+        "patient_id": patient_id,
+        "test_type": "audiometry",
+        "test_date": "2026-08-13T10:00:00",
+        "audiologist_name": "PyTest Audiologist",
+        "referring_doctor": "PyTest ENT",
+    }, timeout=15)
+    assert r.status_code in (200, 201), r.text
+    sid = r.json()["session_id"]
+    # Upload the PDF exactly like the client-rendered report handover.
+    r = session.post(
+        f"{BASE_URL}/api/sessions/{sid}/report-pdf",
+        files={"file": ("audiogram.pdf", _MINIMAL_PDF, "application/pdf")},
+        timeout=15,
+    )
+    assert r.status_code == 200, r.text
+    return sid
+
+
+def test_available_audiograms_lists_only_sessions_with_pdf():
+    """The Custom HA modal's audiogram picker must see PDF-attached
+    sessions only — draft/no-PDF sessions are filtered out at the DB
+    level to keep the picker uncluttered."""
+    s = _sess()
+    pid = _first_patient(s)
+    _seed_session_with_pdf(s, pid)
+
+    r = s.get(f"{BASE_URL}/api/ha/custom-ha-orders/available-audiograms",
+              params={"patient_id": pid}, timeout=15)
+    assert r.status_code == 200
+    rows = r.json()
+    assert isinstance(rows, list)
+    assert len(rows) >= 1
+    assert all(row.get("session_id") for row in rows)
+
+
+def test_from_session_id_auto_attaches_audiogram_on_booking():
+    """POST /custom-ha-orders with `from_session_id` must clone the
+    session's PDF into the order — no follow-up upload. The order
+    should immediately have `audiogram_fs_id` set and be viewable via
+    the /audiogram endpoint."""
+    s = _sess()
+    pid = _first_patient(s)
+    vid = _first_vendor(s)
+    sid = _seed_session_with_pdf(s, pid)
+
+    r = s.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "both", "shell_type": "IIC",
+        "brand": "Phonak", "model": "Virto B90",
+        "delivery_target": "vendor", "vendor_id": vid,
+        "total_amount": 250000, "advance_amount": 25000,
+        "from_session_id": sid,   # ← trial-to-order: auto-attach the audiogram
+    }, timeout=15)
+    assert r.status_code == 200, r.text
+    order = r.json()
+    order_id = order["order_id"]
+    # The order was returned WITH the audiogram fields populated — no
+    # second call needed.
+    assert order.get("audiogram_fs_id"), "audiogram must auto-attach from session"
+    assert order.get("audiogram_source_session_id") == sid
+    assert order.get("audiogram_content_type") == "application/pdf"
+    # Downloading via the order endpoint returns a real PDF.
+    r = s.get(f"{BASE_URL}/api/ha/custom-ha-orders/{order_id}/audiogram", timeout=15)
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
+def test_from_session_id_mirrors_audiogram_to_linked_stock_request():
+    """Auto-attach must also stamp the linked stock_request's mirror
+    fields when the order routes to the head clinic — otherwise the
+    head owner wouldn't see the "View Audiogram" button."""
+    branch = _branch_session()
+    pid = _find_patient_in_branch(branch)
+    sid = _seed_session_with_pdf(branch, pid)
+
+    r = branch.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "both", "shell_type": "CIC",
+        "brand": "Signia", "model": "Insio",
+        "delivery_target": "branch",
+        "total_amount": 150000, "advance_amount": 10000,
+        "from_session_id": sid,
+    }, timeout=15)
+    order = r.json()
+    linked_req_id = order["linked_stock_request_id"]
+
+    head = _sess()
+    r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}", timeout=15)
+    d = (r.json() or {}).get("custom_ha_details") or {}
+    assert d.get("audiogram_fs_id"), "linked stock_request must carry the cloned audiogram ref"
+    # And head can view it via the passthrough.
+    r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}/audiogram", timeout=15)
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
+def test_from_session_id_missing_pdf_is_silent_noop():
+    """If the audiologist points at a session that has no PDF uploaded
+    yet, we must still create the order (no attachment) — surfacing a
+    500 or blocking the booking would be worse than the missing
+    attachment."""
+    s = _sess()
+    pid = _first_patient(s)
+    vid = _first_vendor(s)
+    r = s.post(f"{BASE_URL}/api/sessions", json={
+        "patient_id": pid, "test_type": "audiometry",
+        "test_date": "2026-08-13T10:00:00",
+    }, timeout=15)
+    sid = r.json()["session_id"]  # no PDF uploaded on this session
+
+    r = s.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "left", "shell_type": "ITE",
+        "delivery_target": "vendor", "vendor_id": vid,
+        "total_amount": 90000, "advance_amount": 0,
+        "from_session_id": sid,
+    }, timeout=15)
+    assert r.status_code == 200
+    order = r.json()
+    assert not order.get("audiogram_fs_id"), "no PDF → no attachment, order still succeeds"
+
+
+def test_from_trial_no_closes_source_trial():
+    """Passing `from_trial_no` at booking must close the trial as
+    CONVERTED with `converted_custom_ha_order_no` back-linked."""
+    s = _sess()
+    pid = _first_patient(s)
+    vid = _first_vendor(s)
+    # Seed a trial with a demo unit so `from_trial_no` has something to
+    # close. Uses the same helper we use elsewhere in the suite.
+    demo = s.get(f"{BASE_URL}/api/ha/serial-items",
+                 params={"pool": "demo", "state": "IN_STOCK", "limit": 1},
+                 timeout=15).json()
+    if not demo:
+        return  # no demo units available in this fixture — skip cleanly
+    demo_serial = demo[0]["serial_id"]
+
+    r = s.post(f"{BASE_URL}/api/ha/trials", json={
+        "patient_id": pid,
+        "serials": [{"serial_id": demo_serial, "side": "both"}],
+        "start_date": "2026-08-01", "return_date": "2026-08-14",
+        "audiologist_user_id": None,
+    }, timeout=15)
+    if r.status_code not in (200, 201):
+        return  # fixture missing an audiologist or product — skip
+    trial_no = r.json().get("trial_no")
+
+    r = s.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "both", "shell_type": "ITC",
+        "delivery_target": "vendor", "vendor_id": vid,
+        "total_amount": 180000, "advance_amount": 20000,
+        "from_trial_no": trial_no,
+    }, timeout=15)
+    assert r.status_code == 200, r.text
+    order = r.json()
+
+    r = s.get(f"{BASE_URL}/api/ha/trials/{trial_no}", timeout=15)
+    updated_trial = r.json()
+    assert updated_trial["status"] == "converted"
+    assert updated_trial.get("converted_custom_ha_order_no") == order["order_no"]

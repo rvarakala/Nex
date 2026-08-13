@@ -101,6 +101,13 @@ class CustomHAOrderCreate(BaseModel):
     gst_rate: float = 18
     notes: Optional[str] = None
     branch_id: Optional[str] = None                # source branch
+    # When the audiologist is booking off the back of a completed hearing
+    # test, `from_session_id` copies THAT session's audiogram PDF into
+    # the Custom HA order at creation time — no separate upload needed.
+    # `from_trial_no` (optional) closes the source trial as CONVERTED
+    # once the order is booked, so nothing dangles in Trials.
+    from_session_id: Optional[str] = None
+    from_trial_no: Optional[str] = None
 
 
 class CustomHAStatusIn(BaseModel):
@@ -473,7 +480,135 @@ async def create_custom_ha_order(
         )
         order_doc["linked_stock_request_id"] = stock_req_id
 
+    # ── Trial-to-Order audiogram pipe ──
+    # If the audiologist is booking off the back of a completed hearing
+    # test session, copy that session's PDF straight into the Custom HA
+    # audiogram bucket — no re-upload needed. If a trial was the trigger,
+    # we also close it as CONVERTED so nothing dangles in Trials.
+    if payload.from_session_id:
+        upd = await _clone_session_audiogram_to_order(
+            db, order_doc, payload.from_session_id, user,
+        )
+        if upd:
+            order_doc.update(upd)
+            # Mirror onto the linked stock_request so head owner sees the
+            # audiogram from the first sight of the inbox row.
+            if order_doc.get("linked_stock_request_id"):
+                await db.stock_requests.update_one(
+                    {"request_id": order_doc["linked_stock_request_id"]},
+                    {"$set": {
+                        "custom_ha_details.audiogram_fs_id": upd["audiogram_fs_id"],
+                        "custom_ha_details.audiogram_content_type": upd["audiogram_content_type"],
+                        "custom_ha_details.audiogram_filename": upd["audiogram_filename"],
+                    }},
+                )
+    if payload.from_trial_no:
+        # Mirror `mark_trial_converted` without importing the endpoint —
+        # we just flip status + hand the demo unit back to Demo Stock.
+        trial = await db.ha_trials.find_one(
+            {"clinic_id": user["clinic_id"], "trial_no": payload.from_trial_no},
+            {"_id": 0},
+        )
+        if trial and trial.get("status") in {"active", "extended"}:
+            trial_upd = {
+                "status": "converted",
+                "converted_custom_ha_order_id": order_id,
+                "converted_custom_ha_order_no": order_no,
+                "closed_at": now_iso,
+                "updated_at": now_iso,
+            }
+            await db.ha_trials.update_one(
+                {"clinic_id": user["clinic_id"], "trial_no": payload.from_trial_no},
+                {"$set": trial_upd},
+            )
+            # Return demo units to Demo Stock so the next patient can trial.
+            try:
+                from ha_state_machine import transition_serial   # local import — avoid cycles at boot
+                for s in trial.get("serials", []):
+                    sid = s.get("serial_id")
+                    if not sid:
+                        continue
+                    cur = await db.serial_items.find_one({"serial_id": sid}, {"_id": 0, "state": 1})
+                    if cur and cur["state"] == "TRIAL_OUT":
+                        await transition_serial(
+                            db, sid, "IN_STOCK",
+                            actor_user_id=user["user_id"],
+                            ref_doc={"kind": "trial-to-custom-ha", "id": payload.from_trial_no,
+                                     "order_no": order_no},
+                            note=f"Trial {payload.from_trial_no} converted to Custom HA order {order_no}",
+                        )
+                        await db.serial_items.update_one(
+                            {"serial_id": sid}, {"$set": {"current_patient_id": None}},
+                        )
+            except Exception:  # noqa: BLE001
+                # Best-effort — a serial-transition failure must NOT
+                # roll back a successful order booking.
+                pass
+
     return deserialize_datetime({k: v for k, v in order_doc.items() if k != "_id"})
+
+
+async def _clone_session_audiogram_to_order(
+    db, order: dict, session_id: str, user: dict,
+) -> Optional[dict]:
+    """Copy a patient's captured hearing-test PDF (bucket `session_reports`)
+    into the Custom HA audiogram bucket, then stamp the same audiogram
+    fields we set on manual upload. Returns the update dict that was
+    written to the order (or None if nothing was attached).
+
+    Silent no-op when the session has no PDF yet — audiologist can still
+    upload one later from the list row.
+    """
+    session = await db.test_sessions.find_one(
+        {"session_id": session_id,
+         "clinic_id": user["clinic_id"],
+         "patient_id": order["patient_id"]},
+        {"_id": 0, "session_id": 1, "report_pdf_fs_id": 1, "test_date": 1},
+    )
+    if not session or not session.get("report_pdf_fs_id"):
+        return None
+
+    src_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="session_reports")
+    try:
+        stream = await src_bucket.open_download_stream(
+            ObjectId(session["report_pdf_fs_id"])
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    raw = await stream.read()
+    if not raw or not raw.startswith(b"%PDF"):
+        return None
+
+    dst_bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AUDIOGRAM_BUCKET)
+    filename = f"{order['order_id']}.pdf"
+    fs_id = await dst_bucket.upload_from_stream(
+        filename=filename,
+        source=raw,
+        metadata={
+            "clinic_id": user["clinic_id"],
+            "order_id": order["order_id"],
+            "patient_id": order["patient_id"],
+            "source_session_id": session_id,
+            "cloned_at": datetime.now(timezone.utc).isoformat(),
+            "size_bytes": len(raw),
+            "content_type": "application/pdf",
+        },
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    upd = {
+        "audiogram_fs_id": str(fs_id),
+        "audiogram_content_type": "application/pdf",
+        "audiogram_size_bytes": len(raw),
+        "audiogram_uploaded_at": now_iso,
+        "audiogram_filename": filename,
+        "audiogram_source_session_id": session_id,
+        "updated_at": now_iso,
+    }
+    await db.custom_ha_orders.update_one(
+        {"order_id": order["order_id"], "clinic_id": user["clinic_id"]},
+        {"$set": upd},
+    )
+    return upd
 
 
 @router.get("/custom-ha-orders")
@@ -714,3 +849,33 @@ async def download_audiogram(
         order.get("audiogram_content_type") or "application/pdf",
         order.get("audiogram_filename"),
     )
+
+
+@router.get("/custom-ha-orders/available-audiograms")
+async def list_available_audiograms(
+    patient_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """List the patient's completed hearing-test sessions that have an
+    uploaded report PDF — used by the Custom HA booking modal to offer
+    one-click "attach latest audiogram" without a fresh upload.
+
+    Only sessions with `report_pdf_fs_id` are returned; audiogram-less
+    draft sessions are filtered out at the DB query level.
+    """
+    p = await db.patients.find_one(
+        {"patient_id": patient_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "patient_id": 1},
+    )
+    if not p:
+        raise HTTPException(404, "Patient not found")
+    rows = await db.test_sessions.find(
+        {"clinic_id": user["clinic_id"], "patient_id": patient_id,
+         "report_pdf_fs_id": {"$exists": True, "$ne": None}},
+        {"_id": 0, "session_id": 1, "test_date": 1, "audiologist_name": 1,
+         "right_ear_degree": 1, "left_ear_degree": 1,
+         "clinical_impression": 1, "report_pdf_size_bytes": 1,
+         "created_at": 1},
+    ).sort("created_at", -1).to_list(10)
+    return [deserialize_datetime(r) for r in rows]

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import QuickHASaleModal from './QuickHASaleModal';
+import { CustomHAOrderModal } from './CustomHAOrdersPage';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -407,6 +408,11 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
   // send the demo unit back to Demo Stock (pool=demo · state=IN_STOCK).
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertPrefill, setConvertPrefill] = useState({ patient_id: null, brand: '', model: '' });
+  // Trial → Custom HA (bespoke IIC/CIC/ITC/ITE). Opens the Custom HA
+  // modal with the trial's patient prefilled + `from_trial_no` so the
+  // backend closes the trial as CONVERTED and auto-attaches the
+  // patient's audiogram from their latest hearing test.
+  const [customHAOpen, setCustomHAOpen] = useState(false);
 
   const load = useCallback(async () => {
     const r = await axios.get(`${API}/ha/trials/${trialNo}`);
@@ -535,10 +541,16 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
                       <button onClick={() => { setMode(null); setExtendDate(''); }} className="text-[10px] text-slate-500">Cancel</button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-5 gap-2">
                       <button onClick={() => setMode('extend')} data-testid="ha-trial-extend-btn" className="px-2 py-1.5 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded">Extend</button>
                       <button onClick={doReturn} disabled={busy} data-testid="ha-trial-return-btn" className="px-2 py-1.5 text-[11px] font-bold bg-slate-600 hover:bg-slate-700 text-white rounded">Return</button>
-                      <button onClick={doConvertOpen} disabled={busy} data-testid="ha-trial-convert-btn" className="px-2 py-1.5 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded">Convert to Sale</button>
+                      <button onClick={doConvertOpen} disabled={busy} data-testid="ha-trial-convert-btn" className="px-2 py-1.5 text-[11px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded">To Sale</button>
+                      <button
+                        onClick={() => setCustomHAOpen(true)}
+                        disabled={busy}
+                        data-testid="ha-trial-to-custom-ha-btn"
+                        className="px-2 py-1.5 text-[11px] font-bold bg-violet-600 hover:bg-violet-700 text-white rounded"
+                      >To Custom HA</button>
                       <button onClick={doLost} disabled={busy} data-testid="ha-trial-lost-btn" className="px-2 py-1.5 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white rounded">Lost</button>
                     </div>
                   )}
@@ -555,6 +567,19 @@ function TrialDetailDrawer({ trialNo, onClose, onChanged, canMutate }) {
           prefillPatientId={convertPrefill.patient_id}
           prefillBrand={convertPrefill.brand}
           prefillModel={convertPrefill.model}
+        />
+      )}
+      {customHAOpen && (
+        <CustomHAOrderModal
+          onClose={() => setCustomHAOpen(false)}
+          onSaved={async () => {
+            setCustomHAOpen(false);
+            await load();
+            onChanged();
+          }}
+          prefillPatientId={t?.patient_id || null}
+          fromTrialNo={trialNo}
+          defaultTarget="vendor"
         />
       )}
     </div>

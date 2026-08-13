@@ -1,6 +1,36 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎧 Trial-to-Order Audiogram Auto-attach (2026-08-13)
+
+**Ask**: When the audiologist converts a completed trial into a Custom HA order, the patient's audiogram (already uploaded to a hearing-test session) should auto-attach — no re-upload.
+
+**Shipped**:
+- Extended `CustomHAOrderCreate` payload with two optional fields:
+  - `from_session_id` — copies THAT session's `report_pdf_fs_id` blob from GridFS bucket `session_reports` into `custom_ha_audiograms` at booking time, stamps the same `audiogram_*` fields we set on manual upload, and mirrors them onto the linked stock_request so the head owner sees the button instantly.
+  - `from_trial_no` — marks the source trial as `converted` with `converted_custom_ha_order_no` back-linked, and returns demo serials to `pool=demo · state=IN_STOCK` (same close-of-trial mechanics as the sale conversion path).
+- New endpoint `GET /api/ha/custom-ha-orders/available-audiograms?patient_id=X` — returns the patient's completed hearing-test sessions filtered to those with a `report_pdf_fs_id`, ordered newest first. Powers the modal's picker.
+- Silent no-op: pointing `from_session_id` at a session that hasn't uploaded a PDF yet still lets the order book successfully (no attachment) — surfacing 500s here would be worse than a missing attachment.
+
+**UI**:
+- **Custom HA modal**: When a patient is selected, we auto-fetch their PDF-attached sessions. If any exist, a radio picker shows: "Latest — <date> by <audiologist>" (default selected) → older sessions → "Upload a new file instead". The file input only appears when the picker is dismissed. On submit, `from_session_id` is sent so the backend clones without any follow-up multipart upload.
+- **Trials drawer**: New violet **"To Custom HA"** button next to the existing "To Sale" button (grid changed 4→5 columns). Opens the Custom HA modal with `prefillPatientId` + `fromTrialNo`, defaulting delivery target to Vendor. On success, the trial auto-closes as `converted` and the demo unit goes back into Demo Stock.
+
+**Files updated (backend)**:
+- `/app/backend/routers/ha_custom_ha_orders.py` — `from_session_id` / `from_trial_no` fields, `_clone_session_audiogram_to_order()` helper, `/available-audiograms` list endpoint, trial-close hook using `ha_state_machine.transition_serial` (best-effort — never rolls back a successful booking)
+- `/app/backend/tests/test_custom_ha_orders.py` — 5 new tests: available list filters to PDF-only sessions, auto-attach populates fields + mirror, missing PDF is silent noop, `from_trial_no` closes trial
+
+**Files updated (frontend)**:
+- `/app/frontend/src/modules/ha/CustomHAOrdersPage.jsx` — modal accepts `prefillPatientId` + `fromTrialNo` props, fetches available audiograms on patient select, radio picker for reuse, wires `from_session_id` / `from_trial_no` into the create payload
+- `/app/frontend/src/modules/ha/TrialsPage.js` — "To Custom HA" button in the trial actions grid; opens the shared modal
+
+**End-to-end demo verified**: Created Dhoni's hearing-test session in Mysore → uploaded the 4855-byte pure-tone audiogram PDF → booked a Custom HA order with `from_session_id` → order auto-received `audiogram_fs_id` + `audiogram_source_session_id` → head owner's Stock Requests inbox shows the "View Audiogram" button linked to the exact same PDF bytes. Zero re-upload steps.
+
+**Tested**: 22/22 tests pass (5 new Trial-to-Order + all Custom HA + Ear Mould suites). Screenshots confirm: (1) inbox row for Dhoni shows the auto-attached audiogram button with branch notes "Booked directly from hearing test — audiogram auto-attached." (2) list rows carry green `✓ Audiogram` pill for auto-attached orders.
+
+
+
+
 ## 🎧 Custom HA Audiogram Attachments (2026-08-13)
 
 **Ask**: Let the audiologist attach the patient's audiogram (PDF / PNG / JPG) to any Custom HA order so head + vendor see the fit brief at a glance.

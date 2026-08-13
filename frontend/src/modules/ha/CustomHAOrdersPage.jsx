@@ -419,7 +419,7 @@ function AudiogramCell({ order, onChanged }) {
  *   `defaultTarget` = 'vendor' | 'branch' pre-selects the tab so
  *   procurement + transfer entry points feel native.
  * ============================================================ */
-export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' }) {
+export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor', prefillPatientId = null, fromTrialNo = null }) {
   const [patientQ, setPatientQ] = useState('');
   const [patientOpts, setPatientOpts] = useState([]);
   const [patient, setPatient] = useState(null);
@@ -464,6 +464,11 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
   // right after the JSON order is created so the head owner sees the
   // "View Audiogram" button in their inbox the moment the request lands.
   const [audiogramFile, setAudiogramFile] = useState(null);
+  // Trial-to-order path: if the patient has previous PDF-attached hearing
+  // tests, offer a one-click "attach existing audiogram" picker so we
+  // reuse the diagnostic PDF the audiologist already produced.
+  const [existingAudiograms, setExistingAudiograms] = useState([]);
+  const [reuseSessionId, setReuseSessionId] = useState('');
 
   // Load vendors + branches + clinic-group context for the delivery target dropdowns.
   useEffect(() => {
@@ -500,6 +505,36 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
     }, 250);
     return () => clearTimeout(h);
   }, [patientQ, patient]);
+
+  // When the modal opens with a prefilled patient (typically from the
+  // Trials drawer's "Convert to Custom HA" button), hydrate the search
+  // control from the patient id.
+  useEffect(() => {
+    if (!prefillPatientId || patient) return;
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/patients/${prefillPatientId}`);
+        if (r.data) setPatient(r.data);
+      } catch { /* noop — user can search manually */ }
+    })();
+  }, [prefillPatientId, patient]);
+
+  // Fetch the patient's existing PDF-attached hearing tests the moment
+  // a patient is selected. If any exist, the modal offers a one-click
+  // "auto-attach latest" (default ON) instead of forcing a re-upload.
+  useEffect(() => {
+    if (!patient) { setExistingAudiograms([]); setReuseSessionId(''); return; }
+    (async () => {
+      try {
+        const r = await axios.get(`${API}/ha/custom-ha-orders/available-audiograms`, {
+          params: { patient_id: patient.patient_id },
+        });
+        const rows = Array.isArray(r.data) ? r.data : [];
+        setExistingAudiograms(rows);
+        if (rows.length > 0) setReuseSessionId(rows[0].session_id);
+      } catch { /* noop */ }
+    })();
+  }, [patient]);
 
   const balance = Math.max(0, Number(total || 0) - Number(advance || 0));
   const paymentStatus = Number(advance || 0) <= 0 ? 'unpaid'
@@ -549,10 +584,15 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
         payment_mode: mode,
         gst_rate: Number(gst || 0),
         notes: notes || null,
+        // Reuse the patient's existing hearing-test PDF (trial-to-order
+        // path). If the user picks a session, the backend clones the
+        // audiogram — no manual upload needed. If the user explicitly
+        // chose to upload a new file instead, we send session_id=null.
+        from_session_id: audiogramFile ? null : (reuseSessionId || null),
+        from_trial_no: fromTrialNo || null,
       });
-      // If the audiologist attached an audiogram at booking time,
-      // upload it right away so the linked stock_request carries the
-      // reference from the very first sight in the head owner's inbox.
+      // If the audiologist attached a NEW audiogram file (i.e. no reuse
+      // session was picked), upload it now as a follow-up multipart POST.
       if (audiogramFile && orderResp.data?.order_id) {
         try {
           const fd = new FormData();
@@ -926,24 +966,98 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
           </div>
 
           <div className="rounded border border-dashed border-indigo-300 bg-indigo-50/60 p-3">
-            <label className="text-[10px] uppercase tracking-widest text-indigo-700 font-bold mb-1 block flex items-center gap-1">
-              <Paperclip size={11} /> Attach audiogram (optional)
+            <label className="text-[10px] uppercase tracking-widest text-indigo-700 font-bold mb-2 block flex items-center gap-1">
+              <Paperclip size={11} /> Audiogram
             </label>
-            <input
-              type="file"
-              accept="application/pdf,image/png,image/jpeg"
-              onChange={(e) => setAudiogramFile(e.target.files?.[0] || null)}
-              data-testid="ha-cha-audiogram-file"
-              className="text-[11px] text-slate-700 file:mr-2 file:px-2 file:py-1 file:text-[10px] file:font-semibold file:bg-white file:border file:border-slate-300 file:rounded file:cursor-pointer"
-            />
-            <div className="text-[10.5px] text-slate-500 mt-1 leading-snug">
-              PDF, PNG or JPG (max 15 MB). Head owner + vendor see this the moment you book.
-              {audiogramFile && (
-                <span className="ml-1 text-emerald-700 font-semibold">
-                  ✓ {audiogramFile.name} ({Math.round(audiogramFile.size / 1024)} KB)
-                </span>
-              )}
-            </div>
+
+            {existingAudiograms.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                <div className="text-[10.5px] text-slate-600 leading-snug">
+                  This patient has {existingAudiograms.length} hearing-test report
+                  {existingAudiograms.length > 1 ? 's' : ''} on file — pick one to attach
+                  automatically (no re-upload needed):
+                </div>
+                {existingAudiograms.map((sess, idx) => {
+                  const dt = sess.test_date || sess.created_at;
+                  const dateLabel = dt ? new Date(dt).toLocaleDateString('en-IN', {
+                    day: '2-digit', month: 'short', year: 'numeric',
+                  }) : '—';
+                  const summaryBits = [
+                    sess.right_ear_degree && `R: ${sess.right_ear_degree}`,
+                    sess.left_ear_degree && `L: ${sess.left_ear_degree}`,
+                  ].filter(Boolean).join(' · ');
+                  return (
+                    <label
+                      key={sess.session_id}
+                      data-testid={`ha-cha-audiogram-reuse-${sess.session_id}`}
+                      className={`flex items-start gap-2 rounded border px-2.5 py-1.5 cursor-pointer text-[11.5px] ${
+                        reuseSessionId === sess.session_id && !audiogramFile
+                          ? 'bg-white border-indigo-400 ring-1 ring-indigo-300'
+                          : 'bg-white/60 border-slate-200 hover:bg-white'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="audiogram-source"
+                        checked={reuseSessionId === sess.session_id && !audiogramFile}
+                        onChange={() => { setReuseSessionId(sess.session_id); setAudiogramFile(null); }}
+                        className="mt-0.5"
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold text-slate-800">
+                          {idx === 0 ? 'Latest — ' : ''}{dateLabel}
+                          {sess.audiologist_name && (
+                            <span className="text-slate-500 font-normal"> by {sess.audiologist_name}</span>
+                          )}
+                        </div>
+                        {(summaryBits || sess.clinical_impression) && (
+                          <div className="text-[10.5px] text-slate-500 mt-0.5 line-clamp-2">
+                            {[summaryBits, sess.clinical_impression].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+                <label
+                  data-testid="ha-cha-audiogram-reuse-none"
+                  className={`flex items-start gap-2 rounded border px-2.5 py-1.5 cursor-pointer text-[11.5px] ${
+                    !reuseSessionId
+                      ? 'bg-white border-slate-400'
+                      : 'bg-white/60 border-slate-200 hover:bg-white'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="audiogram-source"
+                    checked={!reuseSessionId}
+                    onChange={() => setReuseSessionId('')}
+                    className="mt-0.5"
+                  />
+                  <div className="text-slate-700">Upload a new file instead</div>
+                </label>
+              </div>
+            )}
+
+            {(!reuseSessionId || existingAudiograms.length === 0) && (
+              <>
+                <input
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg"
+                  onChange={(e) => setAudiogramFile(e.target.files?.[0] || null)}
+                  data-testid="ha-cha-audiogram-file"
+                  className="text-[11px] text-slate-700 file:mr-2 file:px-2 file:py-1 file:text-[10px] file:font-semibold file:bg-white file:border file:border-slate-300 file:rounded file:cursor-pointer"
+                />
+                <div className="text-[10.5px] text-slate-500 mt-1 leading-snug">
+                  PDF, PNG or JPG (max 15 MB). Head owner + vendor see this the moment you book.
+                  {audiogramFile && (
+                    <span className="ml-1 text-emerald-700 font-semibold">
+                      ✓ {audiogramFile.name} ({Math.round(audiogramFile.size / 1024)} KB)
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           {err && (
