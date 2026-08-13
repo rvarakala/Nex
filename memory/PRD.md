@@ -1,6 +1,39 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎧 Custom HA Audiogram Attachments (2026-08-13)
+
+**Ask**: Let the audiologist attach the patient's audiogram (PDF / PNG / JPG) to any Custom HA order so head + vendor see the fit brief at a glance.
+
+**Shipped**:
+- **GridFS-backed storage** in bucket `custom_ha_audiograms` — reuses the same magic-byte validation and 15 MB cap as `report_handover.py` for consistency.
+- **Backend endpoints**:
+  - `POST /api/ha/custom-ha-orders/{order_id}/audiogram` — multipart upload, idempotent (replaces the prior blob), sniffs mime by magic bytes so a renamed .exe can't pretend to be a PDF.
+  - `GET /api/ha/custom-ha-orders/{order_id}/audiogram` — inline stream for the order-owning clinic.
+  - `DELETE /api/ha/custom-ha-orders/{order_id}/audiogram` — clears the blob + the mirrored fields.
+  - `GET /api/stock-requests/{request_id}/audiogram` — passthrough for head clinic to preview the branch's file without any cross-clinic auth workaround.
+- **Auto-mirror**: When an audiogram is attached to a branch-target order, `audiogram_fs_id` / `audiogram_content_type` / `audiogram_filename` are copied onto the linked `stock_request.custom_ha_details`, so the head owner sees the "View Audiogram" button the moment they open their inbox.
+- **UI**:
+  - Booking modal: violet-dashed "Attach audiogram (optional)" card at the bottom of the form. If a file is chosen, it uploads automatically right after the JSON create succeeds — head sees it in the very first sight of the request.
+  - Custom HA list row: `📎 Attach` button per row (opens hidden file input) → transitions to `📎 Audiogram` (view) + `×` (remove) once uploaded. Clicking View fetches via axios (auth headers) → object URL → new tab.
+  - Stock Requests inbox: emerald `📎 View Audiogram` button in the violet spec panel when `audiogram_fs_id` is set; italic "No audiogram attached yet" when not.
+
+**Files updated (backend)**:
+- `/app/backend/routers/ha_custom_ha_orders.py` — 3 audiogram endpoints, GridFS bucket, magic-byte sniffer, stock_request mirror
+- `/app/backend/routers/stock_requests.py` — head-scoped `/audiogram` passthrough
+- `/app/backend/tests/test_custom_ha_orders.py` — 3 new tests (mirror on upload, reject non-PDF, mirror on delete)
+
+**Files updated (frontend)**:
+- `/app/frontend/src/modules/ha/CustomHAOrdersPage.jsx` — `AudiogramCell` per-row component + modal file input + auto-upload on booking
+- `/app/frontend/src/modules/ha/StockRequestsPage.jsx` — `AudiogramViewButton` in the spec panel
+
+**Verified**: 32/32 tests pass across Custom HA + Ear Moulds + Clinic Groups / Stock Requests. Screenshots confirm the audiogram button renders correctly on both branch-side list and head-side inbox with the exact user scenario (Phonak Virto B90, bilateral black, ₹10 k / ₹1.5 L).
+
+**Design choice — mirror vs cross-clinic fetch**: We copy the fs_id onto the stock_request rather than exposing the branch's Custom HA endpoint to the head. Keeps tenant scoping strict, avoids two-hop auth checks, and gives the head owner instant access via a single scoped route.
+
+
+
+
 ## 🎧 Head-owner sees full Custom HA spec inline (2026-08-13)
 
 **Ask**: When a branch places a Custom HA request (e.g. Phonak Virto B90, black shell + black faceplate, bilateral, ₹10 k advance / ₹1.5 L total), the head owner needs to see ALL the form fields the branch filled — otherwise they can't actually order from the vendor.

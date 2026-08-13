@@ -26,11 +26,15 @@ are captured as free-form notes / attachments to keep the modal quick.
 """
 from __future__ import annotations
 
+import io
 import uuid
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from bson import ObjectId
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field
 
 from auth import get_current_user, require_roles, user_can_see_branch
@@ -38,6 +42,19 @@ from database import get_db
 from utils.serde import deserialize_datetime
 
 router = APIRouter(prefix="/api/ha", tags=["ha-custom-ha-orders"])
+
+# 15 MB is comfortably above a full colour audiogram print (4-6 pages),
+# matches the report_handover cap so operators see consistent limits.
+_AUDIOGRAM_MAX_BYTES = 15 * 1024 * 1024
+_AUDIOGRAM_BUCKET = "custom_ha_audiograms"
+# Magic-byte detection: PDF `%PDF`, PNG `\x89PNG`, JPG `\xff\xd8\xff`.
+# We keep JPG/PNG allowed because many diagnostic audiometers export a
+# printable image rather than a PDF.
+_ACCEPTED_MIME = {
+    "application/pdf": (b"%PDF", ".pdf"),
+    "image/png":       (b"\x89PNG\r\n\x1a\n", ".png"),
+    "image/jpeg":      (b"\xff\xd8\xff", ".jpg"),
+}
 
 
 # ── Types ─────────────────────────────────────────────────────────────
@@ -513,3 +530,187 @@ async def update_custom_ha_status(
         {"order_id": order_id}, {"_id": 0},
     )
     return deserialize_datetime(updated)
+
+
+
+# ── Audiogram attachment ──────────────────────────────────────────────
+# Audiologists routinely need to send the patient's audiogram PDF to
+# the vendor (Phonak, Signia, Starkey, …) so the manufacturer can pick
+# a receiver/gain matrix that fits the loss. Since the head clinic and
+# the branch clinic are separate tenants, we store the file once in a
+# dedicated GridFS bucket and expose two auth-scoped read endpoints:
+#   · order owner (branch) → `GET /custom-ha-orders/{id}/audiogram`
+#   · head owner (approver) → `GET /stock-requests/{id}/audiogram`
+# The stock_request mirror is populated the moment the audiogram is
+# attached, so the head sees a "View Audiogram" button in the inbox.
+
+async def _sniff_content_type(raw: bytes, declared: Optional[str]) -> Optional[str]:
+    """Pick a content-type from magic bytes; fall back to the declared
+    mime only if it's in the whitelist. Prevents someone renaming a
+    .exe to .pdf and slipping past the upload validator."""
+    for mime, (magic, _ext) in _ACCEPTED_MIME.items():
+        if raw.startswith(magic):
+            return mime
+    if declared in _ACCEPTED_MIME:
+        return declared
+    return None
+
+
+@router.post("/custom-ha-orders/{order_id}/audiogram")
+async def attach_audiogram(
+    order_id: str,
+    file: UploadFile = File(...),
+    user=Depends(require_roles(
+        "front_desk", "audiologist", "clinic_owner", "accounts", "super_admin",
+    )),
+    db=Depends(get_db),
+):
+    order = await db.custom_ha_orders.find_one(
+        {"order_id": order_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not order:
+        raise HTTPException(404, "Custom HA order not found")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Empty file")
+    if len(raw) > _AUDIOGRAM_MAX_BYTES:
+        raise HTTPException(413, "Audiogram file too large (max 15 MB)")
+    content_type = await _sniff_content_type(raw, (file.content_type or "").lower())
+    if not content_type:
+        raise HTTPException(415, "Only PDF, PNG or JPG audiograms are accepted")
+
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AUDIOGRAM_BUCKET)
+    # Idempotent: overwrite previous audiogram if the audiologist
+    # re-uploads a fresh test result. Old GridFS blob is deleted so we
+    # don't accumulate orphans over time.
+    old_id = order.get("audiogram_fs_id")
+    if old_id:
+        try:
+            await bucket.delete(ObjectId(old_id))
+        except Exception:  # noqa: BLE001
+            pass
+
+    fs_id = await bucket.upload_from_stream(
+        filename=f"{order_id}{_ACCEPTED_MIME[content_type][1]}",
+        source=raw,
+        metadata={
+            "clinic_id": user["clinic_id"],
+            "order_id": order_id,
+            "patient_id": order.get("patient_id"),
+            "uploaded_by_user_id": user["user_id"],
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "content_type": content_type,
+            "size_bytes": len(raw),
+        },
+    )
+    fs_id_str = str(fs_id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.custom_ha_orders.update_one(
+        {"order_id": order_id, "clinic_id": user["clinic_id"]},
+        {"$set": {
+            "audiogram_fs_id": fs_id_str,
+            "audiogram_content_type": content_type,
+            "audiogram_size_bytes": len(raw),
+            "audiogram_uploaded_at": now_iso,
+            "audiogram_filename": file.filename,
+            "updated_at": now_iso,
+        }},
+    )
+
+    # Mirror onto the linked stock_request so the head owner sees the
+    # View Audiogram button in their inbox without a cross-clinic fetch.
+    linked_req = order.get("linked_stock_request_id")
+    if linked_req:
+        await db.stock_requests.update_one(
+            {"request_id": linked_req},
+            {"$set": {
+                "custom_ha_details.audiogram_fs_id": fs_id_str,
+                "custom_ha_details.audiogram_content_type": content_type,
+                "custom_ha_details.audiogram_filename": file.filename,
+            }},
+        )
+
+    return {
+        "ok": True,
+        "order_id": order_id,
+        "audiogram_fs_id": fs_id_str,
+        "content_type": content_type,
+        "size_bytes": len(raw),
+    }
+
+
+@router.delete("/custom-ha-orders/{order_id}/audiogram")
+async def remove_audiogram(
+    order_id: str,
+    user=Depends(require_roles(
+        "front_desk", "audiologist", "clinic_owner", "accounts", "super_admin",
+    )),
+    db=Depends(get_db),
+):
+    order = await db.custom_ha_orders.find_one(
+        {"order_id": order_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
+    if not order:
+        raise HTTPException(404, "Custom HA order not found")
+    fs_id = order.get("audiogram_fs_id")
+    if fs_id:
+        try:
+            bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AUDIOGRAM_BUCKET)
+            await bucket.delete(ObjectId(fs_id))
+        except Exception:  # noqa: BLE001
+            pass
+    await db.custom_ha_orders.update_one(
+        {"order_id": order_id, "clinic_id": user["clinic_id"]},
+        {"$unset": {
+            "audiogram_fs_id": "",
+            "audiogram_content_type": "",
+            "audiogram_size_bytes": "",
+            "audiogram_uploaded_at": "",
+            "audiogram_filename": "",
+        }, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    if order.get("linked_stock_request_id"):
+        await db.stock_requests.update_one(
+            {"request_id": order["linked_stock_request_id"]},
+            {"$unset": {
+                "custom_ha_details.audiogram_fs_id": "",
+                "custom_ha_details.audiogram_content_type": "",
+                "custom_ha_details.audiogram_filename": "",
+            }},
+        )
+    return {"ok": True}
+
+
+async def _stream_audiogram(db, fs_id: str, content_type: str, filename: Optional[str]):
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name=_AUDIOGRAM_BUCKET)
+    try:
+        stream = await bucket.open_download_stream(ObjectId(fs_id))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(404, "Audiogram file missing")
+    data = await stream.read()
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename or "audiogram"}"',
+        "Cache-Control": "private, max-age=300",
+    }
+    return StreamingResponse(io.BytesIO(data), media_type=content_type, headers=headers)
+
+
+@router.get("/custom-ha-orders/{order_id}/audiogram")
+async def download_audiogram(
+    order_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    order = await db.custom_ha_orders.find_one(
+        {"order_id": order_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0, "audiogram_fs_id": 1, "audiogram_content_type": 1, "audiogram_filename": 1},
+    )
+    if not order or not order.get("audiogram_fs_id"):
+        raise HTTPException(404, "Audiogram not attached to this order")
+    return await _stream_audiogram(
+        db,
+        order["audiogram_fs_id"],
+        order.get("audiogram_content_type") or "application/pdf",
+        order.get("audiogram_filename"),
+    )

@@ -332,3 +332,112 @@ def test_head_decline_cancels_linked_custom_ha_order():
                 if "declined" in (h.get("note") or "").lower()]
     assert len(declines) >= 1
     assert "discontinued" in declines[-1]["note"].lower()
+
+
+# ── Audiogram attachment ───────────────────────────────────────────────
+# The audiologist can upload the patient's audiogram (PDF/PNG/JPG) to a
+# Custom HA order at any time. When the order is a branch → head request,
+# uploading also mirrors the reference onto the linked stock_request so
+# the head owner sees a "View Audiogram" button in their inbox.
+_MINIMAL_PDF = (
+    b"%PDF-1.4\n1 0 obj<<>>endobj\n"
+    b"xref\n0 1\n0000000000 65535 f\n"
+    b"trailer<<>>\nstartxref\n0\n%%EOF\n"
+)
+
+
+def test_audiogram_upload_persists_and_mirrors_to_stock_request():
+    """Branch attaches audiogram → order picks up `audiogram_fs_id`
+    AND the linked stock_request's `custom_ha_details.audiogram_fs_id`
+    is populated so the head can preview it from their inbox."""
+    branch = _branch_session()
+    pid = _find_patient_in_branch(branch)
+    r = branch.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "both", "shell_type": "CIC",
+        "brand": "Phonak", "model": "Virto",
+        "delivery_target": "branch",
+        "total_amount": 120000, "advance_amount": 15000,
+    }, timeout=15)
+    order = r.json()
+    order_id = order["order_id"]
+    linked_req_id = order["linked_stock_request_id"]
+
+    r = branch.post(
+        f"{BASE_URL}/api/ha/custom-ha-orders/{order_id}/audiogram",
+        files={"file": ("audiogram.pdf", _MINIMAL_PDF, "application/pdf")},
+        timeout=15,
+    )
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["audiogram_fs_id"]
+    assert payload["content_type"] == "application/pdf"
+
+    # Branch fetch — inline PDF stream.
+    r = branch.get(f"{BASE_URL}/api/ha/custom-ha-orders/{order_id}/audiogram", timeout=15)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/pdf")
+    assert r.content.startswith(b"%PDF")
+
+    # Head must see the audiogram reference on the linked stock_request AND
+    # be able to view the file via the passthrough endpoint.
+    head = _sess()
+    r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}", timeout=15)
+    d = (r.json() or {}).get("custom_ha_details") or {}
+    assert d.get("audiogram_fs_id"), "audiogram fs_id must be mirrored"
+
+    r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}/audiogram", timeout=15)
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
+def test_audiogram_rejects_non_pdf_image_types():
+    """Uploader must reject anything that isn't a PDF / PNG / JPG."""
+    s = _sess()
+    pid = _first_patient(s)
+    vid = _first_vendor(s)
+    r = s.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "left", "shell_type": "ITE",
+        "delivery_target": "vendor", "vendor_id": vid,
+        "total_amount": 70000, "advance_amount": 0,
+    }, timeout=15)
+    order_id = r.json()["order_id"]
+
+    # An executable disguised as an audiogram must be rejected.
+    r = s.post(
+        f"{BASE_URL}/api/ha/custom-ha-orders/{order_id}/audiogram",
+        files={"file": ("virus.exe", b"MZ\x90\x00\x03\x00\x00\x00", "application/octet-stream")},
+        timeout=15,
+    )
+    assert r.status_code == 415
+
+
+def test_audiogram_delete_clears_stock_request_mirror():
+    """Removing an audiogram must unset the order fields AND the
+    matching fields on the linked stock_request."""
+    branch = _branch_session()
+    pid = _find_patient_in_branch(branch)
+    r = branch.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "both", "shell_type": "IIC",
+        "delivery_target": "branch",
+        "total_amount": 90000, "advance_amount": 0,
+    }, timeout=15)
+    order = r.json()
+    order_id = order["order_id"]
+    linked_req_id = order["linked_stock_request_id"]
+
+    branch.post(
+        f"{BASE_URL}/api/ha/custom-ha-orders/{order_id}/audiogram",
+        files={"file": ("audiogram.pdf", _MINIMAL_PDF, "application/pdf")},
+        timeout=15,
+    )
+    r = branch.delete(f"{BASE_URL}/api/ha/custom-ha-orders/{order_id}/audiogram", timeout=15)
+    assert r.status_code == 200
+
+    head = _sess()
+    r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}", timeout=15)
+    d = (r.json() or {}).get("custom_ha_details") or {}
+    assert not d.get("audiogram_fs_id"), "mirror must be cleared on delete"
+
+    # The passthrough endpoint must now return 404.
+    r = head.get(f"{BASE_URL}/api/stock-requests/{linked_req_id}/audiogram", timeout=15)
+    assert r.status_code == 404

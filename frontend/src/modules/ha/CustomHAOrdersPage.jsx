@@ -10,10 +10,10 @@
  *
  * Backend: /api/ha/custom-ha-orders (POST · GET · PATCH /{id}/status)
  */
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { Plus, Ear, Search, Calendar, Package, RefreshCw, Building2, Truck } from 'lucide-react';
+import { Plus, Ear, Search, Calendar, Package, RefreshCw, Building2, Truck, Paperclip, X } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -234,11 +234,12 @@ export default function CustomHAOrdersPage() {
                   <StatusPicker order={r} onChanged={load} />
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <AudiogramCell order={r} onChanged={load} />
                   {r.invoice_id && (
                     <Link
                       to={`/billing/invoice/${r.invoice_id}`}
                       data-testid={`ha-cha-invoice-link-${r.order_id}`}
-                      className="text-[11px] font-semibold text-indigo-700 hover:underline"
+                      className="ml-2 text-[11px] font-semibold text-indigo-700 hover:underline"
                     >
                       Invoice →
                     </Link>
@@ -309,6 +310,110 @@ function StatusPicker({ order, onChanged }) {
   );
 }
 
+function AudiogramCell({ order, onChanged }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const hasAudiogram = !!order.audiogram_fs_id;
+
+  const pick = () => inputRef.current?.click();
+
+  const openInNewTab = async () => {
+    // Fetch as blob with auth headers so the browser can render inline
+    // even though this is a private endpoint. We create an object URL
+    // and open a new tab — same UX as any "View PDF" link.
+    try {
+      const r = await axios.get(
+        `${API}/ha/custom-ha-orders/${order.order_id}/audiogram`,
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(r.data);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch { /* noop */ }
+  };
+
+  const upload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      await axios.post(
+        `${API}/ha/custom-ha-orders/${order.order_id}/audiogram`,
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      onChanged?.();
+    } catch (err) {
+      const d = err?.response?.data?.detail;
+      alert(typeof d === 'string' ? d : 'Audiogram upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm('Remove the attached audiogram?')) return;
+    setBusy(true);
+    try {
+      await axios.delete(`${API}/ha/custom-ha-orders/${order.order_id}/audiogram`);
+      onChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,image/png,image/jpeg"
+        onChange={upload}
+        className="hidden"
+        data-testid={`ha-cha-audiogram-input-${order.order_id}`}
+      />
+      {hasAudiogram ? (
+        <>
+          <button
+            type="button"
+            onClick={openInNewTab}
+            disabled={busy}
+            title="View attached audiogram"
+            data-testid={`ha-cha-audiogram-view-${order.order_id}`}
+            className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5"
+          >
+            <Paperclip size={10} /> Audiogram
+          </button>
+          <button
+            type="button"
+            onClick={remove}
+            disabled={busy}
+            title="Remove audiogram"
+            data-testid={`ha-cha-audiogram-remove-${order.order_id}`}
+            className="text-slate-400 hover:text-rose-600"
+          >
+            <X size={11} />
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={pick}
+          disabled={busy}
+          title="Attach audiogram (PDF, PNG or JPG)"
+          data-testid={`ha-cha-audiogram-attach-${order.order_id}`}
+          className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200 rounded px-1.5 py-0.5"
+        >
+          <Paperclip size={10} /> {busy ? 'Uploading…' : 'Attach'}
+        </button>
+      )}
+    </span>
+  );
+}
+
 /* ============================================================
  *   CUSTOM HA ORDER MODAL — reusable
  *   `defaultTarget` = 'vendor' | 'branch' pre-selects the tab so
@@ -355,6 +460,10 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // Audiogram picked at booking time — sent as a second multipart POST
+  // right after the JSON order is created so the head owner sees the
+  // "View Audiogram" button in their inbox the moment the request lands.
+  const [audiogramFile, setAudiogramFile] = useState(null);
 
   // Load vendors + branches + clinic-group context for the delivery target dropdowns.
   useEffect(() => {
@@ -415,7 +524,7 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
 
     setBusy(true);
     try {
-      await axios.post(`${API}/ha/custom-ha-orders`, {
+      const orderResp = await axios.post(`${API}/ha/custom-ha-orders`, {
         patient_id: patient.patient_id,
         side,
         shell_type: shellType,
@@ -441,6 +550,24 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
         gst_rate: Number(gst || 0),
         notes: notes || null,
       });
+      // If the audiologist attached an audiogram at booking time,
+      // upload it right away so the linked stock_request carries the
+      // reference from the very first sight in the head owner's inbox.
+      if (audiogramFile && orderResp.data?.order_id) {
+        try {
+          const fd = new FormData();
+          fd.append('file', audiogramFile);
+          await axios.post(
+            `${API}/ha/custom-ha-orders/${orderResp.data.order_id}/audiogram`,
+            fd,
+            { headers: { 'Content-Type': 'multipart/form-data' } },
+          );
+        } catch (audioErr) {
+          // Booking succeeded — flag the audiogram error but don't
+          // block the caller since they can retry via the list row.
+          console.warn('Audiogram upload failed', audioErr);
+        }
+      }
       onSaved?.();
     } catch (e) {
       const d = e?.response?.data?.detail;
@@ -796,6 +923,27 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
               data-testid="ha-cha-notes"
               className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded"
             />
+          </div>
+
+          <div className="rounded border border-dashed border-indigo-300 bg-indigo-50/60 p-3">
+            <label className="text-[10px] uppercase tracking-widest text-indigo-700 font-bold mb-1 block flex items-center gap-1">
+              <Paperclip size={11} /> Attach audiogram (optional)
+            </label>
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg"
+              onChange={(e) => setAudiogramFile(e.target.files?.[0] || null)}
+              data-testid="ha-cha-audiogram-file"
+              className="text-[11px] text-slate-700 file:mr-2 file:px-2 file:py-1 file:text-[10px] file:font-semibold file:bg-white file:border file:border-slate-300 file:rounded file:cursor-pointer"
+            />
+            <div className="text-[10.5px] text-slate-500 mt-1 leading-snug">
+              PDF, PNG or JPG (max 15 MB). Head owner + vendor see this the moment you book.
+              {audiogramFile && (
+                <span className="ml-1 text-emerald-700 font-semibold">
+                  ✓ {audiogramFile.name} ({Math.round(audiogramFile.size / 1024)} KB)
+                </span>
+              )}
+            </div>
           </div>
 
           {err && (

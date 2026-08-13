@@ -20,11 +20,15 @@ other's requests. Data isolation stays intact.
 """
 from __future__ import annotations
 
+import io
 import uuid
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field
 
 from auth import get_current_user, require_roles
@@ -427,3 +431,44 @@ async def cancel_request(
         {"$set": {"status": "cancelled", "updated_at": now.isoformat()}},
     )
     return await get_request(request_id, user=user, db=db)
+
+
+
+# ── Audiogram passthrough for linked Custom HA orders ─────────────────
+# The head owner needs to preview the branch's audiogram to sanity-check
+# the fit brief before approving. The file itself sits in the branch's
+# tenant, so we serve it via a stock_request-scoped endpoint that only
+# allows callers who can see the request (owner clinic or head clinic).
+@router.get("/{request_id}/audiogram")
+async def stock_request_audiogram(
+    request_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    ids = await _accessible_clinic_ids_for_requests(db, user)
+    req = await db.stock_requests.find_one(
+        {"request_id": request_id, "clinic_id": {"$in": list(ids)}},
+        {"_id": 0, "custom_ha_details": 1},
+    )
+    if not req:
+        raise HTTPException(404, "Request not found")
+    details = (req or {}).get("custom_ha_details") or {}
+    fs_id = details.get("audiogram_fs_id")
+    if not fs_id:
+        raise HTTPException(404, "No audiogram attached to this request")
+
+    bucket = AsyncIOMotorGridFSBucket(db, bucket_name="custom_ha_audiograms")
+    try:
+        stream = await bucket.open_download_stream(ObjectId(fs_id))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(404, "Audiogram file missing")
+    data = await stream.read()
+    headers = {
+        "Content-Disposition": f'inline; filename="{details.get("audiogram_filename") or "audiogram"}"',
+        "Cache-Control": "private, max-age=300",
+    }
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=details.get("audiogram_content_type") or "application/pdf",
+        headers=headers,
+    )

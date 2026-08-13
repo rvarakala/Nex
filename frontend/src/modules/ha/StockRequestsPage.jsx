@@ -13,7 +13,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { Package, Plus, X, Loader2, Send, Ban, AlertTriangle, ArrowRight, Crown } from 'lucide-react';
+import { Package, Plus, X, Loader2, Send, Ban, AlertTriangle, ArrowRight, Crown, Paperclip } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -222,7 +222,11 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
       </ul>
 
       {request.custom_ha_details && (
-        <CustomHADetailsPanel details={request.custom_ha_details} requestingClinic={request.clinic_name} />
+        <CustomHADetailsPanel
+          details={request.custom_ha_details}
+          requestingClinic={request.clinic_name}
+          requestId={request.request_id}
+        />
       )}
 
       {request.status === 'fulfilled' && request.linked_transfer_id && (
@@ -312,7 +316,7 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
 // shell/faceplate colours, receiver power, warranty, financials — the
 // moment they open the inbox. Enough to place the vendor order without
 // any back-and-forth on the phone.
-function CustomHADetailsPanel({ details, requestingClinic }) {
+function CustomHADetailsPanel({ details, requestingClinic, requestId }) {
   const d = details || {};
   const sideLabel = { left: 'Left', right: 'Right', both: 'Both' };
   const showL = d.side === 'left' || d.side === 'both';
@@ -414,12 +418,55 @@ function CustomHADetailsPanel({ details, requestingClinic }) {
         </div>
       )}
 
-      {d.invoice_no && (
-        <div className="text-[10.5px] text-slate-500">
-          Linked invoice at branch: <span className="font-mono font-semibold text-slate-700">{d.invoice_no}</span>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {d.audiogram_fs_id ? (
+          <AudiogramViewButton requestId={requestId} />
+        ) : (
+          <span className="text-[10.5px] text-slate-400 italic">No audiogram attached yet</span>
+        )}
+        {d.invoice_no && (
+          <div className="text-[10.5px] text-slate-500">
+            Linked invoice at branch: <span className="font-mono font-semibold text-slate-700">{d.invoice_no}</span>
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+// Fetches the audiogram via the head-scoped stock_request passthrough
+// endpoint so head owners can preview the branch's PDF/image without
+// any cross-clinic auth workaround. We use axios (auth headers auto-
+// attached) + a temporary object URL for the popup.
+function AudiogramViewButton({ requestId }) {
+  const [busy, setBusy] = useState(false);
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await axios.get(`${API}/stock-requests/${requestId}/audiogram`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(r.data);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      alert(typeof d === 'string' ? d : 'Failed to load audiogram');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={open}
+      disabled={busy}
+      data-testid={`stock-request-audiogram-view-${requestId}`}
+      className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 border border-emerald-300 rounded px-2 py-1"
+    >
+      <Paperclip size={11} /> {busy ? 'Loading…' : 'View Audiogram'}
+    </button>
   );
 }
 
