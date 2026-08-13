@@ -7788,3 +7788,48 @@ OK   /api/ha/fittings
 
 **Deploy note for the user:** Ships in preview. Deploy preview → production so the beta clinic sees correct local IST times across appointments, patients, invoices, PO — everywhere. Data doesn't need to be migrated — the fix operates on the wire.
 
+
+### [Aug 2026] Bug Fix — Inter-clinic Transfers now include Batteries, Tips, Domes (batch stock)
+
+**Reported by user:** New Transfer modal on `/ha/transfers` only listed serialised hearing aids in the "Items to Ship" picker — batch/accessory SKUs (batteries, receiver tubes, silicone domes, etc.) were entirely absent.
+
+**Root cause:** `StockTransfer` model already carried an `accessory_lines: []` field (added in the initial multi-clinic work), and the CREATE endpoint accepted them — but:
+1. The **CreateTransferModal** only fetched `/ha/serial-items?state=IN_STOCK`, so the UI could only ever build serial-only drafts.
+2. The **dispatch** endpoint did NOT deduct qty from source `accessory_stock` — batch lines were persisted but never physically moved.
+3. The **receive** endpoint did NOT credit qty to destination `accessory_stock`, and there was no logic to auto-create a fresh SKU row at the destination when it didn't already carry the product.
+4. The **cancel** endpoint did not refund batch qty back to source on rollback.
+
+**What shipped:**
+
+- **Frontend (`CreateTransferModal.jsx`)** — the picker now shows two sub-sections in the "Items to Ship" scroll area:
+  1. **"Serialised · Hearing aids"** — same checkbox list as before
+  2. **"Batch · Accessories & consumables"** — new list with `qty on hand`, `variant` chip, per-row `− [n] +` qty stepper. Only rows with `qty_on_hand > 0` show up. `data-testid="transfer-batch-row-{sku_id}"` / `transfer-batch-inc-{sku_id}` / `transfer-batch-dec-{sku_id}` / `transfer-batch-qty-{sku_id}` for e2e coverage.
+  Header counter now reads `X serial · Y batch line(s) · Z available`. The search box filters both sub-lists uniformly (brand / model / serial no / variant).
+  Draft submit builds `accessory_lines` from the `{sku_id: qty}` state and sends both `serial_ids` + `accessory_lines` in one call.
+
+- **Backend (`routers/stock_transfers.py`)**:
+  1. **Dispatch (`POST /{id}/dispatch`)** — before locking serials, walks every `accessory_line`, verifies each source `accessory_stock` row exists with sufficient qty (**409** on insufficient, **404** on missing), then atomically decrements `qty_on_hand` on the source clinic (matching by `clinic_id + product_id + from_branch_id + variant`).
+  2. **Receive (`POST /{id}/receive`)** — after per-serial transitions, walks every `accessory_line` and either `$inc`s the matching destination row OR fabricates a fresh `AccessoryStock` row if none exists (mirrors how serial lines auto-move `clinic_id`).
+  3. **Cancel (`POST /{id}/cancel`)** — refunds batch qty back to source when a dispatched transfer is cancelled. Fully reversible.
+
+**Curl-verified full cycle on preview:**
+```
+Silicone Dome L, source qty = 15
+→ Create draft (5 units)         status = draft
+→ Dispatch                       source qty = 10, challan = DC/2026/0002
+→ Receive (as founder)           destination qty = 5 (new row created)
+                                 source qty = 10 (unchanged, correct)
+```
+
+**Regression tests** (`/app/backend/tests/test_transfer_batch_lines.py`, **3 new tests, all pass**):
+- `test_create_transfer_supports_accessory_lines` — POST accepts + persists `accessory_lines`
+- `test_batch_dispatch_deducts_source_and_receive_credits_destination` — the full happy path
+- `test_serial_only_transfer_still_works` — backwards-compat guard against Phase 2 regressions
+
+**Files touched:**
+- `/app/backend/routers/stock_transfers.py` — dispatch + receive + cancel branch logic (~90 LoC)
+- `/app/frontend/src/modules/ha/transfers/CreateTransferModal.jsx` — batch section, qty stepper, dual-fetch, payload builder (~130 LoC)
+- `/app/backend/tests/test_transfer_batch_lines.py` — NEW
+
+**Deploy note:** Ships in preview. Deploy preview → production so beta clinics can transfer their consumable inventory (a huge day-to-day pain point that couldn't be done from the app before this fix).
+

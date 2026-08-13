@@ -20,12 +20,16 @@ const PURPOSES = [
 export default function CreateTransferModal({ onClose, onCreated }) {
   const [destinations, setDestinations] = useState([]);    // accessible clinics
   const [serials, setSerials] = useState([]);              // IN_STOCK at source
+  const [batchRows, setBatchRows] = useState([]);          // accessory_stock at source
   const [products, setProducts] = useState({});            // product_id -> {brand, model}
   const [loading, setLoading] = useState(true);
 
   const [toClinic, setToClinic] = useState('');
   const [purpose, setPurpose] = useState('trial');
   const [selected, setSelected] = useState([]);            // serial_ids
+  // Batch selections: { [sku_id]: qty }. Removing a key or setting qty=0
+  // drops the line from the payload.
+  const [batchQty, setBatchQty] = useState({});
   const [search, setSearch] = useState('');
   const [courier, setCourier] = useState('');
   const [tracking, setTracking] = useState('');
@@ -34,16 +38,19 @@ export default function CreateTransferModal({ onClose, onCreated }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  // ---- Load: accessible clinics + IN_STOCK serials at source ----
+  // ---- Load: accessible clinics + IN_STOCK serials + accessory stock ----
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [meRes, clinicsRes, serialsRes, prodsRes] = await Promise.all([
+        const [meRes, clinicsRes, serialsRes, prodsRes, batchRes] = await Promise.all([
           axios.get(`${API}/auth/me`),
           axios.get(`${API}/auth/my-clinics`),
           axios.get(`${API}/ha/serial-items`, { params: { state: 'IN_STOCK', limit: 500 } }),
           axios.get(`${API}/ha/products`),
+          // Batch/accessory stock rows for THIS source clinic. Backend
+          // returns { items: [{sku_id, product_id, variant, qty_on_hand, ...}] }.
+          axios.get(`${API}/ha/accessory-stock-hydrated`).catch(() => ({ data: { items: [] } })),
         ]);
         if (!alive) return;
         const myClinic = meRes.data?.clinic_id || meRes.data?.user?.clinic_id;
@@ -53,6 +60,10 @@ export default function CreateTransferModal({ onClose, onCreated }) {
         const serialsData = Array.isArray(serialsRes.data) ? serialsRes.data : (serialsRes.data?.items || []);
         setSerials(serialsData);
         setProducts(Object.fromEntries((prodsRes.data || []).map((p) => [p.product_id, p])));
+        // Only accessory rows with qty > 0 are shippable. Rows are already
+        // hydrated with brand + model from the backend join.
+        const rows = (batchRes.data?.items || []).filter((r) => (r.qty_on_hand || 0) > 0);
+        setBatchRows(rows);
       } catch (e) {
         setErr(e?.response?.data?.detail || 'Failed to load source data');
       } finally {
@@ -69,6 +80,21 @@ export default function CreateTransferModal({ onClose, onCreated }) {
     });
   }, [serials, products]);
 
+  const decoratedBatchRows = useMemo(() => {
+    // Endpoint returns product info under a nested `product` object rather
+    // than flat brand/model on the row — normalise so the picker rows
+    // render uniformly with serial rows.
+    return batchRows.map((b) => {
+      const p = b.product || {};
+      const label = `${p.brand || ''} ${p.model || ''}`.trim() || b.product_id;
+      return {
+        ...b,
+        _product_label: label,
+        _kind: p.accessory_kind || p.form_factor || 'accessory',
+      };
+    });
+  }, [batchRows]);
+
   const filteredSerials = useMemo(() => {
     if (!search.trim()) return decoratedSerials;
     const q = search.toLowerCase();
@@ -78,19 +104,57 @@ export default function CreateTransferModal({ onClose, onCreated }) {
     );
   }, [decoratedSerials, search]);
 
+  const filteredBatch = useMemo(() => {
+    if (!search.trim()) return decoratedBatchRows;
+    const q = search.toLowerCase();
+    return decoratedBatchRows.filter((b) =>
+      (b._product_label || '').toLowerCase().includes(q) ||
+      (b.variant || '').toLowerCase().includes(q),
+    );
+  }, [decoratedBatchRows, search]);
+
   const toggle = (sid) =>
     setSelected((cur) => (cur.includes(sid) ? cur.filter((x) => x !== sid) : [...cur, sid]));
+
+  const setQtyFor = (row, qty) => {
+    const n = Math.max(0, Math.min(Number(qty) || 0, Number(row.qty_on_hand) || 0));
+    setBatchQty((cur) => {
+      const next = { ...cur };
+      if (n <= 0) delete next[row.sku_id];
+      else next[row.sku_id] = n;
+      return next;
+    });
+  };
+
+  const totalSelected = selected.length + Object.keys(batchQty).length;
 
   const submit = async () => {
     setErr('');
     if (!toClinic) { setErr('Pick a destination clinic'); return; }
-    if (selected.length === 0) { setErr('Select at least one serial'); return; }
+    if (totalSelected === 0) { setErr('Select at least one serial or batch line'); return; }
     setBusy(true);
     try {
+      // Build accessory_lines payload from batchQty selections. Each carries
+      // (product_id, product_label, variant, qty) — the shape the backend
+      // TransferAccessoryLine expects.
+      const accessory_lines = Object.entries(batchQty)
+        .map(([sku_id, qty]) => {
+          const row = decoratedBatchRows.find((r) => r.sku_id === sku_id);
+          if (!row) return null;
+          return {
+            product_id: row.product_id,
+            product_label: row._product_label,
+            variant: row.variant || null,
+            qty: Number(qty),
+          };
+        })
+        .filter(Boolean);
+
       await axios.post(`${API}/stock-transfers`, {
         to_clinic_id: toClinic,
         purpose,
         serial_ids: selected,
+        accessory_lines,
         courier_name: courier || null,
         tracking_no: tracking || null,
         notes: notes || null,
@@ -184,14 +248,16 @@ export default function CreateTransferModal({ onClose, onCreated }) {
                 </div>
               </div>
 
-              {/* Serials picker */}
+              {/* Items picker (serialised + batch) */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1">
                     <Package size={11} /> Items to ship *
                   </label>
                   <span className="text-[10px] text-slate-500">
-                    {selected.length} selected · {decoratedSerials.length} available
+                    {selected.length} serial · {Object.keys(batchQty).length} batch line
+                    {Object.keys(batchQty).length === 1 ? '' : 's'} ·{' '}
+                    {decoratedSerials.length + decoratedBatchRows.length} available
                   </span>
                 </div>
                 <div className="relative mb-2">
@@ -200,48 +266,120 @@ export default function CreateTransferModal({ onClose, onCreated }) {
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by serial no. or product…"
+                    placeholder="Search by serial no., brand, model or variant…"
                     data-testid="transfer-create-search"
                     className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:border-indigo-500"
                   />
                 </div>
-                <div className="border border-slate-200 rounded max-h-[260px] overflow-auto">
-                  {filteredSerials.length === 0 ? (
-                    <div className="text-[12px] text-slate-400 text-center py-6">No matching IN_STOCK items.</div>
+                <div className="border border-slate-200 rounded max-h-[300px] overflow-auto">
+                  {filteredSerials.length === 0 && filteredBatch.length === 0 ? (
+                    <div className="text-[12px] text-slate-400 text-center py-6">
+                      No matching items. Try loosening the search.
+                    </div>
                   ) : (
-                    <ul>
-                      {filteredSerials.map((s) => {
-                        const checked = selected.includes(s.serial_id);
-                        return (
-                          <li
-                            key={s.serial_id}
-                            onClick={() => toggle(s.serial_id)}
-                            data-testid={`transfer-serial-row-${s.serial_id}`}
-                            className={`flex items-center gap-3 px-3 py-2 border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${
-                              checked ? 'bg-indigo-50' : 'hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              readOnly
-                              className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer flex-shrink-0"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[12px] font-semibold text-slate-800 truncate">
-                                {s._product_label || s.product_id}
+                    <>
+                      {filteredSerials.length > 0 && (
+                        <div className="text-[9px] uppercase tracking-widest font-bold text-slate-500 bg-slate-50 px-3 py-1.5 border-b border-slate-200 sticky top-0">
+                          Serialised · Hearing aids
+                        </div>
+                      )}
+                      <ul>
+                        {filteredSerials.map((s) => {
+                          const checked = selected.includes(s.serial_id);
+                          return (
+                            <li
+                              key={s.serial_id}
+                              onClick={() => toggle(s.serial_id)}
+                              data-testid={`transfer-serial-row-${s.serial_id}`}
+                              className={`flex items-center gap-3 px-3 py-2 border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${
+                                checked ? 'bg-indigo-50' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                readOnly
+                                className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[12px] font-semibold text-slate-800 truncate">
+                                  {s._product_label || s.product_id}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono truncate">
+                                  S/N {s.serial_no}
+                                </div>
                               </div>
-                              <div className="text-[10px] text-slate-500 font-mono truncate">
-                                S/N {s.serial_no}
+                              <span className="text-[9px] uppercase tracking-wider font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded flex-shrink-0">
+                                IN STOCK
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {filteredBatch.length > 0 && (
+                        <div className="text-[9px] uppercase tracking-widest font-bold text-slate-500 bg-slate-50 px-3 py-1.5 border-b border-t border-slate-200 sticky top-0">
+                          Batch · Accessories &amp; consumables
+                        </div>
+                      )}
+                      <ul>
+                        {filteredBatch.map((b) => {
+                          const qty = batchQty[b.sku_id] || 0;
+                          const active = qty > 0;
+                          return (
+                            <li
+                              key={b.sku_id}
+                              data-testid={`transfer-batch-row-${b.sku_id}`}
+                              className={`flex items-center gap-3 px-3 py-2 border-b border-slate-100 last:border-0 transition-colors ${
+                                active ? 'bg-teal-50' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
+                                <Package size={11} className={active ? 'text-teal-700' : 'text-slate-400'} />
                               </div>
-                            </div>
-                            <span className="text-[9px] uppercase tracking-wider font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded flex-shrink-0">
-                              IN STOCK
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[12px] font-semibold text-slate-800 truncate">
+                                  {b._product_label}
+                                  {b.variant && (
+                                    <span className="ml-1.5 text-[10.5px] font-mono text-slate-500">
+                                      · {b.variant}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  {b.qty_on_hand} on hand · <span className="capitalize">{b._kind || 'accessory'}</span>
+                                </div>
+                              </div>
+                              {/* qty stepper */}
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setQtyFor(b, qty - 1)}
+                                  disabled={qty <= 0}
+                                  data-testid={`transfer-batch-dec-${b.sku_id}`}
+                                  className="w-6 h-6 rounded text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 disabled:opacity-40"
+                                >−</button>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={b.qty_on_hand}
+                                  value={qty}
+                                  onChange={(e) => setQtyFor(b, e.target.value)}
+                                  data-testid={`transfer-batch-qty-${b.sku_id}`}
+                                  className="w-12 text-center text-[12px] font-bold border border-slate-300 rounded py-0.5 focus:outline-none focus:border-teal-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setQtyFor(b, qty + 1)}
+                                  disabled={qty >= b.qty_on_hand}
+                                  data-testid={`transfer-batch-inc-${b.sku_id}`}
+                                  className="w-6 h-6 rounded text-xs font-bold text-teal-700 bg-teal-100 hover:bg-teal-200 disabled:opacity-40"
+                                >+</button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
                   )}
                 </div>
               </div>

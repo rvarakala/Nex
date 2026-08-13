@@ -191,6 +191,46 @@ async def dispatch_transfer(transfer_id: str, payload: StockTransferDispatch,
             note=f"Locked for inter-clinic transfer to {t['to_clinic_name']}",
         )
 
+    # Deduct batch/accessory qty from source now (dispatch = physical
+    # departure). If any line lacks sufficient stock we 409 BEFORE touching
+    # anything else so the draft can be adjusted without half-effects.
+    accessory_lines = t.get("accessory_lines") or []
+    for al in accessory_lines:
+        match = {
+            "clinic_id": t["from_clinic_id"],
+            "product_id": al["product_id"],
+        }
+        if t.get("from_branch_id"):
+            match["branch_id"] = t["from_branch_id"]
+        if al.get("variant") is not None:
+            match["variant"] = al["variant"]
+        row = await db.accessory_stock.find_one(match, {"_id": 0})
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No source stock row for {al.get('product_label') or al['product_id']}"
+                       + (f" · {al['variant']}" if al.get('variant') else ""),
+            )
+        on_hand = int(row.get("qty_on_hand") or 0)
+        if on_hand < int(al["qty"]):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Insufficient stock of {al.get('product_label') or al['product_id']}"
+                       + (f" ({al['variant']})" if al.get('variant') else "")
+                       + f" — need {al['qty']}, have {on_hand}",
+            )
+    for al in accessory_lines:
+        match = {"clinic_id": t["from_clinic_id"], "product_id": al["product_id"]}
+        if t.get("from_branch_id"):
+            match["branch_id"] = t["from_branch_id"]
+        if al.get("variant") is not None:
+            match["variant"] = al["variant"]
+        await db.accessory_stock.update_one(
+            match,
+            {"$inc": {"qty_on_hand": -int(al["qty"])},
+             "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+
     challan_no = await _next_challan_no(db, t["from_clinic_id"])
     now = datetime.now(timezone.utc)
     update = {
@@ -274,6 +314,37 @@ async def receive_transfer(transfer_id: str, payload: StockTransferReceive,
             }},
         )
 
+    # Credit destination accessory_stock for each batch line. When the
+    # destination clinic doesn't already carry a stock row for the SKU
+    # (fresh SKU at this branch), fabricate one so the receipt lands
+    # cleanly. This mirrors how serial lines rewrite `clinic_id`.
+    for al in (t.get("accessory_lines") or []):
+        match = {"clinic_id": t["to_clinic_id"], "product_id": al["product_id"]}
+        if t.get("to_branch_id"):
+            match["branch_id"] = t["to_branch_id"]
+        if al.get("variant") is not None:
+            match["variant"] = al["variant"]
+        existing = await db.accessory_stock.find_one(match, {"_id": 0, "sku_id": 1})
+        if existing:
+            await db.accessory_stock.update_one(
+                match,
+                {"$inc": {"qty_on_hand": int(al["qty"])},
+                 "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        else:
+            # Import here (not at top) to avoid touching startup imports.
+            from models_ha import AccessoryStock
+            row = AccessoryStock(
+                clinic_id=t["to_clinic_id"],
+                branch_id=t.get("to_branch_id"),
+                product_id=al["product_id"],
+                variant=al.get("variant"),
+                qty_on_hand=int(al["qty"]),
+                reorder_level=0,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+            await db.accessory_stock.insert_one(serialize_datetime(row.model_dump()))
+
     now = datetime.now(timezone.utc)
     # Terminal status reflects what actually happened.
     status = "received"
@@ -329,6 +400,19 @@ async def cancel_transfer(transfer_id: str, payload: StockTransferCancel,
             except HTTPException:
                 # Already returned by another flow — ignore.
                 pass
+        # Same for batch/accessory lines — credit the qty back to source
+        # so the cancellation is fully reversible.
+        for al in (t.get("accessory_lines") or []):
+            match = {"clinic_id": t["from_clinic_id"], "product_id": al["product_id"]}
+            if t.get("from_branch_id"):
+                match["branch_id"] = t["from_branch_id"]
+            if al.get("variant") is not None:
+                match["variant"] = al["variant"]
+            await db.accessory_stock.update_one(
+                match,
+                {"$inc": {"qty_on_hand": int(al["qty"])},
+                 "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
 
     now = datetime.now(timezone.utc)
     await db.stock_transfers.update_one(
