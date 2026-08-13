@@ -221,6 +221,10 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
         ))}
       </ul>
 
+      {request.custom_ha_details && (
+        <CustomHADetailsPanel details={request.custom_ha_details} requestingClinic={request.clinic_name} />
+      )}
+
       {request.status === 'fulfilled' && request.linked_transfer_id && (
         <Link
           to={`/inventory/transfers`}
@@ -301,6 +305,124 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
 }
 
 // ─── Modals ──────────────────────────────────────────────────────
+
+// Rich, self-contained spec sheet for Custom HA-linked requests.
+// Snapshotted at request-creation time on `custom_ha_details`, so the
+// head owner sees every field the branch filled — brand, model, per-ear
+// shell/faceplate colours, receiver power, warranty, financials — the
+// moment they open the inbox. Enough to place the vendor order without
+// any back-and-forth on the phone.
+function CustomHADetailsPanel({ details, requestingClinic }) {
+  const d = details || {};
+  const sideLabel = { left: 'Left', right: 'Right', both: 'Both' };
+  const showL = d.side === 'left' || d.side === 'both';
+  const showR = d.side === 'right' || d.side === 'both';
+  const fmtMoney = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+  const earRow = (label, l, r) => (
+    <tr className="border-t border-violet-100">
+      <td className="px-2 py-1 text-[10.5px] font-semibold text-violet-900 whitespace-nowrap">{label}</td>
+      <td className="px-2 py-1 text-[11px] text-slate-800">
+        {showL ? (l || <span className="text-slate-400 italic">—</span>) : <span className="text-slate-300">—</span>}
+      </td>
+      <td className="px-2 py-1 text-[11px] text-slate-800">
+        {showR ? (r || <span className="text-slate-400 italic">—</span>) : <span className="text-slate-300">—</span>}
+      </td>
+    </tr>
+  );
+
+  return (
+    <div
+      data-testid="stock-request-custom-ha-details"
+      className="rounded-lg border border-violet-200 bg-violet-50/60 p-3 space-y-3"
+    >
+      {/* Header row */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-violet-500 font-bold">Custom HA — full spec</div>
+          <div className="text-[13px] font-bold text-slate-900 mt-0.5">
+            {d.patient_name || 'Patient'}
+            {d.patient_mobile && <span className="text-slate-500 font-normal ml-1.5">· {d.patient_mobile}</span>}
+          </div>
+          <div className="text-[11px] text-slate-600 mt-0.5">
+            <b>{d.shell_type || '—'}</b> · {sideLabel[d.side] || d.side} · <b>{d.brand || '—'}</b> {d.model || ''}
+            {d.warranty_months ? <span className="text-slate-500"> · {d.warranty_months}-mo warranty</span> : null}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10.5px] text-slate-500">Requesting clinic</div>
+          <div className="text-[12px] font-semibold text-slate-800">{requestingClinic}</div>
+        </div>
+      </div>
+
+      {/* Per-ear spec table */}
+      <div className="rounded border border-violet-200 bg-white overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-violet-100 text-violet-800">
+            <tr>
+              <th className="text-left px-2 py-1 text-[10px] uppercase tracking-widest font-bold w-[28%]">Spec</th>
+              <th className="text-left px-2 py-1 text-[10px] uppercase tracking-widest font-bold">Left ear</th>
+              <th className="text-left px-2 py-1 text-[10px] uppercase tracking-widest font-bold">Right ear</th>
+            </tr>
+          </thead>
+          <tbody>
+            {earRow('Vent size', d.vent_size_left, d.vent_size_right)}
+            {earRow('Shell colour', d.shell_colour_left, d.shell_colour_right)}
+            {earRow('Faceplate colour', d.faceplate_colour_left, d.faceplate_colour_right)}
+            {earRow('Receiver power', d.receiver_power_left, d.receiver_power_right)}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Features + expected + financials */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-violet-500 font-bold">Features</div>
+          <div className="text-[11.5px] text-slate-800 mt-0.5">
+            {(d.features || []).length
+              ? d.features.map((f) => (
+                  <span key={f} className="inline-block mr-1 mb-1 px-1.5 py-0.5 rounded bg-white border border-violet-200 text-[10.5px] font-semibold">
+                    {String(f).replace(/_/g, ' ')}
+                  </span>
+                ))
+              : <span className="text-slate-400 italic">None</span>}
+          </div>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-violet-500 font-bold">Expected on</div>
+          <div className="text-[12px] font-semibold text-slate-800 mt-0.5 tabular-nums">
+            {d.expected_delivery_date
+              ? new Date(d.expected_delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+              : <span className="text-slate-400 italic">Not set</span>}
+          </div>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-violet-500 font-bold">Total value</div>
+          <div className="text-[13px] font-bold text-slate-900 mt-0.5 tabular-nums">{fmtMoney(d.total_amount)}</div>
+          <div className="text-[10px] text-slate-500">incl {d.gst_rate ?? 0}% GST</div>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-violet-500 font-bold">Advance / Balance</div>
+          <div className="text-[12px] font-bold text-emerald-700 tabular-nums">{fmtMoney(d.advance_amount)} paid</div>
+          <div className="text-[10.5px] font-semibold text-rose-700 tabular-nums">Bal {fmtMoney(d.balance_due)}</div>
+        </div>
+      </div>
+
+      {d.notes && (
+        <div className="text-[11px] text-slate-700 border border-violet-200 bg-white rounded px-2 py-1.5">
+          <b className="text-violet-800">Branch notes:</b> {d.notes}
+        </div>
+      )}
+
+      {d.invoice_no && (
+        <div className="text-[10.5px] text-slate-500">
+          Linked invoice at branch: <span className="font-mono font-semibold text-slate-700">{d.invoice_no}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CreateRequestModal({ onClose, onCreated }) {
   const [lines, setLines] = useState([{ product_label: '', kind: 'accessory', qty: 1 }]);
   const [urgency, setUrgency] = useState('normal');

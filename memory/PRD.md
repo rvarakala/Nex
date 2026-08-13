@@ -1,6 +1,30 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎧 Head-owner sees full Custom HA spec inline (2026-08-13)
+
+**Ask**: When a branch places a Custom HA request (e.g. Phonak Virto B90, black shell + black faceplate, bilateral, ₹10 k advance / ₹1.5 L total), the head owner needs to see ALL the form fields the branch filled — otherwise they can't actually order from the vendor.
+
+**Shipped**:
+- On stock_request creation for a branch-target Custom HA order, we now snapshot the full spec into `stock_requests.custom_ha_details`:
+  - `patient_name` + `patient_mobile`
+  - `shell_type`, `side`
+  - Per-ear: `vent_size_left/right`, `shell_colour_left/right`, `faceplate_colour_left/right`, `receiver_power_left/right`
+  - `brand`, `model`, `warranty_months`, `features[]`
+  - `expected_delivery_date`, `total_amount`, `advance_amount`, `balance_due`, `gst_rate`, `payment_mode`, `invoice_no`, `notes`
+- Stock Requests inbox renders a violet-themed **"Custom HA — full spec"** panel inline right below the compact request line. Panel contains: patient header, per-ear spec table (Left / Right columns for vent, shell colour, faceplate colour, receiver power), feature chips, expected delivery, financials (total incl GST + advance/balance), branch notes, linked invoice ref.
+- Screenshot-verified with the exact scenario from the user's message.
+
+**Files updated**:
+- `/app/backend/routers/ha_custom_ha_orders.py` — snapshot the full spec into `stock_request.custom_ha_details` at creation time
+- `/app/frontend/src/modules/ha/StockRequestsPage.jsx` — new `<CustomHADetailsPanel />` component rendering the rich spec sheet
+- `/app/backend/tests/test_custom_ha_orders.py` — extended the spawn test to assert every snapshot field is populated correctly
+
+**Why snapshot rather than fetch**: The head clinic and the branch clinic have DIFFERENT `clinic_id` values, so scoping `GET /api/ha/custom-ha-orders` to `user.clinic_id` correctly hides the branch's order from the head. Copying the spec onto the stock_request at creation gives the head everything they need without changing the Custom HA endpoint's tenant scoping and without any cross-clinic auth workarounds.
+
+
+
+
 ## 🎧 Custom HA branch → head approval flow (2026-08-13)
 
 **Ask**: Branch clinics placing a Custom HA order with target = "Another Branch" should appear as approve/reject items in the head owner's Stock Requests inbox — so nothing slips through the cracks.

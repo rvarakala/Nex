@@ -412,6 +412,37 @@ async def create_custom_ha_order(
             # Back-refs so both directions of the pair can be resolved.
             "linked_custom_ha_order_id": order_id,
             "linked_custom_ha_order_no": order_no,
+            # Full spec snapshot — the head owner needs every field the
+            # branch filled to actually place the order with the vendor
+            # (Phonak, Signia, Starkey etc.). Snapshotting here means
+            # the inbox stays self-contained and we don't need any
+            # cross-clinic Custom HA fetch endpoint.
+            "custom_ha_details": {
+                "patient_name": patient.get("name"),
+                "patient_mobile": patient.get("mobile"),
+                "shell_type": payload.shell_type,
+                "side": payload.side,
+                "vent_size_left": payload.vent_size_left,
+                "vent_size_right": payload.vent_size_right,
+                "shell_colour_left": payload.shell_colour_left,
+                "shell_colour_right": payload.shell_colour_right,
+                "faceplate_colour_left": payload.faceplate_colour_left,
+                "faceplate_colour_right": payload.faceplate_colour_right,
+                "receiver_power_left": payload.receiver_power_left,
+                "receiver_power_right": payload.receiver_power_right,
+                "brand": payload.brand,
+                "model": payload.model,
+                "warranty_months": payload.warranty_months,
+                "features": payload.features,
+                "expected_delivery_date": payload.expected_delivery_date,
+                "total_amount": total,
+                "advance_amount": paid,
+                "balance_due": balance,
+                "gst_rate": gst_rate,
+                "payment_mode": payload.payment_mode,
+                "invoice_no": invoice_no,
+                "notes": payload.notes,
+            },
             "created_at": now,
             "updated_at": now,
         }

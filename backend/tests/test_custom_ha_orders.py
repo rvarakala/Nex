@@ -251,6 +251,23 @@ def test_custom_ha_branch_target_from_non_head_spawns_stock_request():
     assert "ITC" in stock_req["lines"][0]["product_label"]
     assert "Signia" in stock_req["lines"][0]["product_label"]
 
+    # The head owner needs the FULL form the branch filled — brand, model,
+    # per-ear specs, financials — snapshotted on `custom_ha_details` so
+    # they don't need any cross-clinic fetch to make the vendor order.
+    d = stock_req.get("custom_ha_details") or {}
+    assert d.get("shell_type") == "ITC"
+    assert d.get("side") == "both"
+    assert d.get("brand") == "Signia"
+    assert d.get("model") == "Insio 7AX"
+    assert d.get("vent_size_left") == "1mm"
+    assert d.get("vent_size_right") == "2mm"
+    assert "telecoil" in (d.get("features") or [])
+    assert d.get("total_amount") == 95000
+    assert d.get("advance_amount") == 20000
+    assert d.get("balance_due") == 75000
+    assert d.get("patient_name")   # denormalised for head's view
+    assert d.get("invoice_no")     # branch's linked invoice ref
+
 
 def test_head_fulfill_transitions_linked_custom_ha_order():
     """Fulfilling the linked stock_request must move the Custom HA order
