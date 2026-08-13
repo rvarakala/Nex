@@ -186,7 +186,9 @@ export default function EarMouldsPage() {
                 <td className="px-3 py-2 text-[12px] text-slate-700">
                   <div className="capitalize">{r.material || '—'}</div>
                   <div className="text-[10.5px] text-slate-500">
-                    {r.vent_size ? `Vent ${r.vent_size}` : ''}
+                    {r.side === 'both' && (r.vent_size_left || r.vent_size_right)
+                      ? `Vent ${r.vent_size_left ? `L ${r.vent_size_left}` : ''}${r.vent_size_left && r.vent_size_right ? ' · ' : ''}${r.vent_size_right ? `R ${r.vent_size_right}` : ''}`
+                      : (r.vent_size ? `Vent ${r.vent_size}` : '')}
                     {r.colour ? ` · ${r.colour}` : ''}
                   </div>
                 </td>
@@ -292,6 +294,8 @@ function BookEarMouldModal({ onClose, onSaved }) {
   const [side, setSide] = useState('both');
   const [material, setMaterial] = useState('silicone');
   const [vent, setVent] = useState('');
+  const [ventLeft, setVentLeft] = useState('');
+  const [ventRight, setVentRight] = useState('');
   const [colour, setColour] = useState('');
   const [lab, setLab] = useState('');
   const [expected, setExpected] = useState('');
@@ -337,7 +341,9 @@ function BookEarMouldModal({ onClose, onSaved }) {
         patient_id: patient.patient_id,
         side,
         material,
-        vent_size: vent || null,
+        vent_size: side === 'both' ? null : (vent || null),
+        vent_size_left: side === 'both' ? (ventLeft || null) : null,
+        vent_size_right: side === 'both' ? (ventRight || null) : null,
         colour: colour || null,
         lab_vendor: lab || null,
         expected_delivery_date: expected || null,
@@ -457,16 +463,38 @@ function BookEarMouldModal({ onClose, onSaved }) {
                 <option value="polyethylene">Polyethylene</option>
               </select>
             </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1 block">Vent size</label>
-              <input
-                value={vent}
-                onChange={(e) => setVent(e.target.value)}
-                placeholder="e.g. 1.5mm"
-                data-testid="ha-em-book-vent"
-                className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded"
-              />
-            </div>
+            {side !== 'both' ? (
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1 block">Vent size</label>
+                <input
+                  value={vent}
+                  onChange={(e) => setVent(e.target.value)}
+                  placeholder="e.g. 1.5mm"
+                  data-testid="ha-em-book-vent"
+                  className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1 block">Vent (L / R)</label>
+                <div className="flex gap-1">
+                  <input
+                    value={ventLeft}
+                    onChange={(e) => setVentLeft(e.target.value)}
+                    placeholder="Left e.g. 1.5mm"
+                    data-testid="ha-em-book-vent-left"
+                    className="w-1/2 px-2 py-1.5 text-xs border border-slate-300 rounded"
+                  />
+                  <input
+                    value={ventRight}
+                    onChange={(e) => setVentRight(e.target.value)}
+                    placeholder="Right e.g. IROS"
+                    data-testid="ha-em-book-vent-right"
+                    className="w-1/2 px-2 py-1.5 text-xs border border-slate-300 rounded"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Colour + Lab + Expected */}

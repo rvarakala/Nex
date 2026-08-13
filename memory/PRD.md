@@ -1,6 +1,43 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎧 Custom HA Orders + Ear Mould per-ear vent (2026-08-13)
+
+**Ask**:
+1. Ear Moulds — some patients have different vent sizes per ear (e.g. 1.5mm left, IROS right). The Book Ear Mould modal only exposed one vent field, so one ear's prescription was being lost.
+2. Custom Hearing Aids (IIC/CIC/ITC/ITE) — no dedicated ordering workflow existed. Clinic needed to place orders to a vendor (Phonak/Signia/Starkey/…) OR to another branch (branch → head office that owns the vendor relationship), capturing per-ear specs from the Custom-Order-Form PDF (Starkey/Audibel/NuEar reference).
+
+**Shipped**:
+- Ear Moulds → when Side=Both, modal now shows two vent inputs (`Vent (L)` / `Vent (R)`). Backend `EarMouldOrderCreate` accepts `vent_size_left` + `vent_size_right`; invoice line description renders both. Legacy single-vent flow preserved for Left/Right-only orders.
+- New module `/api/ha/custom-ha-orders` (routes: POST · GET · PATCH /{id}/status) with a **leaner Indian-market subset** of the Starkey form: shell type (IIC/CIC/ITC/ITE), side, per-ear vent/shell colour/faceplate colour/receiver power, brand + model (free-text), warranty months, feature chips, delivery target (Vendor from Vendors master OR Another Branch), advance payment auto-generating a linked invoice.
+- Status ribbon: `impression_pending → sent_to_vendor → dispatched → arrived → delivered → cancelled`.
+- New page at `/ha/custom-ha` (Custom HA tab in the Sales strip) with KPIs, status filter, per-ear spec preview column and one-click invoice deep-link.
+- Reusable `<CustomHAOrderModal />` exposed as CTA in:
+  - `/ha/procurement` → "+ Custom HA Order" (defaults target to Vendor)
+  - `/ha/transfers`   → "Request Custom HA" (defaults target to Another Branch)
+
+**Bug found & fixed while wiring this up**:
+Both ear-mould + custom-HA routers were setting the invoice `status="unpaid"` when advance=0. The canonical `Invoice` model only allows `draft/paid/partial/refunded/partially_refunded/cancelled`, so `GET /api/billing/invoices/{id}` was raising 500 (Pydantic response_model validation) for any zero-advance ear-mould invoice. Changed to `status="draft"` in both routers to match the model's Literal, updated the existing ear-mould regression test to assert the new value.
+
+**Files added**:
+- `/app/backend/routers/ha_custom_ha_orders.py`
+- `/app/frontend/src/modules/ha/CustomHAOrdersPage.jsx` (page + exported `CustomHAOrderModal`)
+- `/app/backend/tests/test_custom_ha_orders.py` (6 tests — vendor happy path, branch/vendor validation guards, advance-over-total guard, status transitions, ear-mould per-ear vent regression)
+
+**Files updated**:
+- `/app/backend/routers/ha_ear_moulds.py` — model + line desc renders per-ear vents; invoice status uses "draft" not "unpaid"
+- `/app/backend/server.py` — imports & mounts `ha_custom_ha_orders_router`
+- `/app/frontend/src/modules/ha/EarMouldsPage.jsx` — dual vent fields when Side=Both; row rendering
+- `/app/frontend/src/modules/ha/HAModule.js` — routes + Custom HA tab
+- `/app/frontend/src/modules/ha/ProcurementPage.js` — Custom HA Order CTA
+- `/app/frontend/src/modules/ha/transfers/StockTransfersPage.jsx` — Request Custom HA CTA
+- `/app/backend/tests/test_ear_mould_orders.py` — status assertion "unpaid" → "draft"
+
+**Verified**: All 11 tests (ear-mould + custom-HA suites) pass. Preview UI verified via screenshots — new page renders 4 test-created orders correctly, modal opens with per-ear spec grid, procurement + transfers show the new CTAs, transfers modal opens with Branch target pre-selected.
+
+
+
+
 ## 🔒 Critical tenant-isolation bug in PO status transition (2026-08-12)
 
 **Report from production**: "Approve button on Purchase Order is stuck / not going further". Reported twice after previous UI-only fix. Same symptom persisted.

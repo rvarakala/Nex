@@ -1005,6 +1005,7 @@ from routers import legal as legal_router                         # noqa: E402
 from routers import password_reset as password_reset_router       # noqa: E402
 from routers import ha_quick_sale as ha_quick_sale_router         # noqa: E402
 from routers import ha_ear_moulds as ha_ear_moulds_router         # noqa: E402
+from routers import ha_custom_ha_orders as ha_custom_ha_orders_router  # noqa: E402
 from routers import csv_email_exports as csv_email_exports_router # noqa: E402
 from routers import hearing_report_versions as hearing_report_versions_router  # noqa: E402
 from routers import launch_banner as launch_banner_router  # noqa: E402
@@ -1072,6 +1073,7 @@ app.include_router(launch_banner_router.router)
 app.include_router(launch_banner_router.public_router)
 app.include_router(ha_quick_sale_router.router)
 app.include_router(ha_ear_moulds_router.router)
+app.include_router(ha_custom_ha_orders_router.router)
 
 # ---- CORS lockdown ----
 # Production SHOULD set CORS_ORIGINS to a comma-separated list of allowed origins

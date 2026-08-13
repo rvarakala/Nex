@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { CustomHAOrderModal } from './CustomHAOrdersPage';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -19,6 +20,7 @@ export default function ProcurementPage() {
   const [pos, setPos] = useState([]);
   const [open, setOpen] = useState(null);   // po_no
   const [creating, setCreating] = useState(false);
+  const [customHAOpen, setCustomHAOpen] = useState(false);
 
   const load = useCallback(async () => {
     const r = await axios.get(`${API}/ha/purchase-orders`);
@@ -34,11 +36,18 @@ export default function ProcurementPage() {
           <h1 className="text-xl font-bold text-slate-800">Procurement</h1>
           <p className="text-[11px] text-slate-500 mt-0.5">Purchase orders → goods receipts. Posting a GRN auto-spawns serial items &amp; updates stock.</p>
         </div>
-        <button
-          data-testid="ha-po-new"
-          onClick={() => setCreating(true)}
-          className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm"
-        >+ New PO</button>
+        <div className="flex items-center gap-2">
+          <button
+            data-testid="ha-po-new-custom-ha"
+            onClick={() => setCustomHAOpen(true)}
+            className="px-3 py-1.5 text-xs font-semibold bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50 rounded-md shadow-sm"
+          >+ Custom HA Order</button>
+          <button
+            data-testid="ha-po-new"
+            onClick={() => setCreating(true)}
+            className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-sm"
+          >+ New PO</button>
+        </div>
       </div>
 
       {/* Cross-link to the Vendors master so a fresh clinic can see how to
@@ -89,6 +98,7 @@ export default function ProcurementPage() {
       </div>
 
       {creating && <CreatePOModal onClose={() => setCreating(false)} onCreated={() => { setCreating(false); load(); }} />}
+      {customHAOpen && <CustomHAOrderModal defaultTarget="vendor" onClose={() => setCustomHAOpen(false)} onSaved={() => setCustomHAOpen(false)} />}
       {open && <PODetailDrawer poNo={open} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   );

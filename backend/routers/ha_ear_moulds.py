@@ -39,7 +39,15 @@ class EarMouldOrderCreate(BaseModel):
     patient_id: str
     side: Side
     material: str = "silicone"
+    # When side == "both", `vent_size_left` and `vent_size_right` are the
+    # authoritative fields; audiologists often prescribe different vents
+    # per ear (e.g. 1.5mm on the left, IROS on the right).
+    # When side == "left" or "right", the single `vent_size` field is
+    # used (legacy + simpler UX). All three are optional so the caller
+    # can send whichever subset is relevant.
     vent_size: Optional[str] = None
+    vent_size_left: Optional[str] = None
+    vent_size_right: Optional[str] = None
     colour: Optional[str] = None
     lab_vendor: Optional[str] = None
     expected_delivery_date: Optional[str] = None    # YYYY-MM-DD
@@ -116,13 +124,26 @@ async def create_ear_mould_order(
 
     paid = round(float(payload.advance_amount), 2)
     balance = round(total - paid, 2)
+    # Invoice model's `status` Literal only accepts draft/paid/partial/…
+    # No advance → "draft"; some advance → "partial"; full → "paid".
     inv_status = ("paid" if balance <= 0
-                  else ("partial" if paid > 0 else "unpaid"))
+                  else ("partial" if paid > 0 else "draft"))
+
+    # Build a vent descriptor that renders correctly for one-ear (single
+    # value) or both-ears (per-ear values) orders.
+    vent_desc = None
+    if payload.side == "both" and (payload.vent_size_left or payload.vent_size_right):
+        parts = []
+        if payload.vent_size_left:  parts.append(f"L {payload.vent_size_left}")
+        if payload.vent_size_right: parts.append(f"R {payload.vent_size_right}")
+        vent_desc = " · ".join(parts)
+    elif payload.vent_size:
+        vent_desc = payload.vent_size
 
     line_desc = (
         f"Custom Ear Mould — {payload.side.title()} · "
         f"{payload.material.title()}"
-        + (f" · Vent {payload.vent_size}" if payload.vent_size else "")
+        + (f" · Vent {vent_desc}" if vent_desc else "")
         + (f" · Colour {payload.colour}" if payload.colour else "")
         + (f" · Lab: {payload.lab_vendor}" if payload.lab_vendor else "")
         + (f". Expected delivery {payload.expected_delivery_date}"
@@ -195,6 +216,8 @@ async def create_ear_mould_order(
         "side": payload.side,
         "material": payload.material,
         "vent_size": payload.vent_size,
+        "vent_size_left": payload.vent_size_left,
+        "vent_size_right": payload.vent_size_right,
         "colour": payload.colour,
         "lab_vendor": payload.lab_vendor,
         "expected_delivery_date": payload.expected_delivery_date,

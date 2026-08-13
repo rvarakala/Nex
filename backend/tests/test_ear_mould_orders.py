@@ -82,7 +82,7 @@ def test_book_ear_mould_no_advance_produces_unpaid_invoice():
     assert order["status"] == "pending_impression"
     assert order["balance_due"] == 4500
     inv = s.get(f"{BASE_URL}/api/billing/invoices/{order['invoice_id']}", timeout=15).json()
-    assert inv["status"] == "unpaid"
+    assert inv["status"] == "draft"
     assert len(inv["payments"]) == 0
     assert inv["due_total"] == 4500
 

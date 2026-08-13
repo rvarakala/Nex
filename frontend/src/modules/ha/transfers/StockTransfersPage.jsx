@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import { Truck, Plus, ArrowDownLeft, ArrowUpRight, AlertCircle, Check } from 'lucide-react';
+import { Truck, Plus, ArrowDownLeft, ArrowUpRight, AlertCircle, Check, Ear } from 'lucide-react';
 import CreateTransferModal from './CreateTransferModal';
 import ReceiveTransferModal from './ReceiveTransferModal';
 import ChallanPrintModal from './ChallanPrintModal';
+import { CustomHAOrderModal } from '../CustomHAOrdersPage';
 import { useAuth } from '../../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -42,6 +43,7 @@ export default function StockTransfersPage() {
   const [creating, setCreating] = useState(false);
   const [receiving, setReceiving] = useState(null);   // transfer doc when modal open
   const [printing, setPrinting] = useState(null);     // transfer doc when challan modal open
+  const [customHAOpen, setCustomHAOpen] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState('');
 
@@ -96,15 +98,26 @@ export default function StockTransfersPage() {
             Move serialised hearing aids between clinics with a signed delivery challan.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          data-testid="transfers-new-btn"
-          className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-bold uppercase tracking-wide px-4 py-2 rounded-lg shadow-sm shadow-indigo-500/30 transition-colors"
-        >
-          <Plus size={14} strokeWidth={2.5} />
-          New Transfer
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCustomHAOpen(true)}
+            data-testid="transfers-request-custom-ha-btn"
+            className="inline-flex items-center gap-1.5 bg-white border border-indigo-300 hover:bg-indigo-50 text-indigo-700 text-[12px] font-bold uppercase tracking-wide px-3 py-2 rounded-lg shadow-sm transition-colors"
+          >
+            <Ear size={13} />
+            Request Custom HA
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            data-testid="transfers-new-btn"
+            className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-bold uppercase tracking-wide px-4 py-2 rounded-lg shadow-sm shadow-indigo-500/30 transition-colors"
+          >
+            <Plus size={14} strokeWidth={2.5} />
+            New Transfer
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -161,6 +174,13 @@ export default function StockTransfersPage() {
         <CreateTransferModal
           onClose={() => setCreating(false)}
           onCreated={() => { setCreating(false); load(); }}
+        />
+      )}
+      {customHAOpen && (
+        <CustomHAOrderModal
+          defaultTarget="branch"
+          onClose={() => setCustomHAOpen(false)}
+          onSaved={() => setCustomHAOpen(false)}
         />
       )}
       {receiving && (
