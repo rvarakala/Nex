@@ -176,3 +176,142 @@ def test_ear_mould_per_ear_vent_persists_when_side_both():
     desc = inv["lines"][0]["description"]
     assert "1.5mm" in desc
     assert "IROS" in desc
+
+
+
+# ── Branch → Head approval flow ────────────────────────────────────────
+# When a branch clinic (Mysore) places a Custom HA order with target=branch
+# and the clinic is a member (non-head) of a clinic group, we auto-spawn a
+# stock_request in the head owner's inbox. Approving it must transition
+# the order to `sent_to_vendor`; declining must cancel it.
+BRANCH_CLINIC_ID = "BR-CL-4601C9DF"   # Sound Clinic – Mysore
+
+
+def _branch_session():
+    """Sign in as head, then flip context to the Mysore branch clinic
+    via `/api/auth/switch-clinic`. Mirrors the existing test pattern in
+    `test_clinic_groups_stock_requests.py`."""
+    s = _sess()   # head-owner token
+    r = s.post(f"{BASE_URL}/api/auth/switch-clinic",
+               json={"clinic_id": BRANCH_CLINIC_ID}, timeout=15)
+    assert r.status_code == 200, r.text
+    tok = r.json()["access_token"]
+    branch = requests.Session()
+    branch.headers.update({"Authorization": f"Bearer {tok}"})
+    return branch
+
+
+def _find_patient_in_branch(branch_session):
+    """Grab a patient scoped to the Mysore branch. If Mysore has no
+    patients yet, seed one — bookings need a patient_id from the same
+    clinic as the caller."""
+    r = branch_session.get(f"{BASE_URL}/api/patients?limit=1", timeout=15)
+    d = r.json()
+    d = d.get("items", d) if isinstance(d, dict) else d
+    if d:
+        return d[0]["patient_id"]
+    r = branch_session.post(f"{BASE_URL}/api/patients", json={
+        "name": "PyTest Branch Patient", "mobile": "9000000001",
+        "age": 45, "gender": "male",
+    }, timeout=15)
+    assert r.status_code == 200, r.text
+    return r.json()["patient_id"]
+
+
+def test_custom_ha_branch_target_from_non_head_spawns_stock_request():
+    """Branch clinic (non-head, in group) + target=branch must auto-spawn
+    a stock_request in the head's inbox AND flag the order as awaiting."""
+    branch = _branch_session()
+    pid = _find_patient_in_branch(branch)
+
+    r = branch.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "both", "shell_type": "ITC",
+        "vent_size_left": "1mm", "vent_size_right": "2mm",
+        "brand": "Signia", "model": "Insio 7AX",
+        "features": ["telecoil", "rechargeable"],
+        "delivery_target": "branch",
+        "total_amount": 95000, "advance_amount": 20000,
+        "payment_mode": "upi", "gst_rate": 18,
+    }, timeout=15)
+    assert r.status_code == 200, r.text
+    order = r.json()
+    assert order["status"] == "awaiting_approval"
+    assert order["target_clinic_id"] is not None
+    assert order["linked_stock_request_id"] is not None
+
+    # Head must see the auto-created stock_request in their inbox.
+    head = _sess()
+    r = head.get(f"{BASE_URL}/api/stock-requests?status=pending", timeout=15)
+    pending = r.json()
+    linked = [x for x in pending if x.get("linked_custom_ha_order_id") == order["order_id"]]
+    assert len(linked) == 1
+    stock_req = linked[0]
+    assert stock_req["linked_custom_ha_order_no"] == order["order_no"]
+    assert stock_req["lines"][0]["kind"] == "ha"
+    assert "ITC" in stock_req["lines"][0]["product_label"]
+    assert "Signia" in stock_req["lines"][0]["product_label"]
+
+
+def test_head_fulfill_transitions_linked_custom_ha_order():
+    """Fulfilling the linked stock_request must move the Custom HA order
+    to `sent_to_vendor` with an approval entry in history."""
+    branch = _branch_session()
+    pid = _find_patient_in_branch(branch)
+    r = branch.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "right", "shell_type": "IIC",
+        "vent_size_right": "1mm", "brand": "Phonak", "model": "Virto",
+        "delivery_target": "branch",
+        "total_amount": 110000, "advance_amount": 40000,
+    }, timeout=15)
+    order = r.json()
+    stock_req_id = order["linked_stock_request_id"]
+    order_id = order["order_id"]
+
+    head = _sess()
+    grp = head.get(f"{BASE_URL}/api/clinic-groups/mine", timeout=15).json()
+    head_clinic_id = grp["head"]["clinic_id"]
+    r = head.post(f"{BASE_URL}/api/stock-requests/{stock_req_id}/fulfill",
+                  json={"source_clinic_id": head_clinic_id, "create_transfer": False},
+                  timeout=15)
+    assert r.status_code == 200, r.text
+
+    r = branch.get(f"{BASE_URL}/api/ha/custom-ha-orders", timeout=15)
+    orders = r.json()
+    updated = next((o for o in orders if o["order_id"] == order_id), None)
+    assert updated is not None
+    assert updated["status"] == "sent_to_vendor"
+    approvals = [h for h in updated["history"]
+                 if "approved" in (h.get("note") or "").lower()]
+    assert len(approvals) >= 1
+
+
+def test_head_decline_cancels_linked_custom_ha_order():
+    """Declining the linked stock_request must cancel the Custom HA
+    order and carry the decline reason into the order's history."""
+    branch = _branch_session()
+    pid = _find_patient_in_branch(branch)
+    r = branch.post(f"{BASE_URL}/api/ha/custom-ha-orders", json={
+        "patient_id": pid, "side": "left", "shell_type": "CIC",
+        "vent_size_left": "1.5mm", "brand": "Oticon", "model": "More",
+        "delivery_target": "branch",
+        "total_amount": 85000, "advance_amount": 0,
+    }, timeout=15)
+    order = r.json()
+    stock_req_id = order["linked_stock_request_id"]
+    order_id = order["order_id"]
+
+    head = _sess()
+    r = head.post(f"{BASE_URL}/api/stock-requests/{stock_req_id}/decline",
+                  json={"reason": "Model discontinued — please pick a current one"},
+                  timeout=15)
+    assert r.status_code == 200, r.text
+
+    r = branch.get(f"{BASE_URL}/api/ha/custom-ha-orders", timeout=15)
+    orders = r.json()
+    updated = next((o for o in orders if o["order_id"] == order_id), None)
+    assert updated is not None
+    assert updated["status"] == "cancelled"
+    declines = [h for h in updated["history"]
+                if "declined" in (h.get("note") or "").lower()]
+    assert len(declines) >= 1
+    assert "discontinued" in declines[-1]["note"].lower()

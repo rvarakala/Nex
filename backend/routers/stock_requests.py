@@ -108,6 +108,41 @@ async def _clinic_name(db, clinic_id: str) -> str:
     return (doc or {}).get("name") or clinic_id
 
 
+async def _apply_stock_request_decision(
+    db, req: dict, decision: str, actor_user_id: str, note: Optional[str] = None,
+) -> None:
+    """Mirror a fulfil/decline on a stock_request into any linked
+    Custom HA order so the audiologist's view stays consistent.
+
+    - fulfil  → order → `sent_to_vendor` (head owner has approved and
+      will place/route the actual manufacturing order)
+    - decline → order → `cancelled` (head owner rejected; branch must
+      inform patient / refund advance separately)
+    """
+    order_id = req.get("linked_custom_ha_order_id")
+    if not order_id:
+        return
+    if decision == "fulfil":
+        next_status = "sent_to_vendor"
+        history_note = "Head clinic approved via Stock Request"
+    elif decision == "decline":
+        next_status = "cancelled"
+        history_note = f"Head clinic declined via Stock Request: {note}" if note else "Head clinic declined via Stock Request"
+    else:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.custom_ha_orders.update_one(
+        {"order_id": order_id},
+        {"$set": {"status": next_status, "updated_at": now_iso},
+         "$push": {"history": {
+             "at": now_iso,
+             "status": next_status,
+             "actor_user_id": actor_user_id,
+             "note": history_note,
+         }}},
+    )
+
+
 def _strip(row: dict) -> dict:
     row.pop("_id", None)
     return row
@@ -288,6 +323,11 @@ async def fulfill_request(
         "source_clinic_id": payload.source_clinic_id,
         "linked_transfer_id": linked_transfer_id, "at": now,
     }))
+    # Approval mirrored on the linked Custom HA order (no-op for regular
+    # requests that don't carry a `linked_custom_ha_order_id`).
+    await _apply_stock_request_decision(
+        db, req, "fulfil", actor_user_id=user["user_id"],
+    )
     return await get_request(request_id, user=user, db=db)
 
 
@@ -316,6 +356,10 @@ async def decline_request(
         "action": "stock_request.decline", "request_id": request_id,
         "reason": payload.reason, "at": now,
     }))
+    # Rejection mirrored on the linked Custom HA order (no-op otherwise).
+    await _apply_stock_request_decision(
+        db, req, "decline", actor_user_id=user["user_id"], note=payload.reason,
+    )
     return await get_request(request_id, user=user, db=db)
 
 

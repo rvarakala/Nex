@@ -1,6 +1,37 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎧 Custom HA branch → head approval flow (2026-08-13)
+
+**Ask**: Branch clinics placing a Custom HA order with target = "Another Branch" should appear as approve/reject items in the head owner's Stock Requests inbox — so nothing slips through the cracks.
+
+**Shipped**:
+- New Custom HA status **`awaiting_approval`** (violet chip) — set automatically when a member (non-head) clinic in a clinic group places a target=branch Custom HA order.
+- Backend auto-spawns a `stock_requests` doc with:
+  - `kind=ha`, one-line `product_label` ("Custom ITC · Both · Signia Insio 7AX")
+  - Full per-ear spec dump in the request line `notes` (L vent, R vent, colours, receivers, features, patient notes)
+  - Cross-refs `linked_custom_ha_order_id` + `linked_custom_ha_order_no`
+- Custom HA order carries back-refs `linked_stock_request_id`, `target_clinic_id`, `target_clinic_name` for the head clinic display.
+- Head-owner **Fulfil** on the linked stock_request → Custom HA order → `sent_to_vendor` (history entry: "Head clinic approved via Stock Request").
+- Head-owner **Decline** on the linked stock_request → Custom HA order → `cancelled` (history entry captures the head's decline reason so the branch audiologist can explain it to the patient).
+- Standalone clinics (no group) or head clinics using target=branch fall back to the existing intra-clinic branch dropdown — no approval needed. Guarded in the modal so we never send an "approval-only" order into a workflow with no approver.
+- Stock Requests inbox: linked Custom HA rows show a **CUSTOM HA · CHA/2026/xxxxxx →** badge deep-linking to `/ha/custom-ha`, plus the full per-ear spec inline (rendered from `notes`).
+- Custom HA page: new "Awaiting Approval" KPI + filter chip; delivery-target column shows `HEAD CLINIC` label with the target clinic name for approval-routed orders.
+
+**Files updated (backend)**:
+- `/app/backend/routers/ha_custom_ha_orders.py` — group-aware target resolution + auto stock_request creation
+- `/app/backend/routers/stock_requests.py` — new `_apply_stock_request_decision()` helper; wired into fulfill + decline
+- `/app/backend/tests/test_custom_ha_orders.py` — 3 new end-to-end tests (spawn, fulfill→approve, decline→cancel) using the existing `switch-clinic` head-to-branch pattern
+
+**Files updated (frontend)**:
+- `/app/frontend/src/modules/ha/CustomHAOrdersPage.jsx` — awaiting_approval status meta, awaiting-approval KPI, modal auto-routes to head via violet hint card when member (non-head) of a group, delivery target display shows `HEAD CLINIC` for approval orders
+- `/app/frontend/src/modules/ha/StockRequestsPage.jsx` — Custom HA linked badge + inline notes rendering
+
+**Verified**: 14/14 backend tests pass (5 new + 6 original custom-HA + full ear-mould suite), 15/15 clinic-groups/stock-requests regression suite passes with no impact, UI screenshot confirms the head owner sees the linked badge in their inbox with all the specs inline.
+
+
+
+
 ## 🎧 Custom HA Orders + Ear Mould per-ear vent (2026-08-13)
 
 **Ask**:

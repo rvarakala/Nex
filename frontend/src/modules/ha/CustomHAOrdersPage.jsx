@@ -17,9 +17,10 @@ import { Plus, Ear, Search, Calendar, Package, RefreshCw, Building2, Truck } fro
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const STATUS_ORDER = ['impression_pending', 'sent_to_vendor', 'dispatched', 'arrived', 'delivered', 'cancelled'];
+const STATUS_ORDER = ['impression_pending', 'awaiting_approval', 'sent_to_vendor', 'dispatched', 'arrived', 'delivered', 'cancelled'];
 const STATUS_META = {
   impression_pending: { label: 'Impression Pending', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
+  awaiting_approval:  { label: 'Awaiting Approval',  tone: 'bg-violet-100 text-violet-800 border-violet-300' },
   sent_to_vendor:     { label: 'Sent to Vendor',     tone: 'bg-amber-100 text-amber-800 border-amber-300' },
   dispatched:         { label: 'Dispatched',         tone: 'bg-sky-100 text-sky-800 border-sky-300' },
   arrived:            { label: 'Arrived',            tone: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
@@ -74,8 +75,9 @@ export default function CustomHAOrdersPage() {
   }, [rows, search]);
 
   const kpis = useMemo(() => {
-    const c = { total: rows.length, sentVendor: 0, arrived: 0, dueBalance: 0 };
+    const c = { total: rows.length, awaiting: 0, sentVendor: 0, arrived: 0, dueBalance: 0 };
     rows.forEach((r) => {
+      if (r.status === 'awaiting_approval') c.awaiting++;
       if (r.status === 'sent_to_vendor') c.sentVendor++;
       if (r.status === 'arrived') c.arrived++;
       c.dueBalance += Number(r.balance_due || 0);
@@ -114,8 +116,9 @@ export default function CustomHAOrdersPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         <Kpi label="Open Orders" value={kpis.total} testid="ha-cha-kpi-open" />
+        <Kpi label="Awaiting Approval" value={kpis.awaiting} testid="ha-cha-kpi-awaiting" tone="violet" />
         <Kpi label="Sent to Vendor" value={kpis.sentVendor} testid="ha-cha-kpi-sent" tone="amber" />
         <Kpi label="Arrived — ready to collect" value={kpis.arrived} testid="ha-cha-kpi-arrived" tone="indigo" />
         <Kpi label="Total Balance Due" value={fmtMoney(kpis.dueBalance)} testid="ha-cha-kpi-due" tone="rose" />
@@ -214,9 +217,11 @@ export default function CustomHAOrdersPage() {
                 <td className="px-3 py-2 text-[12px]">
                   <div className="inline-flex items-center gap-1">
                     {r.delivery_target === 'vendor' ? <Truck size={11} /> : <Building2 size={11} />}
-                    <span>{r.vendor_name || r.target_branch_name || '—'}</span>
+                    <span>{r.vendor_name || r.target_clinic_name || r.target_branch_name || '—'}</span>
                   </div>
-                  <div className="text-[10px] uppercase text-slate-400 tracking-widest">{r.delivery_target}</div>
+                  <div className="text-[10px] uppercase text-slate-400 tracking-widest">
+                    {r.delivery_target === 'branch' && r.target_clinic_id ? 'HEAD CLINIC' : r.delivery_target}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-[12px] tabular-nums">{fmtDay(r.expected_delivery_date)}</td>
                 <td className="px-3 py-2 text-right text-[12px] tabular-nums">
@@ -256,6 +261,7 @@ function Kpi({ label, value, testid, tone }) {
   const toneCls = tone === 'rose'   ? 'bg-rose-50 border-rose-200 text-rose-800'
                 : tone === 'amber'  ? 'bg-amber-50 border-amber-200 text-amber-800'
                 : tone === 'indigo' ? 'bg-indigo-50 border-indigo-200 text-indigo-800'
+                : tone === 'violet' ? 'bg-violet-50 border-violet-200 text-violet-800'
                 : 'bg-white border-slate-200 text-slate-700';
   return (
     <div className={`rounded-md border px-3 py-2 ${toneCls}`} data-testid={testid}>
@@ -334,6 +340,11 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
   const [branches, setBranches] = useState([]);
   const [vendorId, setVendorId] = useState('');
   const [targetBranchId, setTargetBranchId] = useState('');
+  // Group awareness — when this clinic is a member (non-head) of a
+  // clinic group, "Another Branch" routes through the head owner's
+  // Stock Requests inbox for approval. When standalone / head clinic,
+  // fall back to intra-clinic branch selection.
+  const [groupInfo, setGroupInfo] = useState({ inGroup: false, isHead: false, headName: null });
   const [expected, setExpected] = useState('');
 
   const [total, setTotal] = useState('');
@@ -345,16 +356,23 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  // Load vendors + branches for the delivery target dropdowns.
+  // Load vendors + branches + clinic-group context for the delivery target dropdowns.
   useEffect(() => {
     (async () => {
       try {
-        const [v, b] = await Promise.all([
+        const [v, b, g] = await Promise.all([
           axios.get(`${API}/vendors?active=true`).catch(() => ({ data: [] })),
           axios.get(`${API}/branches`).catch(() => ({ data: [] })),
+          axios.get(`${API}/clinic-groups/mine`).catch(() => ({ data: { group: null } })),
         ]);
         setVendors(v.data || []);
         setBranches(b.data || []);
+        const grp = g.data?.group;
+        setGroupInfo({
+          inGroup: !!grp,
+          isHead: !!g.data?.viewer_is_head,
+          headName: g.data?.head?.name || null,
+        });
       } catch { /* noop */ }
     })();
   }, []);
@@ -389,7 +407,11 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
     if (!total || Number(total) <= 0) { setErr('Enter the total amount'); return; }
     if (Number(advance || 0) > Number(total)) { setErr('Advance cannot exceed the total'); return; }
     if (deliveryTarget === 'vendor' && !vendorId) { setErr('Pick a vendor'); return; }
-    if (deliveryTarget === 'branch' && !targetBranchId) { setErr('Pick a target branch'); return; }
+    // Branch target validation: if in group and not head → auto-routes to
+    // head via stock_request (no target_branch_id needed). If standalone
+    // or head clinic → pick an intra-clinic branch.
+    const routesToHead = deliveryTarget === 'branch' && groupInfo.inGroup && !groupInfo.isHead;
+    if (deliveryTarget === 'branch' && !routesToHead && !targetBranchId) { setErr('Pick a target branch'); return; }
 
     setBusy(true);
     try {
@@ -411,7 +433,7 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
         features,
         delivery_target: deliveryTarget,
         vendor_id: deliveryTarget === 'vendor' ? vendorId : null,
-        target_branch_id: deliveryTarget === 'branch' ? targetBranchId : null,
+        target_branch_id: (deliveryTarget === 'branch' && !routesToHead) ? targetBranchId : null,
         expected_delivery_date: expected || null,
         total_amount: Number(total),
         advance_amount: Number(advance || 0),
@@ -662,18 +684,32 @@ export function CustomHAOrderModal({ onClose, onSaved, defaultTarget = 'vendor' 
                 </div>
               ) : (
                 <div>
-                  <label className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1 block">Target branch *</label>
-                  <select
-                    value={targetBranchId}
-                    onChange={(e) => setTargetBranchId(e.target.value)}
-                    data-testid="ha-cha-target-branch-id"
-                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded"
-                  >
-                    <option value="">— pick branch —</option>
-                    {branches.map((b) => (
-                      <option key={b.branch_id} value={b.branch_id}>{b.name}</option>
-                    ))}
-                  </select>
+                  <label className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1 block">
+                    {groupInfo.inGroup && !groupInfo.isHead ? 'Approver' : 'Target branch *'}
+                  </label>
+                  {groupInfo.inGroup && !groupInfo.isHead ? (
+                    <div
+                      data-testid="ha-cha-branch-head-hint"
+                      className="border border-violet-200 bg-violet-50 text-violet-900 rounded px-3 py-1.5 text-[11.5px]"
+                    >
+                      <div className="font-semibold">→ {groupInfo.headName || 'Head clinic'}</div>
+                      <div className="text-[10.5px] opacity-80 leading-snug mt-0.5">
+                        Head owner will see this in Stock Requests. Order stays <b>AWAITING APPROVAL</b> until they fulfil / decline.
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      value={targetBranchId}
+                      onChange={(e) => setTargetBranchId(e.target.value)}
+                      data-testid="ha-cha-target-branch-id"
+                      className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded"
+                    >
+                      <option value="">— pick branch —</option>
+                      {branches.map((b) => (
+                        <option key={b.branch_id} value={b.branch_id}>{b.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
               <div>

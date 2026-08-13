@@ -45,7 +45,7 @@ Side = Literal["left", "right", "both"]
 ShellType = Literal["IIC", "CIC", "ITC", "ITE"]
 DeliveryTarget = Literal["vendor", "branch"]
 CustomHAStatus = Literal[
-    "impression_pending", "sent_to_vendor", "dispatched",
+    "impression_pending", "awaiting_approval", "sent_to_vendor", "dispatched",
     "arrived", "delivered", "cancelled",
 ]
 
@@ -166,6 +166,14 @@ async def create_custom_ha_order(
     # Resolve delivery target so we can denormalise a display name.
     vendor_name: Optional[str] = None
     target_branch_name: Optional[str] = None
+    # If the branch target is routed through a clinic group's approval
+    # flow, we keep track of the linked stock_request + target head.
+    linked_stock_request_id: Optional[str] = None
+    target_clinic_id: Optional[str] = None
+    target_clinic_name: Optional[str] = None
+    # Order starts sent_to_vendor by default; recomputed below if the
+    # request goes through group-head approval.
+    initial_status: str = "sent_to_vendor"
     if payload.delivery_target == "vendor":
         if not payload.vendor_id:
             raise HTTPException(400, "vendor_id is required when delivery_target='vendor'")
@@ -177,17 +185,42 @@ async def create_custom_ha_order(
             raise HTTPException(404, "Vendor not found in this clinic")
         vendor_name = vendor.get("name")
     else:  # branch
-        if not payload.target_branch_id:
-            raise HTTPException(400, "target_branch_id is required when delivery_target='branch'")
-        if payload.target_branch_id == branch_id:
-            raise HTTPException(400, "Requesting branch cannot equal the target branch")
-        tb = await db.branches.find_one(
-            {"branch_id": payload.target_branch_id, "clinic_id": user["clinic_id"]},
-            {"_id": 0, "name": 1},
+        # If the clinic is in a multi-clinic group AND is NOT the head,
+        # the branch delivery target means "ask the head clinic to
+        # fulfil this bespoke order" — auto-spawn a stock_request in the
+        # head owner's inbox and hold the order at `awaiting_approval`
+        # until head fulfils / declines. If the clinic is standalone or
+        # IS the head, fall back to the existing intra-clinic branch
+        # dropdown (no approval needed).
+        group = await db.clinic_groups.find_one(
+            {"$or": [
+                {"head_clinic_id": user["clinic_id"]},
+                {"member_clinic_ids": user["clinic_id"]},
+            ]},
+            {"_id": 0},
         )
-        if not tb:
-            raise HTTPException(404, "Target branch not found in this clinic")
-        target_branch_name = tb.get("name")
+        viewer_is_head = bool(group and group.get("head_clinic_id") == user["clinic_id"])
+
+        if group and not viewer_is_head:
+            # Group-head approval path.
+            target_clinic_id = group["head_clinic_id"]
+            head = await db.clinics.find_one(
+                {"clinic_id": target_clinic_id}, {"_id": 0, "name": 1},
+            ) or {}
+            target_clinic_name = head.get("name") or target_clinic_id
+            initial_status = "awaiting_approval"
+        else:
+            if not payload.target_branch_id:
+                raise HTTPException(400, "target_branch_id is required when delivery_target='branch'")
+            if payload.target_branch_id == branch_id:
+                raise HTTPException(400, "Requesting branch cannot equal the target branch")
+            tb = await db.branches.find_one(
+                {"branch_id": payload.target_branch_id, "clinic_id": user["clinic_id"]},
+                {"_id": 0, "name": 1},
+            )
+            if not tb:
+                raise HTTPException(404, "Target branch not found in this clinic")
+            target_branch_name = tb.get("name")
 
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
@@ -297,10 +330,13 @@ async def create_custom_ha_order(
         "vendor_name": vendor_name,
         "target_branch_id": payload.target_branch_id,
         "target_branch_name": target_branch_name,
+        "target_clinic_id": target_clinic_id,
+        "target_clinic_name": target_clinic_name,
+        "linked_stock_request_id": None,   # filled in below if we create one
         "expected_delivery_date": payload.expected_delivery_date,
-        # Freshly booked orders default to "sent_to_vendor" (or branch)
-        # when target is set, otherwise the impression is still pending.
-        "status": "sent_to_vendor",
+        # Freshly booked orders default to "sent_to_vendor" (or "awaiting_approval"
+        # if the branch target routes through the head clinic's inbox).
+        "status": initial_status,
         "history": [{
             "at": now_iso,
             "status": "booked",
@@ -318,6 +354,76 @@ async def create_custom_ha_order(
         "updated_at": now_iso,
     }
     await db.custom_ha_orders.insert_one(order_doc)
+
+    # ── Head-clinic approval path ──
+    # When this order needs group-head approval (branch target + non-head
+    # requester in a clinic group), spawn a stock_request doc that shows
+    # up in the head owner's Stock Requests inbox. Fulfil/decline on that
+    # request will transition this order via `_apply_stock_request_decision()`
+    # in the stock_requests router.
+    if initial_status == "awaiting_approval":
+        stock_req_id = f"REQ-{uuid.uuid4().hex[:10].upper()}"
+        requesting_clinic = await db.clinics.find_one(
+            {"clinic_id": user["clinic_id"]}, {"_id": 0, "name": 1},
+        ) or {}
+        # Compact one-line label so the inbox column stays readable —
+        # full spec sheet is in the linked custom HA order.
+        line_bits = [f"Custom {payload.shell_type}", payload.side.title()]
+        if payload.brand or payload.model:
+            line_bits.append(f"{payload.brand or ''} {payload.model or ''}".strip())
+        request_note_bits = [
+            f"L vent {payload.vent_size_left}" if payload.vent_size_left else None,
+            f"R vent {payload.vent_size_right}" if payload.vent_size_right else None,
+            f"L colour {payload.shell_colour_left}" if payload.shell_colour_left else None,
+            f"R colour {payload.shell_colour_right}" if payload.shell_colour_right else None,
+            f"L receiver {payload.receiver_power_left}" if payload.receiver_power_left else None,
+            f"R receiver {payload.receiver_power_right}" if payload.receiver_power_right else None,
+            ("features: " + ", ".join(payload.features)) if payload.features else None,
+            payload.notes,
+        ]
+        request_note = " · ".join([b for b in request_note_bits if b])
+
+        stock_request_doc = {
+            "request_id": stock_req_id,
+            "clinic_id": user["clinic_id"],
+            "clinic_name": requesting_clinic.get("name"),
+            "group_id": group["group_id"],
+            "head_clinic_id": group["head_clinic_id"],
+            "requested_by_user_id": user["user_id"],
+            "requested_by_role": user.get("role"),
+            "lines": [{
+                "product_label": " · ".join([b for b in line_bits if b]),
+                "kind": "ha",
+                "product_id": None,
+                "variant": None,
+                "qty": 1,
+                "notes": request_note or None,
+            }],
+            "urgency": "normal",
+            "reason": f"Custom HA order {order_no} needs head approval",
+            "needed_by": payload.expected_delivery_date,
+            "status": "pending",
+            "fulfilled_by_user_id": None,
+            "fulfilled_at": None,
+            "fulfilled_from_clinic_id": None,
+            "linked_transfer_id": None,
+            "decline_reason": None,
+            "po_details": None,
+            # Back-refs so both directions of the pair can be resolved.
+            "linked_custom_ha_order_id": order_id,
+            "linked_custom_ha_order_no": order_no,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db.stock_requests.insert_one(stock_request_doc)
+
+        # Backfill the order with the linked request id so the Custom HA
+        # list can deep-link to the inbox row.
+        await db.custom_ha_orders.update_one(
+            {"order_id": order_id},
+            {"$set": {"linked_stock_request_id": stock_req_id}},
+        )
+        order_doc["linked_stock_request_id"] = stock_req_id
 
     return deserialize_datetime({k: v for k, v in order_doc.items() if k != "_id"})
 

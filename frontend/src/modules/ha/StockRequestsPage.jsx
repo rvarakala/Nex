@@ -193,6 +193,15 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
           <div className="text-[13px] font-semibold text-slate-900 mt-0.5">
             {request.clinic_name}
             {request.needed_by && <span className="text-slate-500 font-normal ml-2">needed by {new Date(request.needed_by).toLocaleDateString()}</span>}
+            {request.linked_custom_ha_order_no && (
+              <Link
+                to="/ha/custom-ha"
+                data-testid={`stock-request-custom-ha-link-${request.request_id}`}
+                className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-violet-100 text-violet-800 border-violet-300 hover:bg-violet-200"
+              >
+                Custom HA · {request.linked_custom_ha_order_no} →
+              </Link>
+            )}
           </div>
           {request.reason && <p className="text-[11.5px] text-slate-500 italic">&ldquo;{request.reason}&rdquo;</p>}
         </div>
@@ -205,6 +214,9 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
             <span className="font-semibold">{ln.product_label}</span>
             {ln.variant && <span className="text-slate-500 text-[11px]">· {ln.variant}</span>}
             <span className="text-[9.5px] uppercase tracking-wider text-slate-400 border border-slate-200 rounded px-1 py-0.5">{ln.kind || 'other'}</span>
+            {ln.notes && (
+              <span className="text-[10.5px] text-slate-500 italic flex-1 truncate">— {ln.notes}</span>
+            )}
           </li>
         ))}
       </ul>
