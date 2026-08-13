@@ -83,7 +83,7 @@ async def dispatch_reminder(
     """Sends the reminder (or stubs it if provider keys missing).
     Returns the ReminderLog dict that was persisted.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from uuid import uuid4
 
     if channel not in {"whatsapp", "sms", "email"}:
@@ -108,7 +108,7 @@ async def dispatch_reminder(
         "recipient": recipient,
         "subject": subject,
         "body": body,
-        "sent_at": datetime.utcnow().isoformat(),
+        "sent_at": datetime.now(timezone.utc).isoformat(),
         "sent_by_user_id": sent_by_user_id,
     }
 

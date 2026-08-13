@@ -84,3 +84,54 @@ def test_billing_invoice_listing_returns_tz_aware_timestamps():
             assert _has_tz(inv[field]), (
                 f"invoice {inv.get('invoice_no')}: {field} = {inv[field]!r} lacks tz suffix"
             )
+
+
+def test_app_wide_no_naive_iso_datetimes_in_responses():
+    """App-wide sweep (Aug 2026 timezone hunt): every one of these list
+    endpoints must return every ISO datetime field with a `Z` or
+    `+HH:MM` / `-HH:MM` suffix. Regression against the class of bug
+    where naive `datetime.utcnow().isoformat()` writes and BSON
+    naive datetime reads leaked to the frontend, causing IST users
+    to see UTC times (5:30 hrs off)."""
+    import re
+    s = _sess()
+    naive_findings = []
+
+    def scan(path):
+        r = s.get(f"{BASE_URL}{path}", timeout=20)
+        if r.status_code != 200:
+            return
+        d = r.json()
+        items = d.get("items", d) if isinstance(d, dict) else d
+        if not isinstance(items, list):
+            items = [items]
+        for it in items[:3]:
+            if not isinstance(it, dict):
+                continue
+            for k, v in it.items():
+                if isinstance(v, str) and len(v) >= 19 and v[4] == "-" and v[10] in ("T", " "):
+                    has_tz = v.endswith("Z") or bool(re.search(r"[+\-]\d\d:\d\d$", v[10:]))
+                    if not has_tz:
+                        naive_findings.append(f"{path}:{k}={v}")
+
+    for path in [
+        "/api/appointments?limit=3",
+        "/api/patients?limit=3",
+        "/api/ha/purchase-orders?limit=3",
+        "/api/ha/serial-items?limit=3",
+        "/api/ha/sales?limit=3",
+        "/api/ha/trials?limit=3",
+        "/api/stock-transfers?limit=3",
+        "/api/vendors",
+        "/api/branches",
+        "/api/ha/products?limit=3",
+        "/api/billing/invoices?limit=3",
+        "/api/ha/loaners?limit=3",
+        "/api/ha/fittings?limit=3",
+    ]:
+        scan(path)
+
+    assert not naive_findings, (
+        f"Naive ISO datetime strings leaked to the frontend:\n  "
+        + "\n  ".join(naive_findings)
+    )

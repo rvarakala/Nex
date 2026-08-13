@@ -110,6 +110,17 @@ def deserialize_datetime(obj):
                     out[k] = (v.date().isoformat()
                               if v.hour == 0 and v.minute == 0 and v.second == 0
                               else v.isoformat())
+                elif (isinstance(v, str) and len(v) >= 19
+                      and v[4] == '-' and v[10] in ('T', ' ')
+                      and not v.endswith('Z') and '+' not in v[10:]
+                      and '-' not in v[10:]):
+                    # Naive ISO datetime string from legacy `datetime.utcnow().isoformat()`
+                    # writes — stamp UTC so JS clients converting to local
+                    # time don't drift 5:30 hrs behind on IST browsers.
+                    # Guard against re-tagging strings that already carry
+                    # a `Z` / `+HH:MM` / `-HH:MM` suffix, and date-only
+                    # values (YYYY-MM-DD, len == 10) which stay untouched.
+                    out[k] = v + '+00:00'
                 else:
                     out[k] = v
             else:

@@ -1,5 +1,5 @@
 """Tokens, public queue TV, and Front Desk Dashboard KPIs."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -119,9 +119,9 @@ async def update_token_status(token_id: str, payload: dict,
         raise HTTPException(status_code=400, detail="Invalid status")
     update: dict = {"status": new_status}
     if new_status in {"in_consultation", "in_testing"}:
-        update["called_at"] = datetime.utcnow().isoformat()
+        update["called_at"] = datetime.now(timezone.utc).isoformat()
     if new_status in {"completed", "cancelled"}:
-        update["completed_at"] = datetime.utcnow().isoformat()
+        update["completed_at"] = datetime.now(timezone.utc).isoformat()
     res = await db.tokens.update_one(
         {"token_id": token_id, "clinic_id": user["clinic_id"]},
         {"$set": update},
@@ -173,7 +173,7 @@ async def public_queue(clinic_id: str, request: Request, db=Depends(get_db)):
         "now_serving": now_serving,
         "next_up": next_up,
         "total_waiting": sum(1 for t in tokens if t.get("status") == "waiting"),
-        "fetched_at": datetime.utcnow().isoformat(),
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

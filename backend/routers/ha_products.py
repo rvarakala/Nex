@@ -142,7 +142,7 @@ async def deactivate_product(
 
     await db.ha_products.update_one(
         {"product_id": product_id, "clinic_id": user["clinic_id"]},
-        {"$set": {"active": False, "updated_at": datetime.utcnow().isoformat()}},
+        {"$set": {"active": False, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     # Also archive any zero-qty accessory_stock rows so the Batch Stock
     # grid stays clean after the SKU is gone.

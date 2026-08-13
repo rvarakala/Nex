@@ -1,5 +1,5 @@
 """Appointments, waitlist, and reminders."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -633,7 +633,7 @@ async def cancel_appointment(appointment_id: str, payload: dict,
         pass
     await db.appointments.update_one(
         {"appointment_id": appointment_id},
-        {"$set": {"status": "cancelled", "updated_at": datetime.utcnow().isoformat()}},
+        {"$set": {"status": "cancelled", "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     log = CancellationLog(
         clinic_id=user["clinic_id"],

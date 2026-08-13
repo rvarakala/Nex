@@ -1,7 +1,7 @@
 """Patient CRUD + duplicate detection + MRD counter."""
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from bson import ObjectId
@@ -122,7 +122,7 @@ async def create_patient(
     mrd = await _next_mrd(db, user["clinic_id"], clinic.get("mrd_prefix", "ACS"))
     payload = patient.model_dump()
     # Stamp WhatsApp consent timestamp on the very first opt-in (DPDP audit).
-    consent_at = datetime.utcnow().isoformat() if payload.get("whatsapp_consent") else None
+    consent_at = datetime.now(timezone.utc).isoformat() if payload.get("whatsapp_consent") else None
     patient_obj = Patient(
         **payload,
         clinic_id=user["clinic_id"],
@@ -157,7 +157,7 @@ async def update_whatsapp_consent(
     )
     if not existing:
         raise HTTPException(404, "Patient not found")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     update = {
         "whatsapp_consent": grant,
         "updated_at": now,
@@ -580,7 +580,7 @@ async def get_undoable_merges(
     # Mongo stores our datetimes as ISO strings (see utils/serde.py) so
     # the range comparison must be ISO-vs-ISO — not datetime-vs-string
     # (that silently returns [] because Mongo can't order across types).
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     cursor = db.patient_merge_events.find({
         "clinic_id": user["clinic_id"],
         "$or": [

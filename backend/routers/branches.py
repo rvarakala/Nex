@@ -6,7 +6,7 @@ A Clinic may have many Branches. Users see branches scoped by `user.branch_ids`
 Only super_admin + clinic_owner can mutate. Everyone else gets a read-only
 scoped list for populating dropdowns.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -107,7 +107,7 @@ async def deactivate_branch(branch_id: str,
     inventory / user references."""
     res = await db.branches.update_one(
         {"branch_id": branch_id, "clinic_id": user["clinic_id"]},
-        {"$set": {"active": False, "updated_at": datetime.utcnow().isoformat()}},
+        {"$set": {"active": False, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Branch not found")

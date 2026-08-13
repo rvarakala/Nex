@@ -7758,3 +7758,33 @@ GET /api/billing/invoices/INV-5E6E0A4F37 →
 
 **Deploy note for the user:** Ships in preview. Deploy to production so the beta clinic's invoice timestamps render as local IST time going forward. All EXISTING invoices in the DB are already stored correctly in UTC — the fix only changes how they're serialised on the wire.
 
+
+### [Aug 2026] Chore — App-Wide Timezone Sweep (post invoice bug)
+
+**Context:** After the invoice-timestamp bug fix, we did a full app-wide sweep to catch any sibling instances of the same bug class before the beta clinic hit them in the wild.
+
+**How the sweep worked:**
+1. Curl-scanned 15 major list/detail endpoints (appointments, patients, PO, serial-items, HA sales, HA trials, HA loaners, HA fittings, stock-transfers, vendors, branches, HA products, billing invoices, service tickets, AMC).
+2. For each field that looked like an ISO datetime (`YYYY-MM-DDTHH:MM:SS...`), checked whether it carried a `Z` or `±HH:MM` timezone suffix.
+3. Flagged offenders: **1st pass** — every endpoint except patients was already clean (post yesterday's + this morning's fixes to `utils/serde.py` and `billing.py`). Patients still leaked naive `whatsapp_consent_at` and `updated_at`.
+
+**Root cause of remaining offenders:** Fields declared as `Optional[str]` on Pydantic models were listed in `STRING_DATE_KEYS` inside `utils/serde.py::deserialize_datetime`. That block kept the raw string as-is on read (so Pydantic's `str` validation passed), but never appended a UTC suffix if the DB value was a naive `datetime.utcnow().isoformat()` string written before the fix.
+
+**Fix (2 passes):**
+1. **Write path** — replaced every `datetime.utcnow().isoformat()` call in the app with `datetime.now(timezone.utc).isoformat()`. New writes always land as UTC-aware `+00:00` strings. Touched 8 files: `reminders.py`, `server.py`, `routers/ha_products.py`, `routers/patients.py`, `routers/tokens.py`, `routers/vendors.py`, `routers/branches.py`, `routers/appointments.py`.
+2. **Read path** — updated the `STRING_DATE_KEYS` branch in `utils/serde.py::deserialize_datetime` to detect legacy naive strings (`len>=19`, has `T`, no `Z`/`+`/`-` suffix in the time part) and append `+00:00` on the wire. Backfill-free — no data migration required, existing rows just render correctly from now on.
+
+**Verified sweep** (post-fix):
+```
+OK   /api/appointments             OK   /api/patients             OK   /api/ha/purchase-orders
+OK   /api/ha/serial-items          OK   /api/ha/sales             OK   /api/ha/trials
+OK   /api/stock-transfers          OK   /api/vendors              OK   /api/branches
+OK   /api/ha/products              OK   /api/billing/invoices     OK   /api/ha/loaners
+OK   /api/ha/fittings
+```
+**Zero** naive ISO datetime fields in any response.
+
+**Regression test:** New `test_app_wide_no_naive_iso_datetimes_in_responses` in `test_invoice_timezone.py` re-scans 13 endpoints for naive ISO strings and fails hard if any drift. **23/23 tests pass across the four regression files touched this session.**
+
+**Deploy note for the user:** Ships in preview. Deploy preview → production so the beta clinic sees correct local IST times across appointments, patients, invoices, PO — everywhere. Data doesn't need to be migrated — the fix operates on the wire.
+

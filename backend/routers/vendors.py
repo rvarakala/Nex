@@ -7,7 +7,7 @@ Read: any authenticated user (needed for PO dropdowns etc.).
 Write: inventory_manager + clinic_owner + super_admin only.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -114,7 +114,7 @@ async def deactivate_vendor(vendor_id: str,
     """Soft-delete — preserves historical PO / GRN references."""
     res = await db.vendors.update_one(
         {"vendor_id": vendor_id, "clinic_id": user["clinic_id"]},
-        {"$set": {"active": False, "updated_at": datetime.utcnow().isoformat()}},
+        {"$set": {"active": False, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -128,7 +128,7 @@ async def reactivate_vendor(vendor_id: str,
     """Restore a soft-deleted vendor so it reappears in PO dropdowns."""
     res = await db.vendors.update_one(
         {"vendor_id": vendor_id, "clinic_id": user["clinic_id"]},
-        {"$set": {"active": True, "updated_at": datetime.utcnow().isoformat()}},
+        {"$set": {"active": True, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Vendor not found")

@@ -902,7 +902,7 @@ async def root():
 
 @api_router.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 # Non-prefixed /health for Kubernetes liveness/readiness probes.
@@ -910,7 +910,7 @@ async def health_check():
 # would mark the pod unhealthy and fail the deployment.
 @app.get("/health")
 async def k8s_health_probe():
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 # ==================== EXTRACTED → routers/ ==================== (== PATIENT ROUTES)
