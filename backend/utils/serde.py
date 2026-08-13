@@ -117,6 +117,15 @@ def deserialize_datetime(obj):
         return out
     if isinstance(obj, list):
         return [deserialize_datetime(item) for item in obj]
+    if isinstance(obj, datetime):
+        # BSON stores datetimes as naive `datetime` objects — pattern
+        # spotted 2026-08-13 when the billing invoice popup was showing
+        # UTC times to IST users. Sister of the string branch below:
+        # stamp UTC on the naive value so FastAPI's encoder emits `Z`
+        # and JS converts to local time correctly.
+        if obj.tzinfo is None:
+            return obj.replace(tzinfo=timezone.utc)
+        return obj
     if isinstance(obj, str):
         try:
             parsed = datetime.fromisoformat(obj)

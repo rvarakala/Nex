@@ -7728,3 +7728,33 @@ Two adjacent asks shipped together. Phase 1 (Head-to-Branch stock requests + tra
 
 **Deploy note:** Ships in preview. Deploy to production. The receive-with-conditions payload is optional so existing clients (mobile app, older frontend caches) keep working unchanged.
 
+
+### [Aug 2026] Bug Fix — Invoice Timestamps Off by 5:30 hrs (IST offset drift)
+
+**Reported by user (production, audinexa.com):** Fresh invoice `INV/2026/000019` created ~12:04 PM IST showed `Date: 13 Aug, 06:31 am` and `Generated at 13 Aug, 06:31 am` — five and a half hours behind reality. Same misdrift on preview.
+
+**Root cause (this was NOT the same as yesterday's fix):** Yesterday's `utils/serde.py` fix handled naive datetime **strings**. But Mongo/motor returns most datetime columns as native **BSON `datetime` objects**, not ISO strings — and both deserializers (`billing.py::_deserialize` and `utils/serde.py::deserialize_datetime`) had ONLY a `isinstance(obj, str)` branch. Native datetime objects passed through untouched → FastAPI's JSON encoder emitted them WITHOUT a `Z` / `+00:00` suffix → JS's `new Date(naive_iso)` parsed them as browser-local time → IST users saw UTC times (5:30 hrs behind).
+
+The `billing.py` local helper was additionally worse: it explicitly stripped tz with `.replace(tzinfo=None)`, so even the string branch produced naive output.
+
+**Fix (2 files):**
+1. `/app/backend/billing.py::_deserialize` — added `isinstance(obj, datetime)` branch that stamps `tzinfo=timezone.utc` on naive datetime objects. Removed the `.replace(tzinfo=None)` from the string branch (already fixed yesterday elsewhere).
+2. `/app/backend/utils/serde.py::deserialize_datetime` — same `isinstance(obj, datetime)` branch added, so every other endpoint using this shared helper benefits too (appointments, patients, ha_sales, etc.).
+
+**Curl verification on preview:**
+```
+GET /api/billing/invoices/INV-5E6E0A4F37 →
+  created_at :  '2026-07-31T13:35:11.269000Z'   ← was '2026-07-31T13:35:11.269000'
+  invoice_date: '2026-07-31T13:35:11.269000Z'   ← was naive
+  paid_at    :  '2026-07-31T13:35:11.269000Z'   ← was naive
+```
+
+**Playwright verification on preview:** Invoice page now renders `Date: 31 Jul 2026` and `Generated at 31 Jul, 01:35 pm` (Playwright container is UTC → 13:35 UTC = 01:35 PM local). On an IST browser the same UTC time will render as 07:05 PM IST — correct local conversion.
+
+**Regression tests** (`/app/backend/tests/test_invoice_timezone.py`, 2 new tests):
+- `test_billing_invoice_get_returns_tz_aware_timestamps` — asserts `created_at` / `invoice_date` / each `paid_at` carries a `Z` or `±HH:MM` suffix.
+- `test_billing_invoice_listing_returns_tz_aware_timestamps` — same contract on the list endpoint.
+**22/22 tests pass** across the full regression suite.
+
+**Deploy note for the user:** Ships in preview. Deploy to production so the beta clinic's invoice timestamps render as local IST time going forward. All EXISTING invoices in the DB are already stored correctly in UTC — the fix only changes how they're serialised on the wire.
+

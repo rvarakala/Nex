@@ -9,7 +9,7 @@ GST invoice engine with:
 """
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Literal, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import re
 
@@ -43,14 +43,32 @@ def _serialize(obj):
 
 
 def _deserialize(obj):
-    """Recursively convert ISO strings back to datetime where possible."""
+    """Recursively convert ISO strings back to datetime where possible.
+
+    **UTC-awareness (2026-08-13 bug fix):** naive datetimes coming from
+    BSON storage were passing through unchanged and being serialised back
+    to the client without a `+00:00` / `Z` suffix. JS's `new Date(...)`
+    parsed those naive strings as browser-local time, so IST users saw
+    invoice timestamps 5:30 hrs behind reality. Fix: stamp naive datetime
+    objects AND naive ISO strings with `tzinfo=timezone.utc` so FastAPI's
+    encoder emits a `Z` suffix on the response.
+    """
     if isinstance(obj, dict):
         return {k: _deserialize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_deserialize(x) for x in obj]
+    if isinstance(obj, datetime):
+        # BSON stores datetimes as naive `datetime` objects (this branch
+        # is the whole reason IST users saw 06:36 instead of 12:06).
+        if obj.tzinfo is None:
+            return obj.replace(tzinfo=timezone.utc)
+        return obj
     if isinstance(obj, str) and len(obj) >= 19 and obj[4] == '-' and obj[10] in ('T', ' '):
         try:
-            return datetime.fromisoformat(obj.replace('Z', '+00:00')).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(obj.replace('Z', '+00:00'))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
         except Exception:
             return obj
     return obj
