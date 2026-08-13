@@ -181,6 +181,99 @@ async def update_whatsapp_consent(
     return {"patient_id": patient_id, "whatsapp_consent": grant, "at": now}
 
 
+@router.get("/patients/duplicates")
+async def list_duplicate_patients(
+    key: str = "phone_and_name",   # or "phone_only" or "name_only"
+    min_group: int = 2,
+    limit: int = 200,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Sweep every active patient in the clinic and return groups where
+    two or more rows share the same normalised phone AND/OR name — the
+    "one-screen bulk duplicate" tool the owner uses to clean up merges.
+
+    Normalisation matches what `check-duplicate` uses:
+      · phone → last 10 digits of `mobile` (falls back to `phone` /
+        `alternate_mobile`)
+      · name  → lower-cased, whitespace-collapsed
+
+    Rows that were already merged (`merged_into` set) are excluded so
+    old cleanups don't re-surface.
+    """
+    if key not in ("phone_and_name", "phone_only", "name_only"):
+        raise HTTPException(400, "key must be phone_and_name / phone_only / name_only")
+
+    cursor = db.patients.find(
+        {"clinic_id": user["clinic_id"], "merged_into": {"$in": [None, False]}},
+        {"_id": 0, "patient_id": 1, "mrd": 1, "name": 1, "mobile": 1,
+         "phone": 1, "alternate_mobile": 1, "age": 1, "gender": 1,
+         "email": 1, "created_at": 1, "updated_at": 1, "active": 1},
+    )
+
+    def _norm_phone(row):
+        for k in ("mobile", "phone", "alternate_mobile"):
+            v = row.get(k)
+            if not v:
+                continue
+            digits = re.sub(r"\D", "", str(v))
+            if len(digits) >= 10:
+                return digits[-10:]
+        return None
+
+    def _norm_name(row):
+        v = (row.get("name") or "").strip().lower()
+        return re.sub(r"\s+", " ", v) or None
+
+    groups: dict = {}
+    async for row in cursor:
+        ph = _norm_phone(row) if key != "name_only" else None
+        nm = _norm_name(row)  if key != "phone_only" else None
+        if key == "phone_and_name":
+            k = (ph or "", nm or "") if (ph and nm) else None
+        elif key == "phone_only":
+            k = (ph,) if ph else None
+        else:
+            k = (nm,) if nm else None
+        if not k:
+            continue
+        groups.setdefault(k, []).append(row)
+
+    dup_groups = [
+        {"key": {"phone": k[0] if key != "name_only" else None,
+                 "name":  k[-1] if key != "phone_only" else None},
+         "count": len(rows),
+         "patients": sorted(rows, key=lambda r: r.get("created_at") or "")}
+        for k, rows in groups.items()
+        if len(rows) >= min_group
+    ]
+    # Biggest groups first — those are the ones costing the clinic the
+    # most manual clean-up.
+    dup_groups.sort(key=lambda g: (-g["count"], g["key"].get("phone") or "", g["key"].get("name") or ""))
+    dup_groups = dup_groups[:limit]
+
+    # Enrich each patient with light activity counts so the owner can
+    # tell at a glance which row is the "real" record before merging.
+    for grp in dup_groups:
+        for p in grp["patients"]:
+            pid = p["patient_id"]
+            p["counts"] = {
+                "sessions": await db.test_sessions.count_documents(
+                    {"clinic_id": user["clinic_id"], "patient_id": pid}),
+                "invoices": await db.invoices.count_documents(
+                    {"clinic_id": user["clinic_id"], "patient_id": pid}),
+                "appointments": await db.appointments.count_documents(
+                    {"clinic_id": user["clinic_id"], "patient_id": pid}),
+            }
+
+    return {
+        "key": key,
+        "group_count": len(dup_groups),
+        "affected_patients": sum(g["count"] for g in dup_groups),
+        "groups": [deserialize_datetime(g) for g in dup_groups],
+    }
+
+
 @router.get("/patients/check-duplicate")
 async def check_duplicate_patient(
     mobile: Optional[str] = None,

@@ -1,6 +1,34 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 👥 Bulk Duplicate Patient Sweep (2026-08-13)
+
+**Ask**: Long-standing backlog — one-screen tool that flags every phone+name collision across the clinic so the owner can merge everything in one go.
+
+**Shipped**:
+- **Backend endpoint** `GET /api/patients/duplicates?key=phone_and_name|phone_only|name_only&min_group=2`. Scans the tenant's active patients, normalises phone (last-10 digits across `mobile` / `phone` / `alternate_mobile`) + name (lower + whitespace-collapsed), groups + returns groups with `count >= min_group`. Merged-out rows (`merged_into != null`) are excluded so cleaned collisions don't come back to haunt.
+- **Per-patient activity counts** (sessions / invoices / appointments) are attached to every row so the owner can eyeball which record to `Keep` before merging.
+- Groups sorted biggest-first so highest-impact cleanups sit at the top.
+- **Frontend page** `/patients/duplicates` (new "Duplicates" tab with `GitMerge` icon in the Patients module):
+  - KPI strip: collision groups · affected patients · est. rows to merge
+  - Three-way key filter chips (strict / phone-only / name-only) with the hint text of each key
+  - Per-group card: two-radio picker (`Keep` emerald / `Merge in` amber) auto-suggests the richest row as `Keep` (most sessions × 100 + invoices × 10 + appointments). Rows show mobile, created date, activity counts, and an `Open` deep-link.
+  - Two-step merge: **Preview** (calls `dry_run:true`, shows exact impact count and per-collection breakdown) → **Merge — moves N rows** (calls `dry_run:false`). Reuses the existing bullet-proof `POST /patients/merge` with its 10-minute undo window.
+- Uses the existing `check-duplicate` normalisation logic so all three duplicate-detection surfaces (booking-time nudge, sweep screen, block-on-create) stay in sync.
+
+**Files added**:
+- `/app/frontend/src/modules/patients/DuplicatePatientsPage.jsx` — page + `DuplicateGroupCard` component
+- `/app/backend/tests/test_duplicate_patients_sweep.py` — 3 tests (shape, merged rows excluded, key matrix)
+
+**Files updated**:
+- `/app/backend/routers/patients.py` — new `list_duplicate_patients()` endpoint
+- `/app/frontend/src/modules/patients/PatientsModule.js` — Duplicates tab + route wiring
+
+**Verified**: Live preview shows 8 collision groups / 20 affected patients / 12 est. rows to merge across the demo tenant's TEST_Primary/Secondary + TEST_Fam A/B/C fixture data. Preview → Merge flow confirmed to call `dry_run:true` first, then flip to a green "Merge — moves 0 rows" CTA with the exact impact number. 3/3 pytest regression tests green.
+
+
+
+
 ## 🎧 Trial-to-Order Audiogram Auto-attach (2026-08-13)
 
 **Ask**: When the audiologist converts a completed trial into a Custom HA order, the patient's audiogram (already uploaded to a hearing-test session) should auto-attach — no re-upload.

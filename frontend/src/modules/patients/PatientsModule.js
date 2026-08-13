@@ -13,18 +13,20 @@
  */
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, FileText } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, FileText, GitMerge } from 'lucide-react';
 import PatientsDashboard from './PatientsDashboard';
 import PatientsListPage from './PatientsListPage';
 import AppointmentsBoard from './AppointmentsBoard';
 import PatientProfilePage from './PatientProfilePage';
 import NewPatientPage from './NewPatientPage';
+import DuplicatePatientsPage from './DuplicatePatientsPage';
 import ReportsModule from '../reports/ReportsModule';
 
 const TABS = [
   { to: '/patients',              end: true,  icon: LayoutDashboard, label: 'Dashboard',    testid: 'pmod-tab-dashboard' },
   { to: '/patients/appointments', end: false, icon: CalendarDays,    label: 'Appointments', testid: 'pmod-tab-appointments' },
   { to: '/patients/list',         end: false, icon: Users,           label: 'Patients',     testid: 'pmod-tab-list' },
+  { to: '/patients/duplicates',   end: false, icon: GitMerge,        label: 'Duplicates',   testid: 'pmod-tab-duplicates' },
   { to: '/patients/reports',      end: false, icon: FileText,        label: 'Reports',      testid: 'pmod-tab-reports' },
 ];
 
@@ -50,7 +52,7 @@ export default function PatientsModule() {
   const onProfile = (
     /^\/patients\/[^/]+$/.test(location.pathname)
     || /^\/patients\/[^/]+\/edit$/.test(location.pathname)
-  ) && !['/patients/new', '/patients/appointments', '/patients/list', '/patients/reports'].includes(location.pathname);
+  ) && !['/patients/new', '/patients/appointments', '/patients/list', '/patients/duplicates', '/patients/reports'].includes(location.pathname);
 
   return (
     <div className="h-full flex flex-col bg-slate-50" data-testid="patients-module">
@@ -80,6 +82,7 @@ export default function PatientsModule() {
           <Route path="new" element={<NewPatientPage />} />
           <Route path="appointments" element={<AppointmentsBoard />} />
           <Route path="list" element={<PatientsListPage />} />
+          <Route path="duplicates" element={<DuplicatePatientsPage />} />
           <Route path="reports" element={<ReportsModule />} />
           {/* Edit route MUST come before `:patientId` so React Router prefers
               the more specific match (otherwise `PT-123/edit` would render
