@@ -138,6 +138,13 @@ def deserialize_datetime(obj):
             return obj.replace(tzinfo=timezone.utc)
         return obj
     if isinstance(obj, str):
+        # Only try to parse strings that look like a full ISO DATETIME.
+        # Date-only strings (`YYYY-MM-DD`, len == 10) are left alone —
+        # they represent business dates (dob, expected_delivery_date etc.)
+        # that shouldn't be up-converted to `datetime` and inflated with
+        # a spurious `T00:00:00+00:00` on the response.
+        if not (len(obj) >= 19 and obj[4] == '-' and obj[10] in ('T', ' ')):
+            return obj
         try:
             parsed = datetime.fromisoformat(obj)
             # Naive strings (no `Z` or `+HH:MM`) come from legacy

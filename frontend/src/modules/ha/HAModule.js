@@ -18,6 +18,7 @@ import AMCPage from './AMCPage';
 import StockTransfersPage from './transfers/StockTransfersPage';
 import StockRequestsPage from './StockRequestsPage';
 import StockHeatmapPage from './StockHeatmapPage';
+import EarMouldsPage from './EarMouldsPage';
 
 // Sub-tabs grouped by section. Sidebar shows two top-level links:
 //   • "Hearing Aids" → /ha/trials (sales lifecycle)
@@ -25,7 +26,7 @@ import StockHeatmapPage from './StockHeatmapPage';
 // Both render <HAModule />; this component picks which tab strip to show
 // based on the current pathname so the sub-nav stays scoped to the section
 // the user clicked. Routes the user reaches via direct URL still resolve.
-const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups']);
+const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups', 'ear-moulds']);
 const INVENTORY_PATHS = new Set([
   'inventory', 'demo-stock', 'saleable-stock', 'accessories', 'amc',
   'procurement', 'products', 'transfers', 'requests', 'heatmap', 'vendors',
@@ -35,6 +36,7 @@ const SALES_TABS = [
   { to: '/ha/trials',     label: 'Trials',     testid: 'ha-tab-trials' },
   { to: '/ha/quotations', label: 'Quotations', testid: 'ha-tab-quotations' },
   { to: '/ha/fittings',   label: 'Fittings',   testid: 'ha-tab-fittings' },
+  { to: '/ha/ear-moulds', label: 'Ear Moulds', testid: 'ha-tab-ear-moulds' },
   { to: '/ha/followups',  label: 'Follow-ups', testid: 'ha-tab-followups' },
 ];
 
@@ -89,6 +91,7 @@ export default function HAModule() {
           <Route path="transfers" element={<StockTransfersPage />} />
           <Route path="requests" element={<StockRequestsPage />} />
           <Route path="heatmap" element={<StockHeatmapPage />} />
+          <Route path="ear-moulds" element={<EarMouldsPage />} />
           <Route path="demo-stock" element={<DemoStockPage />} />
           <Route path="saleable-stock" element={<SaleableStockPage />} />
           <Route path="accessories" element={<AccessoriesPage />} />
