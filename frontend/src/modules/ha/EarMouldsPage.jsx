@@ -243,10 +243,14 @@ function Kpi({ label, value, testid, tone }) {
 function StatusPicker({ order, onChanged }) {
   const [busy, setBusy] = useState(false);
   const meta = STATUS_META[order.status] || STATUS_META.pending_impression;
-  const options = STATUS_ORDER.filter((s) => s !== order.status);
 
-  const change = async (nextStatus) => {
-    if (busy) return;
+  // Native <select> — the browser handles collapse-on-outside-click,
+  // keyboard navigation and mobile touch out of the box. Custom
+  // absolute-positioned menus were overlapping the next row's badge,
+  // making it un-clickable when a picker was already open.
+  const change = async (e) => {
+    const nextStatus = e.target.value;
+    if (busy || !nextStatus || nextStatus === order.status) return;
     setBusy(true);
     try {
       await axios.patch(`${API}/ha/ear-moulds/${order.order_id}/status`, { status: nextStatus });
@@ -257,29 +261,20 @@ function StatusPicker({ order, onChanged }) {
   };
 
   return (
-    <div className="inline-block">
-      <details className="inline-block">
-        <summary
-          data-testid={`ha-em-status-${order.order_id}`}
-          className={`cursor-pointer list-none inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${meta.tone}`}
-        >
-          {meta.label}
-        </summary>
-        <div className="absolute mt-1 bg-white border border-slate-200 rounded shadow-lg z-10 min-w-[140px] py-1">
-          {options.map((s) => (
-            <button
-              key={s}
-              onClick={() => change(s)}
-              disabled={busy}
-              data-testid={`ha-em-status-set-${order.order_id}-${s}`}
-              className="w-full text-left px-2.5 py-1 text-[11px] hover:bg-slate-50"
-            >
-              → {STATUS_META[s].label}
-            </button>
-          ))}
-        </div>
-      </details>
-    </div>
+    <select
+      value={order.status}
+      onChange={change}
+      disabled={busy}
+      data-testid={`ha-em-status-${order.order_id}`}
+      className={`cursor-pointer text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${meta.tone} focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50`}
+    >
+      <option value={order.status}>{meta.label}</option>
+      {STATUS_ORDER.filter((s) => s !== order.status).map((s) => (
+        <option key={s} value={s} data-testid={`ha-em-status-set-${order.order_id}-${s}`}>
+          → {STATUS_META[s].label}
+        </option>
+      ))}
+    </select>
   );
 }
 
