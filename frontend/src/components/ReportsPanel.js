@@ -219,12 +219,17 @@ const ReportsPanel = ({
         referred_by: referredBy,
         further_advice: furtherAdvice,
         recommendations: recText.split('\n').map((l) => l.trim()).filter(Boolean),
+        // Persist the audiologist's section-checkbox state so both the
+        // Live Preview modal AND saved snapshots re-render only the
+        // sections they explicitly enabled — no auto-derive from data.
+        sections: sections.map((s) => ({ id: s.id, enabled: !!s.enabled })),
+        license,
       });
     }, 800);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
   }, [
     resultsText, recText, findings, provisionalDiagnosis,
-    referredBy, furtherAdvice, onPersist,
+    referredBy, furtherAdvice, onPersist, sections, license,
   ]);
 
   const toggleSection = (id) =>

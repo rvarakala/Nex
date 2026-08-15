@@ -177,6 +177,12 @@ def _build_snapshot(session: dict, patient: dict, clinic: dict) -> dict:
             "further_advice":      session.get("further_advice") or "",
             "provisional_diagnosis": session.get("provisional_diagnosis") or "",
             "referred_by":         session.get("referred_by") or "",
+            # Toggleable section checkboxes as they were at save-time.
+            # Empty list means "use frontend defaults" — the ReportsPanel
+            # `initialBuilder.sections` override treats missing/empty as
+            # a fall-through to TOGGLEABLE_SECTIONS.defaultEnabled.
+            "sections":            session.get("sections") or [],
+            "license":             session.get("license") or "",
         },
         # Audiologist attribution
         "audiologist": {

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional, List, Literal, Dict, Union
+from typing import Optional, List, Literal, Dict, Union, Any
 from datetime import datetime, date
 from uuid import uuid4
 
@@ -1125,6 +1125,18 @@ class TestSession(BaseModel):
     # Clinical Notes
     clinical_impression: Optional[str] = None
     recommendations: List[str] = []
+    # Report Builder state — the audiologist's narrative + section
+    # toggles. Populated by the ReportsPanel auto-save.
+    puretone_findings: Optional[str] = None
+    immitence_findings: Optional[str] = None
+    speech_findings: Optional[str] = None
+    findings_by_section: Optional[Dict[str, str]] = None
+    provisional_diagnosis: Optional[str] = None
+    further_advice: Optional[str] = None
+    license: Optional[str] = None
+    # Toggleable section checkboxes — authoritative for both live
+    # preview + saved snapshots. Absent → frontend defaults.
+    sections: Optional[List[Dict[str, Any]]] = None
     
     # Front-desk intake triage (copied from Appointment at session start)
     visit_type: Optional[Literal["referral", "walkin", "consultation"]] = "walkin"
@@ -1198,3 +1210,13 @@ class TestSessionUpdate(BaseModel):
     referred_by: Optional[str] = None
     recommendations: Optional[List[str]] = None
     status: Optional[Literal["draft", "completed", "finalized"]] = None
+    # Per-section findings narrative — dict keyed by section id (e.g.
+    # "pure_tone", "tympanometry"). Populated by the ReportsPanel builder.
+    findings_by_section: Optional[Dict[str, str]] = None
+    # Toggleable Report Builder sections — audiologist's explicit
+    # checkbox state per section. Each entry: {id: str, enabled: bool}.
+    # Snapshot + live preview honour this list; missing ids fall back
+    # to TOGGLEABLE_SECTIONS.defaultEnabled on the frontend.
+    sections: Optional[List[Dict[str, Any]]] = None
+    # Optional persisted license string shown in the signature block.
+    license: Optional[str] = None

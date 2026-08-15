@@ -1,6 +1,45 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## ✅ Section Checkboxes Are Authoritative (2026-08-15)
+
+**Ask (user frustration)**: *"The preview/print should show whatever the boxes the user checked. If user checks pure tone it should show Pure tone only. Here user checked Case History, Puretone, Results & Recommendation only — but when I click on Saved Reports it's showing Tympanometry also which user did not check. Why?"*
+
+**Root cause**: The audiologist's Report Builder sidebar `sections` checkbox state (which sections to include in the report) was **never persisted anywhere** — it only lived in local React state. So on every re-render, the panel reset to `TOGGLEABLE_SECTIONS.defaultEnabled` (which included Tympanometry). Same problem plagued saved snapshots — they were reconstructed from raw session data at view time, ignoring the audiologist's explicit toggles.
+
+Second bug I introduced earlier: my `HearingReportPreviewModal` was **auto-enabling sections when data existed** (misreading Q3.b). That was wrong — the audiologist's checkbox is authoritative, not the data.
+
+**Fix** — three-layer persistence for the section-checkbox state:
+
+**Backend**:
+- `TestSessionUpdate` now accepts `sections: Optional[List[Dict[str, Any]]]` (list of `{id, enabled}`), plus `findings_by_section`, `license`, `puretone_findings`, `immitence_findings`, `speech_findings`, `provisional_diagnosis`, `further_advice` (all previously being dropped silently by Pydantic v2's strict extra="ignore" behaviour). `TestSession` response model gained the same fields so `GET /api/sessions/{id}` returns them.
+- `_build_snapshot()` in `hearing_report_versions.py` copies `session.sections` into `snapshot.builder.sections` so saved snapshots freeze the checkbox state at save-time.
+
+**Frontend `ReportsPanel.js`**:
+- Sections state initializer reads `initialBuilder.sections` (merged with `TOGGLEABLE_SECTIONS` defaults for missing ids). Empty list / null → defaults.
+- Auto-save debounce (800ms) now includes `sections: sections.map(s => ({id, enabled}))` in the persisted payload. Toggling any checkbox flushes to the backend within 800ms.
+
+**Frontend `HearingReportPreviewModal.jsx`**:
+- **Removed** the flawed auto-enable-if-data-populated logic. The modal now reads `session.sections` verbatim — no derivation, no fallback except when the field is missing (older draft) in which case ReportsPanel uses `TOGGLEABLE_SECTIONS.defaultEnabled`.
+
+**Verified live on `SES-730B5760-A40`**:
+- Persisted `sections`: `case_history=true, pure_tone=true, tympanometry=false, results=true, provisional_diagnosis=false, recommendations=true`.
+- Preview modal now renders EXACTLY 4 sections + signature block. Tympanometry and Provisional Diagnosis are **hidden** even though session data for tympanometry exists.
+- Same effect will apply to saved reports viewed later — the snapshot's builder captures the same sections list at save time.
+
+**Files updated**:
+- `/app/backend/models/_canonical.py` — `TestSession` + `TestSessionUpdate` gained `sections`, `findings_by_section`, `license`, and the 3 legacy findings fields
+- `/app/backend/routers/hearing_report_versions.py` — `_build_snapshot` includes `sections` in the builder dict
+- `/app/frontend/src/components/ReportsPanel.js` — auto-save persists `sections`
+- `/app/frontend/src/components/HearingReportPreviewModal.jsx` — reads `session.sections` verbatim; removed 45-line `hasData()` + `DATA_KEY_TO_SECTION` auto-derive helpers
+
+**Lint clean.** Backend + frontend restarted, live curl round-trip verified.
+
+**Redeploy needed** to push to audinexa.com.
+
+
+
+
 ## 🩺 Real Audiogram Preview (React live-render, replaces iframe PDF) (2026-08-15)
 
 **Ask (user rejected earlier fix)**: "I want Real Audiogram that I want to preview & print — not like [report-SES-*.pdf attached, which was a plain-numeric-table with NO graphs]. I want like [123.pdf attached — proper clinical audiogram with two separate ear graphs, dB HL vs Frequency, standard symbols, PTA summary, findings/diagnosis/recommendations]. Clarify before you code — last time you did it wrong."

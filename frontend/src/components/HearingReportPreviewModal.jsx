@@ -30,43 +30,6 @@ import ReportsPanel from './ReportsPanel';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const BACKEND_ORIGIN = process.env.REACT_APP_BACKEND_URL || '';
 
-// Cover BOTH the top-level session doc AND nested audiogram_data
-// containers — different session fields carry data in either shape
-// depending on which tab was actually used during the visit.
-function hasData(v) {
-  if (v == null) return false;
-  if (Array.isArray(v)) return v.length > 0;
-  if (typeof v === 'object') {
-    // Nested "fields" map used by IMP/OAE/ABR/etc. tabs.
-    if (v.fields && Object.keys(v.fields).length > 0) return true;
-    // Audiogram measurements arrays.
-    const arrs = ['ac_measurements', 'bc_measurements', 'mcl_measurements',
-                  'ucl_measurements', 'ff_measurements'];
-    if (arrs.some((k) => Array.isArray(v[k]) && v[k].length > 0)) return true;
-    // Any non-empty leaf value counts.
-    return Object.keys(v).length > 0;
-  }
-  return String(v).trim().length > 0;
-}
-
-// Map session-doc key → toggleable section id in ReportsPanel.
-// Order matches TOGGLEABLE_SECTIONS in constants.js.
-const DATA_KEY_TO_SECTION = [
-  ['pre_test_data',       'case_history'],
-  ['right_ear_audiogram', 'pure_tone'],      // pure_tone tests either ear
-  ['left_ear_audiogram',  'pure_tone'],
-  ['tuning_fork_data',    'tuning_fork'],
-  ['otoscopy_data',       'otoscopy'],
-  ['speech_data',         'speech'],
-  ['impedance_data',      'tympanometry'],
-  ['special_tests_data',  'special_tests'],
-  ['oae_data',            'oae'],
-  ['soundfield_data',     'soundfield'],
-  ['abr_data',            'abr'],
-  ['pediatric_data',      'pediatric'],
-  ['tinnitus_data',       'tinnitus'],
-];
-
 function cleanMobileForWhatsApp(raw) {
   if (!raw) return '';
   const digits = String(raw).replace(/[^\d]/g, '');
@@ -127,19 +90,19 @@ export default function HearingReportPreviewModal({
     };
   }, [onClose]);
 
+  // Sections come STRAIGHT from the persisted session doc. The
+  // audiologist's Report Builder checkbox state is authoritative —
+  // sections they unchecked stay hidden even if the underlying data
+  // is populated. If nothing has been persisted yet (older sessions,
+  // brand-new drafts), we return null so ReportsPanel falls through
+  // to TOGGLEABLE_SECTIONS.defaultEnabled.
   const enabledSections = useMemo(() => {
     if (!session) return null;
-    // Start from defaults, then flip on anything with real data.
-    const enabledIds = new Set([
-      'case_history', 'pure_tone', 'tympanometry',
-      'results', 'provisional_diagnosis', 'recommendations',
-    ]);
-    for (const [key, sid] of DATA_KEY_TO_SECTION) {
-      if (hasData(session[key])) enabledIds.add(sid);
+    const persisted = session.sections;
+    if (Array.isArray(persisted) && persisted.length > 0) {
+      return persisted.map((s) => ({ id: s.id, enabled: !!s.enabled }));
     }
-    // Return only the ids to override — ReportsPanel merges with
-    // TOGGLEABLE_SECTIONS defaults for anything not listed.
-    return Array.from(enabledIds).map((id) => ({ id, enabled: true }));
+    return null;
   }, [session]);
 
   const initialBuilder = useMemo(() => {
@@ -164,7 +127,9 @@ export default function HearingReportPreviewModal({
       findings_by_section: findingsBySection,
       provisional_diagnosis: session.provisional_diagnosis || '',
       referred_by: session.referred_by || '',
-      sections: enabledSections || [],
+      // null → ReportsPanel uses TOGGLEABLE_SECTIONS.defaultEnabled.
+      // Otherwise the audiologist's persisted checkbox state wins.
+      ...(enabledSections ? { sections: enabledSections } : {}),
     };
   }, [session, enabledSections]);
 
