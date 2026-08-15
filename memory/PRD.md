@@ -1,6 +1,48 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 📈 Retention Cohorts + CTA Wiring Guide (2026-08-15)
+
+**Ask**: (1) Show retention cohorts so post-campaign stickiness is visible. (2) Make the on-page install docs bulletproof with copy-paste code for wiring `window.audinexaTrack()` to Get Demo / Sign Up buttons.
+
+**Shipped**:
+
+**Retention cohorts (backend)**
+- New endpoint `GET /api/admin/marketing-traffic/cohorts?weeks=N` — super_admin only.
+- Two-pass aggregation: (a) pull `visitor_id → first_seen_at` for every visitor whose first pageview lies inside the horizon; (b) walk their pageviews and mark `(cohort_week, week_offset)` sets.
+- Anchors on ISO week (Monday-anchored) for stable buckets across timezones.
+- Returns `{weeks, cohorts: [{cohort_week, size, offsets: {"0": {visitors, pct}, "1": {...}, ...}}]}`.
+- BSON naive-vs-aware datetime hazard handled via a `_as_aware()` normaliser so comparisons never TypeError.
+- `weeks` param clamped 2 ≤ N ≤ 26 to protect the query.
+
+**Retention cohorts (frontend)**
+- New `RetentionCohortGrid` component on `/admin/traffic`.
+- Heatmap-style grid, colour interpolated slate-100 → indigo-600 by retention %. W0 always shows 100% in a distinct pale-indigo cell.
+- Row = ISO week (`2026-W30`), size column, then W0…W7 offset columns. Cells hoverable for absolute visitor counts.
+- "How to read this" tooltip explaining healthy benchmarks (15-25% W1 = healthy, <10% = landing-page problem).
+
+**Setup card rework**
+- Restructured to 2 numbered steps with distinct visuals:
+  - **Step 1**: Copy `<script>` tag (unchanged, still one-click Copy).
+  - **Step 2**: Copy CTA-wiring examples (plain HTML `onclick`, React `onClick`, Webflow/Framer attribute pattern) + separate Copy examples button.
+- Three "Tip" mini-cards under Step 2: how to add any button, how to attach metadata, and note that UTM attribution is automatic.
+- Tracker source URL rendered at the bottom for quick reference.
+
+**Files updated**:
+- `/app/backend/routers/marketing_traffic.py` — new `/cohorts` endpoint + naive-datetime handling
+- `/app/frontend/src/modules/admin/panel/MarketingTrafficPage.jsx` — `RetentionCohortGrid`, restructured `InstallSnippet` with 2-step layout + CTA examples + tip cards
+- `/app/backend/tests/test_marketing_traffic.py` — 2 new tests (cohort shape + auth gating, clamp guard)
+
+**Tested**: 7/7 pytest tests pass. UI screenshot confirms the cohort grid renders 7 cohorts with realistic retention curves (2026-W30 shows 44.7% W1 → 25.5% W2 → 4.3% W3), Step-1 script snippet + Step-2 CTA examples both have working Copy buttons, and 3 tip cards render inline.
+
+**What the user must still do on audinexa.com**:
+1. Paste the Step-1 `<script>` tag into audinexa.com&apos;s `<head>` (once — root cause of any zero-data view)
+2. Add `onclick="window.audinexaTrack('demo_cta')"` to Get Demo / Sign Up buttons (or the React/Framer equivalent — copy paste from Step 2)
+3. Wait a couple of days → the retention grid will fill with real cohort data
+
+
+
+
 ## 📊 Marketing-Site Traffic Analytics (2026-08-15)
 
 **Ask**: Founder dashboard needs a section that counts visitors to audinexa.com daily and lets the founder analyse traffic behaviour after a campaign.

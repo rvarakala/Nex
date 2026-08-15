@@ -442,3 +442,97 @@ async def marketing_traffic_live(
         "active_sessions": active_sessions,
         "live_paths": live_paths,
     }
+
+
+@router.get("/admin/marketing-traffic/cohorts")
+async def marketing_traffic_cohorts(
+    weeks: int = 8,
+    user=Depends(require_roles("super_admin")),
+    db=Depends(get_db),
+):
+    """Retention-cohort grid — for each week bucket, count how many of
+    that week's first-time visitors came back in week 1, week 2, … up
+    to the current week. Powers the "how sticky is our marketing site"
+    view + campaign after-effect analysis.
+
+    Rows are anchored on `first_seen_week` (the ISO Monday of the
+    visitor's first-ever pageview). Columns are `week_offset` from
+    that anchor.
+    """
+    weeks = max(2, min(weeks, 26))
+    # Roll up to (visitor_id, first_seen_at) once so the two-pass math
+    # stays cheap even with 100k+ events.
+    firsts = await db.marketing_traffic_events.aggregate([
+        {"$match": {"kind": "pageview"}},
+        {"$group": {"_id": "$visitor_id",
+                    "first_at": {"$min": "$at"}}},
+    ]).to_list(None)
+    if not firsts:
+        return {"weeks": weeks, "cohorts": []}
+
+    # Compute the anchor week for the horizon we care about.
+    now = datetime.now(timezone.utc)
+    # Monday-anchored ISO week for stable buckets across timezones.
+    def _week_key(dt: datetime) -> str:
+        y, w, _ = dt.isocalendar()
+        return f"{y}-W{w:02d}"
+
+    def _as_aware(dt: datetime) -> datetime:
+        # BSON round-trips as naive UTC; make comparisons safe.
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    def _week_diff(a: datetime, b: datetime) -> int:
+        """Return how many ISO weeks separate a → b (a earlier)."""
+        a = _as_aware(a).replace(hour=0, minute=0, second=0, microsecond=0)
+        b = _as_aware(b)
+        return int((b - a).days / 7)
+
+    horizon_cut = now - timedelta(weeks=weeks)
+    # Filter to visitors whose first pageview is inside the horizon —
+    # the cohort table doesn't need older visitors.
+    firsts = [f for f in firsts if _as_aware(f["first_at"]) >= horizon_cut]
+    if not firsts:
+        return {"weeks": weeks, "cohorts": []}
+
+    visitor_first = {f["_id"]: _as_aware(f["first_at"]) for f in firsts}
+    cohort_size: dict = {}
+    for f in firsts:
+        wk = _week_key(f["first_at"])
+        cohort_size[wk] = cohort_size.get(wk, 0) + 1
+
+    # Second pass — for every pageview by an in-horizon visitor, mark
+    # (cohort_week, week_offset) → visitor was active that week.
+    cohort_seen: dict = {}
+    cursor = db.marketing_traffic_events.find(
+        {"kind": "pageview",
+         "visitor_id": {"$in": list(visitor_first.keys())}},
+        {"_id": 0, "visitor_id": 1, "at": 1},
+    )
+    async for evt in cursor:
+        first_at = visitor_first[evt["visitor_id"]]
+        offset = _week_diff(first_at, evt["at"])
+        if offset < 0 or offset >= weeks:
+            continue
+        cohort_wk = _week_key(first_at)
+        cohort_seen.setdefault(cohort_wk, {}).setdefault(offset, set()).add(evt["visitor_id"])
+    # Build the response — one row per cohort week, biggest cohort first.
+    rows = []
+    for cohort_wk, size in sorted(cohort_size.items(), key=lambda kv: kv[0]):
+        seen = cohort_seen.get(cohort_wk, {})
+        row = {
+            "cohort_week": cohort_wk,
+            "size": size,
+            "offsets": {},
+        }
+        for off in range(weeks):
+            n = len(seen.get(off, set()))
+            row["offsets"][str(off)] = {
+                "visitors": n,
+                "pct": round(n / size * 100, 1) if size else 0.0,
+            }
+        rows.append(row)
+
+    return {
+        "weeks": weeks,
+        "cohorts": rows,
+    }

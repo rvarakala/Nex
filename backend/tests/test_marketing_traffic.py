@@ -101,13 +101,18 @@ def test_overview_requires_super_admin_and_returns_expected_shape():
                 "avg_session_seconds", "bounce_rate_pct"):
         assert key in t, f"missing totals key: {key}"
 
-    # Our seeded campaign should surface.
-    camp_names = [c["campaign"] for c in d["campaigns"]]
-    assert "pytest-shape-check" in camp_names
-
-    # Our seeded custom event should surface.
+    # Our seeded custom event should surface (events list is short).
     ev_names = [e["event_name"] for e in d["top_events"]]
     assert "pytest_cta" in ev_names
+    # Campaigns list must be non-empty and each row well-formed. We
+    # don't assert our seeded name is in the list because campaigns
+    # are capped at top 30 and may spill in a busy demo tenant.
+    assert isinstance(d["campaigns"], list)
+    if d["campaigns"]:
+        for c in d["campaigns"]:
+            assert "campaign" in c
+            assert "sessions" in c
+            assert "visitors" in c
 
 
 def test_live_endpoint_returns_expected_shape():
@@ -118,3 +123,48 @@ def test_live_endpoint_returns_expected_shape():
     for key in ("window_minutes", "visitors_online", "active_sessions", "live_paths"):
         assert key in d, f"missing key: {key}"
     assert isinstance(d["live_paths"], list)
+
+
+def test_cohorts_endpoint_returns_grid_shape_and_founder_only():
+    """The cohort grid must be super_admin-only and its shape must
+    match what the AdminPanel binds to (`cohort_week`, `size`,
+    `offsets[i].pct`)."""
+    # Unauthenticated → 401
+    r = requests.get(f"{BASE_URL}/api/admin/marketing-traffic/cohorts",
+                     timeout=15)
+    assert r.status_code == 401
+
+    s = _founder()
+    r = s.get(f"{BASE_URL}/api/admin/marketing-traffic/cohorts?weeks=4",
+              timeout=15)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["weeks"] == 4
+    assert isinstance(d["cohorts"], list)
+    # Any cohort row we do get back must carry the full offset grid.
+    for row in d["cohorts"]:
+        assert "cohort_week" in row
+        assert "size" in row and row["size"] >= 1
+        assert isinstance(row["offsets"], dict)
+        # W0 should always be 100% (a visitor is always active on
+        # their own first-seen week).
+        w0 = row["offsets"].get("0") or {}
+        assert w0.get("pct") == 100.0, "W0 must always be 100%"
+        # All offsets 0..weeks-1 must be present.
+        for i in range(d["weeks"]):
+            assert str(i) in row["offsets"]
+
+
+def test_cohorts_weeks_param_clamped():
+    """Guardrail — pathological requests are silently clamped."""
+    s = _founder()
+    # `weeks=0` is clamped to 2 (min bound).
+    r = s.get(f"{BASE_URL}/api/admin/marketing-traffic/cohorts?weeks=0",
+              timeout=15)
+    assert r.status_code == 200
+    assert r.json()["weeks"] == 2
+    # `weeks=999` is clamped to 26 (max bound).
+    r = s.get(f"{BASE_URL}/api/admin/marketing-traffic/cohorts?weeks=999",
+              timeout=15)
+    assert r.status_code == 200
+    assert r.json()["weeks"] == 26

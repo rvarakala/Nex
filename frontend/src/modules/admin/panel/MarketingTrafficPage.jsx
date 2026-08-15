@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   Activity, Users, Eye, MousePointerClick, Megaphone, Globe2, Copy, RefreshCw,
-  Zap, Timer, ArrowDownRight,
+  Zap, Timer, ArrowDownRight, Repeat, MousePointer, CheckCircle2, Code2,
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -54,17 +54,20 @@ export default function MarketingTrafficPage() {
   const [range, setRange] = useState(30);
   const [data, setData] = useState(null);
   const [live, setLive] = useState(null);
+  const [cohorts, setCohorts] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [o, l] = await Promise.all([
+      const [o, l, c] = await Promise.all([
         axios.get(`${API}/admin/marketing-traffic/overview`, { params: { days: range } }),
         axios.get(`${API}/admin/marketing-traffic/live`, { params: { minutes: 15 } }),
+        axios.get(`${API}/admin/marketing-traffic/cohorts`, { params: { weeks: 8 } }),
       ]);
       setData(o.data || null);
       setLive(l.data || null);
+      setCohorts(c.data || null);
     } finally {
       setLoading(false);
     }
@@ -256,8 +259,11 @@ export default function MarketingTrafficPage() {
             </div>
           </div>
 
+          {/* Retention Cohorts */}
+          <RetentionCohortGrid cohorts={cohorts} />
+
           {/* Install snippet */}
-          <InstallSnippet snippetHtml={snippetHtml} />
+          <InstallSnippet snippetHtml={snippetHtml} snippetUrl={snippetUrl} />
         </>
       )}
     </div>
@@ -333,37 +339,189 @@ function TrafficSparkline({ data }) {
   );
 }
 
-function InstallSnippet({ snippetHtml }) {
-  const [copied, setCopied] = useState(false);
-  const doCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(snippetHtml);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* noop */ }
+function RetentionCohortGrid({ cohorts }) {
+  const rows = cohorts?.cohorts || [];
+  const weeks = cohorts?.weeks || 8;
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-white p-4 mb-4">
+        <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold mb-1 flex items-center gap-1">
+          <Repeat size={11} /> Retention cohorts
+        </div>
+        <div className="text-[11.5px] text-slate-500 italic">
+          Waiting for repeat visitors. Once the same visitor comes back a week later, they&apos;ll show up here.
+        </div>
+      </div>
+    );
+  }
+  // Colour scale — 0% pale, 100% deep indigo. Skip W0 (always 100%).
+  const cellStyle = (pct, off) => {
+    if (off === 0) return { background: '#EEF2FF', color: '#3730A3' };
+    const clamped = Math.max(0, Math.min(100, pct));
+    // Interpolate from #F1F5F9 (slate-100) → #4F46E5 (indigo-600).
+    const t = clamped / 100;
+    const lerp = (a, b) => Math.round(a + (b - a) * t);
+    const bg = `rgb(${lerp(241, 79)}, ${lerp(245, 70)}, ${lerp(249, 229)})`;
+    const fg = t > 0.45 ? '#FFFFFF' : '#0F172A';
+    return { background: bg, color: fg };
   };
   return (
-    <div className="rounded-md border border-indigo-200 bg-indigo-50/60 p-4">
-      <div className="flex items-start justify-between gap-2 mb-2">
+    <div className="rounded-md border border-slate-200 bg-white p-4 mb-4">
+      <div className="flex items-center justify-between mb-2">
         <div>
-          <div className="text-[11px] uppercase tracking-widest text-indigo-700 font-bold">Install on audinexa.com</div>
-          <div className="text-[12px] text-slate-700 max-w-[70ch] mt-1">
-            Add this single line into the <code className="bg-white border border-slate-200 rounded px-1">&lt;head&gt;</code> of every marketing page. The tracker is cookie-less, ~2 KB, and fires on load, SPA nav, and every UTM&apos;d landing.
+          <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
+            <Repeat size={11} /> Retention cohorts — % of first-time visitors who came back
+          </div>
+          <div className="text-[10.5px] text-slate-500 mt-0.5">
+            Each row is a week&apos;s new visitors; each cell is that % that returned in week 1, 2, 3, …
           </div>
         </div>
-        <button
-          onClick={doCopy}
-          data-testid="mtraf-copy-snippet"
-          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm"
-        ><Copy size={11} /> {copied ? 'Copied!' : 'Copy'}</button>
       </div>
-      <pre className="font-mono text-[11.5px] bg-slate-900 text-slate-100 rounded p-3 overflow-x-auto whitespace-pre-wrap">
-{snippetHtml}
-      </pre>
+      <div className="overflow-x-auto">
+        <table className="text-[11px] w-full">
+          <thead>
+            <tr className="text-[9.5px] uppercase tracking-widest text-slate-400 font-semibold">
+              <th className="text-left px-2 py-1.5">Cohort</th>
+              <th className="text-right px-2 py-1.5">Size</th>
+              {Array.from({ length: weeks }).map((_, i) => (
+                <th key={i} className="text-center px-1 py-1.5 tabular-nums">W{i}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={c.cohort_week} className="border-t border-slate-100">
+                <td className="px-2 py-1 font-mono text-slate-700 whitespace-nowrap">{c.cohort_week}</td>
+                <td className="px-2 py-1 text-right tabular-nums font-semibold text-slate-800">{c.size}</td>
+                {Array.from({ length: weeks }).map((_, off) => {
+                  const r = c.offsets?.[String(off)] || { pct: 0, visitors: 0 };
+                  // Only paint cells within the cohort's possible horizon
+                  // (older cohorts have more W columns filled).
+                  return (
+                    <td
+                      key={off}
+                      className="px-1 py-1 text-center tabular-nums text-[10.5px] font-semibold"
+                      style={cellStyle(r.pct, off)}
+                      title={`${r.visitors} returning visitors`}
+                      data-testid={`mtraf-cohort-${c.cohort_week}-W${off}`}
+                    >
+                      {r.pct > 0 ? `${r.pct}%` : (off === 0 ? '100%' : '·')}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="text-[10.5px] text-slate-500 mt-2">
-        For custom conversion events (e.g. Get Demo click), call:{' '}
-        <code className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[10px]">window.audinexaTrack(&apos;demo_cta&apos;)</code>
+        <b>How to read this:</b> If W1 for the <code className="bg-slate-100 rounded px-1">2026-W30</code> cohort is 44%, that means 44% of the visitors who first landed that week came back the next week.
+        A healthy marketing site typically holds 15-25% at W1; anything below 10% signals a landing-page or content issue.
       </div>
+    </div>
+  );
+}
+
+function InstallSnippet({ snippetHtml, snippetUrl }) {
+  const [copied, setCopied] = useState('');
+  const doCopy = async (text, tag) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(tag);
+      setTimeout(() => setCopied(''), 1500);
+    } catch { /* noop */ }
+  };
+  const trackJs = `<!-- Get Demo button -->
+<button onclick="window.audinexaTrack('demo_cta')">Get Demo</button>
+
+<!-- Sign Up form (React) -->
+<button onClick={() => {
+  window.audinexaTrack('signup_cta', { plan: 'starter' });
+  handleSignUp();
+}}>Start free trial</button>
+
+<!-- Webflow / Framer: add onclick attribute to the CTA element -->
+onclick="window.audinexaTrack('pricing_cta')"`;
+
+  return (
+    <div className="rounded-md border border-indigo-200 bg-indigo-50/60 p-4">
+      <div className="text-[11px] uppercase tracking-widest text-indigo-700 font-bold mb-3 flex items-center gap-1">
+        <Code2 size={12} /> Setup — 2 steps to go live
+      </div>
+
+      {/* Step 1 */}
+      <div className="mb-4">
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div>
+            <div className="text-[12px] font-bold text-slate-800">
+              <span className="inline-flex items-center justify-center w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold rounded-full mr-1.5">1</span>
+              Add the tracker to audinexa.com&apos;s <code className="bg-white border border-slate-200 rounded px-1 text-[10.5px]">&lt;head&gt;</code>
+            </div>
+            <div className="text-[11px] text-slate-600 mt-1 max-w-[70ch]">
+              Cookie-less, ~2 KB, no external service. Fires on page load, SPA nav, and session close.
+            </div>
+          </div>
+          <button
+            onClick={() => doCopy(snippetHtml, 'script')}
+            data-testid="mtraf-copy-snippet"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm shrink-0"
+          ><Copy size={11} /> {copied === 'script' ? 'Copied!' : 'Copy'}</button>
+        </div>
+        <pre className="font-mono text-[11.5px] bg-slate-900 text-slate-100 rounded p-3 overflow-x-auto whitespace-pre-wrap">
+{snippetHtml}
+        </pre>
+      </div>
+
+      {/* Step 2 */}
+      <div>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div>
+            <div className="text-[12px] font-bold text-slate-800">
+              <span className="inline-flex items-center justify-center w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold rounded-full mr-1.5">2</span>
+              Wire your Get Demo / Sign Up buttons for conversion tracking
+              <span className="text-[10px] font-normal text-slate-500 ml-1">(optional but recommended)</span>
+            </div>
+            <div className="text-[11px] text-slate-600 mt-1 max-w-[70ch]">
+              Every CTA click calls <code className="bg-white border border-slate-200 rounded px-1 text-[10.5px]">window.audinexaTrack(...)</code>.
+              The event lands in <b>Custom events</b> above with visitor + campaign attribution — so you know which campaign converted best.
+            </div>
+          </div>
+          <button
+            onClick={() => doCopy(trackJs, 'cta')}
+            data-testid="mtraf-copy-cta"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50 rounded shrink-0"
+          ><Copy size={11} /> {copied === 'cta' ? 'Copied!' : 'Copy examples'}</button>
+        </div>
+        <pre className="font-mono text-[11.5px] bg-slate-900 text-slate-100 rounded p-3 overflow-x-auto whitespace-pre-wrap">
+{trackJs}
+        </pre>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <TipCard icon={<MousePointer size={11} />} title="Any button">
+            Add <code className="bg-slate-100 px-1 rounded">onclick=&quot;window.audinexaTrack(&apos;name&apos;)&quot;</code>
+          </TipCard>
+          <TipCard icon={<CheckCircle2 size={11} />} title="Attach data">
+            2nd arg is a free-form object: <code className="bg-slate-100 px-1 rounded">audinexaTrack(&apos;signup&apos;, {'{'} plan: &apos;pro&apos; {'}'})</code>
+          </TipCard>
+          <TipCard icon={<Users size={11} />} title="Auto-attributed">
+            Every event is auto-tagged with the visitor&apos;s UTM campaign, source and referrer — no extra work needed.
+          </TipCard>
+        </div>
+      </div>
+
+      <div className="text-[10.5px] text-slate-500 mt-3 pt-3 border-t border-indigo-200">
+        Tracker source: <a href={snippetUrl} target="_blank" rel="noreferrer" className="font-mono text-indigo-700 hover:underline">{snippetUrl}</a>
+      </div>
+    </div>
+  );
+}
+
+function TipCard({ icon, title, children }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded p-2 text-[11px] text-slate-700">
+      <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1 mb-0.5">
+        {icon} {title}
+      </div>
+      {children}
     </div>
   );
 }
