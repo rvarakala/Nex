@@ -417,19 +417,29 @@ export default function ModernDashboard() {
       });
 
       // ── Clinic Pulse (trials + warranty) ─────────────────
-      // Try dedicated HA endpoints; if they don't exist, fall back to 0
-      // so the tile renders with an empty-state message.
+      // `Trial Devices Out` shows count of ACTIVE trials — matches the
+      // "Active" tile on /ha/trials. Previously this hit
+      // /ha/fittings?filter=trial which silently ignored the filter
+      // and returned unrelated data (dashboard showed 0 despite
+      // multiple active trials — the bug the user reported).
       try {
-        const [rTrials, rWarranty] = await Promise.all([
-          axios.get(`${API}/ha/fittings`, { params: { filter: 'trial', limit: 1 } }).catch(() => ({ data: [] })),
-          axios.get(`${API}/ha/fittings`, { params: { warranty_expiring_days: 30, limit: 1 } }).catch(() => ({ data: [] })),
-        ]);
-        const trialsCount    = Array.isArray(rTrials.data)    ? rTrials.data.length    : (rTrials.data?.total    || (rTrials.data?.items    || []).length);
-        const warrantyCount  = Array.isArray(rWarranty.data)  ? rWarranty.data.length  : (rWarranty.data?.total  || (rWarranty.data?.items  || []).length);
+        const rTrials = await axios
+          .get(`${API}/ha/trials`, { params: { status: 'active', limit: 500 } })
+          .catch(() => ({ data: [] }));
+        const trials = Array.isArray(rTrials.data)
+          ? rTrials.data
+          : (rTrials.data?.items || []);
+        // "Returning soon" — active trials whose return_date is within 7d.
+        const in7d = new Date(); in7d.setDate(in7d.getDate() + 7);
+        const returningSoon = trials.filter((t) => {
+          if (!t.return_date) return false;
+          const d = new Date(t.return_date);
+          return d <= in7d;
+        }).length;
         setClinicPulse({
-          trials_out: trialsCount,
-          trials_returning_soon: Math.min(trialsCount, Math.floor(trialsCount / 2)),
-          warranty_expiring: warrantyCount,
+          trials_out: trials.length,
+          trials_returning_soon: returningSoon,
+          warranty_expiring: 0,     // real endpoint pending (Phase-2)
         });
       } catch {
         setClinicPulse({ trials_out: 0, trials_returning_soon: 0, warranty_expiring: 0 });
