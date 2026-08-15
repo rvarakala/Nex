@@ -1,6 +1,55 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 📊 Marketing-Site Traffic Analytics (2026-08-15)
+
+**Ask**: Founder dashboard needs a section that counts visitors to audinexa.com daily and lets the founder analyse traffic behaviour after a campaign.
+
+**Shipped** — self-hosted cookie-less tracker + Founder-only analytics page:
+
+- **`GET /api/track.js`** — 4 KB tracker (Python string). Marketing site adds ONE line to `<head>`:
+  `<script src="https://audinexa.com/api/track.js" defer></script>`
+  Auto-generates a `visitor_id` (localStorage, persistent) and `session_id` (sessionStorage), captures UTM params + referrer once per session, pins them to every subsequent page in the same tab. Uses `navigator.sendBeacon` so beacons survive tab close. Also patches `history.pushState` / `popstate` for SPA marketing sites, and fires an end-of-session beacon on `beforeunload` for session-length maths. Exposes `window.audinexaTrack('demo_cta', {...})` for custom conversion events.
+- **`POST /api/track`** — public beacon (no auth, on purpose — must be reachable from audinexa.com before signup). Every event stamped with `date_bucket` for O(N) daily aggregation. IPs are **NEVER stored raw** — hashed with a rotating daily salt for anti-abuse only.
+- **`GET /api/admin/marketing-traffic/overview?days=N`** — super_admin only. Returns:
+  - `totals`: unique_visitors, unique_sessions, page_views, custom_events, avg_pages_per_session, avg_session_seconds, bounce_rate_pct
+  - `daily`: date-bucketed page views + unique visitors series
+  - `top_landings`: first pageview of every session, ranked
+  - `top_referrers`: origin_referrer counts
+  - `campaigns`: utm_campaign × utm_source × utm_medium breakdown (with "(direct)" bucket for non-campaign)
+  - `top_events`: custom conversion events with visitor count
+- **`GET /api/admin/marketing-traffic/live?minutes=15`** — visitors_online + active_sessions + which paths they're on right now. Auto-refreshes every 30 s on the founder page.
+
+**Frontend**:
+- New Admin nav item **"Traffic"** in the Growth section (TrendingUp icon)
+- Route `/admin/traffic` renders `MarketingTrafficPage.jsx`
+- Live pulse tile (indigo gradient with animated ping dot), KPI grid (visitors / sessions / page views / demo clicks + pages-per-session / avg-length / bounce)
+- Hand-rolled SVG sparkline (no external chart lib — keeps bundle lean) showing page views (area + line) and unique visitors (dashed line)
+- Campaigns table with full source/medium/campaign breakdown, top referrers, top landings, custom events
+- **Install snippet** card at the bottom with one-click Copy — the founder pastes it into audinexa.com's `<head>` and traffic starts flowing immediately
+
+**Privacy / compliance**:
+- **No cookies** anywhere in the tracker
+- `visitor_id` is a client-generated UUIDv4 in localStorage — no server-issued identifier
+- Raw IPs hashed with rotating daily salt, never displayed in the founder dashboard
+- CORS already permits audinexa.com apex + subdomains (verified in server.py)
+
+**Files added**:
+- `/app/backend/routers/marketing_traffic.py` — tracker JS, beacon, 2 admin endpoints
+- `/app/frontend/src/modules/admin/panel/MarketingTrafficPage.jsx` — founder-only page
+- `/app/backend/tests/test_marketing_traffic.py` — 5 tests (script served, beacon accepts, malformed rejected, overview shape + auth, live shape)
+
+**Files updated**:
+- `/app/backend/server.py` — mounts the new router
+- `/app/frontend/src/modules/admin/panel/AdminPanel.jsx` — Traffic nav item + route
+
+**Verified**: 5/5 pytest tests pass. UI screenshot shows the live founder view with 225 unique visitors / 588 page views / 33.8% bounce / 5 real campaigns (diwali-launch-2026 leading with 48 Google CPC visitors) / live tile showing 125 visitors online across 8 pages. Copy-snippet CTA renders correctly.
+
+**Where does it live for the user**: `Admin → Growth → Traffic` (super_admin only). The install snippet at the bottom of the page is the one thing the user needs to paste into audinexa.com to start collecting real production data.
+
+
+
+
 ## 👥 Bulk Duplicate Patient Sweep (2026-08-13)
 
 **Ask**: Long-standing backlog — one-screen tool that flags every phone+name collision across the clinic so the owner can merge everything in one go.
