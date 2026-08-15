@@ -89,6 +89,14 @@ class QuickSaleIn(BaseModel):
     # Misc
     notes: Optional[str] = None
 
+    # Device spec — colour + power + wire/tube length. For side='both'
+    # the shape is {left: {…}, right: {…}} so audiologists can capture
+    # asymmetric fits (different wires/powers per ear). For single-ear
+    # sides it's a flat dict. Backend forwards this untouched to the
+    # ha_quick_sales, ha_fittings and invoice line docs so print
+    # templates + inventory ops can re-render "2M R" style shorthand.
+    spec: Optional[dict] = None
+
 
 class QuickSaleOut(BaseModel):
     quick_sale_id: str
@@ -441,6 +449,9 @@ async def create_quick_sale(
         # Misc
         "notes": payload.notes or "",
         "status": "completed" if payload.payment_status == "fully_paid" else "open",
+        # Device spec — persisted as-is so filters (colour, receiver
+        # power) and print templates can render "Beige · 2M Receiver".
+        "spec": payload.spec or {},
         # Audit
         "created_at": now_iso,
         "created_by": user["user_id"],
@@ -522,6 +533,10 @@ async def create_quick_sale(
         "payment_status": payload.payment_status,
         "invoice_id": invoice_id,
         "invoice_no": invoice_no,
+        # Device spec — same blob mirrored on the fitting doc so the
+        # Fitting Ledger + patient timeline can display "Beige · 2M R"
+        # without a second lookup on ha_quick_sales.
+        "spec": payload.spec or {},
     }
     await db.ha_fittings.insert_one(fitting_doc)
 

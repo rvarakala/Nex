@@ -297,6 +297,10 @@ class SerialAddIn(BaseModel):
     source_kind: Literal["vendor", "borrowed"] = "vendor"
     borrowed_from: Optional[str] = None
     borrow_reason: Optional[str] = None
+    # Device spec captured at intake — colour + power + wire/tube
+    # length. Free-form dict so brands with weird colour names or
+    # non-standard length markings still fit without a migration.
+    spec: Optional[dict] = None
 
 
 @router.post("/products/{product_id}/serials")
@@ -365,6 +369,7 @@ async def add_serials_to_product(
             borrowed_from=(p.borrowed_from or "").strip() or None,
             borrow_reason=(p.borrow_reason or "").strip() or None,
             borrowed_at=now_iso if p.source_kind == "borrowed" else None,
+            spec=p.spec or None,
             updated_at=now_iso,
         )
         docs.append(serialize_datetime(si.model_dump()))

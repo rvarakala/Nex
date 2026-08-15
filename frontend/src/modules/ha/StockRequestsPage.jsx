@@ -15,6 +15,8 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Package, Plus, X, Loader2, Send, Ban, AlertTriangle, ArrowRight, Crown, Paperclip } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
+import HASpecPicker from '../../components/HASpecPicker';
+import { formatSpecLong } from '../../lib/haSpecs';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -209,11 +211,20 @@ function RequestCard({ request, viewerIsHead, headClinicId, branches, onChanged 
 
       <ul className="space-y-0.5">
         {(request.lines || []).map((ln, i) => (
-          <li key={i} className="text-[12px] text-slate-700 flex items-center gap-2" data-testid={`stock-request-line-${i}`}>
+          <li key={i} className="text-[12px] text-slate-700 flex flex-wrap items-center gap-2" data-testid={`stock-request-line-${i}`}>
             <span className="text-slate-400 font-mono w-4 text-right">{ln.qty}×</span>
             <span className="font-semibold">{ln.product_label}</span>
             {ln.variant && <span className="text-slate-500 text-[11px]">· {ln.variant}</span>}
             <span className="text-[9.5px] uppercase tracking-wider text-slate-400 border border-slate-200 rounded px-1 py-0.5">{ln.kind || 'other'}</span>
+            {ln.spec && formatSpecLong(ln.spec) && (
+              <span
+                className="text-[10.5px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5"
+                data-testid={`stock-request-line-${i}-spec`}
+                title="Device spec requested"
+              >
+                {formatSpecLong(ln.spec)}
+              </span>
+            )}
             {ln.notes && (
               <span className="text-[10.5px] text-slate-500 italic flex-1 truncate">— {ln.notes}</span>
             )}
@@ -543,6 +554,37 @@ function CreateRequestModal({ onClose, onCreated }) {
                   <button type="button" onClick={() => removeLine(i)} className="col-span-1 text-slate-400 hover:text-rose-600" data-testid={`stock-request-create-remove-${i}`}>
                     <X size={14} />
                   </button>
+                )}
+                {/* Per-line spec picker — only relevant for HA items.
+                    Accessories/tools don't carry colour/power/length,
+                    so we hide it to keep the row compact. */}
+                {ln.kind === 'ha' && (
+                  <div className="col-span-12 mt-1 mb-1 rounded border border-slate-200 bg-slate-50 p-2">
+                    <HASpecPicker
+                      deviceType={ln.ha_type || 'RIC'}
+                      side="R"
+                      value={ln.spec || {}}
+                      onChange={(sp) => updateLine(i, { spec: sp })}
+                      testIdPrefix={`stock-request-create-spec-${i}`}
+                      title="Device spec — colour · power · length"
+                      compact
+                    />
+                    <div className="mt-1">
+                      <label className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mr-1">
+                        Type
+                      </label>
+                      <select
+                        value={ln.ha_type || 'RIC'}
+                        onChange={(e) => updateLine(i, { ha_type: e.target.value })}
+                        data-testid={`stock-request-create-hatype-${i}`}
+                        className="text-[11.5px] px-2 py-0.5 rounded border border-slate-300"
+                      >
+                        {['RIC', 'BTE', 'ITE', 'ITC', 'CIC', 'IIC'].map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}

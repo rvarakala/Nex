@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { CustomHAOrderModal } from './CustomHAOrdersPage';
+import HASpecPicker from '../../components/HASpecPicker';
+import { formatSpecLong } from '../../lib/haSpecs';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -163,7 +165,12 @@ function CreatePOModal({ onClose, onCreated }) {
         branch_id: branch,
         vendor_id: vendor,
         expected_date: expected || null,
-        lines: lines.filter(l => l.product_id && l.qty > 0),
+        lines: lines.filter(l => l.product_id && l.qty > 0).map(l => {
+          // Strip local-only bookkeeping fields before shipping to the API.
+          // `_key` + `_form_factor` are picker-driven, not part of POLine.
+          const { _key, _form_factor, spec, ...rest } = l;
+          return spec && Object.keys(spec).length ? { ...rest, spec } : rest;
+        }),
       };
       await axios.post(`${API}/ha/purchase-orders`, body);
       onCreated();
@@ -269,13 +276,14 @@ function CreatePOModal({ onClose, onCreated }) {
             </thead>
             <tbody>
               {lines.map((l, i) => (
-                <tr key={l._key || `PO-${i}`} className="border-t border-slate-100">
+                <React.Fragment key={l._key || `PO-${i}`}>
+                <tr className="border-t border-slate-100">
                   <td className="px-2 py-1">
                     <select value={l.product_id} onChange={(e) => {
                       const copy = [...lines];
                       copy[i] = { ...copy[i], product_id: e.target.value };
                       const p = products.find(pp => pp.product_id === e.target.value);
-                      if (p) { copy[i].unit_cost = p.cost; copy[i].gst_rate = p.gst_rate; }
+                      if (p) { copy[i].unit_cost = p.cost; copy[i].gst_rate = p.gst_rate; copy[i]._form_factor = p.form_factor; }
                       setLines(copy);
                     }} data-testid={`ha-po-line-${i}-prod`} className="w-full border border-slate-300 rounded px-1 py-0.5 text-xs">
                       <option value="">—</option>
@@ -290,6 +298,26 @@ function CreatePOModal({ onClose, onCreated }) {
                     {lines.length > 1 && <button onClick={() => setLines(lines.filter((_, j) => j !== i))} className="text-rose-500 hover:text-rose-700 text-xs">×</button>}
                   </td>
                 </tr>
+                {/* Vendor asks for the exact SKU variant on every PO line
+                    — colour + power + wire/tube length. Same picker,
+                    driven by the product's form_factor. Split lines
+                    when the PO mixes variants (e.g. 3 Beige + 2 Champagne). */}
+                {l.product_id && (l._form_factor || products.find(pp => pp.product_id === l.product_id)?.form_factor) && (
+                  <tr className="border-t-0"><td colSpan={6} className="px-2 pt-0 pb-2">
+                    <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                      <HASpecPicker
+                        deviceType={l._form_factor || products.find(pp => pp.product_id === l.product_id)?.form_factor}
+                        side="R"
+                        value={l.spec || {}}
+                        onChange={(sp) => { const c=[...lines]; c[i] = {...c[i], spec: sp}; setLines(c); }}
+                        testIdPrefix={`ha-po-line-${i}-spec`}
+                        title="Line spec — colour · power · length"
+                        compact
+                      />
+                    </div>
+                  </td></tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -496,7 +524,18 @@ function PODetailDrawer({ poNo, onClose, onChanged }) {
                   const p = products[ln.product_id];
                   return (
                     <tr key={`${ln.product_id || 'p'}-${i}`} className="border-t border-slate-200">
-                      <td className="py-1">{p ? `${p.brand} ${p.model}` : ln.product_id}</td>
+                      <td className="py-1">
+                        {p ? `${p.brand} ${p.model}` : ln.product_id}
+                        {ln.spec && formatSpecLong(ln.spec) && (
+                          <span
+                            className="ml-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5"
+                            data-testid={`ha-po-line-${i}-spec-badge`}
+                            title="Requested SKU variant"
+                          >
+                            {formatSpecLong(ln.spec)}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-1 text-right tabular-nums">{ln.qty}</td>
                       <td className="py-1 text-right tabular-nums">{fmtINR(ln.unit_cost)}</td>
                       <td className="py-1 text-right tabular-nums">{ln.gst_rate}%</td>

@@ -192,6 +192,11 @@ class SerialItem(BaseModel):
     borrowed_at: Optional[str] = None                          # ISO datetime
     returned_at: Optional[str] = None                          # ISO datetime
     return_note: Optional[str] = None
+    # Device spec captured at intake — {color, receiver_power?,
+    # receiver_length?, bte_power?, slim_tube_length?}. Read by
+    # trial / fitting / invoice flows via `serial_items.spec` so the
+    # audiologist never re-enters what the vendor already stamped.
+    spec: Optional[dict] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[str] = None
 
@@ -234,6 +239,13 @@ class POLine(BaseModel):
     qty: int
     unit_cost: float
     gst_rate: float = 18.0
+    # Optional device spec for HA lines — clinic can request specific
+    # colour + receiver/tube power + wire length from the vendor.
+    # E.g. {color: "beige", receiver_power: "M", receiver_length: "2"}
+    # If a single PO line covers multiple variants (e.g. mixed colours
+    # in one Phonak Audeo P50 order), the audiologist should split into
+    # multiple lines — the vendor prints one line per SKU-variant.
+    spec: Optional[dict] = None
 
 
 class PurchaseOrder(BaseModel):
@@ -310,6 +322,10 @@ class QuoteLine(BaseModel):
     discount_pct: float = 0.0  # % discount on unit_price
     gst_rate: float = 18.0
     notes: Optional[str] = None
+    # Structured device spec — colour, receiver/tube power, wire length.
+    # Optional but strongly recommended for HA lines so the printed
+    # quotation reads "1× Phonak Audeo P50 (Beige · 2M Receiver)".
+    spec: Optional[dict] = None
 
 
 class Quotation(BaseModel):
@@ -932,6 +948,12 @@ class ServiceTicketCreate(BaseModel):
     # to manufacturer (steps 2-11). Defaults to IN_CLINIC because most
     # tickets start with an in-clinic inspection.
     repair_location: Literal["IN_CLINIC", "VENDOR"] = "IN_CLINIC"
+    # Device spec snapshot for tickets on non-inventorised devices — e.g.
+    # a walk-in whose HA was never entered into stock. When `serial_id`
+    # is set we auto-copy the spec from the serial_item at create time
+    # (see ha_service_v2.create_ticket), so this field is only needed
+    # for the free-text device path.
+    spec: Optional[dict] = None
 
 
 class ServiceTicketUpdate(BaseModel):

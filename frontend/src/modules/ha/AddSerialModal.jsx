@@ -11,10 +11,11 @@
  *   onClose:   ()  => void
  *   onDone:    ()  => void  (fires after successful save)
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Truck } from 'lucide-react';
 import ModalShell from '../../components/ModalShell';
+import HASpecPicker from '../../components/HASpecPicker';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -37,8 +38,18 @@ export default function AddSerialModal({ pool = 'saleable', onClose, onDone }) {
   const [grnNo, setGrnNo] = useState('');
   const [borrowedFrom, setBorrowedFrom] = useState('');
   const [borrowReason, setBorrowReason] = useState('');
+  const [spec, setSpec] = useState({});
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Derive device family from the picked product's form_factor so
+  // the picker shows the right power/length dropdowns without asking
+  // the audiologist to re-pick the type.
+  const pickedProduct = useMemo(
+    () => products.find((p) => p.product_id === productId),
+    [products, productId],
+  );
+  const deviceType = String(pickedProduct?.form_factor || '').toUpperCase();
 
   useEffect(() => {
     axios.get(`${API}/ha/products`).then((r) => setProducts(r.data || [])).catch(() => {});
@@ -68,6 +79,11 @@ export default function AddSerialModal({ pool = 'saleable', onClose, onDone }) {
         source_kind: sourceKind,
         borrowed_from: sourceKind === 'borrowed' ? borrowedFrom.trim() : null,
         borrow_reason: sourceKind === 'borrowed' ? (borrowReason.trim() || null) : null,
+        // Device spec captured at intake — colour + power + wire/tube
+        // length. Downstream flows (trial, fitting, invoice, PO
+        // reconciliation) read this off the serial_item so we never
+        // ask the audiologist to re-enter what's already known.
+        spec: spec && Object.keys(spec).length ? spec : null,
       }]);
       onDone();
     } catch (e) {
@@ -197,6 +213,23 @@ export default function AddSerialModal({ pool = 'saleable', onClose, onDone }) {
       )}
 
       {err && <div className="bg-rose-50 text-rose-700 text-xs p-2 rounded mb-2">{err}</div>}
+
+      {/* Device spec — colour + power + wire/tube length. Fields shown
+          adapt to the picked product's form factor. */}
+      {productId && (
+        <div className="mb-3 p-3 rounded border border-slate-200 bg-slate-50">
+          <HASpecPicker
+            deviceType={deviceType}
+            side="R"                /* single-unit intake — side is
+                                       recorded at fitting time */
+            value={spec}
+            onChange={setSpec}
+            testIdPrefix={`${testidPrefix}-spec`}
+            title="Device specification (at intake)"
+            compact
+          />
+        </div>
+      )}
 
       <div className="flex justify-end gap-2">
         <button onClick={onClose} disabled={saving}

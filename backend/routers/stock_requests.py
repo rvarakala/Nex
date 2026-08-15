@@ -52,6 +52,10 @@ class RequestLine(BaseModel):
     variant: Optional[str] = None
     qty: int = Field(1, ge=1)
     notes: Optional[str] = None
+    # Structured device spec — colour, receiver/tube power, wire length.
+    # Populated when kind='ha' so the head clinic knows the exact SKU
+    # variant the branch needs from the vendor.
+    spec: Optional[dict] = None
 
 
 class CreateRequestPayload(BaseModel):

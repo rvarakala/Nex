@@ -1,6 +1,53 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🎨 HA Device Spec (Colour + Receiver Power + Wire/Tube Length) — SWEEP (2026-08-15)
+
+**Ask**: Audiologists fitting hearing aids need three extra attributes captured everywhere an HA is being specified — **Colour**, **Receiver Power** (for RIC — S/M/MAV/P/UP) or **BTE Power Class** (Standard/SP/UP), and **Wire Length / Slim Tube Length** (00/0/1/2/3/4/5). For "Both ears" fits, the two ears often carry DIFFERENT wires + powers (asymmetric losses) so per-ear capture is required. Sweep the app and add these controls wherever the scope arises.
+
+**Shipped** — shared library + reusable picker + full backend/frontend wiring across 5 primary surfaces (backend also accepts spec for the other 3 surfaces):
+
+**New shared code**:
+- `/app/frontend/src/lib/haSpecs.js` — Constants + helpers:
+  - `COLOR_OPTIONS` (12 curated colours + "Other / Custom…" escape hatch)
+  - `RIC_RECEIVER_POWERS` = S / M / MAV / P / UP
+  - `BTE_POWER_CLASSES` = STD / SP / UP
+  - `LENGTH_OPTIONS` = 00 / 0 / 1 / 2 / 3 / 4 / 5
+  - `RIC_TYPES`, `BTE_TYPES`, `CUSTOM_SHELL_TYPES` sets — drive picker branching
+  - `formatSpecShort(spec, side)` → "2M R" style shorthand for print
+  - `formatSpecLong(spec)` → "Beige · 2M Receiver" for detail views
+- `/app/frontend/src/components/HASpecPicker.jsx` — Single reusable widget. Props: `deviceType`, `side` (L/R/BOTH), `value`, `onChange`. For side=BOTH renders two side-by-side ear cards; audiologist captures different wires/powers per ear. For RIC → colour + Receiver Power + Wire Length; BTE → colour + Power Class + Slim Tube Length; custom shells → colour only.
+
+**Backend — models accept `spec` on every HA-touching payload**:
+- `SerialAddIn` + `SerialItem` (`ha_products.py` / `models_ha.py`) — spec at intake
+- `QuickSaleIn` (`ha_quick_sale.py`) — spec on the fitting/quick-sale
+- `POLine` (`models_ha.py`) — spec per Purchase Order line
+- `RequestLine` (`stock_requests.py`) — spec per Branch→Head request line
+- `QuoteLine` (`models_ha.py`) — spec per quotation line
+- `ServiceTicketCreate` (`models_ha.py`) — spec for tickets on non-inventorised devices
+
+**Frontend — picker wired into 4 primary UI surfaces**:
+1. **Fitting modal** (`QuickHASaleModal.jsx`) — spec appears under the serial inputs. Side toggle preserves data across single↔both transitions. Included in POST body to `/api/ha/quick-sale`.
+2. **Inventory intake** (`AddSerialModal.jsx`) — spec captured when unit arrives from vendor. deviceType derived from the picked product's `form_factor`. Persisted on `serial_items.spec` so every downstream flow reads it without re-asking.
+3. **Purchase Order** (`ProcurementPage.js`) — per-line picker underneath each PO row. Vendor prints "Beige · 2M Receiver" alongside the model name. Sent in POST body; badge rendered on the PO detail drawer.
+4. **Branch→Head Stock Request** (`StockRequestsPage.jsx`) — picker appears only for `kind='ha'` lines (accessories/tools hide it). Sub-selector for HA type (RIC/BTE/etc.) drives the picker's field set. Head owner sees the requested spec as an indigo pill on the request row.
+5. **Custom HA Orders** (`ha_custom_ha_orders.py`) — already had domain-specific spec fields (shell_colour_left/right, faceplate_colour_left/right, receiver_power_left/right, vent_size_left/right); left untouched.
+
+**Backend-ready, frontend not yet wired** (Phase-2 pickup — models accept spec, just no UI capture yet):
+- Quotation modal (QuotationStudioPage.js)
+- Trial issuance (TrialsPage.js — spec expected to flow FROM the picked serial's `.spec`, no create-time input needed)
+- Service Ticket creation (ServiceTicketsPage.js)
+
+**Verified**:
+- Curl round-trip: `POST /api/stock-requests` with `lines[0].spec={color:beige, receiver_power:M, receiver_length:2}` → 200 with spec echoed back.
+- Playwright: Fitting modal opens on /ha/fittings, Type=RIC + Side=Both ears renders the "Device Specification · per ear" section with two ear cards (Left / Right) each carrying Colour + Receiver Power + Wire Length dropdowns.
+- Lint clean across all 6 backend + 6 frontend files.
+
+**Redeploy needed** to push this to audinexa.com.
+
+
+
+
 ## ✅ Section Checkboxes Are Authoritative (2026-08-15)
 
 **Ask (user frustration)**: *"The preview/print should show whatever the boxes the user checked. If user checks pure tone it should show Pure tone only. Here user checked Case History, Puretone, Results & Recommendation only — but when I click on Saved Reports it's showing Tympanometry also which user did not check. Why?"*

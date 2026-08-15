@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import HASpecPicker from '../../components/HASpecPicker';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -76,12 +77,36 @@ export default function QuickHASaleModal({
     expected_payment_date: '',
     notes: '',
   });
+  // Device spec — colour + power + wire/tube length. Shape depends on
+  // form.side: for 'left'/'right' it's a flat object; for 'both' it's
+  // { left: {...}, right: {...} } so audiologist can capture different
+  // wire lengths & powers per ear (asymmetric losses are common).
+  const [spec, setSpec] = useState({});
   const u = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const ub = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.checked }));
 
   // Live inventory lookup state per side: {status, reason, state}
   // status: 'available' | 'conflict' | 'not_found' | 'checking' | null
   const [serialState, setSerialState] = useState({ left: null, right: null });
+
+  // When the audiologist toggles Side (both ↔ left ↔ right) the spec
+  // shape must follow — flat for single-ear, {left, right} for both.
+  // Preserve any captured spec by mapping across the transition
+  // instead of resetting silently.
+  useEffect(() => {
+    setSpec((prev) => {
+      const isBothShape = prev && (prev.left || prev.right);
+      if (form.side === 'both' && !isBothShape) {
+        // Flat → both — mirror onto both ears (audiologist can adjust).
+        return { left: prev || {}, right: prev || {} };
+      }
+      if ((form.side === 'left' || form.side === 'right') && isBothShape) {
+        // Both → single — keep the matching ear.
+        return prev[form.side] || {};
+      }
+      return prev || {};
+    });
+  }, [form.side]);
 
   // Load branches + (optional) prefill patient
   useEffect(() => {
@@ -214,6 +239,10 @@ export default function QuickHASaleModal({
         advance_amount: form.payment_status === 'advance_paid' ? parseFloat(form.advance_amount) : null,
         expected_payment_date: form.expected_payment_date || null,
         notes: form.notes || null,
+        // Device spec (colour + power + length). Backend accepts the
+        // whole blob and forwards to inventory / fitting docs so the
+        // stock unit knows what wire/tube shipped.
+        spec: spec && Object.keys(spec).length ? spec : null,
       };
       const r = await axios.post(`${API}/ha/quick-sale`, body);
       onCreated && onCreated(r.data);
@@ -342,6 +371,22 @@ export default function QuickHASaleModal({
                   placeholder="PHO-RIC-2026RXX"
                 />
               )}
+            </div>
+
+            {/* Device spec — colour + power + wire/tube length. Fields
+                shown depend on ha_type (RIC → receiver spec, BTE → power
+                class + slim tube; custom shells → colour only). For
+                Side = Both ears we render per-ear cards so left and
+                right can carry different wires/powers. */}
+            <div className="mt-3">
+              <HASpecPicker
+                deviceType={form.ha_type}
+                side={form.side === 'both' ? 'BOTH' : (form.side === 'left' ? 'L' : 'R')}
+                value={spec}
+                onChange={setSpec}
+                testIdPrefix="quick-ha-spec"
+                title="Device specification"
+              />
             </div>
           </section>
 
