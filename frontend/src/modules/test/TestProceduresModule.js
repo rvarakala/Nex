@@ -20,6 +20,7 @@ import PediatricPanel from '../../components/PediatricPanel';
 import TinnitusPanel from '../../components/TinnitusPanel';
 import { captureAndUploadPdf } from '../../components/reports/captureAndUpload';
 import HearingReportHistoryModal from '../../components/HearingReportHistoryModal';
+import ReportViewerModal from '../../components/ReportViewerModal';
 import DiagnosticsQueueBoard from './DiagnosticsQueueBoard';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -119,6 +120,9 @@ export default function TestProceduresModule() {
   const [savedToast, setSavedToast] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
+  // In-app PDF viewer popup — replaces the old "open blob in new tab"
+  // behaviour so audiologists can review before hitting Print.
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   const [preTestData, setPreTestData] = useState(DEFAULT_PRE_TEST);
   const [impedanceData, setImpedanceData] = useState(DEFAULT_IMPEDANCE);
@@ -329,21 +333,12 @@ export default function TestProceduresModule() {
         await axios.post(`${API}/sessions/${activeTest.sessionId}/generate-report`);
       }
 
-      // 4. Fetch the now-stored PDF and open it in a new tab for printing.
-      try {
-        const r = await axios.get(`${API}/reports/${activeTest.sessionId}/pdf`, { responseType: 'blob' });
-        const url = URL.createObjectURL(r.data);
-        const w = window.open(url, '_blank');
-        if (!w) {
-          const a = document.createElement('a');
-          a.href = url; a.download = `report-${activeTest.sessionId}.pdf`;
-          document.body.appendChild(a); a.click(); a.remove();
-        }
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } catch (pdfErr) {
-        console.error('PDF fetch failed', pdfErr);
-        alert('Print PDF could not be opened. Try again in a moment.');
-      }
+      // 4. Open the in-app viewer modal — user reviews the letterheaded
+      //    report (both ears in separate PTA graphs, PTA summary,
+      //    findings, diagnosis, recommendations) and hits Print inside
+      //    the modal to reach the browser's native print dialog
+      //    (Save as PDF / physical printer, per operator choice).
+      setViewerOpen(true);
     } catch (err) {
       console.error('Print failed', err);
       alert(err?.response?.data?.detail || 'Could not print the report. Please try again.');
@@ -501,6 +496,16 @@ export default function TestProceduresModule() {
         sessionId={activeTest.sessionId}
         onClose={() => setHistoryOpen(false)}
       />
+
+      {viewerOpen && (
+        <ReportViewerModal
+          endpoint={`/reports/${activeTest.sessionId}/pdf`}
+          filename={`report-${activeTest.sessionId}.pdf`}
+          title="Hearing Assessment Report"
+          subtitle={`${activeTest.patient?.name || 'Patient'} · ${activeTest.patient?.mrd || activeTest.patient?.patient_id || ''}`}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
 
       <SimpleTabs activeTab={activeTab} onTabChange={setActiveTab} />
 

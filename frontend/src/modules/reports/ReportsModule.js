@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import PatientDrawer from '../../components/PatientDrawer';
 import LandscapePrompt from '../../components/LandscapePrompt';
+import ReportViewerModal from '../../components/ReportViewerModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -45,6 +46,7 @@ export default function ReportsModule() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [drawerPatientId, setDrawerPatientId] = useState(null);
+  const [viewerRow, setViewerRow] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -64,23 +66,10 @@ export default function ReportsModule() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [search]);
 
-  const openPatientReport = useCallback(async (row) => {
-    try {
-      const r = await axios.get(`${API}/reports/${row.session_id}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
-      const w = window.open(url, '_blank');
-      if (!w) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `report-${row.session_id}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      alert(e?.response?.data?.detail || 'Could not open the report PDF.');
-    }
+  const openPatientReport = useCallback((row) => {
+    // In-app popup — user reviews report, then hits Print inside modal
+    // for browser's native print dialog (Save as PDF or physical printer).
+    setViewerRow(row);
   }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -165,6 +154,16 @@ export default function ReportsModule() {
         patientId={drawerPatientId}
         onClose={() => setDrawerPatientId(null)}
       />
+
+      {viewerRow && (
+        <ReportViewerModal
+          endpoint={`/reports/${viewerRow.session_id}/pdf`}
+          filename={`report-${viewerRow.session_id}.pdf`}
+          title="Hearing Assessment Report"
+          subtitle={`${viewerRow.patient_name || 'Patient'}${viewerRow.mrd ? ` · ${viewerRow.mrd}` : ''}`}
+          onClose={() => setViewerRow(null)}
+        />
+      )}
     </div>
   );
 }

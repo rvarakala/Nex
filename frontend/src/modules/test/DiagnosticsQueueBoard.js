@@ -29,6 +29,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
+import ReportViewerModal from '../../components/ReportViewerModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -149,6 +150,9 @@ export default function DiagnosticsQueueBoard() {
   const [starting, setStarting] = useState(null);
   const [dragFrom, setDragFrom] = useState(null);
   const [dragOver, setDragOver] = useState(null);
+  // Report viewer popup state — swapped in for the old "download PDF"
+  // flow so audiologists can review the report before printing.
+  const [viewerRow, setViewerRow] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -252,21 +256,11 @@ export default function DiagnosticsQueueBoard() {
         if (row.patient_id) navigate(`/patients/${row.patient_id}`);
         return;
       }
-      try {
-        const r = await axios.get(`${API}/reports/${row.session_id}/pdf`, { responseType: 'blob' });
-        const url = URL.createObjectURL(r.data);
-        const w = window.open(url, '_blank', 'noopener');
-        setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
-        if (!w) {
-          const a = document.createElement('a');
-          a.href = url; a.download = `report-${row.session_id}.pdf`;
-          document.body.appendChild(a); a.click(); a.remove();
-        }
-      } catch (e) {
-        alert(e?.response?.status === 404
-          ? 'No PDF report has been generated for this session yet.'
-          : `Could not load report: ${e?.response?.data?.detail || e.message}`);
-      }
+      // Open the in-app viewer modal instead of downloading the PDF —
+      // user reviews the letterheaded audiogram + PTA summary first,
+      // then hits Print (which routes to the browser's native print
+      // dialog, so they can Save-as-PDF or send to a physical printer).
+      setViewerRow(row);
       return;
     }
     await startAndNavigate(row);
@@ -496,6 +490,15 @@ export default function DiagnosticsQueueBoard() {
           })}
         </div>
       </div>
+      {viewerRow && (
+        <ReportViewerModal
+          endpoint={`/reports/${viewerRow.session_id}/pdf`}
+          filename={`report-${viewerRow.session_id}.pdf`}
+          title="Hearing Assessment Report"
+          subtitle={`${viewerRow.name || 'Patient'} · Session ${viewerRow.session_id}`}
+          onClose={() => setViewerRow(null)}
+        />
+      )}
     </div>
   );
 }

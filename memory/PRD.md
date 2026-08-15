@@ -1,6 +1,45 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🖨️ Universal In-App Report Viewer Popup (2026-08-15)
+
+**Ask (production report from user)**: "When user clicks View report it should open like [in-app popup with letterhead + both ears separate graphs] — not like attached PDF. It should always — wherever the scope of print report — first view as pop up report. On popup if user wants to print, give them Print to PDF & or already plugged in printer."
+
+**Shipped** — one reusable modal component wired into every "print report" surface across the app so the audiologist never has to re-open a downloaded PDF file just to review-and-print:
+
+**New component**: `/app/frontend/src/components/ReportViewerModal.jsx`
+- Props: `endpoint` (API path relative to `/api`), `filename` (download fallback), `title`, `subtitle`, `onClose`
+- Fetches PDF via axios (JWT auth) → creates `blob:` URL → embeds in `<iframe src="blob:...#toolbar=0&navpanes=0">`
+- Toolbar (never printed): title on left, three CTAs on right
+  - **Print** — focuses iframe + calls `iframe.contentWindow.print()` → browser's native print dialog opens → user picks "Save as PDF" OR any physical printer registered on their system
+  - **Download** — fallback if user still wants the raw file
+  - **Close** — plus Escape key + backdrop click
+- Full-screen slate-900 backdrop, body scroll lock while open, `z-[70]` so it stacks above every other drawer/modal
+- Handles 404 gracefully with an "Report unavailable" inline error card
+- Revokes `URL.createObjectURL` on unmount (no memory leaks across the session)
+
+**Wired into 5 surfaces** (replaced the old `axios.get(... blob).then(window.open)` pattern with `setViewerRow(row)` state that mounts the modal):
+1. `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` — Hearing Tests card "View report" (the exact surface from the user's screenshot)
+2. `/app/frontend/src/modules/test/TestProceduresModule.js` — in-test **Print** button (after auto-save + PDF capture + upload)
+3. `/app/frontend/src/modules/reports/ReportsModule.js` — Reports archive "Reprint" button
+4. `/app/frontend/src/components/PatientDrawer.js` — Patient drawer "View" report per historical session
+5. `/app/frontend/src/modules/repair/AudinexaPipelineDrawer.jsx` — Service Repair Job Card PDF (both header "📄 Job Card PDF" button + "🖨️ Print Service Report" CTA in the Complete banner)
+
+**Files updated**:
+- `/app/frontend/src/components/ReportViewerModal.jsx` (new, ~180 lines)
+- `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` — import + `viewerRow` state + swap in `setViewerRow(row)` for completed cards + render modal in tree
+- `/app/frontend/src/modules/test/TestProceduresModule.js` — import + `viewerOpen` state + swap `handlePrint` tail from "fetch → window.open" to `setViewerOpen(true)`
+- `/app/frontend/src/modules/reports/ReportsModule.js` — import + `viewerRow` state + simplified `openPatientReport` to just set state + render modal
+- `/app/frontend/src/components/PatientDrawer.js` — import + `viewerSession` state + swap async `openReportPdf` to modal state + render modal
+- `/app/frontend/src/modules/repair/AudinexaPipelineDrawer.jsx` — import + `jobCardOpen` state + deleted the top-level `downloadJobCard()` helper + swap 2 button call sites + render modal
+
+**Tested**: Lint clean across all 6 files. Playwright confirmed the modal opens with title/subtitle populated, iframe mounts with a valid `blob:` URL, and all three toolbar CTAs (Print, Download, Close) render. PDF endpoint returns HTTP 200 + `application/pdf` for real sessions.
+
+**User needs to redeploy** to push this fix from preview to production (audinexa.com). Screenshot from user's report showed old download behavior — after redeploy, clicking "View report" anywhere in the app opens the in-app popup viewer with a Print CTA that routes to the browser's native print dialog.
+
+
+
+
 ## ⚖️ Compare Campaigns for Marketing Traffic (2026-08-15)
 
 **Ask**: Side-by-side comparison of visitor, bounce, and conversion data overlaid per marketing campaign — so the founder can see which UTM campaign is winning after a push.

@@ -18,6 +18,7 @@ import {
   X, FileText, Printer, Receipt, Headphones, ClipboardList,
   AlertCircle,
 } from 'lucide-react';
+import ReportViewerModal from './ReportViewerModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -45,6 +46,7 @@ export default function PatientDrawer({ patientId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [viewerSession, setViewerSession] = useState(null);
 
   const load = useCallback(async () => {
     if (!patientId) return;
@@ -74,15 +76,11 @@ export default function PatientDrawer({ patientId, onClose }) {
     };
   }, [patientId, onClose]);
 
-  const openReportPdf = async (sessionId) => {
-    try {
-      const r = await axios.get(`${API}/reports/${sessionId}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
-      window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      alert(e?.response?.data?.detail || 'Report not available for this session.');
-    }
+  const openReportPdf = (session) => {
+    // Open in-app viewer modal — audiologist reviews the letterheaded
+    // report first, then hits Print inside the modal to reach the
+    // browser's native print dialog.
+    setViewerSession(session);
   };
 
   if (!patientId) return null;
@@ -178,10 +176,10 @@ export default function PatientDrawer({ patientId, onClose }) {
                           </div>
                         </div>
                         <button
-                          onClick={() => openReportPdf(s.session_id)}
+                          onClick={() => openReportPdf(s)}
                           data-testid={`pd-open-${s.session_id}`}
                           className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded px-2 py-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Open the report PDF in a new tab"
+                          title="Preview and print the report"
                         >
                           <Printer size={10} /> View
                         </button>
@@ -252,6 +250,15 @@ export default function PatientDrawer({ patientId, onClose }) {
           )}
         </div>
       </aside>
+      {viewerSession && (
+        <ReportViewerModal
+          endpoint={`/reports/${viewerSession.session_id}/pdf`}
+          filename={`report-${viewerSession.session_id}.pdf`}
+          title="Hearing Assessment Report"
+          subtitle={`${data?.patient?.name || 'Patient'}${data?.patient?.mrd ? ` · ${data.patient.mrd}` : ''}`}
+          onClose={() => setViewerSession(null)}
+        />
+      )}
     </div>
   );
 }

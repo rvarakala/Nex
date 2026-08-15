@@ -15,37 +15,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import ConflictResolutionModal from '../../components/ConflictResolutionModal';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
+import ReportViewerModal from '../../components/ReportViewerModal';
 import { ServiceTicketActions } from '../ha/ServiceTicketPhase14Actions';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-
-/**
- * Download the Job Card / Service Report PDF using axios so the JWT travels
- * with the request. Browser-level <a href="…/job-card.pdf"> doesn't carry the
- * Authorization header → server returns 401 "Not authenticated".
- */
-async function downloadJobCard(ticketNo, setErr) {
-  try {
-    const r = await axios.get(`${API}/ha/service-tickets/${ticketNo}/job-card.pdf`, {
-      responseType: 'blob',
-    });
-    const blobUrl = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
-    // Open in a new tab; revoke later so the browser keeps the URL alive
-    // long enough to render the PDF preview.
-    const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
-    if (!win) {
-      // Pop-up blocked — fall back to a hidden download link
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `service-${ticketNo}.pdf`;
-      a.click();
-    }
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-  } catch (e) {
-    setErr && setErr(describeError(e, 'Failed to download Job Card PDF'));
-  }
-}
 
 const PIPELINE_ORDER = [
   'RECEIVED', 'INSPECTED', 'AWAITING_DISPATCH', 'DISPATCHED', 'IN_TRANSIT',
@@ -96,6 +70,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
   const [showCourier, setShowCourier] = useState(false);
   const [showEstimate, setShowEstimate] = useState(false);
   const [stampingShipment, setStampingShipment] = useState(null);
+  const [jobCardOpen, setJobCardOpen] = useState(false);
 
   const load = useCallback(async () => {
     setErr(''); setLoading(true);
@@ -202,7 +177,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
           <div className="text-xs text-slate-500 font-mono">{t.serial_no || t.serial_id || 'No device linked'}</div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => downloadJobCard(ticketNo, setErr)}
+          <button onClick={() => setJobCardOpen(true)}
                   data-testid="audinexa-job-card-pdf"
                   className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded hover:bg-slate-100">
             📄 Job Card PDF
@@ -333,7 +308,7 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
               <div className="text-[11px] text-emerald-800">Print the Service Report &amp; raise the GST invoice (18%, SAC 9985).</div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => downloadJobCard(ticketNo, setErr)}
+              <button onClick={() => setJobCardOpen(true)}
                       data-testid="audinexa-print-service-report"
                       className="px-3 py-2 text-xs font-bold bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-900 rounded shadow-sm">
                 🖨️ Print Service Report
@@ -555,6 +530,16 @@ export default function AudinexaPipelineDrawer({ ticketNo, onClose, onChanged })
         ]}
         onResolve={resolveConflict}
       />
+
+      {jobCardOpen && (
+        <ReportViewerModal
+          endpoint={`/ha/service-tickets/${ticketNo}/job-card.pdf`}
+          filename={`service-${ticketNo}.pdf`}
+          title="Service Report / Job Card"
+          subtitle={`${t?.patient_name || 'Patient'} · Ticket ${ticketNo}`}
+          onClose={() => setJobCardOpen(false)}
+        />
+      )}
 
     </DrawerShell>
   );
