@@ -27,21 +27,22 @@ export const COLOR_OPTIONS = [
 // RIC receiver power classes — as printed on manufacturer datasheets
 // (Phonak S/M/P/UP, Signia S/M/P/HP, Oticon MiniFit S/M/P). MAV* is
 // the Phonak "medium-attenuation vent" variant; keep it in the list
-// so we can capture it without inventing a synonym.
+// so we can capture it without inventing a synonym. Short labels so
+// the dropdown reads cleanly inside a narrow per-ear card.
 export const RIC_RECEIVER_POWERS = [
-  { value: 'S',   label: 'S — Standard' },
-  { value: 'M',   label: 'M — Medium' },
-  { value: 'MAV', label: 'MAV — Medium-Attenuation Vent' },
-  { value: 'P',   label: 'P — Power' },
-  { value: 'UP',  label: 'UP — Ultra Power' },
+  { value: 'S',   label: 'S · Standard' },
+  { value: 'M',   label: 'M · Medium' },
+  { value: 'MAV', label: 'MAV · Med-Attn Vent' },
+  { value: 'P',   label: 'P · Power' },
+  { value: 'UP',  label: 'UP · Ultra Power' },
 ];
 
 // BTE amplifier power classes. Standard is the everyday BTE; SP is
 // Super Power (severe losses); UP is Ultra Power (profound losses).
 export const BTE_POWER_CLASSES = [
-  { value: 'STD', label: 'Standard' },
-  { value: 'SP',  label: 'SP — Super Power' },
-  { value: 'UP',  label: 'UP — Ultra Power' },
+  { value: 'STD', label: 'STD · Standard' },
+  { value: 'SP',  label: 'SP · Super Power' },
+  { value: 'UP',  label: 'UP · Ultra Power' },
 ];
 
 // Wire/tube length units — identical numbering for RIC receiver wires

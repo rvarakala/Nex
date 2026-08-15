@@ -48,9 +48,9 @@ function SingleEar({
   const s = spec || {};
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 gap-2 min-w-0">
       {/* Colour — always present */}
-      <div className="col-span-1">
+      <div className="col-span-1 min-w-0">
         <label className={labelCls}>Colour</label>
         <select
           value={s.color || ''}
@@ -77,10 +77,8 @@ function SingleEar({
 
       {/* Power — RIC or BTE (custom shells have no external power) */}
       {(isRIC || isBTE) && (
-        <div className="col-span-1">
-          <label className={labelCls}>
-            {isRIC ? 'Receiver power' : 'Power class'}
-          </label>
+        <div className="col-span-1 min-w-0">
+          <label className={labelCls}>Power</label>
           <select
             value={isRIC ? (s.receiver_power || '') : (s.bte_power || '')}
             onChange={(e) => set(isRIC
@@ -97,12 +95,10 @@ function SingleEar({
         </div>
       )}
 
-      {/* Length — RIC wire OR BTE slim tube */}
+      {/* Size — RIC receiver wire length OR BTE slim tube length */}
       {(isRIC || isBTE) && (
-        <div className="col-span-1">
-          <label className={labelCls}>
-            {isRIC ? 'Wire length' : 'Slim tube length'}
-          </label>
+        <div className="col-span-1 min-w-0">
+          <label className={labelCls}>Size</label>
           <select
             value={isRIC ? (s.receiver_length || '') : (s.slim_tube_length || '')}
             onChange={(e) => set(isRIC
