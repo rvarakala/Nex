@@ -23,6 +23,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTestContext } from '../../TestContext';
+import { useAuth } from '../../AuthContext';
 import {
   Clock, ClipboardList, Activity, CheckCircle2, RefreshCw, UserPlus, Users,
   Ear, Mic, CircleDot, Waves, Zap, Music, Baby, Sparkles, FileText, Radio,
@@ -145,6 +146,7 @@ const todayHuman = () => new Date().toLocaleDateString('en-IN', { weekday: 'shor
 export default function DiagnosticsQueueBoard() {
   const navigate = useNavigate();
   const { setActiveTest } = useTestContext();
+  const { clinic } = useAuth();
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [starting, setStarting] = useState(null);
@@ -496,6 +498,12 @@ export default function DiagnosticsQueueBoard() {
           filename={`report-${viewerRow.session_id}.pdf`}
           title="Hearing Assessment Report"
           subtitle={`${viewerRow.name || 'Patient'} · Session ${viewerRow.session_id}`}
+          shareContext={{
+            sessionId: viewerRow.session_id,
+            patientMobile: viewerRow.mobile,
+            patientName: viewerRow.name,
+            clinicName: clinic?.name,
+          }}
           onClose={() => setViewerRow(null)}
         />
       )}

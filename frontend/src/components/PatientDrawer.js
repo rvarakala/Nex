@@ -19,6 +19,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import ReportViewerModal from './ReportViewerModal';
+import { useAuth } from '../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -43,6 +44,7 @@ function degreeLabel(d) {
 }
 
 export default function PatientDrawer({ patientId, onClose }) {
+  const { clinic } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -256,6 +258,12 @@ export default function PatientDrawer({ patientId, onClose }) {
           filename={`report-${viewerSession.session_id}.pdf`}
           title="Hearing Assessment Report"
           subtitle={`${data?.patient?.name || 'Patient'}${data?.patient?.mrd ? ` · ${data.patient.mrd}` : ''}`}
+          shareContext={{
+            sessionId: viewerSession.session_id,
+            patientMobile: data?.patient?.mobile,
+            patientName: data?.patient?.name,
+            clinicName: clinic?.name,
+          }}
           onClose={() => setViewerSession(null)}
         />
       )}

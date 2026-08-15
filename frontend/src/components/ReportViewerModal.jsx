@@ -27,21 +27,42 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { X, Printer, Download, Loader2, AlertCircle } from 'lucide-react';
+import { X, Printer, Download, Loader2, AlertCircle, MessageCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BACKEND_ORIGIN = process.env.REACT_APP_BACKEND_URL || '';
+
+// Strip everything that isn't a digit or leading `+`. wa.me expects an
+// E.164 number without spaces or dashes; leading `+` is accepted (and
+// often required for cross-country delivery).
+function cleanMobileForWhatsApp(raw) {
+  if (!raw) return '';
+  const trimmed = String(raw).trim();
+  const digits = trimmed.replace(/[^\d]/g, '');
+  if (!digits) return '';
+  // Assume Indian number if 10 digits with no country code.
+  if (digits.length === 10) return `91${digits}`;
+  return digits;
+}
 
 export default function ReportViewerModal({
   endpoint,
   filename,
   title = 'Report',
   subtitle,
+  shareContext,
   onClose,
 }) {
   const [blobUrl, setBlobUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [sharing, setSharing] = useState(false);
+  const [shareErr, setShareErr] = useState('');
   const iframeRef = useRef(null);
+
+  const canShare = Boolean(
+    shareContext?.sessionId && shareContext?.patientMobile
+  );
 
   // Fetch once per endpoint. Revoke on unmount so we don't leak object
   // URLs across the session.
@@ -119,6 +140,46 @@ export default function ReportViewerModal({
     a.remove();
   };
 
+  const handleShareWhatsApp = async () => {
+    if (!canShare || sharing) return;
+    setSharing(true); setShareErr('');
+    try {
+      // Mint a fresh 7-day signed share link. Reuses the existing
+      // `POST /reports/{session_id}/share-link` endpoint — server hashes
+      // + audits every mint so we don't need to store the token again.
+      const r = await axios.post(
+        `${API}/reports/${shareContext.sessionId}/share-link`,
+        { ttl_hours: 168 }
+      );
+      const path = r.data?.path || '';
+      if (!path) throw new Error('Backend did not return a share path.');
+      const publicUrl = `${BACKEND_ORIGIN.replace(/\/$/, '')}${path}`;
+
+      const patient = shareContext.patientName || 'there';
+      const clinic = shareContext.clinicName || 'your clinic';
+      const message = `Hello ${patient}, your hearing assessment report from ${clinic} is ready: ${publicUrl}. This link is valid for 7 days.`;
+
+      const cleanedNumber = cleanMobileForWhatsApp(shareContext.patientMobile);
+      if (!cleanedNumber) {
+        // Fall back to a generic wa.me link without the recipient — user
+        // will need to pick the contact manually. Better than nothing.
+        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+      } else {
+        const url = `https://wa.me/${cleanedNumber}?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (e) {
+      setShareErr(
+        e?.response?.data?.detail ||
+        e?.message ||
+        'Could not create the share link.'
+      );
+      setTimeout(() => setShareErr(''), 4000);
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[70] bg-slate-900/70 flex flex-col"
@@ -134,6 +195,19 @@ export default function ReportViewerModal({
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {canShare && (
+            <button
+              type="button"
+              onClick={handleShareWhatsApp}
+              disabled={sharing || loading}
+              data-testid="report-viewer-share-whatsapp"
+              title={`Share via WhatsApp to ${shareContext.patientMobile}`}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <MessageCircle size={13} />
+              {sharing ? 'Sharing…' : 'Share via WhatsApp'}
+            </button>
+          )}
           <button
             type="button"
             onClick={handlePrint}
@@ -164,6 +238,14 @@ export default function ReportViewerModal({
           </button>
         </div>
       </div>
+      {shareErr && (
+        <div
+          className="bg-rose-600 text-white text-xs font-semibold px-4 py-1.5 text-center"
+          data-testid="report-viewer-share-error"
+        >
+          {shareErr}
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 bg-slate-200 relative">

@@ -78,7 +78,7 @@ const TEST_LABEL = {
 
 export default function TestProceduresModule() {
   const { activeTest, clearActiveTest } = useTestContext();
-  const { user } = useAuth();
+  const { user, clinic } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -503,6 +503,12 @@ export default function TestProceduresModule() {
           filename={`report-${activeTest.sessionId}.pdf`}
           title="Hearing Assessment Report"
           subtitle={`${activeTest.patient?.name || 'Patient'} · ${activeTest.patient?.mrd || activeTest.patient?.patient_id || ''}`}
+          shareContext={{
+            sessionId: activeTest.sessionId,
+            patientMobile: activeTest.patient?.mobile,
+            patientName: activeTest.patient?.name,
+            clinicName: clinic?.name,
+          }}
           onClose={() => setViewerOpen(false)}
         />
       )}

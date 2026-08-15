@@ -17,6 +17,7 @@ import {
 import PatientDrawer from '../../components/PatientDrawer';
 import LandscapePrompt from '../../components/LandscapePrompt';
 import ReportViewerModal from '../../components/ReportViewerModal';
+import { useAuth } from '../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -38,6 +39,7 @@ const fmt = (iso) => {
 };
 
 export default function ReportsModule() {
+  const { clinic } = useAuth();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -161,6 +163,12 @@ export default function ReportsModule() {
           filename={`report-${viewerRow.session_id}.pdf`}
           title="Hearing Assessment Report"
           subtitle={`${viewerRow.patient_name || 'Patient'}${viewerRow.mrd ? ` · ${viewerRow.mrd}` : ''}`}
+          shareContext={{
+            sessionId: viewerRow.session_id,
+            patientMobile: viewerRow.mobile,
+            patientName: viewerRow.patient_name,
+            clinicName: clinic?.name,
+          }}
           onClose={() => setViewerRow(null)}
         />
       )}

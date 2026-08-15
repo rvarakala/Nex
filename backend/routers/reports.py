@@ -176,7 +176,8 @@ async def create_report_share_link(session_id: str, request: Request,
 
     Optional body: `{"ttl_hours": <int>}` (default 168 = 7 days, max 720 = 30 days).
     """
-    if user["role"] not in {"super_admin", "front_desk", "accounts", "audiologist"}:
+    if user["role"] not in {"super_admin", "founder", "clinic_owner",
+                            "front_desk", "accounts", "audiologist"}:
         raise HTTPException(status_code=403, detail="Not authorised to share reports")
 
     session, patient = await _load_session_and_patient(db, session_id)

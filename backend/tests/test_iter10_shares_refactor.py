@@ -312,6 +312,40 @@ class TestReportShareLinks:
         r = requests.get(f"{API}/reports/shared/{tok}", timeout=10)
         assert r.status_code == 410, f"expected 410 expired, got {r.status_code}: {r.text[:200]}"
 
+    def test_share_link_clinic_owner_can_mint(self):
+        """Regression for the 2026-08-15 WhatsApp-share fix — the
+        endpoint's role whitelist was missing `clinic_owner`, blocking
+        every demo tenant owner from creating a share link. Now allowed
+        alongside super_admin/founder/front_desk/audiologist/accounts."""
+        # Uses the seeded PREMIUM demo tenant so the owner role is real
+        # rather than pytest-fabricated.
+        try:
+            owner_token = _login("owner@thesoundclinic.in", "demo123")
+        except Exception as e:
+            pytest.skip(f"demo owner not seeded in this environment: {e}")
+
+        # Pull any existing completed session from the demo tenant.
+        r = requests.get(f"{API}/reports",
+                         params={"status": "completed", "per_page": 1},
+                         headers=_h(owner_token), timeout=15)
+        assert r.status_code == 200
+        items = (r.json() or {}).get("items") or []
+        if not items:
+            pytest.skip("demo tenant has no completed sessions")
+        sid = items[0]["session_id"]
+
+        r = requests.post(f"{API}/reports/{sid}/share-link",
+                          json={"ttl_hours": 168},
+                          headers=_h(owner_token), timeout=15)
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert j["path"].startswith("/api/reports/shared/")
+        assert j["ttl_hours"] == 168
+        # Public unauth fetch must resolve without auth headers.
+        r2 = requests.get(f"{BASE_URL}{j['path']}", timeout=30)
+        assert r2.status_code == 200
+        assert r2.headers.get("content-type", "").startswith("application/pdf")
+
 
 # ============== 6. Regression smoke: extracted routers still serve ==============
 

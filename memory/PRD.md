@@ -1,6 +1,53 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 📲 Share Report via WhatsApp (2026-08-15)
+
+**Ask**: Add a "Share via WhatsApp" chip inside the report-viewer popup that opens WhatsApp Web pre-filled with a signed short-link to the patient's report — one-tap sharing without downloading anything.
+
+**Shipped**:
+
+**Backend** — the endpoints already existed (`POST /api/reports/{session_id}/share-link` returns `{path, token, expires_at, ttl_hours}`; `GET /api/reports/shared/{token}` is a public unauth stream of the PDF). Fixed one blocker:
+- The mint-endpoint's role whitelist was missing `clinic_owner` + `founder`. Every demo tenant owner (who runs their own clinic!) was getting a 403 "Not authorised to share reports". Expanded to `{super_admin, founder, clinic_owner, front_desk, accounts, audiologist}`.
+
+**Frontend** — `<ReportViewerModal>` grew a new optional `shareContext` prop:
+```js
+shareContext={{ sessionId, patientMobile, patientName, clinicName }}
+```
+When both `sessionId` and `patientMobile` are present, an emerald **"Share via WhatsApp"** chip renders in the toolbar. On click:
+1. POSTs to `/api/reports/{sessionId}/share-link` with `ttl_hours: 168` (7 days per user preference).
+2. Builds public URL: `{REACT_APP_BACKEND_URL}/api/reports/shared/{token}` (this is `https://audinexa.com/...` in production — patient's phone opens it, no login needed).
+3. Opens `https://wa.me/{cleanedMobile}?text={encodedMessage}` in a new tab.
+4. Message (per user preference): `Hello {patientName}, your hearing assessment report from {clinicName} is ready: {link}. This link is valid for 7 days.`
+5. Loading state ("Sharing…"), transient rose error banner on failure.
+
+**Number cleaning**: strips non-digits from the mobile; if the result is 10 digits (no country code) we prepend `91` for India — WhatsApp's `wa.me` API requires the country code.
+
+**Surface scope** (per user preference): only Hearing Test surfaces get the chip.
+- ✅ Hearing Tests card (DiagnosticsQueueBoard) — passes `mobile` from queue row
+- ✅ In-test Print (TestProceduresModule) — passes `activeTest.patient.mobile` + audiologist's clinic name
+- ✅ Reports archive (ReportsModule) — passes `viewerRow.mobile` (comes from `/api/reports` list endpoint)
+- ✅ Patient drawer (PatientDrawer) — passes `data.patient.mobile` from history endpoint
+- ❌ Service Repair Job Card — kept internal, no share chip (per user preference)
+
+**No revoke UI** — per user preference, links just expire after 7 days.
+
+**Files updated**:
+- `/app/backend/routers/reports.py` — role whitelist expanded to include `clinic_owner` + `founder`
+- `/app/frontend/src/components/ReportViewerModal.jsx` — `shareContext` prop, WhatsApp chip, mint→wa.me handler, mobile cleaner, error banner
+- `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` — import `useAuth`, pass `shareContext` (mobile from row, clinic from AuthContext)
+- `/app/frontend/src/modules/test/TestProceduresModule.js` — destructure `clinic` from existing `useAuth()`, pass `shareContext`
+- `/app/frontend/src/modules/reports/ReportsModule.js` — import `useAuth`, pass `shareContext`
+- `/app/frontend/src/components/PatientDrawer.js` — import `useAuth`, pass `shareContext`
+- `/app/backend/tests/test_iter10_shares_refactor.py` — new `test_share_link_clinic_owner_can_mint` regression test using demo tenant owner
+
+**Tested**: 6/6 share-link tests pass (including the new clinic_owner regression). Playwright confirmed the emerald "Share via WhatsApp" chip renders in the modal toolbar next to Print / Download / Close. Curl verified end-to-end: clinic_owner mints share-link → 200 with `path`, `token`, `expires_at`; public GET returns 200 with `application/pdf` Content-Type.
+
+**Redeploy needed** for this to reach audinexa.com — behavior only lives on preview right now.
+
+
+
+
 ## 🖨️ Universal In-App Report Viewer Popup (2026-08-15)
 
 **Ask (production report from user)**: "When user clicks View report it should open like [in-app popup with letterhead + both ears separate graphs] — not like attached PDF. It should always — wherever the scope of print report — first view as pop up report. On popup if user wants to print, give them Print to PDF & or already plugged in printer."
