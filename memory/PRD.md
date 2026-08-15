@@ -1,6 +1,35 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## ⚖️ Compare Campaigns for Marketing Traffic (2026-08-15)
+
+**Ask**: Side-by-side comparison of visitor, bounce, and conversion data overlaid per marketing campaign — so the founder can see which UTM campaign is winning after a push.
+
+**Shipped**:
+
+**Backend** `GET /api/admin/marketing-traffic/compare?campaigns=A,B,C&days=N` — super_admin only.
+- Accepts 2-4 comma-separated `utm_campaign` names (dupes collapsed, first-4 wins). The sentinel `(direct)` matches all pageviews with no utm_campaign set (mirrors the overview endpoint's bucketing).
+- Returns per-campaign `totals`: page_views, unique_visitors, unique_sessions, custom_events, converting_visitors, conversion_rate_pct, bounce_rate_pct, avg_pages_per_session, avg_session_seconds.
+- Returns per-campaign `daily` array (page_views + unique_visitors) aligned to a shared `dates: [YYYY-MM-DD, ...]` axis covering the full horizon — the frontend can overlay lines without any extra alignment logic.
+- **Attribution nuance**: `window.audinexaTrack` beacons don't carry utm_campaign (they inherit attribution through the visitor_id). So events are attributed to a campaign via the campaign's pageview visitor set. Session-end beacons attributed via session_id set — same technique.
+
+**Frontend**:
+- New "Compare campaigns" panel on `/admin/traffic`, wedged between Retention Cohorts and Install Snippet.
+- Multi-select chip picker sourced from `data.campaigns` — top 20 unique campaigns from the overview response. Chips show session count. Numbered 1-4 when picked, coloured per shared `COMPARE_PALETTE` (indigo / emerald / amber / rose) so the same colour identifies the campaign across chip, table header, and chart line.
+- Comparison table: 9 metric rows × N campaign columns. Winner cell is auto-highlighted in emerald (max for good metrics, min for bounce rate).
+- Overlay SVG chart with metric toggle (Page views ↔ Unique visitors), aligned to the shared date axis, one line + dots per campaign, native `<title>` tooltips, legend at the bottom.
+- Auto-refresh when parent range toggle changes (7 / 30 / 90 days) — uses a `useRef` sentinel so chip clicks alone don't retrigger the effect.
+
+**Files updated**:
+- `/app/backend/routers/marketing_traffic.py` — new `/compare` endpoint
+- `/app/frontend/src/modules/admin/panel/MarketingTrafficPage.jsx` — `CompareCampaigns`, `CompareMetricTable`, `CompareOverlayChart` components + shared `COMPARE_PALETTE`
+- `/app/backend/tests/test_marketing_traffic.py` — 3 new tests (auth + required param, shape + alignment + conversion attribution, dedupe + 4-cap)
+
+**Tested**: 10/10 pytest tests pass. UI screenshot confirms the comparison table renders `(direct) vs diwali-launch-2026` with 9 metric rows, correctly-highlighted winners, and a two-line overlay chart with legend + metric switcher.
+
+
+
+
 ## 📈 Retention Cohorts + CTA Wiring Guide (2026-08-15)
 
 **Ask**: (1) Show retention cohorts so post-campaign stickiness is visible. (2) Make the on-page install docs bulletproof with copy-paste code for wiring `window.audinexaTrack()` to Get Demo / Sign Up buttons.

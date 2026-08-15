@@ -18,6 +18,7 @@ import axios from 'axios';
 import {
   Activity, Users, Eye, MousePointerClick, Megaphone, Globe2, Copy, RefreshCw,
   Zap, Timer, ArrowDownRight, Repeat, MousePointer, CheckCircle2, Code2,
+  GitCompareArrows, X,
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -261,6 +262,12 @@ export default function MarketingTrafficPage() {
 
           {/* Retention Cohorts */}
           <RetentionCohortGrid cohorts={cohorts} />
+
+          {/* Compare Campaigns */}
+          <CompareCampaigns
+            allCampaigns={data.campaigns || []}
+            range={range}
+          />
 
           {/* Install snippet */}
           <InstallSnippet snippetHtml={snippetHtml} snippetUrl={snippetUrl} />
@@ -510,6 +517,323 @@ onclick="window.audinexaTrack('pricing_cta')"`;
 
       <div className="text-[10.5px] text-slate-500 mt-3 pt-3 border-t border-indigo-200">
         Tracker source: <a href={snippetUrl} target="_blank" rel="noreferrer" className="font-mono text-indigo-700 hover:underline">{snippetUrl}</a>
+      </div>
+    </div>
+  );
+}
+
+// ── Compare Campaigns ───────────────────────────────────────────────
+// Palette used for BOTH the chip picker + the overlay lines so a
+// campaign keeps the same colour whichever surface it appears on.
+const COMPARE_PALETTE = [
+  { name: 'indigo',  hex: '#4F46E5', dot: 'bg-indigo-500'  },
+  { name: 'emerald', hex: '#059669', dot: 'bg-emerald-500' },
+  { name: 'amber',   hex: '#D97706', dot: 'bg-amber-500'   },
+  { name: 'rose',    hex: '#E11D48', dot: 'bg-rose-500'    },
+];
+
+function CompareCampaigns({ allCampaigns, range }) {
+  const [picked, setPicked] = useState([]);   // list of campaign names
+  const [compare, setCompare] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [metric, setMetric] = useState('page_views'); // 'page_views' | 'unique_visitors'
+  const [err, setErr] = useState('');
+
+  // Curated list — top 20 unique campaign names from the overview
+  // response, deduped and stable-sorted by sessions.
+  const options = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const c of allCampaigns) {
+      if (!c?.campaign || seen.has(c.campaign)) continue;
+      seen.add(c.campaign);
+      out.push({ campaign: c.campaign, sessions: c.sessions, visitors: c.visitors });
+      if (out.length >= 20) break;
+    }
+    return out;
+  }, [allCampaigns]);
+
+  const togglePick = (name) => {
+    setPicked((prev) => {
+      if (prev.includes(name)) return prev.filter((n) => n !== name);
+      if (prev.length >= 4) return prev;   // 4-max
+      return [...prev, name];
+    });
+  };
+  const clearPicks = () => { setPicked([]); setCompare(null); setErr(''); };
+
+  const runCompare = useCallback(async () => {
+    if (picked.length < 2) {
+      setErr('Pick at least 2 campaigns to compare.');
+      return;
+    }
+    setLoading(true);
+    setErr('');
+    try {
+      const r = await axios.get(`${API}/admin/marketing-traffic/compare`, {
+        params: { campaigns: picked.join(','), days: range },
+      });
+      setCompare(r.data);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || 'Failed to load comparison.');
+      setCompare(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [picked, range]);
+
+  // Re-run automatically when the parent range toggle changes and we
+  // already have a comparison on screen. Otherwise the numbers would
+  // silently drift out of sync with the KPI grid above. Guard against
+  // the effect firing on chip clicks by ignoring the initial mount and
+  // by checking that a prior comparison exists.
+  const rangeRef = React.useRef(range);
+  useEffect(() => {
+    if (rangeRef.current === range) return;    // ignore non-range changes
+    rangeRef.current = range;
+    if (compare && picked.length >= 2) { runCompare(); }
+  }, [range, compare, picked.length, runCompare]);
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-4 mb-4" data-testid="mtraf-compare-panel">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold flex items-center gap-1">
+            <GitCompareArrows size={11} /> Compare campaigns
+          </div>
+          <div className="text-[10.5px] text-slate-500 mt-0.5 max-w-[70ch]">
+            Pick 2–4 campaigns to overlay their visitors, sessions, bounce and conversion side-by-side over the last {range} day{range > 1 ? 's' : ''}.
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {picked.length > 0 && (
+            <button
+              onClick={clearPicks}
+              data-testid="mtraf-compare-clear"
+              className="text-[11px] px-2 py-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded"
+            >Clear</button>
+          )}
+          <button
+            onClick={runCompare}
+            disabled={picked.length < 2 || loading}
+            data-testid="mtraf-compare-run"
+            className="text-[11px] font-semibold px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >{loading ? 'Comparing…' : 'Compare'}</button>
+        </div>
+      </div>
+
+      {/* Chip picker */}
+      {options.length === 0 ? (
+        <div className="text-[11.5px] text-slate-400 italic py-3">
+          No campaign data yet. Send UTM-tagged links to audinexa.com to start comparing.
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
+          {options.map((o) => {
+            const idx = picked.indexOf(o.campaign);
+            const chosen = idx !== -1;
+            const paint = chosen ? COMPARE_PALETTE[idx % COMPARE_PALETTE.length] : null;
+            return (
+              <button
+                key={o.campaign}
+                onClick={() => togglePick(o.campaign)}
+                data-testid={`mtraf-compare-chip-${o.campaign}`}
+                className={`text-[11px] font-semibold px-2 py-1 rounded-full border flex items-center gap-1.5 transition ${
+                  chosen
+                    ? 'text-white border-transparent'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400'
+                }`}
+                style={chosen ? { background: paint.hex } : {}}
+              >
+                {chosen && (
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-white/25 text-[9px]">
+                    {idx + 1}
+                  </span>
+                )}
+                {o.campaign}
+                <span className={`text-[10px] font-normal ${chosen ? 'opacity-80' : 'text-slate-400'}`}>
+                  {fmt(o.sessions)}
+                </span>
+                {chosen && <X size={10} className="opacity-80" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="text-[10.5px] text-slate-500 mt-1">
+        Selected {picked.length}/4 · {picked.length < 2 ? 'pick one more to enable Compare' : 'ready — hit Compare'}
+      </div>
+
+      {err && (
+        <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2 py-1 mt-3">{err}</div>
+      )}
+
+      {compare && compare.campaigns?.length >= 2 && (
+        <div className="mt-4 space-y-4" data-testid="mtraf-compare-result">
+          <CompareMetricTable rows={compare.campaigns} />
+          <CompareOverlayChart
+            dates={compare.dates || []}
+            rows={compare.campaigns}
+            metric={metric}
+            setMetric={setMetric}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompareMetricTable({ rows }) {
+  // Build a wide table — one metric row, one column per campaign. The
+  // "winner" cell (highest for good metrics, lowest for bounce) gets
+  // a green ring so the founder can eyeball leaders instantly.
+  const cols = rows.map((r, i) => ({
+    ...r,
+    _paint: COMPARE_PALETTE[i % COMPARE_PALETTE.length],
+  }));
+  const metrics = [
+    { key: 'unique_visitors',       label: 'Unique visitors',      fmt: fmt,       best: 'max' },
+    { key: 'unique_sessions',       label: 'Sessions',             fmt: fmt,       best: 'max' },
+    { key: 'page_views',            label: 'Page views',           fmt: fmt,       best: 'max' },
+    { key: 'avg_pages_per_session', label: 'Pages / session',      fmt: (v) => Number(v || 0).toFixed(2), best: 'max' },
+    { key: 'avg_session_seconds',   label: 'Avg session length',   fmt: (v) => fmtSec(v), best: 'max' },
+    { key: 'bounce_rate_pct',       label: 'Bounce rate',          fmt: (v) => `${Number(v || 0).toFixed(1)}%`, best: 'min' },
+    { key: 'custom_events',         label: 'Custom events',        fmt: fmt,       best: 'max' },
+    { key: 'converting_visitors',   label: 'Converting visitors',  fmt: fmt,       best: 'max' },
+    { key: 'conversion_rate_pct',   label: 'Conversion rate',      fmt: (v) => `${Number(v || 0).toFixed(1)}%`, best: 'max' },
+  ];
+  const bestIdx = (m) => {
+    const vals = cols.map((c) => Number(c.totals?.[m.key] || 0));
+    if (m.best === 'min') return vals.indexOf(Math.min(...vals));
+    return vals.indexOf(Math.max(...vals));
+  };
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[12px]" data-testid="mtraf-compare-table">
+        <thead>
+          <tr className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
+            <th className="text-left px-2 py-2">Metric</th>
+            {cols.map((c) => (
+              <th key={c.campaign} className="text-right px-2 py-2">
+                <div className="flex items-center justify-end gap-1.5">
+                  <span className="w-2 h-2 rounded-sm" style={{ background: c._paint.hex }} />
+                  <span className="text-slate-800 tracking-normal normal-case text-[11px] font-semibold truncate max-w-[160px]" title={c.campaign}>
+                    {c.campaign}
+                  </span>
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {metrics.map((m) => {
+            const winner = bestIdx(m);
+            return (
+              <tr key={m.key} className="border-t border-slate-100">
+                <td className="px-2 py-1.5 text-slate-600">{m.label}</td>
+                {cols.map((c, i) => (
+                  <td
+                    key={c.campaign}
+                    className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                      i === winner && cols.length > 1
+                        ? 'text-emerald-700 bg-emerald-50 rounded'
+                        : 'text-slate-800'
+                    }`}
+                    data-testid={`mtraf-compare-cell-${m.key}-${c.campaign}`}
+                  >
+                    {m.fmt(c.totals?.[m.key])}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CompareOverlayChart({ dates, rows, metric, setMetric }) {
+  if (!dates.length) {
+    return <div className="text-center text-slate-400 italic text-[11px] py-8">No date range to plot yet.</div>;
+  }
+  const W = 900, H = 200, PAD_L = 40, PAD_R = 12, PAD_T = 14, PAD_B = 26;
+  const iw = W - PAD_L - PAD_R;
+  const ih = H - PAD_T - PAD_B;
+  const maxY = Math.max(
+    1,
+    ...rows.flatMap((r) => (r.daily || []).map((d) => Number(d[metric] || 0))),
+  );
+  const step = dates.length > 1 ? iw / (dates.length - 1) : iw;
+  const xFor = (i) => PAD_L + (dates.length > 1 ? i * step : iw / 2);
+  const yFor = (v) => PAD_T + ih - (v / maxY) * ih;
+
+  return (
+    <div className="border border-slate-200 rounded-md p-3 bg-slate-50/40">
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">
+          Daily overlay — {metric === 'page_views' ? 'Page views' : 'Unique visitors'}
+        </div>
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded shadow-sm p-0.5">
+          {[
+            { k: 'page_views',       lbl: 'Page views' },
+            { k: 'unique_visitors',  lbl: 'Unique visitors' },
+          ].map((o) => (
+            <button
+              key={o.k}
+              onClick={() => setMetric(o.k)}
+              data-testid={`mtraf-compare-metric-${o.k}`}
+              className={`text-[10.5px] font-semibold px-2 py-1 rounded ${
+                metric === o.k ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >{o.lbl}</button>
+          ))}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} data-testid="mtraf-compare-chart">
+        {/* Y grid */}
+        {[0, 0.25, 0.5, 0.75, 1].map((r, i) => (
+          <line key={i} x1={PAD_L} x2={W - PAD_R}
+                y1={PAD_T + ih * (1 - r)} y2={PAD_T + ih * (1 - r)}
+                stroke="#E5E7EB" strokeDasharray="2 3" />
+        ))}
+        <text x={PAD_L - 6} y={PAD_T + ih + 4} textAnchor="end" fontSize="10" fill="#94A3B8">0</text>
+        <text x={PAD_L - 6} y={PAD_T + 8} textAnchor="end" fontSize="10" fill="#94A3B8">{maxY}</text>
+
+        {/* One line per campaign */}
+        {rows.map((r, idx) => {
+          const paint = COMPARE_PALETTE[idx % COMPARE_PALETTE.length];
+          const points = (r.daily || []).map((d, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i)} ${yFor(Number(d[metric] || 0))}`).join(' ');
+          return (
+            <g key={r.campaign}>
+              <path d={points} fill="none" stroke={paint.hex} strokeWidth="2" />
+              {(r.daily || []).map((d, i) => (
+                <circle key={i} cx={xFor(i)} cy={yFor(Number(d[metric] || 0))} r="2.5" fill={paint.hex}>
+                  <title>{d.date} · {r.campaign} · {d[metric]}</title>
+                </circle>
+              ))}
+            </g>
+          );
+        })}
+
+        {/* X labels */}
+        {[0, Math.floor((dates.length - 1) / 2), dates.length - 1].filter((v, i, a) => a.indexOf(v) === i).map((i) => (
+          <text key={i} x={xFor(i)} y={H - 6} textAnchor="middle" fontSize="10" fill="#64748B">
+            {fmtDay(dates[i])}
+          </text>
+        ))}
+      </svg>
+      {/* Legend */}
+      <div className="flex flex-wrap gap-3 mt-1 text-[10.5px]">
+        {rows.map((r, idx) => {
+          const paint = COMPARE_PALETTE[idx % COMPARE_PALETTE.length];
+          return (
+            <div key={r.campaign} className="inline-flex items-center gap-1.5 text-slate-700">
+              <span className="inline-block w-3 h-1 rounded" style={{ background: paint.hex }} />
+              <span className="font-semibold">{r.campaign}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

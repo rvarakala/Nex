@@ -444,6 +444,190 @@ async def marketing_traffic_live(
     }
 
 
+@router.get("/admin/marketing-traffic/compare")
+async def marketing_traffic_compare(
+    campaigns: str,
+    days: int = 30,
+    user=Depends(require_roles("super_admin")),
+    db=Depends(get_db),
+):
+    """Side-by-side comparison of 2-4 marketing campaigns.
+
+    `campaigns` is a comma-separated list of `utm_campaign` values. The
+    sentinel `(direct)` matches all pageviews with no utm_campaign set,
+    mirroring the overview endpoint's bucketing.
+
+    For each campaign we return:
+      · totals — visitors, sessions, page_views, custom_events,
+        bounce_rate_pct, avg_pages_per_session, avg_session_seconds,
+        conversion_rate_pct (events ÷ unique visitors)
+      · daily  — page_views + unique_visitors keyed by date_bucket,
+        aligned to the shared `dates` axis so the frontend can
+        overlay them without extra alignment work.
+
+    Response also carries `dates: [YYYY-MM-DD, ...]` covering the full
+    horizon so the overlay chart's X-axis stays stable even when a
+    campaign has zero traffic on a given day.
+    """
+    days = max(1, min(days, 365))
+    picks = [c.strip() for c in (campaigns or "").split(",") if c.strip()]
+    # Dedupe while preserving order, cap at 4 to protect the query.
+    seen: set = set()
+    campaign_list: list[str] = []
+    for name in picks:
+        if name not in seen:
+            seen.add(name)
+            campaign_list.append(name)
+        if len(campaign_list) >= 4:
+            break
+    if not campaign_list:
+        raise HTTPException(400, "campaigns query param required (comma-separated)")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    # Build the shared date axis first — every day between cutoff and
+    # today, inclusive. Keeps the frontend rendering trivial.
+    axis_days: list[str] = []
+    d = cutoff.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    while d <= end:
+        axis_days.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+
+    def _match_filter(name: str) -> dict:
+        base = {"at": {"$gte": cutoff}}
+        if name == "(direct)":
+            base["$or"] = [
+                {"utm_campaign": None},
+                {"utm_campaign": {"$exists": False}},
+                {"utm_campaign": ""},
+            ]
+        else:
+            base["utm_campaign"] = name
+        return base
+
+    results: list = []
+    for name in campaign_list:
+        base_match = _match_filter(name)
+        pv_match = {**base_match, "kind": "pageview"}
+
+        page_views = await db.marketing_traffic_events.count_documents(pv_match)
+        # Attribute events to a campaign via the campaign's pageview
+        # visitor set — because `window.audinexaTrack` beacons don't
+        # carry utm_campaign (they inherit attribution through the
+        # visitor_id → first-touch campaign relationship).
+        campaign_visitor_ids = await db.marketing_traffic_events.distinct(
+            "visitor_id", pv_match
+        )
+        campaign_session_ids = await db.marketing_traffic_events.distinct(
+            "session_id", pv_match
+        )
+        unique_visitors = len(campaign_visitor_ids)
+        unique_sessions = len(campaign_session_ids)
+
+        if campaign_visitor_ids:
+            custom_events = await db.marketing_traffic_events.count_documents({
+                "kind": "event",
+                "at": {"$gte": cutoff},
+                "visitor_id": {"$in": campaign_visitor_ids},
+            })
+            event_visitors = len(
+                await db.marketing_traffic_events.distinct("visitor_id", {
+                    "kind": "event",
+                    "at": {"$gte": cutoff},
+                    "visitor_id": {"$in": campaign_visitor_ids},
+                })
+            )
+        else:
+            custom_events = 0
+            event_visitors = 0
+
+        # Daily page_views + unique visitors, indexed for O(1) alignment.
+        daily_cursor = db.marketing_traffic_events.aggregate([
+            {"$match": pv_match},
+            {"$group": {
+                "_id": "$date_bucket",
+                "page_views": {"$sum": 1},
+                "visitors": {"$addToSet": "$visitor_id"},
+            }},
+            {"$project": {
+                "date": "$_id", "_id": 0,
+                "page_views": 1,
+                "unique_visitors": {"$size": "$visitors"},
+            }},
+        ])
+        daily_by_date = {r["date"]: r for r in await daily_cursor.to_list(400)}
+        daily = [{
+            "date": d,
+            "page_views": (daily_by_date.get(d, {}) or {}).get("page_views", 0),
+            "unique_visitors": (daily_by_date.get(d, {}) or {}).get("unique_visitors", 0),
+        } for d in axis_days]
+
+        # Bounce rate + pages-per-session (session hit distribution).
+        sess_cursor = db.marketing_traffic_events.aggregate([
+            {"$match": pv_match},
+            {"$group": {"_id": "$session_id", "hits": {"$sum": 1}}},
+            {"$group": {
+                "_id": None,
+                "total_sessions": {"$sum": 1},
+                "single_page_sessions": {
+                    "$sum": {"$cond": [{"$eq": ["$hits", 1]}, 1, 0]}
+                },
+                "total_page_views": {"$sum": "$hits"},
+            }},
+        ])
+        sess = await sess_cursor.to_list(1)
+        if sess and sess[0]["total_sessions"]:
+            s = sess[0]
+            bounce_rate = round(s["single_page_sessions"] / s["total_sessions"] * 100, 1)
+            avg_pps = round(s["total_page_views"] / s["total_sessions"], 2)
+        else:
+            bounce_rate = 0.0
+            avg_pps = 0.0
+
+        # Avg session duration from session_end beacons within this campaign.
+        # Session_end beacons don't carry utm_campaign directly, so we
+        # match them by session_id joined with the campaign's sessions.
+        if campaign_session_ids:
+            dur_cursor = db.marketing_traffic_events.aggregate([
+                {"$match": {"kind": "session_end", "dur_ms": {"$gt": 0},
+                            "session_id": {"$in": campaign_session_ids}}},
+                {"$group": {"_id": None, "avg_ms": {"$avg": "$dur_ms"}}},
+            ])
+            dur = await dur_cursor.to_list(1)
+            avg_session_ms = int(dur[0]["avg_ms"] or 0) if dur else 0
+        else:
+            avg_session_ms = 0
+
+        # Conversion — % of unique visitors who fired at least one custom
+        # event. More useful than raw event count for A/B campaign work.
+        conversion_pct = (
+            round(event_visitors / unique_visitors * 100, 1)
+            if unique_visitors else 0.0
+        )
+
+        results.append({
+            "campaign": name,
+            "totals": {
+                "page_views": page_views,
+                "unique_visitors": unique_visitors,
+                "unique_sessions": unique_sessions,
+                "custom_events": custom_events,
+                "converting_visitors": event_visitors,
+                "conversion_rate_pct": conversion_pct,
+                "bounce_rate_pct": bounce_rate,
+                "avg_pages_per_session": avg_pps,
+                "avg_session_seconds": round(avg_session_ms / 1000, 1) if avg_session_ms else 0,
+            },
+            "daily": daily,
+        })
+
+    return {
+        "range_days": days,
+        "dates": axis_days,
+        "campaigns": results,
+    }
+
+
 @router.get("/admin/marketing-traffic/cohorts")
 async def marketing_traffic_cohorts(
     weeks: int = 8,

@@ -168,3 +168,99 @@ def test_cohorts_weeks_param_clamped():
               timeout=15)
     assert r.status_code == 200
     assert r.json()["weeks"] == 26
+
+
+
+def _seed_campaign_hit(campaign, source="google", medium="cpc",
+                       event_name=None, path="/"):
+    """Fire pageview (+optional event) beacon under a campaign so the
+    compare endpoint has something to roll up."""
+    vid = f"v-cmp-{uuid.uuid4().hex[:8]}"
+    sid = f"s-cmp-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "visitor_id": vid, "session_id": sid,
+        "kind": "pageview", "path": path,
+        "utm_source": source, "utm_medium": medium,
+        "utm_campaign": campaign,
+    }
+    requests.post(f"{BASE_URL}/api/track", json=payload, timeout=15)
+    if event_name:
+        requests.post(f"{BASE_URL}/api/track", json={
+            "visitor_id": vid, "session_id": sid,
+            "kind": "event", "event_name": event_name,
+        }, timeout=15)
+    return vid, sid
+
+
+def test_compare_endpoint_requires_super_admin_and_needs_campaigns():
+    """The compare endpoint must be founder-only and 400 without campaigns."""
+    # Unauthenticated → 401
+    r = requests.get(f"{BASE_URL}/api/admin/marketing-traffic/compare"
+                     "?campaigns=foo,bar", timeout=15)
+    assert r.status_code == 401
+
+    s = _founder()
+    r = s.get(f"{BASE_URL}/api/admin/marketing-traffic/compare?campaigns=",
+              timeout=15)
+    assert r.status_code == 400
+
+
+def test_compare_endpoint_shape_and_alignment():
+    """Every requested campaign returns totals + a daily array aligned
+    to the shared `dates` axis so the frontend can overlay cleanly."""
+    c1 = f"pytest-cmp-a-{uuid.uuid4().hex[:6]}"
+    c2 = f"pytest-cmp-b-{uuid.uuid4().hex[:6]}"
+    _seed_campaign_hit(c1, event_name="demo_cta", path="/pricing")
+    _seed_campaign_hit(c1, path="/features")     # 2nd hit for c1
+    _seed_campaign_hit(c2, source="linkedin", medium="social", path="/pricing")
+
+    s = _founder()
+    r = s.get(f"{BASE_URL}/api/admin/marketing-traffic/compare",
+              params={"campaigns": f"{c1},{c2}", "days": 30},
+              timeout=20)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["range_days"] == 30
+    assert isinstance(d["dates"], list) and len(d["dates"]) > 0
+    assert isinstance(d["campaigns"], list) and len(d["campaigns"]) == 2
+
+    names = [c["campaign"] for c in d["campaigns"]]
+    assert c1 in names and c2 in names
+    for row in d["campaigns"]:
+        # Totals shape.
+        for key in ("page_views", "unique_visitors", "unique_sessions",
+                    "custom_events", "converting_visitors",
+                    "conversion_rate_pct", "bounce_rate_pct",
+                    "avg_pages_per_session", "avg_session_seconds"):
+            assert key in row["totals"], f"missing totals key: {key}"
+        # Daily must be aligned to the shared axis.
+        assert len(row["daily"]) == len(d["dates"])
+        for pt, day in zip(row["daily"], d["dates"]):
+            assert pt["date"] == day
+            assert "page_views" in pt and "unique_visitors" in pt
+
+    # Sanity: c1 fired a custom event, so its converting_visitors should
+    # be >= 1 while c2 (no event) stays at 0.
+    by_name = {c["campaign"]: c for c in d["campaigns"]}
+    assert by_name[c1]["totals"]["converting_visitors"] >= 1
+    assert by_name[c2]["totals"]["converting_visitors"] == 0
+
+
+def test_compare_endpoint_dedupes_and_caps_at_four():
+    """Duplicates collapse, and only the first 4 unique names are kept."""
+    names = [f"pytest-cap-{i}-{uuid.uuid4().hex[:4]}" for i in range(6)]
+    # Seed one hit for each so all 6 are real campaigns.
+    for n in names:
+        _seed_campaign_hit(n)
+
+    s = _founder()
+    # 6 names + a duplicate — expect exactly 4 in the response, in the
+    # order they were sent (first-4 wins), with the dupe collapsed.
+    payload = ",".join([names[0], names[0], *names[1:6]])
+    r = s.get(f"{BASE_URL}/api/admin/marketing-traffic/compare",
+              params={"campaigns": payload, "days": 30},
+              timeout=20)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert len(d["campaigns"]) == 4
+    assert [c["campaign"] for c in d["campaigns"]] == names[:4]
