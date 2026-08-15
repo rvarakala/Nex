@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import PatientDrawer from '../../components/PatientDrawer';
 import LandscapePrompt from '../../components/LandscapePrompt';
-import ReportViewerModal from '../../components/ReportViewerModal';
+import HearingReportPreviewModal from '../../components/HearingReportPreviewModal';
 import { useAuth } from '../../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -158,11 +158,9 @@ export default function ReportsModule() {
       />
 
       {viewerRow && (
-        <ReportViewerModal
-          endpoint={`/reports/${viewerRow.session_id}/pdf`}
-          filename={`report-${viewerRow.session_id}.pdf`}
+        <HearingReportPreviewModal
+          sessionId={viewerRow.session_id}
           title="Hearing Assessment Report"
-          subtitle={`${viewerRow.patient_name || 'Patient'}${viewerRow.mrd ? ` · ${viewerRow.mrd}` : ''}`}
           shareContext={{
             sessionId: viewerRow.session_id,
             patientMobile: viewerRow.mobile,

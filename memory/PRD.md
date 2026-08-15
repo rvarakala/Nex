@@ -1,6 +1,59 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🩺 Real Audiogram Preview (React live-render, replaces iframe PDF) (2026-08-15)
+
+**Ask (user rejected earlier fix)**: "I want Real Audiogram that I want to preview & print — not like [report-SES-*.pdf attached, which was a plain-numeric-table with NO graphs]. I want like [123.pdf attached — proper clinical audiogram with two separate ear graphs, dB HL vs Frequency, standard symbols, PTA summary, findings/diagnosis/recommendations]. Clarify before you code — last time you did it wrong."
+
+**Root cause**: The `/api/reports/{session_id}/pdf` server template renders numeric tables ONLY when no client-side captured PDF exists in GridFS. All 5 surfaces I previously wired were embedding this fallback PDF. The React `<ReportsPanel>` component in the browser was already producing the correct 123.pdf-style output (with SVG audiograms), but only when the audiologist manually clicked "Save & Print" — never in the "View report" flow.
+
+**Shipped**:
+
+**New component** `/app/frontend/src/components/HearingReportPreviewModal.jsx` — **LIVE React render** of the report in a full-screen modal:
+- Fetches `/api/sessions/{sessionId}` for the full session doc (audiogram measurements, per-tab data, builder narrative)
+- Fetches `/api/patients/{patient_id}` for the letterhead patient strip
+- Mounts `<ReportsPanel hideBuilder previewId="report-preview-past">` with everything hydrated → SVG audiograms + PTA summary + legend + tympanograms + narrative sections all render in-browser (matches 123.pdf exactly)
+- **Dynamic sections** (per user preference Q3.b): starts from `TOGGLEABLE_SECTIONS.defaultEnabled` (Case History, Pure Tone, Tympanometry, Results, Provisional Diagnosis, Recommendations) and auto-enables any additional section whose session data is populated (speech / OAE / ABR / soundfield / etc.)
+- **Print** — `window.print()` scoped via existing `body.printing-past-report` + `@media print` CSS (proven pattern shared with saved-snapshot viewer). Browser's native print dialog opens → user picks Save as PDF or any physical printer
+- **Share via WhatsApp** — emerald chip unchanged, still mints a 7-day signed public link (server-generated PDF, unchanged per user preference)
+- **Close** — Escape key + backdrop + X button, body scroll lock while open
+
+**`<ReportsPanel>` extended** to accept `initialBuilder.sections` — optional `[{id, enabled}]` array that overrides the default TOGGLEABLE_SECTIONS.defaultEnabled. Additive: any id NOT listed keeps its default. Enables the modal to programmatically enable populated sections without touching the audiologist's live editor state.
+
+**All 4 Hearing Test surfaces** now use `<HearingReportPreviewModal>` (React-render) instead of `<ReportViewerModal>` (iframe-PDF):
+1. `DiagnosticsQueueBoard.js` — Hearing Tests completed card "View report"
+2. `TestProceduresModule.js` — in-test **Print** button
+3. `ReportsModule.js` — Reports archive Reprint
+4. `PatientDrawer.js` — Patient drawer historical session View
+
+`<ReportViewerModal>` (iframe-PDF) kept only for the Service Repair Job Card in `AudinexaPipelineDrawer.jsx` — that's a separate PDF entirely, unchanged.
+
+**Files updated**:
+- `/app/frontend/src/components/HearingReportPreviewModal.jsx` (NEW, ~275 lines)
+- `/app/frontend/src/components/ReportsPanel.js` — `initialBuilder.sections` override support
+- `/app/frontend/src/modules/test/DiagnosticsQueueBoard.js` — swap modal + import
+- `/app/frontend/src/modules/test/TestProceduresModule.js` — swap modal + import
+- `/app/frontend/src/modules/reports/ReportsModule.js` — swap modal + import
+- `/app/frontend/src/components/PatientDrawer.js` — swap modal + import
+
+**Verified**: Live Playwright screenshot on `SES-730B5760-A40` (the exact session the user attached as `report-SES-730B5760-A40.pdf`) shows the modal now rendering with:
+- Sound Clinic letterhead + "Hearing Assessment" title
+- Patient one-liner (raaav · 45M · MRD ACS-2026-A2C95D90 · Audiologist · 15/08/2026)
+- Case History narrative
+- **Two separate clinical audiogram graphs** (Right Ear + Left Ear) with proper dB HL vs Frequency axes, red circles for R-AC, blue crosses for L-AC
+- Legend (O / △ / < / X / □ / > / ✓)
+- PTA Summary table (PTA 1, PTA 2, AB Gap)
+- Tympanometry section (Right Tympanogram + table + Left Tympanogram)
+- Results grid with 9 findings sub-cards
+- Toolbar: "Live view" pill + Share via WhatsApp + Print + Close
+
+**Lint clean** across all 6 files. Same session that previously produced the bad `report-SES-730B5760-A40.pdf` now displays like `123.pdf`.
+
+**Redeploy needed** to push this to audinexa.com.
+
+
+
+
 ## 📲 Share Report via WhatsApp (2026-08-15)
 
 **Ask**: Add a "Share via WhatsApp" chip inside the report-viewer popup that opens WhatsApp Web pre-filled with a signed short-link to the patient's report — one-tap sharing without downloading anything.

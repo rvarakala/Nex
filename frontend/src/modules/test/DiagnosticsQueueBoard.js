@@ -30,7 +30,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import ErrorToast, { describeError } from '../../components/ErrorToast';
-import ReportViewerModal from '../../components/ReportViewerModal';
+import HearingReportPreviewModal from '../../components/HearingReportPreviewModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -493,11 +493,9 @@ export default function DiagnosticsQueueBoard() {
         </div>
       </div>
       {viewerRow && (
-        <ReportViewerModal
-          endpoint={`/reports/${viewerRow.session_id}/pdf`}
-          filename={`report-${viewerRow.session_id}.pdf`}
+        <HearingReportPreviewModal
+          sessionId={viewerRow.session_id}
           title="Hearing Assessment Report"
-          subtitle={`${viewerRow.name || 'Patient'} · Session ${viewerRow.session_id}`}
           shareContext={{
             sessionId: viewerRow.session_id,
             patientMobile: viewerRow.mobile,

@@ -18,7 +18,7 @@ import {
   X, FileText, Printer, Receipt, Headphones, ClipboardList,
   AlertCircle,
 } from 'lucide-react';
-import ReportViewerModal from './ReportViewerModal';
+import HearingReportPreviewModal from './HearingReportPreviewModal';
 import { useAuth } from '../AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -253,11 +253,9 @@ export default function PatientDrawer({ patientId, onClose }) {
         </div>
       </aside>
       {viewerSession && (
-        <ReportViewerModal
-          endpoint={`/reports/${viewerSession.session_id}/pdf`}
-          filename={`report-${viewerSession.session_id}.pdf`}
+        <HearingReportPreviewModal
+          sessionId={viewerSession.session_id}
           title="Hearing Assessment Report"
-          subtitle={`${data?.patient?.name || 'Patient'}${data?.patient?.mrd ? ` · ${data.patient.mrd}` : ''}`}
           shareContext={{
             sessionId: viewerSession.session_id,
             patientMobile: data?.patient?.mobile,

@@ -52,9 +52,26 @@ const ReportsPanel = ({
   previewId = 'report-preview',
 }) => {
   // ========== Section config ==========
-  const [sections, setSections] = useState(
-    TOGGLEABLE_SECTIONS.map((s) => ({ id: s.id, label: s.label, enabled: s.defaultEnabled }))
-  );
+  // Sections can be overridden by a saved snapshot / live-preview modal
+  // via `initialBuilder.sections`. Each entry only needs {id, enabled}
+  // (order + label come from TOGGLEABLE_SECTIONS). Missing ids default
+  // to their `defaultEnabled` value — additive rather than destructive.
+  const [sections, setSections] = useState(() => {
+    const overrides = initialBuilder?.sections;
+    if (Array.isArray(overrides) && overrides.length) {
+      const byId = new Map(overrides.map((o) => [o.id, o]));
+      return TOGGLEABLE_SECTIONS.map((s) => ({
+        id: s.id,
+        label: s.label,
+        enabled: byId.has(s.id)
+          ? !!byId.get(s.id).enabled
+          : s.defaultEnabled,
+      }));
+    }
+    return TOGGLEABLE_SECTIONS.map((s) => ({
+      id: s.id, label: s.label, enabled: s.defaultEnabled,
+    }));
+  });
 
   // ========== Editable fields ==========
   const [resultsText, setResultsText] = useState(

@@ -20,7 +20,7 @@ import PediatricPanel from '../../components/PediatricPanel';
 import TinnitusPanel from '../../components/TinnitusPanel';
 import { captureAndUploadPdf } from '../../components/reports/captureAndUpload';
 import HearingReportHistoryModal from '../../components/HearingReportHistoryModal';
-import ReportViewerModal from '../../components/ReportViewerModal';
+import HearingReportPreviewModal from '../../components/HearingReportPreviewModal';
 import DiagnosticsQueueBoard from './DiagnosticsQueueBoard';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -498,11 +498,9 @@ export default function TestProceduresModule() {
       />
 
       {viewerOpen && (
-        <ReportViewerModal
-          endpoint={`/reports/${activeTest.sessionId}/pdf`}
-          filename={`report-${activeTest.sessionId}.pdf`}
+        <HearingReportPreviewModal
+          sessionId={activeTest.sessionId}
           title="Hearing Assessment Report"
-          subtitle={`${activeTest.patient?.name || 'Patient'} · ${activeTest.patient?.mrd || activeTest.patient?.patient_id || ''}`}
           shareContext={{
             sessionId: activeTest.sessionId,
             patientMobile: activeTest.patient?.mobile,
