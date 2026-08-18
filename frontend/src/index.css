@@ -94,7 +94,7 @@
 }
 
 /* Modern Dashboard Recent Registrations rows — always 3-col Name/Time/Action. */
-.dash-recent-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: center; }
+.dash-recent-grid { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; }
 
 @import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&f[]=manrope@400,500,600,700&display=swap");
 

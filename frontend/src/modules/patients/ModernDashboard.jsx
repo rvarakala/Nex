@@ -505,6 +505,9 @@ export default function ModernDashboard() {
         time: to12h(a.start_at?.slice(11, 16) || '—'),
         service: a.service || SERVICE_CATEGORY(a.service),
         patient: a.patient_name || 'Patient',
+        // patient_id enables click-through to /patients/${patient_id}.
+        // Preserved so we don't re-derive it from a name-match later.
+        patient_id: a.patient_id || null,
       }));
   }, [appts]);
 
@@ -538,7 +541,7 @@ export default function ModernDashboard() {
           </div>
           <div className="text-[13px] text-slate-500 mt-1 font-medium">Have a nice day at great work</div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-2 cursor-pointer hover:shadow" data-testid="dash-date-chip">
+        <div className="bg-white rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-2" data-testid="dash-date-chip">
           <div className="text-[13px] font-semibold text-slate-800">
             {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
@@ -641,7 +644,13 @@ export default function ModernDashboard() {
                     <div
                       key={a.appointment_id}
                       className="flex items-center gap-3 px-1 py-2.5 hover:bg-slate-50 rounded-lg cursor-pointer"
-                      onClick={() => a.patient_id && navigate(`/patients/${a.patient_id}`)}
+                      onClick={() => a.patient_id && navigate(
+                        // Preserve appointment context using the profile
+                        // page's existing ?tab= mechanism. `appointment`
+                        // param is appended for future highlight logic
+                        // — browser back returns to the dashboard.
+                        `/patients/${a.patient_id}?tab=appointments&appointment=${encodeURIComponent(a.appointment_id)}`
+                      )}
                       data-testid={`dash-appt-${a.appointment_id}`}
                     >
                       <div className={`w-11 h-11 rounded-full flex items-center justify-center font-extrabold text-[14px] ${initialsColor(a.patient_name || '')}`}>
@@ -751,8 +760,7 @@ export default function ModernDashboard() {
               />
               <div className="dash-recent-grid text-[10.5px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 px-1">
                 <div>Name</div>
-                <div>Time</div>
-                <div className="text-right">Action</div>
+                <div className="text-right">Time</div>
               </div>
               <div className="space-y-0.5">
                 {recentPts.length === 0 && (
@@ -773,24 +781,7 @@ export default function ModernDashboard() {
                         </div>
                         <div className="text-[13px] font-bold text-slate-800 truncate">{p.name || '—'}</div>
                       </div>
-                      <div className="text-[12.5px] text-slate-600 font-semibold tabular-nums">{t}</div>
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); navigate(`/patients/${p.patient_id}`); }}
-                          className="w-7 h-7 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100"
-                          title="Open"
-                          data-testid={`dash-recent-approve-${p.patient_id}`}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); }}
-                          className="w-7 h-7 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100"
-                          title="Dismiss"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                        </button>
-                      </div>
+                      <div className="text-[12.5px] text-slate-600 font-semibold tabular-nums text-right">{t}</div>
                     </div>
                   );
                 })}
@@ -962,21 +953,39 @@ export default function ModernDashboard() {
             {timelineEvents.length === 0 && (
               <div className="text-[13px] text-slate-400 py-4">No upcoming events today.</div>
             )}
-            {timelineEvents.map((ev, i) => (
-              <div key={i} className="relative pl-8">
-                <div
-                  className="absolute left-0 top-1 w-3.5 h-3.5 rounded-full bg-white"
-                  style={{ border: `3px solid ${i === 0 ? '#22D3EE' : '#CBD5E1'}` }}
-                />
-                {i < timelineEvents.length - 1 && (
-                  <div className="absolute left-[6px] top-[22px] bottom-[-16px] w-[2px] bg-slate-200" />
-                )}
-                <div className="text-[13.5px] font-extrabold text-slate-900">
-                  {ev.time.time} {ev.time.ampm} · {ev.service}
-                </div>
-                <div className="text-[12px] text-slate-500 mt-0.5 font-medium">{ev.patient}</div>
-              </div>
-            ))}
+            {timelineEvents.map((ev, i) => {
+              // Only patient-bound events are clickable — decorative
+              // (no patient_id) events remain static per spec.
+              const clickable = !!ev.patient_id;
+              const Inner = (
+                <>
+                  <div
+                    className="absolute left-0 top-1 w-3.5 h-3.5 rounded-full bg-white"
+                    style={{ border: `3px solid ${i === 0 ? '#22D3EE' : '#CBD5E1'}` }}
+                  />
+                  {i < timelineEvents.length - 1 && (
+                    <div className="absolute left-[6px] top-[22px] bottom-[-16px] w-[2px] bg-slate-200" />
+                  )}
+                  <div className="text-[13.5px] font-extrabold text-slate-900">
+                    {ev.time.time} {ev.time.ampm} · {ev.service}
+                  </div>
+                  <div className="text-[12px] text-slate-500 mt-0.5 font-medium">{ev.patient}</div>
+                </>
+              );
+              return clickable ? (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => navigate(`/patients/${ev.patient_id}`)}
+                  data-testid={`dash-timeline-${ev.patient_id}`}
+                  className="relative pl-8 block w-full text-left rounded-md py-1 -my-1 cursor-pointer transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                >
+                  {Inner}
+                </button>
+              ) : (
+                <div key={i} className="relative pl-8">{Inner}</div>
+              );
+            })}
           </div>
         </Card>
       </div>
