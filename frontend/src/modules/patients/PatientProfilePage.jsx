@@ -40,10 +40,24 @@ const fmtDate = (iso) => fmtDateShared(iso);
 const fmtDateTime = (iso) => fmtDateTimeShared(iso);
 const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
 
+// FOLLOW-001 · Sprint-3B — identify a Follow-up appointment.
+// The pre-Sprint-3B code filtered by `a.is_followup` which is not a field
+// written by any create path (Appointment model has no such attribute).
+// The canonical signal is `service === 'Follow-up'` (present in the
+// APPOINTMENT_SERVICES catalogue and already used by the DB — see the
+// distinct-services snapshot in the NAV-005 audit). We match case- and
+// hyphenation-insensitively so historically-typed variants ("Follow up",
+// "follow-up", "FOLLOWUP") still surface. `visit_type` never carried a
+// "follow-up" value; kept out of the predicate to avoid false positives.
+const isFollowupAppointment = (a) => {
+  const s = String(a?.service || '').toLowerCase().replace(/[\s_-]/g, '');
+  return s.includes('followup');
+};
+
 export default function PatientProfilePage() {
   const { patientId } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   // Read `?tab=payments` (or any other tab id) so deep-links from the
   // Inventory Board's invoice popup land the receptionist directly on
@@ -54,6 +68,24 @@ export default function PatientProfilePage() {
   const [tab, setTab] = useState(initialTab);
   const [showMerge, setShowMerge] = useState(false);
   const canMerge = !!user && ['clinic_owner', 'super_admin', 'founder'].includes(user.role);
+
+  // APPT-005 · Sprint-3B — deep-link highlight for a specific appointment.
+  // ModernDashboard (NAV-004 Sprint-2) emits URLs shaped like
+  //   /patients/<pid>?tab=appointments&appointment=<appointment_id>
+  // The Appointments tab uses this id to scroll+flash the matching row.
+  // We capture the value on mount and then STRIP it from the URL so a
+  // browser refresh doesn't re-flash on every reload (state, not identity).
+  const [highlightAppointmentId, setHighlightAppointmentId] = useState(
+    searchParams.get('appointment') || null,
+  );
+  useEffect(() => {
+    if (!searchParams.get('appointment')) return;
+    // Preserve `tab` (and any other benign params); drop only `appointment`.
+    const next = new URLSearchParams(searchParams);
+    next.delete('appointment');
+    setSearchParams(next, { replace: true });
+    // We deliberately fire once on mount — state was captured above.
+  }, []);
 
   const [patient, setPatient]           = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -95,7 +127,13 @@ export default function PatientProfilePage() {
         axios.get(`${API}/sessions?patient_id=${patientId}`).then(r => r.data).catch(() => []),
         axios.get(`${API}/billing/invoices?patient_id=${patientId}`).then(r => r.data).catch(() => []),
         axios.get(`${API}/ha/service-tickets?patient_id=${patientId}`).then(r => r.data?.items || r.data || []).catch(() => []),
-        axios.get(`${API}/patients/${patientId}/notes`).then(r => r.data).catch(() => []),
+        // NOTES-001 · Sprint-3B — call the canonical patient-notes route.
+        // Previous URL `/patients/{id}/notes` was never registered, so every
+        // patient's Notes tab silently rendered "No notes yet." even when
+        // clinical notes existed. `/patient-notes?patient_id=X` is defined
+        // in routers/ref_docs.py and enforces tenant scoping via the parent
+        // patient lookup.
+        axios.get(`${API}/patient-notes?patient_id=${patientId}`).then(r => r.data).catch(() => []),
         axios.get(`${API}/greetings/today?days=30`).then(r => {
           // filter to just this patient (any kind, today or upcoming)
           const all = [...(r.data?.today || []), ...(r.data?.upcoming || [])];
@@ -366,9 +404,11 @@ export default function PatientProfilePage() {
       {/* Content */}
       <div className="p-4 sm:p-6 space-y-4">
         {tab === 'history' && <HistoryTab events={timeline} />}
-        {tab === 'appointments' && <AppointmentsTab rows={appointments} />}
+        {tab === 'appointments' && (
+          <AppointmentsTab rows={appointments} highlightId={highlightAppointmentId} />
+        )}
         {tab === 'notes' && <NotesTab rows={notes} />}
-        {tab === 'followups' && <FollowupsTab rows={appointments.filter(a => a.is_followup)} />}
+        {tab === 'followups' && <FollowupsTab rows={appointments.filter(isFollowupAppointment)} />}
         {tab === 'payments' && <PaymentsTab invoices={invoices} />}
         {tab === 'reports' && <ReportsTab sessions={sessions} tickets={tickets} />}
         {tab === 'service' && <ServiceTab tickets={tickets} />}
@@ -430,7 +470,27 @@ const HistoryTab = ({ events }) => {
   );
 };
 
-const AppointmentsTab = ({ rows }) => {
+// APPT-005 · Sprint-3B — Appointments tab with deep-link highlight.
+// When PatientProfilePage passes `highlightId`, we auto-scroll the
+// matching row into view and flash a temporary amber ring. If the id
+// doesn't match any loaded row, we render normally (no error, no
+// blank state). The flash class self-clears after 2.5 s so the row
+// returns to its resting style — important for print/screenshot.
+const AppointmentsTab = ({ rows, highlightId }) => {
+  const rowRefs = React.useRef({});
+  const [flashId, setFlashId] = React.useState(null);
+  React.useEffect(() => {
+    if (!highlightId) return;
+    if (!rows.some(a => a.appointment_id === highlightId)) return;
+    const el = rowRefs.current[highlightId];
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    setFlashId(highlightId);
+    const t = setTimeout(() => setFlashId(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightId, rows]);
+
   if (!rows.length) return <Empty msg="No appointments yet." />;
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" data-testid="profile-appointments-tab">
@@ -444,14 +504,25 @@ const AppointmentsTab = ({ rows }) => {
           </tr>
         </thead>
         <tbody>
-          {rows.map((a) => (
-            <tr key={a.appointment_id} className="border-t border-slate-100">
-              <td className="px-4 py-2.5">{fmtDateTime(a.start_at)}</td>
-              <td className="px-4 py-2.5">{a.service || '—'}</td>
-              <td className="px-4 py-2.5">{a.audiologist_name || '—'}</td>
-              <td className="px-4 py-2.5"><StatusPill v={a.status} /></td>
-            </tr>
-          ))}
+          {rows.map((a) => {
+            const isFlash = flashId === a.appointment_id;
+            return (
+              <tr
+                key={a.appointment_id}
+                ref={(el) => { if (el) rowRefs.current[a.appointment_id] = el; }}
+                data-testid={isFlash ? 'highlighted-appt' : `appt-row-${a.appointment_id}`}
+                data-highlighted={isFlash ? 'true' : undefined}
+                className={`border-t border-slate-100 transition-colors duration-500 ${
+                  isFlash ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : ''
+                }`}
+              >
+                <td className="px-4 py-2.5">{fmtDateTime(a.start_at)}</td>
+                <td className="px-4 py-2.5">{a.service || '—'}</td>
+                <td className="px-4 py-2.5">{a.audiologist_name || '—'}</td>
+                <td className="px-4 py-2.5"><StatusPill v={a.status} /></td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -564,6 +635,13 @@ const ReportsTab = ({ sessions, tickets }) => {
   );
 };
 
+// SRV-001 · Sprint-3B — Service tab with row-level drill-down.
+// Each ticket now has an "Open →" link that navigates to
+// /repair/jobs?ticket=<ticket_no> — ServiceTicketsPage opens the
+// AudinexaPipelineDrawer for that ticket automatically (see the
+// `?ticket=` handling in that page). patient_id is preserved on the
+// ticket document itself, and the destination page is tenant-scoped,
+// so no other patient's ticket can be accidentally opened.
 const ServiceTab = ({ tickets }) => {
   if (!tickets.length) return <Empty msg="No service tickets yet." />;
   return (
@@ -575,6 +653,7 @@ const ServiceTab = ({ tickets }) => {
             <th className="text-left px-4 py-2.5">Kind</th>
             <th className="text-left px-4 py-2.5">Status</th>
             <th className="text-left px-4 py-2.5">Created</th>
+            <th className="px-4 py-2.5"></th>
           </tr>
         </thead>
         <tbody>
@@ -584,6 +663,15 @@ const ServiceTab = ({ tickets }) => {
               <td className="px-4 py-2.5">{t.kind}</td>
               <td className="px-4 py-2.5"><StatusPill v={t.status} /></td>
               <td className="px-4 py-2.5">{fmtDate(t.created_at)}</td>
+              <td className="px-4 py-2.5 text-right">
+                <Link
+                  to={`/repair/jobs?ticket=${encodeURIComponent(t.ticket_no)}`}
+                  data-testid={`profile-service-open-${t.ticket_no}`}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold"
+                >
+                  Open →
+                </Link>
+              </td>
             </tr>
           ))}
         </tbody>

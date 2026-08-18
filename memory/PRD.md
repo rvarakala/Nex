@@ -1,6 +1,45 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🧭 NAV-005 Sprint-3B — Patient Profile Hygiene (2026-08-18)
+
+**Ask**: Close 4 audit items surfaced during NAV-005 that lie behind Patient Profile UX drift — the Notes tab silently broken, Follow-ups tab always empty, Service tab non-clickable, and the NAV-004 Sprint-2 `?appointment=<id>` deep-link ignored. Strictly frontend hygiene, no schema changes.
+
+**Fixes shipped**:
+
+**NOTES-001** — Wrong Notes URL. `PatientProfilePage.jsx:98` was calling `/api/patients/{id}/notes` (route that was never registered) — every patient's Notes tab silently rendered "No notes yet." even when the DB had notes. Changed to the canonical `/api/patient-notes?patient_id=X` (defined in `ref_docs.py`) — tenant scoping is enforced there via the parent-patient lookup. **No alias route created** — the existing endpoint is now used directly.
+
+**FOLLOW-001** — Follow-ups tab always empty. Filter was `appointments.filter(a => a.is_followup)` but `is_followup` is not a field on `Appointment`. **No schema change needed**: the canonical signal is `service === "Follow-up"` (already in `APPOINTMENT_SERVICES` and stamped by every existing create path). New `isFollowupAppointment(a)` helper collapses whitespace/hyphens/underscores and lowercases before checking for `"followup"` — so "Follow-up", "Follow up", "FOLLOWUP", "follow_up" all match, no matter how imported.
+
+**SRV-001** — Service tab non-drillable. Each ticket row now has an "Open →" link routing to `/repair/jobs?ticket=<ticket_no>`. `ServiceTicketsPage.js` now reads `?ticket=<ticket_no>` on mount, opens `AudinexaPipelineDrawer` for that ticket, and strips the param from the URL so refresh doesn't re-open it. `patient_id` is preserved on the ticket document itself (never lost); destination is tenant-scoped; no cross-patient bleed possible.
+
+**APPT-005** — `?appointment=<id>` deep-link (from NAV-004 Sprint-2 dashboard cards) is now consumed. `PatientProfilePage` reads the param on mount, passes it into `AppointmentsTab` as `highlightId`, then strips it from the URL via `setSearchParams(next, { replace: true })`. `AppointmentsTab` uses a `ref` map to scroll the matching row into view (`behavior: 'smooth'`) and applies a 2.5-second amber ring (`bg-amber-50 ring-2 ring-inset ring-amber-300`, transition-colors). Bogus/missing IDs silently skip highlight — no error, no crash.
+
+**Files changed (3)**:
+- `/app/frontend/src/modules/patients/PatientProfilePage.jsx` — canonical notes URL, `isFollowupAppointment` predicate, `highlightAppointmentId` state + URL-strip effect, `AppointmentsTab` scroll+flash, `ServiceTab` "Open →" links.
+- `/app/frontend/src/modules/ha/ServiceTicketsPage.js` — `?ticket=` URL param consumption; auto-open pipeline drawer; URL strip.
+- `/app/backend/tests/test_nav005_sprint3b_profile_hygiene.py` — NEW: 3 backend guards.
+
+**Regression suite added** — `test_nav005_sprint3b_profile_hygiene.py` (3 tests, all pass):
+- `test_notes_001_canonical_route_returns_patient_notes` — asserts `POST /patient-notes` writes are visible via `GET /patient-notes?patient_id=X`; also asserts the OLD `/patients/{id}/notes` URL still 404s so an accidental alias-route addition breaks CI.
+- `test_follow_001_appointments_carry_service_marker` — creates a "Follow-up" appointment AND a "Consultation" control; asserts the list API preserves the raw service string, and emulates the frontend's `isFollowupAppointment` normalisation to prove FE/BE symmetry.
+- `test_srv_001_service_tickets_expose_ticket_no` — creates a ticket, asserts it appears in `GET /ha/service-tickets?patient_id=X` with a URL-safe `ticket_no` and the correct `patient_id`.
+
+**Frontend Playwright verification (self-test via screenshot tool)**:
+- NOTES-001 ✅ — Notes tab renders the actual note text after clicking, no more "No notes yet" for a patient with notes.
+- FOLLOW-001 ✅ — Follow-ups tab renders exactly 1 row (the "Follow-up" service), Consultation is filtered out.
+- SRV-001 ✅ — Service tab shows the "Open →" link, `href="/repair/jobs?ticket=JOB-2026-0013"`; clicking navigates to the repair page and auto-opens the ticket's pipeline drawer.
+- APPT-005 ✅ — Valid `?appointment=<id>` flashes the correct row (`[data-highlighted="true"]`) and strips the param from the URL. Bogus id passes silently (no error, no flash).
+
+**Full regression sweep**: `test_nav005_sprint3a_merge_and_isolation.py` (16/16) + `test_nav005_sprint3b_profile_hygiene.py` (3/3) + `test_patient_merge.py` (5/5) + `test_patient_edit.py` (4/4) + `test_duplicate_patients_sweep.py` (3/3) + `test_appointments_patient_filter.py` (2/2) + `test_report_handover.py` (12/12) = **45 / 45 PASS**. ESLint on both frontend files clean (single pre-existing `no-alert` warning on the unrelated `sendGreeting` function). NAV-003 / NAV-004 Sprint-1 / NAV-004 Sprint-2 code paths untouched.
+
+**Migration**: None required. All fixes operate on existing data models.
+
+**Deploy note for the user**: Ships in preview. Deploy preview → production so front-desk stops seeing "No notes yet" for patients who actually have notes; Follow-ups tab starts working; ticket drill-down works; dashboard→profile appointment deep-links start highlighting the target row.
+
+**Remaining deferred items** (out of Sprint-3B scope): DPDP-001, REP-001, PROF-001, REG-001 through REG-006, SEC-001/002/003, orphan cleanup script. Handled in future sprints per your scope directive.
+
+
 ## 🔒 NAV-005 Sprint-3A — Patient Data Integrity + Clinic Isolation (2026-08-18)
 
 **Ask**: Post-NAV-005 audit identified 4 P1 data-integrity gaps around patient merging and TestSession tenant scoping. Sprint-3A closes those specifically; NOTES-001 / FOLLOW-001 / SRV-001 / APPT-005 / DPDP-001 / REG-* deferred.

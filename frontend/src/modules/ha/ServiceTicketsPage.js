@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import AudinexaPipelineDrawer from '../repair/AudinexaPipelineDrawer';
 import Pagination, { DEFAULT_PAGE_SIZE, usePaginationSlice } from '../../components/Pagination';
@@ -53,6 +54,24 @@ export default function ServiceTicketsPage() {
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState('');
   const [techFilter, setTechFilter] = useState('');
+
+  // SRV-001 · Sprint-3B — accept `?ticket=<ticket_no>` deep-link.
+  // The Patient Profile → Service tab passes the ticket number here so
+  // the receptionist lands directly on the ticket's pipeline drawer
+  // instead of scrolling through the full clinic-wide ticket list.
+  // The search box is also prefilled so the row is visible when the
+  // drawer is closed. Param is stripped after first-mount to keep the
+  // URL clean and prevent re-opening the drawer on browser refresh.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const q = searchParams.get('ticket');
+    if (!q) return;
+    setOpenNo(q);
+    setSearch(q);
+    const next = new URLSearchParams(searchParams);
+    next.delete('ticket');
+    setSearchParams(next, { replace: true });
+  }, []);
 
   // Distinct technician + kind options derived from the currently-loaded rows
   const techOptions = useMemo(() => {
