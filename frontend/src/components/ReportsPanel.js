@@ -51,6 +51,47 @@ const ReportsPanel = ({
   hideBuilder = false,
   previewId = 'report-preview',
 }) => {
+  // ========== NAV-006 F-012 — re-derive patient from session ==========
+  // The `patient` prop can be stale in live editing mode (e.g., audiologist
+  // opened the queue with patient v1, front-desk edited the patient in
+  // another tab, audiologist then clicks the Reports tab). The session's
+  // `patient_id` on the backend is the source of truth. We re-derive
+  // ONLY in live editing mode:
+  //   • `hideBuilder=false` → live editing → re-derive to catch mid-session
+  //     patient edits/merges.
+  //   • `hideBuilder=true` → snapshot / live-preview viewer → trust the
+  //     prop verbatim so historical snapshots stay frozen and the preview
+  //     modal's already-re-derived patient isn't re-fetched redundantly.
+  // If the fetch fails for any reason, we fall back to the prop so the
+  // panel always renders something.
+  const [livePatient, setLivePatient] = useState(patient);
+  useEffect(() => {
+    // Keep `livePatient` in sync with the prop when it changes (e.g.,
+    // parent swapped active test / opened a different snapshot).
+    setLivePatient(patient);
+  }, [patient]);
+  useEffect(() => {
+    if (hideBuilder || !sessionId) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const sr = await axios.get(`${API}/sessions/${sessionId}`);
+        const pid = sr.data?.patient_id;
+        if (!pid || !alive) return;
+        const pr = await axios.get(`${API}/patients/${pid}`);
+        if (alive && pr?.data) setLivePatient(pr.data);
+      } catch {
+        // Re-derive is best-effort. Prop patient (already set in state)
+        // remains the fallback.
+      }
+    })();
+    return () => { alive = false; };
+  }, [sessionId, hideBuilder]);
+  // Everywhere below in this component, use `patient` bound to the
+  // re-derived value so the JSX doesn't need touching. The original
+  // prop stays available as `patient` only via the useState initial;
+  // subsequent renders read from `livePatient`.
+  patient = livePatient || patient;
   // ========== Section config ==========
   // Sections can be overridden by a saved snapshot / live-preview modal
   // via `initialBuilder.sections`. Each entry only needs {id, enabled}

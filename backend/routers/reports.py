@@ -159,8 +159,16 @@ async def _stream_pdf(
             headers={"Content-Disposition": f'inline; filename="audiogram_report_{session_id}.pdf"'},
         )
     except Exception as e:
-        logger.error(f"Error generating PDF: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
+        # NAV-006 F-010 (2026-08-18) — do NOT leak `str(e)` in the response
+        # body. Filesystem paths, template internals, and Mongo error codes
+        # can surface via `raise HTTPException(..., detail=f"...{e}")`. This
+        # matters most for the public share-link endpoint (unauthenticated).
+        # Full error stays server-side in the log line for support triage.
+        logger.error(
+            "reports.pdf_generation_failed session=%s error=%r",
+            session_id, e,
+        )
+        raise HTTPException(status_code=500, detail="Failed to generate PDF")
 
 
 # ---- Internal (app-authenticated) PDF fetch ----

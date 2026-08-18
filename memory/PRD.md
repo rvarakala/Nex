@@ -1,6 +1,40 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🛠 NAV-006 Sprint-P2D — Core Bundle (F-005 · F-010 · F-012) (2026-08-18)
+
+**Sprint scope (user-approved)**: **F-005 + F-010 + F-012 only**. F-008 held **BLOCKED** on a production DB probe. **F-009 + F-011 = DEFERRED / WON'T FIX** by user directive. No MSG91, DPDP, orphan, vestibular, multi-clinic groups, referral automation, or AI copilot work.
+
+**Root causes**:
+- **F-005** — `POST /api/diagnostics/queue/complete` (`diagnostics_queue.py:592-597`) discarded the appointment `update_one` result. A stale/foreign/hard-deleted `appointment_id` referenced by the session caused a silent no-op — no log, no audit trail.
+- **F-010** — `_stream_pdf` (`reports.py:161-163`) raised `HTTPException(500, detail=f"Failed to generate PDF: {e}")`, leaking `str(e)` (filesystem paths, template internals, Mongo errors) into the response body. Especially concerning on the unauthenticated `GET /api/reports/shared/{token}` path.
+- **F-012** — `ReportsPanel.js` accepted a `patient` prop verbatim. `TestProceduresModule.js:582` passed `activeTest.patient` from React `TestContext` — stale if the patient was edited/merged in another tab mid-visit. Live-editing report letterhead showed old name/MRD.
+
+**Files changed (3 code + 1 test)**:
+- `backend/routers/reports.py` — F-010: sanitised `HTTPException.detail` to a generic `"Failed to generate PDF"`; full error remains in `logger.error()` server-side with session_id for triage.
+- `backend/routers/diagnostics_queue.py` — F-005: captured the `update_one` result; `log.warning("queue.complete appointment_update_zero clinic=%s session=%s appointment=%s", ...)` on `matched_count == 0`. Added `logging` import + module-level `log`.
+- `frontend/src/components/ReportsPanel.js` — F-012: added `livePatient` state, initialised from `patient` prop, refreshed via `useEffect` fetching `/api/sessions/${sessionId}` → `/api/patients/${pid}`. Gated on `!hideBuilder` so snapshot/preview viewers stay frozen. Fetch failure falls back to the prop.
+- `backend/tests/test_nav006_p2d_core_bundle.py` — **NEW** 8-test regression suite: 4 F-005 tests, 3 F-010 tests, 1 F-012 source-guard.
+
+**Test results**:
+- New P2D suite: **8 / 8 PASS** (0.19 s).
+- Combined NAV-006 P1 + P1B + P2A + P2B + P2C + P2D: **59 / 59 PASS** (11.77 s).
+- Combined NAV-005 3A + 3B + 3C: **47 / 47 PASS** (43.21 s).
+- **Grand total: 106 / 106 PASS.**
+- Ruff on all 3 backend files: 0 findings. ESLint on `ReportsPanel.js`: 0 findings (no new warnings introduced; one pre-existing `react-hooks/exhaustive-deps` warning on an unrelated existing useEffect shifted by +41 lines).
+- Preview DB probe: `db.sessions.count_documents({}) == 0`. **Production probe requires user-side action; F-008 remains BLOCKED.**
+
+**F-008 status**: **BLOCKED**. Agent has no production DB access. Preview probe is 0 rows across `total`, `with_clinic_id`, `without_clinic_id`. Fallback branch in `hearing_report_versions.py:96` is untouched.
+
+**F-009 status**: **DEFERRED / WON'T FIX** per user directive — P2A already enforces the invariant by construction.
+
+**F-011 status**: **DEFERRED / WON'T FIX** per user directive — the user-visible zombie modal was already resolved in commits `333dc8c` + `09a841f`.
+
+**Explicitly untouched**: `hearing_report_versions.py`, `report_handover.py`, `test_sessions.py`, `models/_canonical.py`, `utils/patient_resolution.py`, `AudiogramReportPage.jsx`, `HearingReportPreviewModal.jsx`, `HearingReportViewerModal.jsx`, `TestProceduresModule.js`. No frontend dependency bumps, no migrations, no env changes.
+
+**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+
+
 ## 🕐 NAV-006 Sprint-P2C — IST/UTC Boundary + Timezone-aware `updated_at` (2026-08-18)
 
 **Sprint scope (user-approved)**: **F-003 + F-004-B ONLY**. No P0/P1 items, no F-001, F-002, F-004-A, F-005, F-006, F-007, F-008–F-012, F-013, token_id fallback, vestibular, MSG91, DPDP, orphan cleanup, multi-clinic groups, referral automation, AI Support Copilot, or any unrelated feature.

@@ -26,6 +26,8 @@ Endpoints:
 from datetime import datetime, timezone
 from typing import Optional
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -34,6 +36,9 @@ from database import get_db
 from models import TestSession
 from utils.ist import ist_day_start_utc, ist_today_ymd
 from utils.serde import serialize_datetime, deserialize_datetime
+
+
+log = logging.getLogger("audinexa.diagnostics_queue")
 
 router = APIRouter(prefix="/api/diagnostics")
 
@@ -591,10 +596,21 @@ async def complete_diagnostics(
 
     # Close the appointment if one is linked.
     if s.get("appointment_id"):
-        await db.appointments.update_one(
+        # NAV-006 F-005 (2026-08-18) — capture the update result. A
+        # `matched_count == 0` means the session referenced an appointment
+        # that no longer exists in this clinic (hard-deleted, moved, or
+        # never actually created). The session itself is now correctly
+        # marked completed; we just need an audit trail so ops can grep
+        # for "session marked complete but appointment update matched 0".
+        appt_res = await db.appointments.update_one(
             {"appointment_id": s["appointment_id"], "clinic_id": clinic_id},
             {"$set": {"status": "completed"}},
         )
+        if appt_res.matched_count == 0:
+            log.warning(
+                "queue.complete appointment_update_zero clinic=%s session=%s appointment=%s",
+                clinic_id, payload.session_id, s["appointment_id"],
+            )
 
     # Close the matching in-testing token if one exists for this patient today.
     today_start_iso = ist_day_start_utc().isoformat()
