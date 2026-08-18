@@ -20,7 +20,13 @@
 
 **Explicitly untouched**: `datetime.utcnow()` in `test_sessions.py` still 2 hits (F-003); `updated_at` on line 130 unchanged (F-004-B); P2A files (`reports.py`, `hearing_report_versions.py`, `report_handover.py`, `utils/patient_resolution.py`) untouched.
 
-**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+**✅ DEPLOYED & PRODUCTION-VERIFIED (2026-08-18 16:31 UTC)** — read-only unauthenticated post-deploy sweep against `https://audinexa.com`:
+- `GET /api/health` → **200** `{"status":"healthy","timestamp":"2026-08-18T16:31:40.676381+00:00"}`
+- `GET /` → **200** (AUDINEXA SPA HTML, ~3.7 KB)
+- `GET /api/diagnostics/queue` → **401** `{"detail":"Not authenticated"}` (auth gate intact)
+- `POST /api/diagnostics/queue/start` → **401** `{"detail":"Not authenticated"}` (auth gate intact)
+- `POST /api/sessions` → **401** `{"detail":"Not authenticated"}` (auth gate intact)
+- Cloudflare HTTP/2, HSTS `max-age=63072000; includeSubDomains; preload`, `x-content-type-options: nosniff` all present. No production data touched, no credentials used, no writes performed.
 
 
 ## 🛡️ NAV-006 Sprint-P2A — Reports Tenant + Merge-Resolution Hardening (2026-08-18)
