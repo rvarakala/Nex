@@ -10,8 +10,21 @@ NAV-005 Sprint-3A / CLIN-001 hardening notes:
   `TestSession.model_config = ConfigDict(extra='ignore')`).
 - Legacy sessions without `clinic_id` are backfilled once at startup
   via `patients.clinic_id` (see server.py lifespan).
+
+NAV-006 Sprint-P2C (2026-08-18):
+- **F-003** — `POST /api/sessions` auto-discover branch used
+  `datetime.utcnow()` to build the "today" regex prefix. During the
+  00:00–05:30 IST nightly window the UTC clock is on the previous
+  day, so the regex missed IST-today's scheduled appointment. Swapped
+  to `ist_today_ymd()` which anchors to Asia/Kolkata (single source
+  of truth already used by `diagnostics_queue.py`, `appointments.py`,
+  `tokens.py`).
+- **F-004-B** — `PUT /api/sessions/{id}` wrote `updated_at` via
+  `datetime.utcnow()` (naive). Swapped to `datetime.now(timezone.utc)`
+  (tz-aware) for consistency with every other write site in the
+  codebase, eliminating the latent naive-vs-aware comparison bug.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import get_current_user
 from database import get_db
 from models import TestSession, TestSessionCreate, TestSessionUpdate, AudiogramData
+from utils.ist import ist_today_ymd
 from utils.serde import serialize_datetime, deserialize_datetime
 
 
@@ -63,7 +77,13 @@ async def create_test_session(session: TestSessionCreate,
                 status_code=404, detail="Appointment not found in this clinic."
             )
     else:
-        today_prefix = datetime.utcnow().strftime("%Y-%m-%d")
+        # NAV-006 F-003 (2026-08-18): anchor "today" to IST (Asia/Kolkata),
+        # not UTC. Appointments' `start_at` is stored as an IST-wall-clock
+        # ISO string; using `datetime.utcnow()` here caused the 00:00-05:30
+        # IST window to filter YESTERDAY's UTC prefix and miss today's
+        # IST-morning appointment (silent — session persisted without the
+        # appointment context, forcing the audiologist to re-enter it).
+        today_prefix = ist_today_ymd()
         appt = await db.appointments.find_one(
             {
                 "clinic_id": user["clinic_id"],
@@ -127,7 +147,14 @@ async def update_test_session(session_id: str, session_update: TestSessionUpdate
     if not s:
         raise HTTPException(status_code=404, detail="Test session not found")
     update_data = {k: v for k, v in session_update.model_dump().items() if v is not None}
-    update_data["updated_at"] = datetime.utcnow()
+    # NAV-006 F-004-B (2026-08-18): use tz-aware UTC to match every other
+    # write site in the codebase (queue/start, report_handover, hearing
+    # report versions). Naive `datetime.utcnow()` mixed with aware writes
+    # elsewhere raised `TypeError: can't compare offset-naive and offset-
+    # aware datetimes` in any downstream code that sorts/compares across
+    # sources. Serialiser stamps `+00:00` on the wire either way, so no
+    # response-contract change.
+    update_data["updated_at"] = datetime.now(timezone.utc)
     await db.test_sessions.update_one(
         {"session_id": session_id, "clinic_id": user["clinic_id"]},
         {"$set": serialize_datetime(update_data)},

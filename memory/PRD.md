@@ -1,6 +1,31 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🕐 NAV-006 Sprint-P2C — IST/UTC Boundary + Timezone-aware `updated_at` (2026-08-18)
+
+**Sprint scope (user-approved)**: **F-003 + F-004-B ONLY**. No P0/P1 items, no F-001, F-002, F-004-A, F-005, F-006, F-007, F-008–F-012, F-013, token_id fallback, vestibular, MSG91, DPDP, orphan cleanup, multi-clinic groups, referral automation, AI Support Copilot, or any unrelated feature.
+
+**Root causes**:
+- **F-003** — `backend/routers/test_sessions.py:66` used `datetime.utcnow().strftime("%Y-%m-%d")` to build the "today" regex prefix for the auto-discover branch of `POST /api/sessions`. During 00:00–05:30 IST the UTC clock is on the previous day, so the regex matched YESTERDAY (UTC) instead of TODAY (IST) — silently missing the patient's IST-morning appointment and forcing the audiologist to re-enter `visit_type` / `recommended_tests` / `referred_by`. Symmetric bug: at the same window, YESTERDAY's IST appointment was wrongly linked as today.
+- **F-004-B** — `backend/routers/test_sessions.py:130` wrote `update_data["updated_at"] = datetime.utcnow()` (naive) while every other write site in the codebase (`queue/start`, `report_handover`, `hearing_report_versions`) uses `datetime.now(timezone.utc)` (tz-aware). Mixed naive/aware datetimes can raise `TypeError: can't compare offset-naive and offset-aware datetimes` in downstream sorts/comparisons.
+
+**Files changed (1 code + 1 test)**:
+- `backend/routers/test_sessions.py` — swap `datetime.utcnow().strftime("%Y-%m-%d")` → `ist_today_ymd()` (F-003); swap `datetime.utcnow()` → `datetime.now(timezone.utc)` (F-004-B); add `from utils.ist import ist_today_ymd` + `timezone` import.
+- `backend/tests/test_nav006_p2c_ist_boundary_and_timezone.py` — **NEW** 10-test regression suite covering IST-midnight boundary, previous-IST-day over-match guard, daytime regression, explicit-appt-id path, no-matching-appointment fallback, tz-aware update writes, wire contract stability, legacy naive readability, sort-mixed-sources no-TypeError, and an AST-based source guard.
+
+**Test results**:
+- New P2C suite: **10 / 10 PASS** (0.15 s).
+- Combined NAV-006 P1 + P1B + P2A + P2B + P2C: **51 / 51 PASS** (~13 s).
+- Combined NAV-005 Sprint-3A + 3B + 3C: **47 / 47 PASS** (~131 s).
+- **Grand total: 98 / 98 PASS.**
+- Ruff on both changed files: 0 findings.
+- Pre-fix reproduction confirmed: 4 tests FAILED on unpatched code (`test_F003_repro_ist_midnight_walkin_should_link_ist_today_appointment`, `test_F003_previous_ist_day_appointment_not_linked_after_boundary`, `test_F004B_update_writes_timezone_aware_updated_at`, `test_F003_and_F004B_source_no_datetime_utcnow_in_router`); all PASS post-fix.
+
+**Explicitly untouched**: `diagnostics_queue.py`, `reports.py`, `hearing_report_versions.py`, `report_handover.py`, `utils/patient_resolution.py`, `models/_canonical.py` — all NAV-006 P1/P1B/P2A/P2B code paths preserved verbatim. No frontend changes, no migrations, no dependency changes, no env changes.
+
+**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+
+
 ## 🧷 NAV-006 Sprint-P2B — Walk-in Draft Session Isolation (2026-08-18)
 
 **Sprint scope (user-approved)**: **F-004-A ONLY** — prevent cross-visit contamination when two same-day walk-in visits (two tokens) exist for the same patient. No P3 items, no F-003, no F-004-B, no F-005/F-008/F-009-F-012, no token_id-fallback broader work, no vestibular / MSG91 / DPDP / orphan cleanup.
