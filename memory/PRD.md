@@ -1,6 +1,43 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🔎 NAV-006 — Clinical Diagnostics Audit (READ-ONLY, 2026-08-18)
+
+**Ask**: Read-only audit of the full clinical chain (Patient → Appointment → Diagnostic Queue → Test Session → Test → Result → Report → Patient History). NO CODE CHANGES.
+
+**Outcome**: 12 findings across data-integrity + defence-in-depth. **P0 = 0. P1 = 2. P2 = 4. P3 = 4. ORPHAN = 2 (grouped)**. Nothing blocks release; nothing requires rollback. See `/app/memory/NAV-006_CLINICAL_AUDIT.md` for the full report.
+
+**Highest-priority findings (awaiting your approval before any dev)**:
+1. **F-001 · P1** — `diagnostics_queue.py` dedupes by `patient_id` alone → a patient with two same-day appointments loses the second card. Fix = dedupe by `(patient_id, appointment_id)`.
+2. **F-002 · P1** — `POST /api/sessions` silently substitutes a foreign `appointment_id` with an auto-discovered one → session's `appointment_id` becomes a lie. Fix = fail hard when supplied but unresolvable.
+
+**Orphan clinical functionality** (advertised in landing copy but not built): VEMP dedicated panel, VNG, vHIT, Posturography / Balance, Vestibular Assessment, Vestibular Rehabilitation. Decision needed: build them, or reword landing copy.
+
+**Nothing modified in this pass** — code + DB rows untouched. Only synthetic patient created during Sprint-1 smoke test (`ACS-2026-EB4688A2` on production, deleted in the same script run).
+
+
+## ✅ Production Sprint-1 Smoke Verification — audinexa.com (2026-08-18)
+
+**Ask**: Post-deploy smoke walk-through of NAV-003 + NAV-004 + NAV-005 on production using the provided burner clinic (`triveni.pisb@gmail.com` — AUDINEXA QA Clinic, Pune).
+
+**Result**: **22 / 22 PASS.** Synthetic patient created via API + deleted in one run so the burner tenant stays clean.
+
+| Bucket | Checks | Result |
+|---|---|---|
+| Login flow (burner) | 1 | ✅ |
+| NAV-003 · Orphaned HA routes (`/ha/upgrades`, `/ha/subscriptions`, `/ha/vendors`) | 3 | ✅ |
+| NAV-004 S1 · KPI Appointments → `/patients/appointments?date=today` + Recall banner on `?filter=recall` | 2 | ✅ |
+| NAV-004 S2 · ModernDashboard mounted, Date chip non-clickable, no ✗/✓ in Recent Registrations | 4 | ✅ |
+| NAV-005 S3A · `/patients/duplicates` loads with 3 key-mode chips | 1 | ✅ |
+| NAV-005 S3C · REG-001 (Mobile no *), REG-002 (DOB + Anniversary future-block), REG-003 (email regex), REG-004 (mobile == alt) | 5 | ✅ |
+| NAV-005 S3B · Setup synthetic patient + NOTES-001 canonical URL + FOLLOW-001 tab + SRV-001 tab + APPT-005 bogus `?appointment=` silent | 5 | ✅ |
+| Cleanup: `DELETE /api/patients/ACS-2026-EB4688A2` | 1 | ✅ 200 |
+
+**Evidence**: 4 batched Playwright screenshot runs, all clean. Cross-tenant guard confirmed via NAV-005 Sprint-3A test suite (16/16 green in preview). Production `/api/health` returns `{"status":"healthy"}`. CSRF cookie (`audinexa_csrf`) is enforced on all state-changing endpoints.
+
+**One infrastructure item still outside my reach**: `CLIN-001 backfill: stamped clinic_id on N legacy test_sessions` log line from `/var/log/supervisor/backend.err.log` on the production pod. Support-agent classifier confirmed I cannot access production logs from the preview pod. **User action required**: email `support@emergent.sh` with the job ID + `https://audinexa.com` and request "Please retrieve the exact `CLIN-001 backfill` log line from production backend supervisor logs so we can confirm N legacy sessions were stamped." Once the number is confirmed, we can officially close the deployment verification phase.
+
+
 ## 🛡️ NAV-005 Sprint-3C — Registration Hardening (2026-08-18)
 
 **Ask**: Close 4 approved audit items from the REG-001 → REG-006 registration-form audit — mobile asterisk mismatch, future-date validation, email format validation, mobile↔alternate-mobile self-collision. REG-005 name-match scoring and REG-006 draft persistence explicitly DEFERRED per your scope directive.

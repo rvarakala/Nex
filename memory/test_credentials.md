@@ -175,6 +175,15 @@ curl -s "$API/patients" -H "Authorization: Bearer $TOKEN"
 
 
 
+## 🔥 Production Burner Clinic (added 2026-08-18)
+- **Login URL**: `https://audinexa.com/login`
+- **Email**: `triveni.pisb@gmail.com`
+- **Password**: `Jasmita@1506`
+- **Role**: `clinic_owner`
+- **Tier**: `STANDARD` (Basic feature · 29 days trial)
+- **clinic_name**: "AUDINEXA QA Clinic" (Pune)
+- **Purpose**: PRODUCTION smoke tests only — dedicated burner account provided by user for post-deploy verification. Use synthetic/test data only. Do NOT commit real patient data into this tenant.
+
 ## Sandbox Test Clinic (NEW — 2026-05-06)
 - **Login URL**: PREVIEW preview env `REACT_APP_BACKEND_URL` / PROD `https://audinexa.com/login`
 - **Email**: `sandbox.demo@audinexademo.com`
