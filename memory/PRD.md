@@ -1,6 +1,26 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🩹 NAV-006 Sprint-P1B — Queue/Start Appointment & Session Hardening (2026-08-18)
+
+**Sprint scope (user-approved)**: Two F-002-sibling defects discovered on `/api/diagnostics/queue/start` — silent appointment substitution (B1) + draft-session reuse across appointments (B2). No P2/P3/ORPHAN work touched.
+
+**Bugs confirmed**:
+- **B1** — Foreign / invalid `appointment_id` silently falls through to auto-discover another same-day appointment → session linked to substitute.
+- **B2** — Draft-session lookup filters by patient only (no `appointment_id`) → morning session for A1 silently reused when audiologist clicks afternoon appointment A2; PUT /sessions writes A2's inputs over A1.
+
+**Files changed (1 code + 1 test)**:
+- `backend/routers/diagnostics_queue.py` — split appointment resolution into supplied-→-fail-hard vs auto-discover branches; scoped draft-session reuse by `appointment_id` when an appointment is present.
+- `backend/tests/test_nav006_p1b_queue_start_appointment_fix.py` — new regression suite (9 tests, all 8 acceptance criteria + 1 belt-and-braces).
+
+**Test results**:
+- New NAV-006 P1B suite: **9 / 9 PASS** (3.6 s)
+- Combined NAV-005 + NAV-006 P1 + P1B + appointment regression: **85 / 85 PASS** (1 m 25 s)
+- Ruff on all 3 files: 0 findings.
+
+**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+
+
 ## 🩹 NAV-006 Sprint-P1 — Queue Dedupe + Session Fail-Hard (2026-08-18)
 
 **Sprint scope (user-approved)**: F-001 (`diagnostics_queue` dedupe by `(patient_id, appointment_id)`) + F-002 (`POST /api/sessions` fail-hard on foreign / invalid `appointment_id`). No P2/P3/ORPHAN work touched.

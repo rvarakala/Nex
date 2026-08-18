@@ -361,33 +361,29 @@ async def start_diagnostics(
     if not patient:
         raise HTTPException(404, detail="Patient not found")
 
-    # --- Find an existing draft session for this patient today (idempotency) ---
-    today_start_iso = ist_day_start_utc().isoformat()
-    session = None
-    if payload.session_id:
-        session = await db.test_sessions.find_one(
-            {"session_id": payload.session_id, "clinic_id": clinic_id}, {"_id": 0},
-        )
-    if not session:
-        session = await db.test_sessions.find_one(
-            {
-                "clinic_id": clinic_id,
-                "patient_id": patient_id,
-                "status": "draft",
-                "created_at": {"$gte": today_start_iso},
-            },
-            {"_id": 0},
-            sort=[("created_at", -1)],
-        )
-
     # --- Resolve / capture a matching appointment ---
+    #
+    # NAV-006 Sprint-P1B (2026-08-18) — fail hard when an explicit
+    # `appointment_id` is supplied but not resolvable in the caller's
+    # clinic. Previously the endpoint silently substituted an
+    # auto-discovered same-day appointment (F-002 sibling bug) which
+    # meant the resulting session was linked to a DIFFERENT appointment
+    # than the caller requested.
+    #   • CASE B — supplied AND in this clinic → link exactly.
+    #   • CASE C/D — supplied AND not-in-this-clinic → 404 with a fixed
+    #     detail string (foreign existence NOT revealed).
+    #   • CASE A — not supplied → keep existing IST-today auto-discover.
     appt = None
     day_key = _ymd_ist()
     if payload.appointment_id:
         appt = await db.appointments.find_one(
             {"appointment_id": payload.appointment_id, "clinic_id": clinic_id}, {"_id": 0},
         )
-    if not appt:
+        if not appt:
+            raise HTTPException(
+                status_code=404, detail="Appointment not found in this clinic."
+            )
+    else:
         appt = await db.appointments.find_one(
             {
                 "clinic_id": clinic_id,
@@ -397,6 +393,46 @@ async def start_diagnostics(
             },
             {"_id": 0},
             sort=[("start_at", -1)],
+        )
+
+    # --- Find an existing draft session for this patient today (idempotency) ---
+    #
+    # NAV-006 Sprint-P1B — draft-session reuse is now appointment-aware.
+    # Previously a draft tied to appointment A1 was silently reused when
+    # the caller clicked appointment A2, and the session's
+    # `appointment_id` was never rewritten. Result: PUT /sessions/{S1}
+    # for A2 overwrote A1's data. Fix: if an appointment was explicitly
+    # supplied (or resolved via auto-discover) we only reuse a draft
+    # that is ALREADY tied to that same appointment. Walk-in flows with
+    # no resolved appointment keep the historic any-draft-today
+    # behaviour (idempotent within a single visit).
+    today_start_iso = ist_day_start_utc().isoformat()
+    session = None
+    if payload.session_id:
+        session = await db.test_sessions.find_one(
+            {"session_id": payload.session_id, "clinic_id": clinic_id}, {"_id": 0},
+        )
+        # If the caller pinned a specific session but it belongs to a
+        # DIFFERENT appointment than the one we just resolved, refuse to
+        # reuse it — the caller would end up writing A2's inputs into
+        # A1's session. Reset session so the fresh-session branch runs.
+        if session and appt and session.get("appointment_id") and session.get("appointment_id") != appt.get("appointment_id"):
+            session = None
+    if not session:
+        draft_filter: dict = {
+            "clinic_id": clinic_id,
+            "patient_id": patient_id,
+            "status": "draft",
+            "created_at": {"$gte": today_start_iso},
+        }
+        if appt:
+            # Only reuse a draft that is ALREADY tied to this exact
+            # appointment. A walk-in draft (appointment_id: None) is
+            # NOT auto-snapped to a discovered appointment — it stays a
+            # walk-in and the caller gets a fresh session for `appt`.
+            draft_filter["appointment_id"] = appt["appointment_id"]
+        session = await db.test_sessions.find_one(
+            draft_filter, {"_id": 0}, sort=[("created_at", -1)],
         )
 
     # --- Create session if still missing ---
