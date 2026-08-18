@@ -58,7 +58,7 @@
 
 ## ✅ Production Sprint-1 Smoke Verification — audinexa.com (2026-08-18)
 
-**Ask**: Post-deploy smoke walk-through of NAV-003 + NAV-004 + NAV-005 on production using the provided burner clinic (`triveni.pisb@gmail.com` — AUDINEXA QA Clinic, Pune).
+**Ask**: Post-deploy smoke walk-through of NAV-003 + NAV-004 + NAV-005 on production using the provided dedicated burner clinic (credentials handled out-of-band; not stored in this repo).
 
 **Result**: **22 / 22 PASS.** Synthetic patient created via API + deleted in one run so the burner tenant stays clean.
 
