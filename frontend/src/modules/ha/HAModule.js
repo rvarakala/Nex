@@ -27,19 +27,21 @@ import CustomHAOrdersPage from './CustomHAOrdersPage';
 // Both render <HAModule />; this component picks which tab strip to show
 // based on the current pathname so the sub-nav stays scoped to the section
 // the user clicked. Routes the user reaches via direct URL still resolve.
-const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'followups', 'ear-moulds', 'custom-ha']);
+const SALES_PATHS = new Set(['trials', 'quotations', 'fittings', 'upgrades', 'subscriptions', 'followups', 'ear-moulds', 'custom-ha']);
 const INVENTORY_PATHS = new Set([
   'inventory', 'demo-stock', 'saleable-stock', 'accessories', 'amc',
   'procurement', 'products', 'transfers', 'requests', 'heatmap', 'vendors',
 ]);
 
 const SALES_TABS = [
-  { to: '/ha/trials',     label: 'Trials',     testid: 'ha-tab-trials' },
-  { to: '/ha/quotations', label: 'Quotations', testid: 'ha-tab-quotations' },
-  { to: '/ha/fittings',   label: 'Fittings',   testid: 'ha-tab-fittings' },
-  { to: '/ha/ear-moulds', label: 'Ear Moulds', testid: 'ha-tab-ear-moulds' },
-  { to: '/ha/custom-ha',  label: 'Custom HA',  testid: 'ha-tab-custom-ha' },
-  { to: '/ha/followups',  label: 'Follow-ups', testid: 'ha-tab-followups' },
+  { to: '/ha/trials',        label: 'Trials',        testid: 'ha-tab-trials' },
+  { to: '/ha/quotations',    label: 'Quotations',    testid: 'ha-tab-quotations' },
+  { to: '/ha/fittings',      label: 'Fittings',      testid: 'ha-tab-fittings' },
+  { to: '/ha/upgrades',      label: 'Upgrades',      testid: 'ha-tab-upgrades' },
+  { to: '/ha/subscriptions', label: 'Subscriptions', testid: 'ha-tab-subscriptions' },
+  { to: '/ha/ear-moulds',    label: 'Ear Moulds',    testid: 'ha-tab-ear-moulds' },
+  { to: '/ha/custom-ha',     label: 'Custom HA',     testid: 'ha-tab-custom-ha' },
+  { to: '/ha/followups',     label: 'Follow-ups',    testid: 'ha-tab-followups' },
 ];
 
 const INVENTORY_TABS = [
@@ -49,6 +51,7 @@ const INVENTORY_TABS = [
   { to: '/ha/accessories',    label: 'Accessories',     testid: 'ha-tab-accessories' },
   { to: '/ha/amc',            label: 'AMC',             testid: 'ha-tab-amc' },
   { to: '/ha/procurement',    label: 'Procurement',     testid: 'ha-tab-procurement' },
+  { to: '/ha/vendors',        label: 'Vendors',         testid: 'ha-tab-vendors' },
   { to: '/ha/transfers',      label: 'Transfers',       testid: 'ha-tab-transfers' },
   { to: '/ha/requests',       label: 'Stock Requests',  testid: 'ha-tab-requests' },
   { to: '/ha/heatmap',        label: 'Stock Heatmap',   testid: 'ha-tab-heatmap' },
