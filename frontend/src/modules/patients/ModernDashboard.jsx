@@ -81,25 +81,32 @@ const to12h = (hhmm = '') => {
 // ────────────────────────── Sub-components ──────────────────────────
 
 /** Saturated KPI card — one of 4 across the top row. */
-function KpiCard({ gradient, iconStroke, icon, value, label, testid, big = false }) {
-  return (
-    <div
-      className={`${gradient} text-white rounded-2xl p-5 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.15)]`}
-      data-testid={testid}
-    >
-      <div className="flex items-center gap-4">
-        <div className="bg-white w-[52px] h-[52px] rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.10)] shrink-0">
-          {React.cloneElement(icon, { stroke: iconStroke, strokeWidth: 2.4, size: 24 })}
+function KpiCard({ gradient, iconStroke, icon, value, label, testid, big = false, onClick }) {
+  const interactive = typeof onClick === 'function';
+  const commonProps = {
+    className: `${gradient} text-white rounded-2xl p-5 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.15)] w-full text-left ${
+      interactive
+        ? 'cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.28)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70'
+        : ''
+    }`,
+    'data-testid': testid,
+  };
+  const inner = (
+    <div className="flex items-center gap-4">
+      <div className="bg-white w-[52px] h-[52px] rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.10)] shrink-0">
+        {React.cloneElement(icon, { stroke: iconStroke, strokeWidth: 2.4, size: 24 })}
+      </div>
+      <div className="min-w-0">
+        <div className={`${big ? 'text-[26px] sm:text-[30px]' : 'text-[32px] sm:text-[40px]'} font-extrabold leading-none tabular-nums truncate`}>
+          {value}
         </div>
-        <div className="min-w-0">
-          <div className={`${big ? 'text-[26px] sm:text-[30px]' : 'text-[32px] sm:text-[40px]'} font-extrabold leading-none tabular-nums truncate`}>
-            {value}
-          </div>
-          <div className="text-[13px] sm:text-[14px] font-semibold text-white/95 mt-1.5 truncate">{label}</div>
-        </div>
+        <div className="text-[13px] sm:text-[14px] font-semibold text-white/95 mt-1.5 truncate">{label}</div>
       </div>
     </div>
   );
+  return interactive
+    ? <button type="button" onClick={onClick} {...commonProps}>{inner}</button>
+    : <div {...commonProps}>{inner}</div>;
 }
 
 /** Uniform action-tile — used by Quick Actions and Alerts for parity. */
@@ -376,9 +383,23 @@ export default function ModernDashboard() {
       mix.total = mix.pta + mix.speech + mix.imp + mix.oae + mix.abr;
       setTestMix(mix);
 
-      // In-Test Now — pick first in-progress appointment
+      // In-Test Now — pick first in-progress appointment and enrich
+      // it with the linked test session (if any). The Dashboard's
+      // "Open →" needs the session_id so it can jump straight to the
+      // audiogram; without it, the fallback is a queue highlight.
       const inProgress = todayAppts.find((a) => a.status === 'in_progress' || a.status === 'checked_in');
-      setInTestSession(inProgress || null);
+      if (inProgress) {
+        // Match on patient_id + not-finalised so we pick the live
+        // session (there's typically at most one open at a time).
+        const linked = sessions.find((s) => (
+          s.patient_id === inProgress.patient_id
+          && s.status !== 'completed'
+          && s.status !== 'finalized'
+        )) || sessions.find((s) => s.patient_id === inProgress.patient_id);
+        setInTestSession({ ...inProgress, session_id: linked?.session_id || null });
+      } else {
+        setInTestSession(null);
+      }
 
       setRecentPts(arr(rRecentPts));
       const userList = Array.isArray(rUsers.data) ? rUsers.data : (rUsers.data?.users || []);
@@ -557,6 +578,7 @@ export default function ModernDashboard() {
           value={kpis.appointments_today}
           label="Appointments"
           testid="kpi-appointments"
+          onClick={() => navigate('/patients/appointments?date=today')}
         />
         <KpiCard
           gradient="audinexa-kpi-mint"
@@ -565,6 +587,7 @@ export default function ModernDashboard() {
           value={kpis.new_patients_today}
           label="New Patients"
           testid="kpi-registrations"
+          onClick={() => navigate('/patients/list?date=today')}
         />
         <KpiCard
           gradient="audinexa-kpi-purple"
@@ -573,6 +596,7 @@ export default function ModernDashboard() {
           value={kpis.hearing_tests_today}
           label="Tests Today"
           testid="kpi-tests"
+          onClick={() => navigate('/test')}
         />
         <KpiCard
           gradient="audinexa-kpi-cyan"
@@ -582,6 +606,7 @@ export default function ModernDashboard() {
           label="Collections"
           testid="kpi-collections"
           big
+          onClick={() => navigate('/accounts')}
         />
       </div>
 
@@ -681,7 +706,17 @@ export default function ModernDashboard() {
                       <div className="text-[13px] font-bold text-slate-800 mt-1">In progress</div>
                     </div>
                     <button
-                      onClick={() => navigate(`/test/queue`)}
+                      onClick={() => {
+                        // Prefer the live audiogram if we have a session_id;
+                        // otherwise fall back to the queue with the
+                        // appointment highlighted so the audiologist can
+                        // click the correct row.
+                        if (inTestSession.session_id) {
+                          navigate(`/test/audiogram/${inTestSession.session_id}`);
+                        } else {
+                          navigate(`/test/queue?highlight=${inTestSession.appointment_id}`);
+                        }
+                      }}
                       className="text-[13px] font-bold text-cyan-600 hover:text-cyan-700"
                       data-testid="dash-in-test-open"
                     >
@@ -842,7 +877,7 @@ export default function ModernDashboard() {
                 hint={clinicPulse.trials_out
                   ? `${clinicPulse.trials_returning_soon} due back this week · call to close`
                   : 'No active trials right now'}
-                onClick={() => navigate('/ha/fittings?filter=trial')}
+                onClick={() => navigate('/ha/trials?status=active')}
                 testid="pulse-trial-devices"
               />
               <ClinicTile
@@ -853,7 +888,7 @@ export default function ModernDashboard() {
                 hint={clinicPulse.warranty_expiring
                   ? 'Nudge patients for AMC / renewal'
                   : 'No expiries in the next 30 days'}
-                onClick={() => navigate('/ha/fittings?warranty=expiring')}
+                onClick={() => navigate('/ha/saleable-stock?warranty=expiring&days=30')}
                 testid="pulse-warranty"
               />
             </div>

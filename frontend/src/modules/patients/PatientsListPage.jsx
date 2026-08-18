@@ -6,17 +6,27 @@
  * `<LoadMoreButton/>` spinner. Search is debounced at 250ms and
  * resets pagination.
  */
-import React, { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { Search, UserPlus, Users, Download } from 'lucide-react';
+import { Search, UserPlus, Users, Download, Clock, X } from 'lucide-react';
 import { ListSkeleton, LoadMoreButton } from '../../components/ListSkeleton';
 import EmailWeeklyCsvToggle from '../../components/EmailWeeklyCsvToggle';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 const PAGE_SIZE = 50;
+// Threshold used for the "recall" filter. Patients registered longer
+// than this many days ago (with no attempt to prove they've been back
+// — the backend has no last-visit field yet) surface as "may need
+// follow-up". This matches the intent of the Dashboard's Recall
+// Reminders chip and Quick Action "Send Recall" without requiring a
+// new backend endpoint.
+const RECALL_DAYS = 180;
 
 export default function PatientsListPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isRecallFilter = searchParams.get('filter') === 'recall';
+
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(true);   // initial fetch (skeleton)
@@ -51,6 +61,31 @@ export default function PatientsListPage() {
     const t = setTimeout(() => fetchPage(true, ''), 250);
     return () => clearTimeout(t);
   }, [fetchPage]);
+
+  // Recall filter — client-side. We apply it on top of the paginated
+  // rows so paging + search + recall all layer cleanly. Sort recall
+  // rows oldest-registered first so front desk works the highest-risk
+  // patients first.
+  const displayRows = useMemo(() => {
+    if (!isRecallFilter) return rows;
+    const cutoff = Date.now() - RECALL_DAYS * 24 * 3600 * 1000;
+    return rows
+      .filter((p) => {
+        const ts = new Date(p.created_at || p.updated_at || 0).getTime();
+        return Number.isFinite(ts) && ts > 0 && ts <= cutoff;
+      })
+      .sort((a, b) => {
+        const ta = new Date(a.created_at || 0).getTime();
+        const tb = new Date(b.created_at || 0).getTime();
+        return ta - tb;
+      });
+  }, [rows, isRecallFilter]);
+
+  const clearRecall = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('filter');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const fmtDate = (iso) => {
     if (!iso) return '—';
@@ -98,6 +133,29 @@ export default function PatientsListPage() {
       </header>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        {isRecallFilter && (
+          <div
+            className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-[12px]"
+            data-testid="patients-recall-banner"
+          >
+            <Clock size={14} className="shrink-0" />
+            <span className="font-semibold">Recall filter active —</span>
+            <span className="opacity-90">
+              showing patients registered over {RECALL_DAYS} days ago (oldest first).
+              These may need a follow-up call.
+              {' · '}
+              {displayRows.length} of {rows.length} loaded rows match.
+            </span>
+            <button
+              type="button"
+              onClick={clearRecall}
+              data-testid="patients-recall-clear"
+              className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 rounded px-2 py-0.5"
+            >
+              <X size={11} /> Clear
+            </button>
+          </div>
+        )}
         <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
           <Search size={14} className="text-slate-400" />
           <input
@@ -113,9 +171,11 @@ export default function PatientsListPage() {
           <div className="p-4">
             <ListSkeleton rows={8} cols={5} />
           </div>
-        ) : rows.length === 0 ? (
+        ) : displayRows.length === 0 ? (
           <div className="px-4 py-12 text-center italic text-slate-400">
-            {q ? 'No matches.' : 'No patients yet — register your first one.'}
+            {isRecallFilter
+              ? 'No patients past the recall threshold in the loaded pages. Load more to expand the check.'
+              : (q ? 'No matches.' : 'No patients yet — register your first one.')}
           </div>
         ) : (
           <>
@@ -132,7 +192,7 @@ export default function PatientsListPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((p) => (
+                  {displayRows.map((p) => (
                     <tr key={p.patient_id} className="border-t border-slate-100 hover:bg-indigo-50/30 transition" data-testid={`patient-row-${p.patient_id}`}>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2.5">

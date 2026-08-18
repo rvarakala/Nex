@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import QuickHASaleModal from './QuickHASaleModal';
 import { CustomHAOrderModal } from './CustomHAOrdersPage';
@@ -27,9 +28,17 @@ const daysUntil = (ymd) => {
 
 
 export default function TrialsPage() {
+  const [searchParams] = useSearchParams();
+  // Honour ?status=active from the Dashboard's "Trial Devices Out" tile
+  // so audiologists land pre-filtered. Any of the canonical status
+  // values seeds the dropdown; unknown values fall back to "all".
+  const initialStatus = (() => {
+    const s = searchParams.get('status');
+    return ['active', 'extended', 'converted', 'returned', 'lost'].includes(s) ? s : '';
+  })();
   const [rows, setRows] = useState([]);
   const [kpis, setKpis] = useState(null);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(initialStatus);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [creating, setCreating] = useState(false);
   const [openNo, setOpenNo] = useState(null);

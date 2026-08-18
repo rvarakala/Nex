@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { Package, ArrowLeftRight, AlertTriangle, Boxes, Truck } from 'lucide-react';
+import { Package, ArrowLeftRight, AlertTriangle, Boxes, Truck, X } from 'lucide-react';
 import ModalShell from '../../components/ModalShell';
 import AddSerialModal from './AddSerialModal';
 
@@ -28,7 +28,7 @@ const STATE_BADGE = {
 const fmtINR = (n) => (n == null ? '—' : `₹${Number(n).toLocaleString('en-IN')}`);
 
 export default function SaleableStockPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState({ totals: {}, items: [] });
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -42,6 +42,14 @@ export default function SaleableStockPage() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [returnRow, setReturnRow] = useState(null);
+  // Warranty-expiring filter — dashboard "Warranty Expiring" tile
+  // deep-links here with ?warranty=expiring&days=30. Cleared via the
+  // banner's Clear button.
+  const warrantyExpiring = searchParams.get('warranty') === 'expiring';
+  const warrantyDays = (() => {
+    const raw = Number(searchParams.get('days'));
+    return Number.isFinite(raw) && raw > 0 && raw <= 365 ? raw : 30;
+  })();
 
   const load = async () => {
     setLoading(true); setErr('');
@@ -58,11 +66,22 @@ export default function SaleableStockPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const nowMs = Date.now();
+    const cutoffMs = nowMs + warrantyDays * 24 * 3600 * 1000;
     return (data.items || []).filter((r) => {
       const kind = r.source_kind || 'vendor';
       if (source === 'vendor' && kind !== 'vendor') return false;
       if (source === 'borrowed' && kind !== 'borrowed') return false;
       if (stateFilter !== 'all' && r.state !== stateFilter) return false;
+      // Warranty-expiring: warranty_end_date is set AND falls between
+      // today and the requested horizon (default 30 days). We keep
+      // already-expired units in-list too since they need the most
+      // urgent nudge for AMC / renewal.
+      if (warrantyExpiring) {
+        if (!r.warranty_end_date) return false;
+        const end = new Date(r.warranty_end_date).getTime();
+        if (!Number.isFinite(end) || end > cutoffMs) return false;
+      }
       if (!q) return true;
       const p = r.product || {};
       return (
@@ -72,7 +91,7 @@ export default function SaleableStockPage() {
         || (r.borrowed_from || '').toLowerCase().includes(q)
       );
     });
-  }, [data, source, stateFilter, search]);
+  }, [data, source, stateFilter, search, warrantyExpiring, warrantyDays]);
 
   const totals = data.totals || {};
 
@@ -103,6 +122,35 @@ export default function SaleableStockPage() {
         <Stat label="Borrowed here"   value={totals.borrowed_still_here ?? 0} tone="rose"
               testid="ha-saleable-stat-borrowed" />
       </div>
+
+      {warrantyExpiring && (
+        <div
+          className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 mb-3 text-[12px]"
+          data-testid="ha-saleable-warranty-banner"
+        >
+          <AlertTriangle size={14} className="shrink-0" />
+          <span className="font-semibold">Warranty-expiring filter active —</span>
+          <span className="opacity-90">
+            showing units whose warranty ends within {warrantyDays} days (already-expired included).
+            Nudge patients for AMC / renewal.
+            {' · '}
+            {filtered.length} matching {filtered.length === 1 ? 'unit' : 'units'}.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('warranty');
+              next.delete('days');
+              setSearchParams(next, { replace: true });
+            }}
+            data-testid="ha-saleable-warranty-clear"
+            className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 rounded px-2 py-0.5"
+          >
+            <X size={11} /> Clear
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
