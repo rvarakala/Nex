@@ -325,6 +325,54 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             _log.warning(f"Appointments backfill skipped: {e}")
 
+        # ---- NAV-005 Sprint-3A / CLIN-001 backfill: legacy test_sessions
+        # without clinic_id get it stamped from their linked patient. Idempotent —
+        # only touches rows missing the field.
+        try:
+            missing_cursor = db.test_sessions.find(
+                {"clinic_id": {"$in": [None]}, "patient_id": {"$exists": True}},
+                {"_id": 1, "patient_id": 1},
+            )
+            # Also handle rows where the field is entirely absent (not just null).
+            absent_cursor = db.test_sessions.find(
+                {"clinic_id": {"$exists": False}, "patient_id": {"$exists": True}},
+                {"_id": 1, "patient_id": 1},
+            )
+            backfilled = 0
+            for cursor in (missing_cursor, absent_cursor):
+                async for s in cursor:
+                    pid = s.get("patient_id")
+                    if not pid:
+                        continue
+                    pat = await db.patients.find_one(
+                        {"patient_id": pid},
+                        {"_id": 0, "clinic_id": 1},
+                    )
+                    cid = pat.get("clinic_id") if pat else None
+                    if cid:
+                        await db.test_sessions.update_one(
+                            {"_id": s["_id"]},
+                            {"$set": {"clinic_id": cid}},
+                        )
+                        backfilled += 1
+            if backfilled:
+                _log.info(f"CLIN-001 backfill: stamped clinic_id on {backfilled} legacy test_sessions")
+        except Exception as e:
+            _log.warning(f"CLIN-001 test_sessions clinic_id backfill skipped: {e}")
+
+        # Compound index for tenant-scoped session lookups (post-CLIN-001).
+        try:
+            await db.test_sessions.create_index(
+                [("clinic_id", 1), ("session_id", 1)],
+                name="clinic_session_id",
+            )
+            await db.test_sessions.create_index(
+                [("clinic_id", 1), ("patient_id", 1), ("test_date", -1)],
+                name="clinic_patient_test_date",
+            )
+        except Exception as e:
+            _log.debug(f"test_sessions compound index skip: {e}")
+
         # ---- one-time cleanup of stale UTC-keyed token counters ----
         # After the IST migration, old `token:{clinic}:{YYYY-MM-DD}` counter docs keyed on UTC date
         # (e.g., yesterday's UTC date when we crossed IST midnight) are functionally obsolete.

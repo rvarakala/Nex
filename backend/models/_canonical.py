@@ -1076,6 +1076,13 @@ class TestSession(BaseModel):
     model_config = ConfigDict(extra="ignore")
     
     session_id: str = Field(default_factory=lambda: f"SES-{str(uuid4())[:12].upper()}")
+    # NAV-005 Sprint-3A / CLIN-001: `clinic_id` is now first-class on the
+    # canonical schema. Router stamps it from JWT on insert; legacy rows
+    # without it are backfilled at startup via `patients.clinic_id`.
+    # Kept Optional at the model layer for backwards-compat with any
+    # in-flight docs (pre-backfill); every read/write path filters
+    # by `clinic_id` explicitly regardless.
+    clinic_id: Optional[str] = None
     patient_id: str
     test_date: datetime = Field(default_factory=datetime.utcnow)
     audiologist_name: Optional[str] = None

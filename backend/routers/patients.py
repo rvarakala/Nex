@@ -497,11 +497,34 @@ async def delete_patient(patient_id: str, user=Depends(get_current_user), db=Dep
 # Whitelisted collections that carry a `patient_id` foreign key. Kept
 # hand-maintained (rather than auto-discovered via listCollections) so a
 # stray dev-time collection can never accidentally get rewritten during
-# a merge. Enumerated by production count 2026-08-07. activity_logs and
-# greeting_log intentionally NOT rewritten — those are audit trails and
-# must retain the original patient_id for forensic accuracy. A new
-# activity_log entry is written at merge-time so the audit chain stays
-# intact.
+# a merge.
+#
+# NAV-005 Sprint-3A / MERGE-001 update: extended after a repo-wide audit
+# of every `patient_id` FK. Additions cover HA follow-ups, loaners,
+# subscriptions, trade-ins, custom orders, ear-moulds and portal
+# appointment requests — all of which are patient-scoped operational
+# records that must follow the surviving patient.
+#
+# Intentionally NOT rewritten (documented for future readers):
+#   • activity_logs, greeting_log  — audit trails; original patient_id
+#     preserved for forensic accuracy. A new activity_log entry is
+#     written at merge-time so the audit chain stays intact.
+#   • patient_merge_events          — the merge event itself; secondary_id
+#     MUST keep pointing at the actually-merged secondary.
+#   • patient_otps                  — short-lived (10 min) portal auth
+#     tokens; secondary is deactivated so they cannot be used. Deleted
+#     during merge (see `_MERGE_DELETE_COLLECTIONS`).
+#   • payments                      — no top-level patient_id; embedded
+#     in invoices. Follows invoices which are already re-parented.
+#   • partner_payouts               — aggregated by partner_id + period;
+#     no patient_id FK. Attribution follows patients.referring_doctor_id.
+#   • hearing_report_versions       — already in whitelist.
+#   • serial_items                  — special-cased below (MERGE-002):
+#     `current_patient_id` is the CURRENT ownership pointer and must be
+#     rewritten separately from the standard `patient_id` FK. Historical
+#     ownership audit lives in `serial_events` (no direct patient_id).
+#   • family_groups                 — special-cased below (MERGE-003):
+#     subdocument `members[]` + denormalised `patients.family_group_id`.
 _MERGEABLE_COLLECTIONS = [
     "appointments", "invoices", "service_tickets", "cancellation_logs",
     "dpdpa_actions", "reminder_logs", "test_sessions", "ha_sales",
@@ -509,6 +532,23 @@ _MERGEABLE_COLLECTIONS = [
     "hearing_report_versions", "tokens", "ha_trials", "patient_feedback",
     "ha_amc_contracts", "report_deliveries", "ha_quotes", "ha_quick_sales",
     "patient_notes",
+    # NAV-005 Sprint-3A additions (MERGE-001):
+    "ha_followups", "ha_loaners", "ha_subscriptions", "ha_trade_ins",
+    "custom_ha_orders", "ear_mould_orders", "patient_appointment_requests",
+]
+
+# Collections where secondary rows are DELETED (not re-parented) on
+# merge. Short-lived credentials that can't be used against a
+# deactivated patient anyway.
+_MERGE_DELETE_COLLECTIONS = [
+    "patient_otps",
+]
+
+# Collections with a non-standard patient-ownership field. Rewritten
+# on merge via `field` rather than `patient_id`. Undo reverses using
+# the same `field` marker (recorded in `rewrites`).
+_MERGE_ALT_FIELDS = [
+    ("serial_items", "current_patient_id"),  # MERGE-002 — active device owner
 ]
 
 
@@ -516,6 +556,143 @@ class MergePayload(BaseModel):
     primary_patient_id: str
     secondary_patient_id: str
     dry_run: bool = False
+
+
+# ─── MERGE-003 · Family group cohesion helpers ───────────────────────
+# See the decision tree comment inside `merge_patients` for behaviour.
+async def _plan_family_merge(db, clinic_id: str, primary: dict, secondary: dict):
+    """Read-only planner. Returns (action, group_id) describing what
+    `_apply_family_merge` will do. Called during dry-run for preview
+    and again at wet-run.
+    """
+    a_gid = primary.get("family_group_id")
+    b_gid = secondary.get("family_group_id")
+    if a_gid and b_gid and a_gid == b_gid:
+        return ("cleanup_same_group", a_gid)         # case 1
+    if a_gid and not b_gid:
+        return ("noop", None)                        # case 2
+    if b_gid and not a_gid:
+        return ("inherit_secondary", b_gid)          # case 3
+    if a_gid and b_gid and a_gid != b_gid:
+        return ("conflict", a_gid)                   # case 4 — leave both as-is
+    return ("noop", None)                            # case 5
+
+
+async def _apply_family_merge(db, clinic_id: str, primary: dict, secondary: dict,
+                              action: str, group_id):
+    """Apply the family-merge action returned by `_plan_family_merge`.
+    Returns a small dict logged into `patient_merge_events.family_result`
+    so undo can reverse precisely.
+    """
+    result: dict = {"action": action, "group_id": group_id}
+    primary_id = primary["patient_id"]
+    secondary_id = secondary["patient_id"]
+
+    if action == "cleanup_same_group":
+        # Remove secondary from members[]; primary already listed.
+        secondary_member = await _find_member(db, clinic_id, group_id, secondary_id)
+        result["removed_member"] = secondary_member
+        await db.family_groups.update_one(
+            {"group_id": group_id, "clinic_id": clinic_id},
+            {"$pull": {"members": {"patient_id": secondary_id}}},
+        )
+    elif action == "inherit_secondary":
+        # Move primary into secondary's group. Secondary is deactivated,
+        # so we replace its member row with primary (preserving the
+        # relationship label the front-desk originally chose).
+        secondary_member = await _find_member(db, clinic_id, group_id, secondary_id)
+        result["inherited_member"] = secondary_member
+        relationship = (secondary_member or {}).get("relationship") if secondary_member else None
+        # Push primary FIRST (so if $pull fails we don't lose the group entirely).
+        await db.family_groups.update_one(
+            {"group_id": group_id, "clinic_id": clinic_id,
+             "members.patient_id": {"$ne": primary_id}},
+            {"$push": {"members": {"patient_id": primary_id, "relationship": relationship}}},
+        )
+        await db.family_groups.update_one(
+            {"group_id": group_id, "clinic_id": clinic_id},
+            {"$pull": {"members": {"patient_id": secondary_id}}},
+        )
+        # Denormalised pointer on patients row.
+        await db.patients.update_one(
+            {"patient_id": primary_id, "clinic_id": clinic_id},
+            {"$set": {"family_group_id": group_id}},
+        )
+    elif action == "conflict":
+        # Documented behaviour: primary keeps its group, secondary keeps its.
+        # Nothing to write here (secondary's deactivation is handled by the
+        # main merge routine). Owner is expected to reconcile manually.
+        result["note"] = "primary and secondary were in different family groups; both preserved"
+    # noop cases 2 and 5: nothing to do.
+    return result
+
+
+async def _find_member(db, clinic_id: str, group_id: str, patient_id: str):
+    """Return the {patient_id, relationship} subdoc for `patient_id`
+    inside `group_id`, or None."""
+    group = await db.family_groups.find_one(
+        {"group_id": group_id, "clinic_id": clinic_id},
+        {"_id": 0, "members": 1},
+    )
+    if not group:
+        return None
+    for m in group.get("members", []):
+        if m.get("patient_id") == patient_id:
+            return {"patient_id": patient_id, "relationship": m.get("relationship")}
+    return None
+
+
+async def _undo_family_merge(db, clinic_id: str, family_result: dict,
+                             primary_snapshot: dict, secondary_snapshot: dict,
+                             primary_patient_id: str, secondary_patient_id: str):
+    """Reverse the family-merge action recorded during merge."""
+    action = family_result.get("action")
+    group_id = family_result.get("group_id")
+    undo = {"action": f"undo_{action}", "group_id": group_id}
+
+    if action == "cleanup_same_group":
+        removed = family_result.get("removed_member")
+        if removed and group_id:
+            await db.family_groups.update_one(
+                {"group_id": group_id, "clinic_id": clinic_id,
+                 "members.patient_id": {"$ne": secondary_patient_id}},
+                {"$push": {"members": {
+                    "patient_id": secondary_patient_id,
+                    "relationship": removed.get("relationship"),
+                }}},
+            )
+    elif action == "inherit_secondary":
+        inherited = family_result.get("inherited_member")
+        if group_id:
+            # Restore secondary's membership row.
+            if inherited:
+                await db.family_groups.update_one(
+                    {"group_id": group_id, "clinic_id": clinic_id,
+                     "members.patient_id": {"$ne": secondary_patient_id}},
+                    {"$push": {"members": {
+                        "patient_id": secondary_patient_id,
+                        "relationship": inherited.get("relationship"),
+                    }}},
+                )
+            # Remove primary from the group.
+            await db.family_groups.update_one(
+                {"group_id": group_id, "clinic_id": clinic_id},
+                {"$pull": {"members": {"patient_id": primary_patient_id}}},
+            )
+            # Restore primary's family_group_id (was None; unset it).
+            if primary_snapshot.get("family_group_id") is None:
+                await db.patients.update_one(
+                    {"patient_id": primary_patient_id, "clinic_id": clinic_id},
+                    {"$unset": {"family_group_id": ""}},
+                )
+            else:
+                await db.patients.update_one(
+                    {"patient_id": primary_patient_id, "clinic_id": clinic_id},
+                    {"$set": {"family_group_id": primary_snapshot["family_group_id"]}},
+                )
+    # conflict and noop: nothing to reverse.
+    return undo
+# ─── /MERGE-003 helpers ──────────────────────────────────────────────
 
 
 @router.post("/patients/merge")
@@ -555,14 +732,51 @@ async def merge_patients(
         )
 
     # Compute per-collection impact counts BEFORE any writes.
+    # NOTE: We filter by `patient_id` ONLY (no clinic_id filter) here.
+    # Rationale: secondary was already tenant-verified at the top of
+    # this function, and `patient_id` is uuid4 — cross-tenant collision
+    # is cryptographically impossible. Some mergeable collections
+    # (e.g. `patient_notes`) do not carry `clinic_id` on the document,
+    # so a `{clinic_id, patient_id}` filter would silently miss those
+    # rows (a latent bug this Sprint-3A test surfaced).
     impact: dict = {}
     for coll in _MERGEABLE_COLLECTIONS:
         n = await db[coll].count_documents({
-            "clinic_id": clinic_id,
             "patient_id": payload.secondary_patient_id,
         })
         if n:
             impact[coll] = n
+
+    # Alt-field collections (MERGE-002) — e.g. serial_items.current_patient_id
+    alt_impact: dict = {}
+    for coll, field in _MERGE_ALT_FIELDS:
+        n = await db[coll].count_documents({
+            field: payload.secondary_patient_id,
+        })
+        if n:
+            alt_impact[f"{coll}:{field}"] = n
+
+    # Family-group cohesion (MERGE-003) — computed for preview only.
+    # Decision tree (documented in test suite):
+    #   1. Both patients in SAME family group     → remove secondary from members[]
+    #   2. Only PRIMARY in a family group         → add secondary is a no-op (secondary
+    #                                               is being deactivated); we ALSO clear
+    #                                               secondary.family_group_id if stale.
+    #   3. Only SECONDARY in a family group       → inherit: primary is added to that
+    #                                               group (taking secondary's slot), and
+    #                                               patients.family_group_id is moved.
+    #   4. BOTH in DIFFERENT family groups        → CONFLICT. Primary stays in its group.
+    #                                               Secondary stays in its group (its
+    #                                               member row remains; the group renders
+    #                                               it as a merged/inactive dropout via
+    #                                               `_populate_members`). A `family_conflict`
+    #                                               entry is added to the activity log so the
+    #                                               owner can manually resolve.
+    #   5. Neither in a family group              → no-op.
+    family_action, family_group_id_touch = await _plan_family_merge(
+        db, clinic_id, primary, secondary,
+    )
+    family_impact = {"action": family_action, "group_id": family_group_id_touch} if family_action != "noop" else {}
 
     if payload.dry_run:
         return {
@@ -570,7 +784,9 @@ async def merge_patients(
             "primary": {"patient_id": primary["patient_id"], "name": primary.get("name"), "mrd": primary.get("mrd")},
             "secondary": {"patient_id": secondary["patient_id"], "name": secondary.get("name"), "mrd": secondary.get("mrd")},
             "preview": impact,
-            "total_rows_affected": sum(impact.values()),
+            "alt_preview": alt_impact,
+            "family": family_impact,
+            "total_rows_affected": sum(impact.values()) + sum(alt_impact.values()),
         }
 
     # Wet-run: rewrite FKs in each whitelisted collection.
@@ -579,15 +795,16 @@ async def merge_patients(
     # on `merged_from_patient_id` sentinels (which could be shared
     # across chained merges of the same row).
     applied: dict = {}
-    rewrites: list = []  # [{coll, id: str(_id)}, ...] — for undo
+    rewrites: list = []  # [{coll, id: str(_id), field?: 'patient_id'|'current_patient_id'}, ...] — for undo
     now = datetime.utcnow()
     now_iso = now.isoformat()
     expires_at = now + timedelta(minutes=10)
     merge_id = f"MRG-{uuid.uuid4().hex[:12].upper()}"
     for coll, _ in impact.items():
-        # Snapshot the ids we're about to rewrite.
+        # Snapshot the ids we're about to rewrite (patient_id-only
+        # filter — see impact-count rationale above).
         cursor = db[coll].find(
-            {"clinic_id": clinic_id, "patient_id": payload.secondary_patient_id},
+            {"patient_id": payload.secondary_patient_id},
             {"_id": 1},
         )
         ids = [d["_id"] async for d in cursor]
@@ -598,13 +815,50 @@ async def merge_patients(
             {"$set": {"patient_id": payload.primary_patient_id, "merged_from_patient_id": payload.secondary_patient_id}},
         )
         applied[coll] = int(res.modified_count or 0)
-        rewrites.extend([{"coll": coll, "id": str(_id)} for _id in ids])
+        rewrites.extend([{"coll": coll, "id": str(_id), "field": "patient_id"} for _id in ids])
+
+    # MERGE-002 — alt-field collections (serial_items.current_patient_id).
+    # Historical ownership audit lives in `serial_events` and is NOT
+    # touched — that's an append-only state-machine log keyed by
+    # serial_id, not patient_id. Only the CURRENT ownership pointer moves.
+    for coll, field in _MERGE_ALT_FIELDS:
+        cursor = db[coll].find(
+            {field: payload.secondary_patient_id},
+            {"_id": 1},
+        )
+        ids = [d["_id"] async for d in cursor]
+        if not ids:
+            continue
+        res = await db[coll].update_many(
+            {"_id": {"$in": ids}},
+            {"$set": {field: payload.primary_patient_id, "merged_from_patient_id": payload.secondary_patient_id}},
+        )
+        alt_key = f"{coll}:{field}"
+        applied[alt_key] = int(res.modified_count or 0)
+        rewrites.extend([{"coll": coll, "id": str(_id), "field": field} for _id in ids])
+
+    # Delete short-lived credentials that would otherwise dangle.
+    for coll in _MERGE_DELETE_COLLECTIONS:
+        res = await db[coll].delete_many({
+            "patient_id": payload.secondary_patient_id,
+        })
+        if res.deleted_count:
+            applied[f"{coll}:deleted"] = int(res.deleted_count or 0)
+
+    # MERGE-003 — family group cohesion.
+    family_result = await _apply_family_merge(
+        db, clinic_id, primary, secondary, family_action, family_group_id_touch,
+    )
 
     # Capture the secondary's pre-merge state so undo can restore it
     # cleanly. Only fields the merge itself touches — everything else
     # is left as-is.
     secondary_snapshot = {
         "active": secondary.get("active", True),
+        "family_group_id": secondary.get("family_group_id"),
+    }
+    primary_snapshot = {
+        "family_group_id": primary.get("family_group_id"),
     }
 
     # Soft-mark the secondary. Never hard-delete: forensic trail.
@@ -633,6 +887,8 @@ async def merge_patients(
         "rewrites": rewrites,
         "applied": applied,
         "secondary_snapshot": secondary_snapshot,
+        "primary_snapshot": primary_snapshot,
+        "family_result": family_result,
         "undone_at": None,
         "undone_by": None,
     }))
@@ -645,6 +901,7 @@ async def merge_patients(
         "primary_patient_id": payload.primary_patient_id,
         "secondary_patient_id": payload.secondary_patient_id,
         "rows_rewritten": applied,
+        "family_result": family_result,
         "at": now,
     }))
 
@@ -655,6 +912,7 @@ async def merge_patients(
         "primary": {"patient_id": primary["patient_id"], "name": primary.get("name"), "mrd": primary.get("mrd")},
         "secondary": {"patient_id": secondary["patient_id"], "name": secondary.get("name"), "mrd": secondary.get("mrd")},
         "applied": applied,
+        "family_result": family_result,
         "total_rows_affected": sum(applied.values()),
     }
 
@@ -725,42 +983,65 @@ async def undo_merge(
         raise HTTPException(status_code=409, detail="Merge already undone")
 
     expires_at = ev.get("expires_at")
-    now = datetime.utcnow()
-    # Mongo stores as ISO string (see utils/serde.py). Coerce both back
-    # to naive datetime for the range check.
+    now = datetime.now(timezone.utc)
+    # Mongo stores as ISO string (see utils/serde.py — always emitted
+    # with `+00:00` suffix). Coerce string → aware datetime for the
+    # range check; if `expires_at` is somehow already a naive datetime
+    # (legacy row from before serde stamping), treat it as UTC.
     if isinstance(expires_at, str):
         try:
             expires_at = datetime.fromisoformat(expires_at)
         except Exception:
             expires_at = None
+    if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if not expires_at or now >= expires_at:
         raise HTTPException(status_code=410, detail="Undo window (10 minutes) has expired")
 
     # Reverse every recorded rewrite. Update by `_id` so a subsequent
     # merge that touched the same rows can't accidentally get reverted
     # here — we only touch the specific ObjectIds we snapshotted.
+    # Filter by `_id` only (no clinic_id constraint) because some
+    # collections (e.g. patient_notes) don't carry clinic_id; the
+    # rewrite list already contains only rows we authored during the
+    # original merge, so this is safe.
     reverted: dict = {}
     for r in ev.get("rewrites", []):
         coll = r["coll"]
+        field = r.get("field", "patient_id")  # legacy events default to patient_id
         try:
             oid = ObjectId(r["id"])
         except Exception:
             continue
         res = await db[coll].update_one(
-            {"_id": oid, "clinic_id": clinic_id},
-            {"$set": {"patient_id": ev["secondary_patient_id"]}, "$unset": {"merged_from_patient_id": ""}},
+            {"_id": oid},
+            {"$set": {field: ev["secondary_patient_id"]}, "$unset": {"merged_from_patient_id": ""}},
         )
         if res.modified_count:
-            reverted[coll] = reverted.get(coll, 0) + 1
+            key = f"{coll}:{field}" if field != "patient_id" else coll
+            reverted[key] = reverted.get(key, 0) + 1
+
+    # MERGE-003 undo — reverse family-group changes.
+    family_undo = await _undo_family_merge(
+        db, clinic_id, ev.get("family_result") or {},
+        primary_snapshot=ev.get("primary_snapshot") or {},
+        secondary_snapshot=ev.get("secondary_snapshot") or {},
+        primary_patient_id=ev["primary_patient_id"],
+        secondary_patient_id=ev["secondary_patient_id"],
+    )
 
     # Restore the secondary patient.
     snap = ev.get("secondary_snapshot") or {}
+    unset_fields = {"merged_into": "", "merged_at": "", "merged_by": ""}
+    set_fields = {"active": snap.get("active", True)}
+    # Restore family_group_id if it was cleared by the merge; otherwise unset any inheritance.
+    if snap.get("family_group_id") is not None:
+        set_fields["family_group_id"] = snap["family_group_id"]
+    else:
+        unset_fields["family_group_id"] = ""
     await db.patients.update_one(
         {"patient_id": ev["secondary_patient_id"], "clinic_id": clinic_id},
-        {
-            "$set": {"active": snap.get("active", True)},
-            "$unset": {"merged_into": "", "merged_at": "", "merged_by": ""},
-        },
+        {"$set": set_fields, "$unset": unset_fields},
     )
 
     await db.patient_merge_events.update_one(
@@ -776,12 +1057,14 @@ async def undo_merge(
         "primary_patient_id": ev["primary_patient_id"],
         "secondary_patient_id": ev["secondary_patient_id"],
         "rows_reverted": reverted,
+        "family_undo": family_undo,
         "at": now,
     }))
 
     return {
         "merge_id": merge_id,
         "reverted": reverted,
+        "family_undo": family_undo,
         "total_rows_reverted": sum(reverted.values()),
         "primary_patient_id": ev["primary_patient_id"],
         "secondary_patient_id": ev["secondary_patient_id"],

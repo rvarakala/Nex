@@ -1,4 +1,16 @@
-"""Test session CRUD + PTA calculator."""
+"""Test session CRUD + PTA calculator.
+
+NAV-005 Sprint-3A / CLIN-001 hardening notes:
+- Every read/write filters by `clinic_id` explicitly (not via patient
+  cross-check). This is a defence-in-depth upgrade — session_id is a
+  uuid4 so cross-tenant enumeration was never practically exploitable,
+  but the new pattern is uniform, cheap, and audit-friendly.
+- `clinic_id` is stamped from the JWT on every insert and cannot be
+  spoofed via payload (`TestSessionCreate` has no clinic_id field, and
+  `TestSession.model_config = ConfigDict(extra='ignore')`).
+- Legacy sessions without `clinic_id` are backfilled once at startup
+  via `patients.clinic_id` (see server.py lifespan).
+"""
 from datetime import datetime
 from typing import List, Optional
 
@@ -55,9 +67,9 @@ async def create_test_session(session: TestSessionCreate,
         extras["referred_by"] = appt.get("referred_by")
 
     payload = session.model_dump(exclude={"appointment_id"})
-    session_obj = TestSession(**payload, **extras)
+    # CLIN-001: stamp clinic_id on the model itself (source of truth).
+    session_obj = TestSession(**payload, **extras, clinic_id=user["clinic_id"])
     doc = serialize_datetime(session_obj.model_dump())
-    doc["clinic_id"] = user["clinic_id"]
     await db.test_sessions.insert_one(doc)
     return session_obj
 
@@ -65,57 +77,61 @@ async def create_test_session(session: TestSessionCreate,
 @router.get("/sessions", response_model=List[TestSession])
 async def get_test_sessions(patient_id: Optional[str] = None, limit: int = 100,
                             user=Depends(get_current_user), db=Depends(get_db)):
+    """List sessions. Always clinic-scoped. No legacy fallback — the
+    startup backfill (see server.py) stamps `clinic_id` on every
+    pre-tenant row, so a missing clinic_id here means the row does not
+    belong to this tenant."""
     query: dict = {"clinic_id": user["clinic_id"]}
     if patient_id:
         query["patient_id"] = patient_id
-    # Legacy sessions created before tenant scoping may not have clinic_id; include them if patient belongs to this clinic
     sessions = await db.test_sessions.find(query, {"_id": 0}).sort("test_date", -1).to_list(limit)
-    if not sessions and patient_id:
-        p = await db.patients.find_one({"patient_id": patient_id, "clinic_id": user["clinic_id"]})
-        if p:
-            sessions = await db.test_sessions.find({"patient_id": patient_id}, {"_id": 0}).sort("test_date", -1).to_list(limit)
     return [deserialize_datetime(s) for s in sessions]
 
 
 @router.get("/sessions/{session_id}", response_model=TestSession)
 async def get_test_session(session_id: str,
                            user=Depends(get_current_user), db=Depends(get_db)):
-    s = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    # CLIN-001: direct clinic_id filter. No patient-cross-check fallback.
+    s = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0},
+    )
     if not s:
         raise HTTPException(status_code=404, detail="Test session not found")
-    # Tenant check via patient
-    p = await db.patients.find_one({"patient_id": s.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
     return deserialize_datetime(s)
 
 
 @router.put("/sessions/{session_id}", response_model=TestSession)
 async def update_test_session(session_id: str, session_update: TestSessionUpdate,
                               user=Depends(get_current_user), db=Depends(get_db)):
-    s = await db.test_sessions.find_one({"session_id": session_id})
+    # CLIN-001: direct clinic_id filter on existence check AND the write.
+    s = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": user["clinic_id"]},
+    )
     if not s:
         raise HTTPException(status_code=404, detail="Test session not found")
-    p = await db.patients.find_one({"patient_id": s.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
     update_data = {k: v for k, v in session_update.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
-    await db.test_sessions.update_one({"session_id": session_id}, {"$set": serialize_datetime(update_data)})
-    updated = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    await db.test_sessions.update_one(
+        {"session_id": session_id, "clinic_id": user["clinic_id"]},
+        {"$set": serialize_datetime(update_data)},
+    )
+    updated = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": user["clinic_id"]},
+        {"_id": 0},
+    )
     return deserialize_datetime(updated)
 
 
 @router.delete("/sessions/{session_id}")
 async def delete_test_session(session_id: str,
                               user=Depends(get_current_user), db=Depends(get_db)):
-    s = await db.test_sessions.find_one({"session_id": session_id})
-    if not s:
+    # CLIN-001: direct clinic_id filter.
+    res = await db.test_sessions.delete_one(
+        {"session_id": session_id, "clinic_id": user["clinic_id"]},
+    )
+    if not res.deleted_count:
         raise HTTPException(status_code=404, detail="Test session not found")
-    p = await db.patients.find_one({"patient_id": s.get("patient_id"), "clinic_id": user["clinic_id"]})
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    await db.test_sessions.delete_one({"session_id": session_id})
     return {"message": "Deleted", "session_id": session_id}
 
 

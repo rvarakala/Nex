@@ -1,6 +1,59 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🔒 NAV-005 Sprint-3A — Patient Data Integrity + Clinic Isolation (2026-08-18)
+
+**Ask**: Post-NAV-005 audit identified 4 P1 data-integrity gaps around patient merging and TestSession tenant scoping. Sprint-3A closes those specifically; NOTES-001 / FOLLOW-001 / SRV-001 / APPT-005 / DPDP-001 / REG-* deferred.
+
+**Fixes shipped**:
+
+**MERGE-001 — extended `_MERGEABLE_COLLECTIONS`** in `/app/backend/routers/patients.py`. After a repo-wide `patient_id`-FK audit, added 7 collections that were silently orphaned on merge: `ha_followups`, `ha_loaners`, `ha_subscriptions`, `ha_trade_ins`, `custom_ha_orders`, `ear_mould_orders`, `patient_appointment_requests`. Documented (in-source comments) the collections intentionally excluded from re-parenting: `activity_logs`, `greeting_log`, `patient_merge_events`, `payments` (follows invoices), `partner_payouts` (no patient_id FK). Latent secondary bug also fixed: the impact/rewrite queries had a `{clinic_id, patient_id}` filter, but `patient_notes` doesn't carry `clinic_id` — so every merge silently missed notes. Now filters by `patient_id` only (safe — secondary is already tenant-verified, uuid4 rules out cross-tenant collision).
+
+**MERGE-002 — `serial_items.current_patient_id` migrated on merge**. New `_MERGE_ALT_FIELDS = [("serial_items", "current_patient_id")]` handles the non-standard field name. The rewrite record now carries `field='current_patient_id'` so undo reverses precisely. `serial_events` audit log is intentionally NOT touched — it's an append-only state-machine keyed by `serial_id` and preserves historical ownership.
+
+**MERGE-003 — family group cohesion** across 5 documented scenarios:
+1. **Both patients in same family group** → secondary is `$pull`ed from `family_groups.members[]`. Primary stays. Documented as `family_result.action = "cleanup_same_group"`.
+2. **Only primary in a family group** → no-op. Secondary is being deactivated anyway.
+3. **Only secondary in a family group** → **primary inherits**: added to members[] (taking secondary's relationship label), `patients.family_group_id` copied over, secondary removed from members[].
+4. **Both patients in DIFFERENT family groups** → CONFLICT preserved. Primary keeps its group; secondary keeps its group (rendered as inactive via `_populate_members` filter). Owner reconciles manually. This is deliberate — silent cross-group moves would break unrelated family relationships.
+5. **Neither in a group** → no-op.
+
+Undo reverses each scenario precisely — see `_undo_family_merge` in `patients.py`.
+
+**MERGE-002/003 undo compatibility fix (latent bug uncovered)**: `undo_merge` was comparing a naive `datetime.utcnow()` against a tz-aware `expires_at` parsed from an ISO string — every undo attempt was crashing with `can't compare offset-naive and offset-aware datetimes`. Fixed by using `datetime.now(timezone.utc)` and coercing legacy naive `expires_at` to UTC. Also removed the stray `clinic_id` filter in the undo update path (patient_notes lacks the field).
+
+**CLIN-001 — TestSession `clinic_id` first-class**:
+- Added `clinic_id: Optional[str] = None` to `TestSession` in `/app/backend/models/_canonical.py`.
+- `test_sessions.py` now sets `clinic_id` via the Pydantic model itself (not via post-model_dump mutation).
+- Every GET/PUT/DELETE now filters by `{session_id, clinic_id}` directly — patient-cross-check fallback removed. Legacy fallback (`if not sessions and patient_id: refetch without clinic_id`) removed from `list_sessions`.
+- Startup backfill in `server.py` stamps `clinic_id` on any legacy `test_sessions` row from the linked patient. Idempotent — only touches rows missing the field.
+- Two new compound indexes: `(clinic_id, session_id)` and `(clinic_id, patient_id, test_date desc)`.
+
+**Regression suite added** — `/app/backend/tests/test_nav005_sprint3a_merge_and_isolation.py` (16 tests, all pass):
+- MERGE-001: whitelist source-level guard + dry-run counts + wet-run reparenting to primary + zero-orphan check on secondary.
+- MERGE-002: direct-DB serial_items row → merge → assert `current_patient_id` migrated + `merged_from_patient_id` marker set + undo reverses cleanly.
+- MERGE-003: one test per scenario (5) + inheritance-undo restore test.
+- CLIN-001: create stamps clinic_id + cross-tenant GET/PUT/DELETE all 404 + cross-tenant list returns [].
+- Cross-tenant regression (Part 6): patient GET, /history GET, appointments list all forbidden across clinics.
+
+Regression sweep passes: `test_patient_merge.py` (5/5), `test_patient_edit.py` (4/4), `test_duplicate_patients_sweep.py` (3/3), `test_appointments_patient_filter.py` (2/2), `test_report_handover.py` (12/12). No regressions on NAV-003, NAV-004 Sprint-1, or NAV-004 Sprint-2. Pre-existing failures in `test_patient_legacy_tolerance.py` (5) and `test_iter21_report_extras.py` (8) are stale-fixture / missing-demo-seed environment issues NOT touching Sprint-3A code — verified by `git stash` run.
+
+**Files changed (5)**:
+- `/app/backend/routers/patients.py` — whitelist extension, alt-field handling, family-merge planner/applier/undo helpers, undo tz fix.
+- `/app/backend/routers/test_sessions.py` — direct clinic_id filters on every endpoint, dropped legacy fallback.
+- `/app/backend/models/_canonical.py` — added `clinic_id` field to `TestSession`.
+- `/app/backend/server.py` — legacy session backfill + new compound indexes.
+- `/app/backend/tests/test_nav005_sprint3a_merge_and_isolation.py` — 16 new tests (NEW file).
+
+**Deploy note for the user**: Ships in preview. Deploy preview → production so:
+1. Existing merged secondaries can be re-merged (the follow-ups / loaners / subscriptions / trade-ins / custom-orders / ear-moulds / portal-requests that were orphaned in prior merges will still need a one-off cleanup — I can prepare a `scripts/backfill_orphaned_merged_records.py` if you want).
+2. Serial-items on sold devices will now correctly follow the surviving patient in every new merge.
+3. Family groups stay coherent.
+4. Legacy `test_sessions` without `clinic_id` get backfilled on the first production restart.
+
+**Remaining audit items (deferred)**: NOTES-001, FOLLOW-001, SRV-001, APPT-005, REP-001, PROF-001, DPDP-001, REG-001 through REG-006, SEC-001 through SEC-003. Handled in separate sprints per your scope directive.
+
+
 ## 🎨 HA Device Spec (Colour + Receiver Power + Wire/Tube Length) — SWEEP (2026-08-15)
 
 **Ask**: Audiologists fitting hearing aids need three extra attributes captured everywhere an HA is being specified — **Colour**, **Receiver Power** (for RIC — S/M/MAV/P/UP) or **BTE Power Class** (Standard/SP/UP), and **Wire Length / Slim Tube Length** (00/0/1/2/3/4/5). For "Both ears" fits, the two ears often carry DIFFERENT wires + powers (asymmetric losses) so per-ear capture is required. Sweep the app and add these controls wherever the scope arises.
