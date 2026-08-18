@@ -39,14 +39,30 @@ async def create_test_session(session: TestSessionCreate,
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    # Try to locate an appointment for this session — explicit id wins, else the
-    # most-recent same-day appointment for this patient at this clinic.
+    # Try to locate an appointment for this session.
+    #
+    # NAV-006 F-002 (2026-08-18): fail hard when an explicit `appointment_id`
+    # is supplied but not resolvable in the caller's clinic. Previously the
+    # endpoint silently fell through to the auto-discover branch and linked
+    # the session to a DIFFERENT appointment (or to none) — turning the
+    # session's `appointment_id` into a lie. We now:
+    #   • CASE B — supplied AND in this clinic → link exactly.
+    #   • CASE C/D — supplied AND not-in-this-clinic (unknown or foreign) →
+    #     raise 404. We do NOT distinguish between "doesn't exist" and
+    #     "belongs to another clinic" so foreign existence isn't leaked.
+    #   • CASE A — not supplied → keep the existing auto-discover branch,
+    #     which picks the most-recent same-day appointment for this
+    #     patient (IST) at this clinic.
     appt = None
     if session.appointment_id:
         appt = await db.appointments.find_one(
             {"appointment_id": session.appointment_id, "clinic_id": user["clinic_id"]}, {"_id": 0}
         )
-    if not appt:
+        if not appt:
+            raise HTTPException(
+                status_code=404, detail="Appointment not found in this clinic."
+            )
+    else:
         today_prefix = datetime.utcnow().strftime("%Y-%m-%d")
         appt = await db.appointments.find_one(
             {

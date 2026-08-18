@@ -1,6 +1,26 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🩹 NAV-006 Sprint-P1 — Queue Dedupe + Session Fail-Hard (2026-08-18)
+
+**Sprint scope (user-approved)**: F-001 (`diagnostics_queue` dedupe by `(patient_id, appointment_id)`) + F-002 (`POST /api/sessions` fail-hard on foreign / invalid `appointment_id`). No P2/P3/ORPHAN work touched.
+
+**Files changed (2 code + 1 test)**:
+- `backend/routers/diagnostics_queue.py` — `by_patient → by_card`, composite key with unambiguous-appointment collapse for token/walk-in rows.
+- `backend/routers/test_sessions.py` — split `if session.appointment_id` into fail-hard 404 branch + auto-discover fallback branch.
+- `backend/tests/test_nav006_p1_queue_and_session_fixes.py` — new regression suite (11 tests: 5 for F-001 + 6 for F-002).
+
+**Test results**:
+- New NAV-006 suite: **11 / 11 PASS**
+- NAV-005 Sprint-3A + 3B + 3C combined regression: **47 / 47 PASS**
+- Combined NAV-005 + NAV-006 sweep: **58 / 58 PASS**
+- Preview UI smoke: Kanban board loads with 47 distinct cards = 47 distinct patients (no over-split, no under-collapse).
+
+**Pre-existing failures observed but out of scope**: 3 clock-timezone failures in `test_diagnostics_queue_checkin.py` (hardcoded 15/16/17h vs UTC-vs-IST comparison — fails after 12:30 IST). Confirmed pre-existing via `git stash` — same errors on unpatched HEAD. Not caused by this sprint.
+
+**Awaiting your explicit go/no-go on production deploy** — nothing has been pushed to `audinexa.com` yet.
+
+
 ## 🔎 NAV-006 — Clinical Diagnostics Audit (READ-ONLY, 2026-08-18)
 
 **Ask**: Read-only audit of the full clinical chain (Patient → Appointment → Diagnostic Queue → Test Session → Test → Result → Report → Patient History). NO CODE CHANGES.
@@ -36,6 +56,8 @@
 **Evidence**: 4 batched Playwright screenshot runs, all clean. Cross-tenant guard confirmed via NAV-005 Sprint-3A test suite (16/16 green in preview). Production `/api/health` returns `{"status":"healthy"}`. CSRF cookie (`audinexa_csrf`) is enforced on all state-changing endpoints.
 
 **One infrastructure item still outside my reach**: `CLIN-001 backfill: stamped clinic_id on N legacy test_sessions` log line from `/var/log/supervisor/backend.err.log` on the production pod. Support-agent classifier confirmed I cannot access production logs from the preview pod. **User action required**: email `support@emergent.sh` with the job ID + `https://audinexa.com` and request "Please retrieve the exact `CLIN-001 backfill` log line from production backend supervisor logs so we can confirm N legacy sessions were stamped." Once the number is confirmed, we can officially close the deployment verification phase.
+
+**UPDATE 2026-08-18 (late)**: 🎉 **PRODUCTION RELEASE VERIFIED.** User ran the 4 read-only CLIN-001 data-integrity queries directly against the production MongoDB and confirmed the post-migration invariant = **PASS** (eligible legacy sessions without `clinic_id` = 0; no orphaned clinics; no patient/session `clinic_id` mismatches). Sprint-1 verification phase officially closed.
 
 
 ## 🛡️ NAV-005 Sprint-3C — Registration Hardening (2026-08-18)

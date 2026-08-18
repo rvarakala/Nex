@@ -125,14 +125,55 @@ async def diagnostics_queue(
             patient_map[p["patient_id"]] = p
 
     # ------ Normalise every row to a common shape ------
-    # bucket keyed by patient_id; we keep the *most advanced* entry per patient.
-    by_patient: dict[str, dict] = {}
+    # NAV-006 F-001 (2026-08-18): dedupe by (patient_id, appointment_id).
+    # Previously the board keyed by `patient_id` alone which collapsed two
+    # same-day appointments for the same patient into a single Kanban card.
+    # Now every distinct appointment gets its own card; token rows without
+    # an appointment_id fall back to a walk-in identity keyed on their
+    # issued_at timestamp so they remain unique per visit but still MERGE
+    # with an appointment when the patient has exactly one appointment
+    # today (unambiguous same-visit case).
+    patient_appts: dict[str, list[str]] = {}
+    for a in appts:
+        pid = a.get("patient_id")
+        aid = a.get("appointment_id")
+        if pid and aid:
+            patient_appts.setdefault(pid, []).append(aid)
 
-    def _upsert(entry: dict):
+    def _card_key(pid: str, appointment_id: Optional[str], walkin_id: str) -> str:
+        """Compose the per-card dedupe key.
+
+        - Explicit appointment_id → its own card, always.
+        - No appointment_id + patient has exactly 1 appointment today →
+          snap the walk-in / token / session card to that appointment
+          (so token + appointment for the same visit collapse to 1 card).
+        - Otherwise → walk-in card keyed on the supplied fallback id
+          (issued_at for tokens, created_at for sessions).
+        """
+        if appointment_id:
+            return f"{pid}::appt::{appointment_id}"
+        appt_ids = patient_appts.get(pid) or []
+        if len(appt_ids) == 1:
+            return f"{pid}::appt::{appt_ids[0]}"
+        return f"{pid}::walkin::{walkin_id}"
+
+    # bucket keyed by (patient_id, appointment_id | walkin:<ts>); we keep
+    # the *most advanced* entry per card.
+    by_card: dict[str, dict] = {}
+
+    def _upsert(entry: dict, walkin_id: str = ""):
         pid = entry["patient_id"]
-        existing = by_patient.get(pid)
+        key = _card_key(pid, entry.get("appointment_id"), walkin_id)
+        # Stamp the effective key on the row so the sibling merge branch
+        # below can find its neighbour deterministically.
+        entry["_card_key"] = key
+        # If the composite key snapped to an appointment we didn't have,
+        # backfill it so start-endpoint payloads carry the right id.
+        if "::appt::" in key and not entry.get("appointment_id"):
+            entry["appointment_id"] = key.split("::appt::", 1)[1]
+        existing = by_card.get(key)
         if not existing or STATE_RANK[entry["state"]] > STATE_RANK[existing["state"]]:
-            by_patient[pid] = entry
+            by_card[key] = entry
         # If the two entries are SAME state, keep the one with the earlier
         # arrival time (FIFO) but merge source ids so the frontend can call
         # /start with the correct token+appointment pair.
@@ -172,7 +213,7 @@ async def diagnostics_queue(
             "priority": t.get("priority") or "normal",
             "service": t.get("service"),
             "arrived_at": t.get("issued_at"),
-        })
+        }, walkin_id=f"tok:{t.get('token_id') or t.get('issued_at') or ''}")
 
     # ---- appointments ----
     # Map every relevant appointment status to a queue column so today's
@@ -215,7 +256,7 @@ async def diagnostics_queue(
             # + whether this is a first-visit vs a repeat/follow-up.
             "recommended_tests": a.get("recommended_tests") or [],
             "visit_type": a.get("visit_type"),
-        })
+        }, walkin_id="")
 
     # ---- draft sessions (always in_progress) ----
     for s in draft_sessions:
@@ -240,7 +281,7 @@ async def diagnostics_queue(
             "arrived_at": s.get("created_at"),
             "recommended_tests": s.get("recommended_tests") or [],
             "visit_type": s.get("visit_type"),
-        })
+        }, walkin_id=f"sess:{s.get('session_id') or s.get('created_at') or ''}")
 
     # ---- completed sessions today ----
     for s in completed_sessions:
@@ -265,14 +306,16 @@ async def diagnostics_queue(
             "arrived_at": s.get("updated_at") or s.get("created_at"),
             "recommended_tests": s.get("recommended_tests") or [],
             "visit_type": s.get("visit_type"),
-        })
+        }, walkin_id=f"sess:{s.get('session_id') or s.get('updated_at') or ''}")
 
     # ------ Split into 4 columns, sort within each ------
     def _sort_key(row):
         return (_priority_rank(row.get("priority")), row.get("arrived_at") or "")
 
     columns = {"waiting": [], "checked_in": [], "in_progress": [], "completed": []}
-    for row in by_patient.values():
+    for row in by_card.values():
+        # Drop the private `_card_key` from the payload before serialising.
+        row.pop("_card_key", None)
         columns[row["state"]].append(row)
     for k in columns:
         columns[k].sort(key=_sort_key)
