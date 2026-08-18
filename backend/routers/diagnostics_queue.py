@@ -373,6 +373,14 @@ async def start_diagnostics(
     #   • CASE C/D — supplied AND not-in-this-clinic → 404 with a fixed
     #     detail string (foreign existence NOT revealed).
     #   • CASE A — not supplied → keep existing IST-today auto-discover.
+    #
+    # NAV-006 Sprint-P2B (2026-08-18) — F-004-A. When the caller supplies
+    # a `token_id` but NO `appointment_id`, the token IS the visit
+    # identity. We must NOT auto-discover a random same-day appointment
+    # and silently snap the walk-in to it (that would cross-contaminate
+    # a walk-in visit with a scheduled appointment). Auto-discover now
+    # runs ONLY in the truly-identity-less case: neither token nor
+    # appointment.
     appt = None
     day_key = _ymd_ist()
     if payload.appointment_id:
@@ -383,7 +391,10 @@ async def start_diagnostics(
             raise HTTPException(
                 status_code=404, detail="Appointment not found in this clinic."
             )
-    else:
+    elif not payload.token_id:
+        # Case A — no visit identity supplied at all → auto-discover the
+        # patient's most-recent scheduled appointment today. Preserves
+        # legacy walk-in-from-scratch behaviour.
         appt = await db.appointments.find_one(
             {
                 "clinic_id": clinic_id,
@@ -394,6 +405,8 @@ async def start_diagnostics(
             {"_id": 0},
             sort=[("start_at", -1)],
         )
+    # else: token_id supplied but no appointment_id — leave appt=None so
+    # the walk-in session gets its own identity below (via token_id).
 
     # --- Find an existing draft session for this patient today (idempotency) ---
     #
@@ -403,9 +416,13 @@ async def start_diagnostics(
     # `appointment_id` was never rewritten. Result: PUT /sessions/{S1}
     # for A2 overwrote A1's data. Fix: if an appointment was explicitly
     # supplied (or resolved via auto-discover) we only reuse a draft
-    # that is ALREADY tied to that same appointment. Walk-in flows with
-    # no resolved appointment keep the historic any-draft-today
-    # behaviour (idempotent within a single visit).
+    # that is ALREADY tied to that same appointment.
+    #
+    # NAV-006 Sprint-P2B — F-004-A. Walk-in flows now use `token_id` as
+    # the visit identity. We only reuse a draft whose `token_id` matches
+    # the caller's token — never the historic "any draft today for this
+    # patient". Two same-day walk-ins for the same patient (two tokens)
+    # now yield two independent sessions.
     today_start_iso = ist_day_start_utc().isoformat()
     session = None
     if payload.session_id:
@@ -431,9 +448,23 @@ async def start_diagnostics(
             # NOT auto-snapped to a discovered appointment — it stays a
             # walk-in and the caller gets a fresh session for `appt`.
             draft_filter["appointment_id"] = appt["appointment_id"]
-        session = await db.test_sessions.find_one(
-            draft_filter, {"_id": 0}, sort=[("created_at", -1)],
-        )
+            session = await db.test_sessions.find_one(
+                draft_filter, {"_id": 0}, sort=[("created_at", -1)],
+            )
+        elif payload.token_id:
+            # F-004-A — only reuse a walk-in draft whose token_id matches
+            # the caller's supplied token. This makes each walk-in token
+            # a distinct visit identity; a second same-day walk-in for
+            # the same patient (a new token) gets its own fresh session.
+            draft_filter["token_id"] = payload.token_id
+            session = await db.test_sessions.find_one(
+                draft_filter, {"_id": 0}, sort=[("created_at", -1)],
+            )
+        # else: neither appointment nor token → no visit identity → do
+        # NOT reuse ANY draft. The clinical-safety rule "if the system
+        # cannot confidently establish the draft belongs to the current
+        # visit, CREATE A NEW SESSION" takes precedence. `session`
+        # remains None so the fresh-session branch below runs.
 
     # --- Create session if still missing ---
     if not session:
@@ -441,6 +472,10 @@ async def start_diagnostics(
             clinic_id=clinic_id,
             patient_id=patient_id,
             appointment_id=(appt or {}).get("appointment_id"),
+            # F-004-A — persist the walk-in visit identity so a future
+            # click on the SAME token idempotently reuses this session
+            # while a click on a different token spawns a new one.
+            token_id=payload.token_id if not appt else None,
             visit_type=(appt or {}).get("visit_type") or "walkin",
             recommended_tests=(appt or {}).get("recommended_tests") or [],
             referred_by=(appt or {}).get("referred_by"),

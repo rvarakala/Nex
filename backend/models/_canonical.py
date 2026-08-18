@@ -1239,6 +1239,13 @@ class TestSession(BaseModel):
     recommended_tests: List[str] = Field(default_factory=list)   # tests front-desk marked
     referred_by: Optional[str] = None                            # ENT / GP name when visit_type=referral
     appointment_id: Optional[str] = None                         # Link back for handover tracking
+    # NAV-006 F-004-A (2026-08-18) — walk-in visit identity. When a session
+    # is started via the Diagnostics Queue with a `token_id` (and no
+    # scheduled appointment), we persist the token_id so that a SECOND
+    # walk-in the same day for the same patient (a new token) can never
+    # reuse the earlier session's row. Optional so pre-existing sessions
+    # remain valid.
+    token_id: Optional[str] = None
 
     # Report-handover lifecycle — simplified per ops manager review (Feb 2026).
     # draft → report_ready (audiologist "Generate & Print Report") → completed (FD "Consultation Finished")

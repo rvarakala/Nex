@@ -1,6 +1,28 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🧷 NAV-006 Sprint-P2B — Walk-in Draft Session Isolation (2026-08-18)
+
+**Sprint scope (user-approved)**: **F-004-A ONLY** — prevent cross-visit contamination when two same-day walk-in visits (two tokens) exist for the same patient. No P3 items, no F-003, no F-004-B, no F-005/F-008/F-009-F-012, no token_id-fallback broader work, no vestibular / MSG91 / DPDP / orphan cleanup.
+
+**Root cause**: In `diagnostics_queue.py` `queue/start`, when no `appointment_id` was supplied, (a) the endpoint auto-discovered ANY same-day appointment for the patient and (b) the draft-session reuse filter was appointment-agnostic when no appointment resolved. Together they let the afternoon walk-in silently reuse the morning session document.
+
+**Files changed (2 code + 1 test)**:
+- `backend/models/_canonical.py` — new optional `TestSession.token_id` field (walk-in visit identity).
+- `backend/routers/diagnostics_queue.py` — auto-discover disabled when caller supplies `token_id` only; draft-reuse filter now includes `token_id`; new sessions persist `token_id`.
+- `backend/tests/test_nav006_p2b_walkin_draft_isolation.py` — 5 regression tests (**reproduction test failed pre-fix, passes post-fix**).
+
+**Test results**:
+- New P2B suite: **5 / 5 PASS** (2.90 s).
+- Combined NAV-005 + NAV-006 P1 + P1B + P2A + P2B: **88 / 88 PASS** (~2 m 26 s).
+- Ruff on all changed files: 0 findings.
+- One transient network flake on `test_cross_tenant_history_read_forbidden` in the batched run — passes cleanly on immediate re-run (same flake observed in P2A sprint; unrelated infrastructure).
+
+**Explicitly untouched**: `datetime.utcnow()` in `test_sessions.py` still 2 hits (F-003); `updated_at` on line 130 unchanged (F-004-B); P2A files (`reports.py`, `hearing_report_versions.py`, `report_handover.py`, `utils/patient_resolution.py`) untouched.
+
+**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+
+
 ## 🛡️ NAV-006 Sprint-P2A — Reports Tenant + Merge-Resolution Hardening (2026-08-18)
 
 **Sprint scope (user-approved)**: F-006 · F-013 · F-007 ONLY. No P3 items, no F-004-A / F-003 / F-004-B / F-008 / F-005 / F-009-F-012 / token-fallback / vestibular / ORPHAN work.
