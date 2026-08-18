@@ -14,6 +14,7 @@ from auth import get_current_user
 from database import get_db
 from pdf_generator import generate_report_pdf
 from share_token import create_share_token, decode_share_token
+from utils.patient_resolution import resolve_patient_for_session
 from utils.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api")
@@ -32,15 +33,27 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-async def _load_session_and_patient(db, session_id: str) -> tuple[dict, dict]:
-    session = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+async def _load_session_and_patient(db, session_id: str, clinic_id: str) -> tuple[dict, dict]:
+    # NAV-006 F-006 (2026-08-18) — clinic_id is filtered DIRECTLY in the query
+    # so that a foreign session_id is indistinguishable from a non-existent
+    # one (both return 404 here). Removes the "find first, tenant-check
+    # later" defence-in-depth gap.
+    session = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found")
-    patient = await db.patients.find_one({"patient_id": session.get("patient_id")}, {"_id": 0})
+    # NAV-006 F-007 (2026-08-18) — walk `patients.merged_into` + the
+    # `patient_merge_events` log to find the surviving primary patient
+    # when a session references a merged/hard-deleted secondary. The
+    # helper is strictly clinic-scoped so no cross-tenant patient can
+    # be substituted.
+    patient = await resolve_patient_for_session(db, session)
     if not patient:
-        # Orphaned-patient fallback so the PDF still renders. Inherit session's clinic
-        # so the tenant guard downstream still applies (avoids an "UNKNOWN" patient
-        # bypassing clinic-mismatch checks).
+        # Truly orphaned — fall back to a synthetic UNKNOWN patient
+        # inheriting the session's clinic so downstream renderers stay
+        # tenant-safe. Reached only when direct + merge-log resolution
+        # both fail (rare — patient hard-deleted with no merge trail).
         patient = {
             "patient_id": session.get("patient_id", "UNKNOWN"),
             "name": session.get("patient_name", "Unknown Patient"),
@@ -154,13 +167,9 @@ async def _stream_pdf(
 @router.get("/reports/{session_id}/pdf")
 async def generate_session_report(session_id: str,
                                   user=Depends(get_current_user), db=Depends(get_db)):
-    session, patient = await _load_session_and_patient(db, session_id)
-    session_clinic = session.get("clinic_id")
-    patient_clinic = patient.get("clinic_id")
-    if session_clinic and session_clinic != user["clinic_id"]:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    if patient_clinic and patient_clinic != user["clinic_id"]:
-        raise HTTPException(status_code=403, detail="Not authorised")
+    session, patient = await _load_session_and_patient(db, session_id, user["clinic_id"])
+    # NAV-006 F-006 — tenant guard is now baked into the session find_one.
+    # No redundant post-fetch clinic check needed (foreign session_id → 404).
     # Use the requesting user as the signer when the session has no explicit
     # `audiologist_user_id` (covers older sessions that pre-date that field).
     return await _stream_pdf(db, session_id, session, patient,
@@ -180,13 +189,9 @@ async def create_report_share_link(session_id: str, request: Request,
                             "front_desk", "accounts", "audiologist"}:
         raise HTTPException(status_code=403, detail="Not authorised to share reports")
 
-    session, patient = await _load_session_and_patient(db, session_id)
-    session_clinic = session.get("clinic_id")
-    patient_clinic = patient.get("clinic_id")
-    if session_clinic and session_clinic != user["clinic_id"]:
-        raise HTTPException(status_code=403, detail="Not authorised")
-    if patient_clinic and patient_clinic != user["clinic_id"]:
-        raise HTTPException(status_code=403, detail="Not authorised")
+    session, patient = await _load_session_and_patient(db, session_id, user["clinic_id"])
+    # NAV-006 F-006 — tenant guard baked into the find_one. Foreign session
+    # → 404 above. No redundant post-fetch clinic check.
 
     body: dict = {}
     try:
@@ -225,21 +230,12 @@ async def get_shared_report_pdf(token: str, request: Request, db=Depends(get_db)
     session_id = payload["session_id"]
     claim_clinic = payload["clinic_id"]
 
-    session, patient = await _load_session_and_patient(db, session_id)
-    session_clinic = session.get("clinic_id")
-    patient_clinic = patient.get("clinic_id")
-    if session_clinic and session_clinic != claim_clinic:
-        logger.warning(
-            "share_link.clinic_mismatch session_id=%s token.clinic_id=%s session.clinic_id=%s ip=%s",
-            session_id, claim_clinic, session_clinic, _client_ip(request),
-        )
-        raise HTTPException(status_code=401, detail="Share link clinic mismatch")
-    if patient_clinic and patient_clinic != claim_clinic:
-        logger.warning(
-            "share_link.patient_clinic_mismatch session_id=%s token.clinic_id=%s patient.clinic_id=%s ip=%s",
-            session_id, claim_clinic, patient_clinic, _client_ip(request),
-        )
-        raise HTTPException(status_code=401, detail="Share link clinic mismatch")
+    # NAV-006 F-006 — the signed token IS the tenant assertion for the
+    # public share path. Feed `claim_clinic` into the session find_one:
+    # any mismatch (forged/stolen session_id in a valid token) will 404
+    # here instead of silently loading a foreign session and 401'ing
+    # after the fact.
+    session, patient = await _load_session_and_patient(db, session_id, claim_clinic)
 
     # Successful access — audit $inc. We only write if a matching mint-record
     # exists (silent no-op on legacy mints that predate the token_hash field).
@@ -263,11 +259,13 @@ async def list_share_audit(session_id: str,
                            user=Depends(get_current_user), db=Depends(get_db)):
     """Lists all share-links minted for a session (most-recent first), including
     access_count + last_accessed_at. Tenant-scoped."""
-    session = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    # NAV-006 F-006 — clinic_id in the find_one; foreign session → 404
+    # (existence not revealed).
+    session = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": user["clinic_id"]}, {"_id": 0},
+    )
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found")
-    if session.get("clinic_id") and session.get("clinic_id") != user["clinic_id"]:
-        raise HTTPException(status_code=403, detail="Not authorised")
 
     rows = await db.report_share_links.find(
         {"session_id": session_id, "clinic_id": user["clinic_id"]},

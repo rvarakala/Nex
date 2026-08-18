@@ -1,6 +1,28 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🛡️ NAV-006 Sprint-P2A — Reports Tenant + Merge-Resolution Hardening (2026-08-18)
+
+**Sprint scope (user-approved)**: F-006 · F-013 · F-007 ONLY. No P3 items, no F-004-A / F-003 / F-004-B / F-008 / F-005 / F-009-F-012 / token-fallback / vestibular / ORPHAN work.
+
+**Files changed** (3 code · 1 helper · 1 test):
+- `backend/utils/patient_resolution.py` — **NEW** shared `resolve_patient_for_session` helper, strictly clinic-scoped.
+- `backend/routers/reports.py` — F-006 (4 sites) + F-007 wired into `_load_session_and_patient`.
+- `backend/routers/hearing_report_versions.py` — F-006 (main + legacy `sessions` fallback).
+- `backend/routers/report_handover.py` — F-013 (session direct-guard) + F-007 (patient enrichment).
+- `backend/tests/test_nav006_p2a_report_tenant_and_merge_resolution.py` — **NEW** regression suite (16 tests).
+
+**Test results**:
+- New P2A suite: **16 / 16 PASS** (1.76 s).
+- NAV-005 Sprint-3A/3B/3C + NAV-006 P1/P1B + P2A combined: **83 / 83 PASS** (~2 m).
+- Ruff on all changed files: 0 findings.
+- 1 transient network timeout observed on `test_cross_tenant_history_read_forbidden`; passed on re-run — unrelated preview-pod flake.
+
+**F-003 + F-004-A explicitly untouched**: `datetime.utcnow()` in `test_sessions.py` still present twice (unchanged). `queue/start` walk-in draft-filter still lacks `appointment_id` constraint (unchanged). Awaiting future sprint approval.
+
+**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+
+
 ## 🩹 NAV-006 Sprint-P1B — Queue/Start Appointment & Session Hardening (2026-08-18)
 
 **Sprint scope (user-approved)**: Two F-002-sibling defects discovered on `/api/diagnostics/queue/start` — silent appointment substitution (B1) + draft-session reuse across appointments (B2). No P2/P3/ORPHAN work touched.

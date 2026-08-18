@@ -77,12 +77,25 @@ def _default_label(session: dict, existing_count: int) -> str:
     return f"Visit {existing_count + 1} · {date_part}"
 
 
-async def _load_session(db, session_id: str) -> dict:
-    """Prefer `test_sessions`, fall back to `sessions` for legacy tenants."""
-    doc = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+async def _load_session(db, session_id: str, clinic_id: str) -> dict:
+    """Load a session that BELONGS to `clinic_id`.
+
+    NAV-006 F-006 (2026-08-18) — clinic_id is filtered directly in the
+    query so that a foreign session_id is indistinguishable from a
+    non-existent one (both 404). Removes the "find first, tenant-check
+    later" defence-in-depth gap. We prefer `test_sessions`; the legacy
+    `sessions` collection (F-008, out of scope this sprint) is kept as
+    a scoped fallback so a caller in one clinic can never see a legacy
+    row from another.
+    """
+    doc = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
     if doc:
         return doc
-    doc = await db.sessions.find_one({"session_id": session_id}, {"_id": 0})
+    doc = await db.sessions.find_one(
+        {"session_id": session_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
     if doc:
         return doc
     raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -197,9 +210,9 @@ def _build_snapshot(session: dict, patient: dict, clinic: dict) -> dict:
 @router.post("/save", response_model=VersionSummary)
 async def save_version(payload: SaveIn,
                        user=Depends(get_current_user), db=Depends(get_db)):
-    session = await _load_session(db, payload.session_id)
-    if session.get("clinic_id") != user["clinic_id"]:
-        raise HTTPException(status_code=403, detail="Session belongs to a different clinic")
+    # NAV-006 F-006 — session lookup is now directly clinic-scoped.
+    # A foreign session_id → 404 in `_load_session` (existence not revealed).
+    session = await _load_session(db, payload.session_id, user["clinic_id"])
 
     patient_id = session.get("patient_id")
     if not patient_id:

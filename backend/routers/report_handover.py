@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from auth import get_current_user
 from database import get_db
+from utils.patient_resolution import resolve_patient_for_session
 from utils.serde import deserialize_datetime, serialize_datetime
 
 
@@ -39,15 +40,30 @@ _MAX_PDF_BYTES = 15 * 1024 * 1024  # 15 MB cap — well above a 4-page audiogram
 
 # ---------- helpers --------------------------------------------------------
 async def _get_session_tenant_scoped(db, session_id: str, clinic_id: str) -> Dict[str, Any]:
-    s = await db.test_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    """NAV-006 F-013 (2026-08-18) — direct clinic_id filter on the session.
+
+    Previously this helper looked up the session WITHOUT `clinic_id`, then
+    used the linked patient's existence in the caller's clinic as the tenant
+    guard. That broke legitimate handovers when the patient row was
+    hard-deleted or had an outdated clinic_id (and never asserted the
+    session's own clinic_id directly).
+
+    Now the authoritative check is `session.clinic_id == user.clinic_id`,
+    enforced in the `find_one` filter itself. A foreign session_id → 404
+    (existence not revealed). The patient lookup that follows is for
+    RENDERING enrichment only and is resolved via
+    `resolve_patient_for_session` (NAV-006 F-007) which walks merge
+    history within the same clinic — never crossing tenants.
+    """
+    s = await db.test_sessions.find_one(
+        {"session_id": session_id, "clinic_id": clinic_id}, {"_id": 0},
+    )
     if not s:
         raise HTTPException(status_code=404, detail="Session not found")
-    p = await db.patients.find_one(
-        {"patient_id": s.get("patient_id"), "clinic_id": clinic_id}, {"_id": 0}
-    )
-    if not p:
-        raise HTTPException(status_code=403, detail="Not authorised for this session")
-    s["_patient"] = p
+    # F-007 — attach the surviving primary patient (or None) for downstream
+    # renderers. This is NOT the tenant gate; do not gate on `p is None`.
+    p = await resolve_patient_for_session(db, s)
+    s["_patient"] = p or {}
     return s
 
 
