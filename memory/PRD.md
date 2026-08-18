@@ -1,6 +1,75 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🛡️ NAV-005 Sprint-3C — Registration Hardening (2026-08-18)
+
+**Ask**: Close 4 approved audit items from the REG-001 → REG-006 registration-form audit — mobile asterisk mismatch, future-date validation, email format validation, mobile↔alternate-mobile self-collision. REG-005 name-match scoring and REG-006 draft persistence explicitly DEFERRED per your scope directive.
+
+**Pre-flight (mandatory, READ-ONLY)**:
+- IST today: 2026-08-18
+- Future DOB rows: **0**
+- Future anniversary rows: **0**
+- Non-ISO-format DOB / anniversary strings: **0** / **0**
+- Total active patients (all clinics): 236
+- ✅ Zero rows would be affected by the new validators. Safe to activate.
+
+**Fixes shipped**:
+
+**REG-001 · Mobile field misleading asterisk** — Removed `required` prop from the Mobile `<Field>` in `NewPatientPage.js`. Replaced the "Primary identifier" hint with "Recommended — enables WhatsApp reminders and duplicate detection". Backend model `PatientCreate.mobile: Optional[str]` is unchanged — the walk-in / emergency capture flow that intentionally allows phone-less registration continues to work.
+
+**REG-002 · DOB / Anniversary future-date rejection** — Hard block at BOTH layers, IST-based.
+- **Frontend**: DOB and Anniversary `<Input type="date">` get `max={istTodayIso()}` (matches server-side `greetings._today_ist()`); a `fieldErrors` object surfaces "DOB cannot be in the future." / "Anniversary date cannot be in the future." inline below the field; Register / Print / Book / Diagnostics buttons all disabled via `!formValid` when any field error is present.
+- **Backend**: New `@field_validator("dob", "anniversary_date", mode="after")` validators on `PatientCreate` reject with a standard FastAPI **HTTP 422** on any date > IST-today. Silently coerces nothing.
+- **AGE > 120 stays soft**. No hard block per your explicit directive.
+
+**REG-003 · Email format validation** — Hard block at BOTH layers, HTML5-living-standard regex `^[^\s@]+@[^\s@]+\.[^\s@]+$` (deliberately NOT RFC 5322).
+- **Frontend**: `EMAIL_RE` constant; inline error "Enter a valid email address (e.g. name@example.com)." when non-empty and doesn't match.
+- **Backend**: `@field_validator("email", mode="before")` — trims, lowercases, regex-checks; raises 422 on mismatch; stores the normalised (trimmed, lowercased) form.
+- Empty email remains valid (field is Optional).
+- Rejected: `raviyahoo.com`, `ravi@`, `@google.com`, `ravi @gmail.com`, `ravi@gmail`, `no_at_sign_here.com`.
+- Accepted: `ravi@gmail.com`, `ravi.varakala@gmail.com`, `ravi+clinic@gmail.com`, `ravi@subdomain.example.com`.
+
+**REG-004 · Mobile === Alternate Mobile self-collision** — New hard block at BOTH layers using LAST-10-DIGIT normalisation (matches the existing cross-patient duplicate-detection guard in `POST /patients`).
+- **Frontend**: `last10Digits()` helper; inline error "Mobile and Alternate Mobile cannot be the same." when both fields are non-empty and normalise identically.
+- **Backend**: `@model_validator(mode="after")` on `PatientCreate` — raises 422 with the same message. `+91-9876543210`, `09876543210`, `9876543210`, `+91 98765 43210`, `9876-543-210` all collide correctly.
+- **Critically**: Duplicate-phone workflow across DIFFERENT patients (family sharing one phone) is UNCHANGED. The 409 → DuplicateContactModal → Create-Anyway + link-family path continues to work exactly as before.
+
+**REG-005 / REG-006** — Explicitly DEFERRED per your directive.
+
+**Files changed (3)**:
+- `/app/backend/models/_canonical.py` — added `_ist_today()`, `_EMAIL_RE`, `_digits_only`, `_last10` helpers + 4 validators on `PatientCreate`.
+- `/app/frontend/src/modules/patients/NewPatientPage.js` — removed Mobile asterisk, added `istTodayIso() / EMAIL_RE / last10Digits` helpers, per-field `fieldErrors` derivation, `Field` component now renders red inline error, `formValid` gate replaces `valid` on all 4 submit buttons.
+- `/app/backend/tests/test_nav005_sprint3c_registration_hardening.py` — NEW: 28 backend tests.
+
+**Test results**:
+- **Sprint-3C backend suite**: **28 / 28 PASS** in ~9 s. Covers REG-001 (mobile omitted), REG-002 (today / yesterday / tomorrow DOB + today / tomorrow anniversary + age>120 accepted), REG-003 (empty, valid, 6 invalid variants, 4 practical variants, uppercase+whitespace normalisation), REG-004 (mobile-only, alt-only, both-different, identical, formatted-variants, both-empty, family-workflow-preservation), and edit-flow validator symmetry (PUT also enforces).
+- **Frontend Playwright self-test**: **6 / 6 PASS**. Asterisk gone; DOB error + max attribute; anniversary error; email error; mobile==alt error; error clears and Register re-enables on fix. Screenshot attached in session.
+- **Full regression sweep** (Sprint-3A + Sprint-3B + Sprint-3C + prior patient/merge/session/report tests): **73 / 73 PASS** in 87 s.
+- **ESLint** (`NewPatientPage.js`): clean.
+- **Ruff** (`_canonical.py`, `test_nav005_sprint3c_*`): clean.
+
+**Regression safety confirmed**:
+- NAV-003 · **PASS** — no HA route touched.
+- NAV-004 Sprint-1 & Sprint-2 · **PASS** — dashboard code untouched.
+- NAV-005 Sprint-3A (merge + tenant isolation) · **PASS** — 16 / 16 tests still green.
+- NAV-005 Sprint-3B (profile hygiene) · **PASS** — 3 / 3 tests still green.
+- No changes to merge logic, TestSession clinic isolation, patient profile navigation, notes / follow-ups / service tabs, dashboard, MSG91, WhatsApp integration, DPDP consent flow.
+
+**Migration**: None. Zero backfills, zero index changes, zero schema changes. All 4 fixes are additive validation.
+
+**Warnings**: None. Pre-flight showed 0 legacy rows would be rejected. No DB rows to fix.
+
+**Result per fix**:
+- **REG-001 — PASS**
+- **REG-002 — PASS**
+- **REG-003 — PASS**
+- **REG-004 — PASS**
+- **REG-005 — DEFERRED** (P3 — name-match scoring; revisit after real clinic usage feedback)
+- **REG-006 — DEFERRED** (P4 — draft persistence; DPDP-sensitive, awaiting user demand signal)
+
+**Deploy note for the user**: Ships in preview. Deploy preview → production so beta clinic gets: sane Mobile UX (no misleading asterisk), IST-safe date rejection, email format validation, mobile/alt-mobile self-collision guard. No downtime, no migration, no risk to existing rows.
+
+
 ## 🧭 NAV-005 Sprint-3B — Patient Profile Hygiene (2026-08-18)
 
 **Ask**: Close 4 audit items surfaced during NAV-005 that lie behind Patient Profile UX drift — the Notes tab silently broken, Follow-ups tab always empty, Service tab non-clickable, and the NAV-004 Sprint-2 `?appointment=<id>` deep-link ignored. Strictly frontend hygiene, no schema changes.

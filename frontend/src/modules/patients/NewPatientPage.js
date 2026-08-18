@@ -8,13 +8,18 @@ import { ReferringDoctorPicker } from '../../components/patient/ReferringDoctorP
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const Field = ({ label, required, children, full, testid, hint }) => (
+const Field = ({ label, required, children, full, testid, hint, error }) => (
   <div className={full ? 'col-span-full' : ''} data-testid={testid}>
     <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-0.5">
       {label} {required && <span className="text-red-500">*</span>}
     </label>
     {children}
-    {hint && <div className="text-[9px] text-slate-400 mt-0.5">{hint}</div>}
+    {error && (
+      <div className="text-[10px] text-red-600 mt-0.5 font-medium" data-testid={`${testid}-error`}>
+        {error}
+      </div>
+    )}
+    {!error && hint && <div className="text-[9px] text-slate-400 mt-0.5">{hint}</div>}
   </div>
 );
 
@@ -58,6 +63,35 @@ const INITIAL = {
 const REFERRAL_SOURCES = ['Walk-in', 'Doctor Referral', 'Online', 'Camp / Outreach', 'Family / Friend', 'Insurance', 'Repeat Visit', 'Other'];
 const INSURANCE_SCHEMES = ['Cash', 'CGHS', 'ECHS', 'ESIC', 'Ayushman Bharat', 'Private Insurance', 'Corporate', 'Other'];
 const EAR_SIDES = ['', 'Left', 'Right', 'Bilateral'];
+
+// REG-002 · Sprint-3C — IST-based "today" for the date-picker `max`
+// attribute + client-side future-date rejection. Matches the pattern
+// used server-side in `greetings._today_ist()` — the daily birthday /
+// anniversary cron works off UTC + 5h30, so we align the frontend
+// cutoff so an Indian front-desk typing today's DOB just before
+// midnight IST is never spuriously rejected (or spuriously accepted
+// as "yesterday").
+const istTodayIso = () => {
+  const now = new Date();
+  const istMs = now.getTime() + 5.5 * 60 * 60 * 1000;
+  return new Date(istMs).toISOString().slice(0, 10); // YYYY-MM-DD
+};
+
+// REG-003 · Sprint-3C — HTML5 living-standard email regex.
+// Deliberately NOT RFC 5322 (over-broad, accepts unusable addresses)
+// and NOT the "must have TLD >= 2 chars" variant (rejects a few
+// legitimate single-letter TLDs). Kept in sync with the backend
+// validator in `models/_canonical.py::PatientCreate`.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// REG-004 · Sprint-3C — helper to normalise a raw phone for the
+// self-collision check. Same last-10-digit reduction the backend
+// duplicate-detection guard uses, so behaviour is symmetric across
+// formatting variants (+91-, 09-prefix, spaces, hyphens).
+const last10Digits = (v) => {
+  const d = (v || '').replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : d;
+};
 
 export default function NewPatientPage() {
   const navigate = useNavigate();
@@ -155,8 +189,47 @@ export default function NewPatientPage() {
 
   const valid = form.name.trim() && form.age !== '' && !isNaN(parseInt(form.age, 10));
 
+  // NAV-005 Sprint-3C — per-field validation for DOB, anniversary,
+  // email, and mobile↔alternate self-collision. Recomputed on every
+  // render (cheap) so error banners react instantly to user edits.
+  // Kept as a plain object rather than useMemo to avoid the churn of
+  // dep-array bookkeeping — the checks are all O(1).
+  const _todayIst = istTodayIso();
+  const fieldErrors = {};
+  // REG-002 · DOB / Anniversary must not be in the future (IST).
+  if (form.dob && form.dob > _todayIst) {
+    fieldErrors.dob = 'DOB cannot be in the future.';
+  }
+  if (form.anniversary_date && form.anniversary_date > _todayIst) {
+    fieldErrors.anniversary_date = 'Anniversary date cannot be in the future.';
+  }
+  // REG-003 · Email format (only when non-empty).
+  if (form.email && form.email.trim() && !EMAIL_RE.test(form.email.trim().toLowerCase())) {
+    fieldErrors.email = 'Enter a valid email address (e.g. name@example.com).';
+  }
+  // REG-004 · Mobile and Alternate Mobile self-collision (only when
+  // both are non-empty AND normalise to the same digits). The existing
+  // cross-patient duplicate-phone guard at /api/patients still applies
+  // separately — this is an independent data-quality check.
+  if (form.mobile && form.alternate_mobile) {
+    const a = last10Digits(form.mobile);
+    const b = last10Digits(form.alternate_mobile);
+    if (a && b && a === b) {
+      fieldErrors.alternate_mobile = 'Mobile and Alternate Mobile cannot be the same.';
+    }
+  }
+  const formValid = valid && Object.keys(fieldErrors).length === 0;
+
   const submit = async (action, opts = {}) => {
     if (!valid) { setErr('Name and Age are required.'); return; }
+    // NAV-005 Sprint-3C — server also enforces these, but blocking
+    // at the client saves a round-trip and gives an immediate,
+    // field-anchored error message instead of a generic 422 toast.
+    if (Object.keys(fieldErrors).length) {
+      const first = Object.values(fieldErrors)[0];
+      setErr(first);
+      return;
+    }
     setBusy(true); setErr(null);
     try {
       const payload = { ...form, age: parseInt(form.age, 10) };
@@ -349,11 +422,11 @@ export default function NewPatientPage() {
             <Field label="Full Name" required full testid="f-name">
               <Input value={form.name} onChange={(e) => set({ name: e.target.value })} data-testid="in-name" autoFocus />
             </Field>
-            <Field label="DOB" testid="f-dob">
-              <Input type="date" value={form.dob} onChange={(e) => set({ dob: e.target.value })} data-testid="in-dob" />
+            <Field label="DOB" testid="f-dob" error={fieldErrors.dob}>
+              <Input type="date" max={_todayIst} value={form.dob} onChange={(e) => set({ dob: e.target.value })} data-testid="in-dob" />
             </Field>
-            <Field label="Anniversary" testid="f-anniversary" hint="Optional · used for auto-greetings">
-              <Input type="date" value={form.anniversary_date} onChange={(e) => set({ anniversary_date: e.target.value })} data-testid="in-anniversary" />
+            <Field label="Anniversary" testid="f-anniversary" hint="Optional · used for auto-greetings" error={fieldErrors.anniversary_date}>
+              <Input type="date" max={_todayIst} value={form.anniversary_date} onChange={(e) => set({ anniversary_date: e.target.value })} data-testid="in-anniversary" />
             </Field>
             <Field label="Age" required testid="f-age" hint="Auto from DOB">
               <Input type="number" min="0" max="120" value={form.age} onChange={(e) => set({ age: e.target.value })} data-testid="in-age" />
@@ -366,13 +439,19 @@ export default function NewPatientPage() {
             </Field>
 
             <SectionHeader>Contact</SectionHeader>
-            <Field label="Mobile" required testid="f-mobile" hint="Primary identifier">
+            {/* REG-001 · Sprint-3C — Mobile is intentionally OPTIONAL.
+                Front-desk supports walk-in / emergency registration where
+                the patient can't recite a number. The `required` prop and
+                previous "Primary identifier" hint were misleading — mobile
+                is recommended (unlocks duplicate detection + WhatsApp
+                reminders) but not enforced at either layer. */}
+            <Field label="Mobile" testid="f-mobile" hint="Recommended — enables WhatsApp reminders and duplicate detection">
               <Input type="tel" value={form.mobile} onChange={(e) => set({ mobile: e.target.value })} placeholder="+91-98765 43210" data-testid="in-mobile" />
             </Field>
-            <Field label="Alternate Mobile" testid="f-alt-mobile">
+            <Field label="Alternate Mobile" testid="f-alt-mobile" error={fieldErrors.alternate_mobile}>
               <Input type="tel" value={form.alternate_mobile} onChange={(e) => set({ alternate_mobile: e.target.value })} data-testid="in-alt-mobile" />
             </Field>
-            <Field label="Email" testid="f-email">
+            <Field label="Email" testid="f-email" error={fieldErrors.email}>
               <Input type="email" value={form.email} onChange={(e) => set({ email: e.target.value })} data-testid="in-email" />
             </Field>
             <Field label="WhatsApp updates" full testid="f-whatsapp-consent" hint="DPDP Act 2023 — patient must explicitly opt in">
@@ -487,7 +566,7 @@ export default function NewPatientPage() {
               <button
                 type="button"
                 onClick={() => submit('save')}
-                disabled={!valid || busy || loadingPatient}
+                disabled={!formValid || busy || loadingPatient}
                 data-testid="btn-save-edit"
                 className="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
               >{busy ? 'Saving…' : 'Save Changes'}</button>
@@ -503,21 +582,21 @@ export default function NewPatientPage() {
               <button
                 type="button"
                 onClick={() => submit('register')}
-                disabled={!valid || busy}
+                disabled={!formValid || busy}
                 data-testid="btn-register"
                 className="px-3 py-1.5 text-xs bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded disabled:opacity-50"
               >{busy ? 'Saving…' : 'Register Patient'}</button>
               <button
                 type="button"
                 onClick={() => submit('print')}
-                disabled={!valid || busy}
+                disabled={!formValid || busy}
                 data-testid="btn-register-print"
                 className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded disabled:opacity-50"
               >Register + Print Token</button>
               <button
                 type="button"
                 onClick={() => submit('book_appointment')}
-                disabled={!valid || busy}
+                disabled={!formValid || busy}
                 data-testid="btn-register-book-apt"
                 title="Save the patient and jump straight into booking an appointment for them."
                 className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
@@ -525,7 +604,7 @@ export default function NewPatientPage() {
               <button
                 type="button"
                 onClick={() => submit('start_diagnostics')}
-                disabled={!valid || busy}
+                disabled={!formValid || busy}
                 data-testid="btn-register-diagnostics"
                 className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded disabled:opacity-50 shadow-sm"
               >Register + Start Diagnostics →</button>

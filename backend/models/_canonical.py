@@ -1,7 +1,35 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import Optional, List, Literal, Dict, Union, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from uuid import uuid4
+import re
+
+
+# NAV-005 Sprint-3C · REG-002/003/004 shared helpers
+# Kept at module scope so `PatientCreate` validators can reference them
+# without duplication and so tests can import them for parity checks.
+def _ist_today() -> date:
+    """Return today's date in IST. Matches `greetings._today_ist()` so
+    the entire codebase agrees on when "tomorrow" begins."""
+    return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).date()
+
+
+# REG-003 email regex. Deliberately the HTML5 living-standard shape:
+# ^[^\s@]+@[^\s@]+\.[^\s@]+$
+# Practical (accepts + addressing, subdomains, single-letter TLDs) and
+# in sync with the frontend `EMAIL_RE`. Compile once.
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _digits_only(v) -> str:
+    return re.sub(r"\D", "", str(v or ""))
+
+
+def _last10(v) -> str:
+    """Last 10 digits — the canonical Indian-phone equality shape used
+    by the duplicate-detection guard in `POST /patients`."""
+    d = _digits_only(v)
+    return d[-10:] if len(d) >= 10 else d
 
 
 def _normalize_date_str(v):
@@ -671,6 +699,67 @@ class PatientCreate(BaseModel):
     # AUDINEXA Connect opt-in (DPDP Act 2023). False until patient ticks the
     # consent box at registration.
     whatsapp_consent: bool = False
+
+    # ── NAV-005 Sprint-3C · REG-002/003/004 hard validators ─────────
+    # These fire on both POST /patients and PUT /patients/{id} because
+    # both endpoints use `PatientCreate` as their body model. Silent
+    # coercion is deliberately avoided — we raise `ValueError` so the
+    # user sees the field-anchored FastAPI 422 with our message.
+    @field_validator("dob", mode="after")
+    @classmethod
+    def _dob_not_in_future(cls, v):
+        if not v:
+            return v
+        # Accept ISO YYYY-MM-DD strings; leave anything odd for the
+        # existing legacy tolerance path to handle at Patient level.
+        try:
+            parsed = date.fromisoformat(v[:10]) if isinstance(v, str) else None
+        except ValueError:
+            return v  # let the existing normaliser cope
+        if parsed and parsed > _ist_today():
+            raise ValueError("DOB cannot be in the future.")
+        return v
+
+    @field_validator("anniversary_date", mode="after")
+    @classmethod
+    def _anniv_not_in_future(cls, v):
+        if not v:
+            return v
+        try:
+            parsed = date.fromisoformat(v[:10]) if isinstance(v, str) else None
+        except ValueError:
+            return v
+        if parsed and parsed > _ist_today():
+            raise ValueError("Anniversary date cannot be in the future.")
+        return v
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _email_format(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        s = v.strip().lower()
+        if not s:
+            return None
+        if not _EMAIL_RE.match(s):
+            raise ValueError("Enter a valid email address (e.g. name@example.com).")
+        return s
+
+    @model_validator(mode="after")
+    def _mobile_ne_alt_mobile(self):
+        # REG-004: fire only when BOTH fields are non-empty and reduce
+        # to the same digits. The cross-patient duplicate guard in
+        # `POST /patients` remains authoritative for family-shared
+        # phones — this validator is exclusively about the *same row*
+        # having identical mobile and alternate_mobile (a data-entry
+        # slip, never a legitimate business case).
+        m = _last10(self.mobile)
+        a = _last10(self.alternate_mobile)
+        if m and a and m == a:
+            raise ValueError("Mobile and Alternate Mobile cannot be the same.")
+        return self
 
 
 # ==================== REFERRING DOCTOR MODELS ====================
