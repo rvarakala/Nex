@@ -83,22 +83,23 @@ async def _load_session(db, session_id: str, clinic_id: str) -> dict:
     NAV-006 F-006 (2026-08-18) — clinic_id is filtered directly in the
     query so that a foreign session_id is indistinguishable from a
     non-existent one (both 404). Removes the "find first, tenant-check
-    later" defence-in-depth gap. We prefer `test_sessions`; the legacy
-    `sessions` collection (F-008, out of scope this sprint) is kept as
-    a scoped fallback so a caller in one clinic can never see a legacy
-    row from another.
+    later" defence-in-depth gap.
+
+    NAV-006 F-008 (2026-08-18) — the previous fallback that also queried
+    the legacy `db.sessions` collection was removed after confirming
+    (a) production has no `sessions` collection at all (verified via the
+    Emergent Database Manager collection list), (b) preview has 0 rows
+    in `sessions`, and (c) every session writer in the codebase targets
+    `test_sessions` exclusively (CLIN-001 backfill + NAV-005 Sprint-3A).
+    The removal is behaviour-preserving: the fallback was already
+    clinic-scoped post-F-006, and it never produced a hit in production.
     """
     doc = await db.test_sessions.find_one(
         {"session_id": session_id, "clinic_id": clinic_id}, {"_id": 0},
     )
-    if doc:
-        return doc
-    doc = await db.sessions.find_one(
-        {"session_id": session_id, "clinic_id": clinic_id}, {"_id": 0},
-    )
-    if doc:
-        return doc
-    raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return doc
 
 
 async def _load_patient(db, patient_id: str, clinic_id: str) -> dict:

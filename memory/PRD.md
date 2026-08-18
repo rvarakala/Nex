@@ -1,6 +1,43 @@
 # ACS Audiology Clinic — Product Requirements Document
 
 
+## 🧹 NAV-006 · F-008 · Legacy `sessions` Fallback Removal (2026-08-18)
+
+**Scope (user-approved)**: F-008 only. Remove the dead `db.sessions.find_one(...)` fallback from `hearing_report_versions.py::_load_session`. No P2E, no F-009, no F-011, no other feature.
+
+**Verification chain that unblocked F-008**:
+- Preview DB probe: `db.sessions.count_documents({}) == 0`.
+- Production DB browser (Emergent Database Manager, full unfiltered collection list): no `sessions` collection present. Only `test_sessions` (656 docs), `user_sessions` (323 docs), `session_reports.chunks` (47 docs), `session_reports.files` (23 docs).
+- Source trace: only two `db.sessions.*` references in the entire codebase — the fallback under review, and a marketing counter in `launch_banner.py` (out of scope; wrapped in `try/except` with a hardcoded default).
+- Zero writers to `db.sessions.*` anywhere in the tree; zero indexes; zero migrations touch it.
+
+**Files changed (1 code + 1 test)**:
+- `backend/routers/hearing_report_versions.py` — remove the second `find_one` branch; collapse `_load_session` to a single tenant-scoped `test_sessions` lookup. Docstring updated with the F-008 rationale.
+- `backend/tests/test_nav006_p2d_f008_legacy_fallback.py` — **NEW** 5-test regression suite:
+  1. Valid same-clinic session loads from `test_sessions`.
+  2. Unknown session → HTTP 404 with the exact pre-fix detail contract.
+  3. Foreign-clinic session → HTTP 404 (F-006 tenant hardening preserved).
+  4. **Primary post-fix guarantee**: a row deliberately inserted into `db.sessions` with a matching `session_id` + `clinic_id` is NEVER returned by `_load_session` — proves the fallback is genuinely gone.
+  5. AST/line source guard: `db.sessions.` no longer appears in `hearing_report_versions.py`.
+
+**Test results**:
+- New F-008 suite: **5 / 5 PASS** (0.07 s).
+- Combined NAV-006 P1 + P1B + P2A + P2B + P2C + P2D (F-005/F-010/F-012) + F-008: **64 / 64 PASS** (12.69 s).
+- Combined NAV-005 3A + 3B + 3C: **47 / 47 PASS** (41.23 s).
+- **Grand total: 111 / 111 PASS.**
+- Ruff on both changed files: 0 findings.
+
+**Behaviour preservation**:
+- `test_sessions` lookup unchanged.
+- `clinic_id` filter unchanged.
+- HTTPException 404 detail string preserved byte-for-byte.
+- Every downstream caller (`POST /api/hearing-reports/save`) receives the same shape of response on both success and 404 paths.
+
+**Explicitly untouched**: `reports.py`, `diagnostics_queue.py`, `test_sessions.py`, `report_handover.py`, `launch_banner.py`, `models/_canonical.py`, `utils/patient_resolution.py`, all frontend files, all migrations, all env/config. F-009 + F-011 remain DEFERRED / WON'T FIX.
+
+**Awaiting your explicit go/no-go on production deploy — nothing pushed to `audinexa.com` yet.**
+
+
 ## 🛠 NAV-006 Sprint-P2D — Core Bundle (F-005 · F-010 · F-012) (2026-08-18)
 
 **Sprint scope (user-approved)**: **F-005 + F-010 + F-012 only**. F-008 held **BLOCKED** on a production DB probe. **F-009 + F-011 = DEFERRED / WON'T FIX** by user directive. No MSG91, DPDP, orphan, vestibular, multi-clinic groups, referral automation, or AI copilot work.
