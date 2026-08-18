@@ -29,6 +29,7 @@ import BillingModule from './modules/billing/BillingModule';
 import AccountsRevenuePage from './modules/accounts/AccountsRevenuePage';
 import CompliancePolicyPack from './modules/compliance/CompliancePolicyPack';
 import TestProceduresModule from './modules/test/TestProceduresModule';
+import AudiogramReportPage from './pages/AudiogramReportPage';
 import HAModule from './modules/ha/HAModule';
 import RepairModule from './modules/repair/RepairModule';
 import AdminPanel from './modules/admin/panel/AdminPanel';
@@ -164,6 +165,9 @@ function AppRoutes() {
               } />
               <Route path="/settings/compliance" element={
                 <ShelledRoute><CompliancePolicyPack /></ShelledRoute>
+              } />
+              <Route path="/test/audiogram/:sessionId" element={
+                <ShelledRoute><AudiogramReportPage /></ShelledRoute>
               } />
               <Route path="/test/*" element={
                 <ShelledRoute><ModuleGate module="diagnostics"><TestProceduresModule /></ModuleGate></ShelledRoute>
